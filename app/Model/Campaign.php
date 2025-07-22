@@ -1,0 +1,1109 @@
+<?php
+
+namespace App\Model;
+
+use App\Jobs\RecycleDeletedNotificationJob;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Log;
+use App\Model\Client\CampaignList;
+
+class Campaign extends Model
+{
+
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array
+     */
+    protected $guarded = ['id'];
+    protected $table = 'campaign';
+    public $timestamps = false;
+
+
+    public static function allowedCampaigns(int $clientId, int $level, array $groups = [])
+    {
+        if (empty($groups)) $groups = [0];
+        $sql = "SELECT * FROM campaign WHERE is_deleted=0";
+        //$sql = "SELECT * FROM campaign WHERE status=1";
+
+        if ($level < 7) {
+            $sql .= " AND group_id IN (" . implode(",", $groups) . ")";
+        }
+        $records = DB::connection("mysql_$clientId")->select($sql);
+        $data = [];
+        foreach ($records as $record) {
+            $data[$record->id] = $record;
+        }
+        return $data;
+    }
+
+    public function campaignDetailold($request)
+    {
+        try {
+            $data = self::allowedCampaigns($request->auth->parent_id, $request->auth->level, $request->auth->groups);
+            $data_count = array();
+            foreach ($data as $key => $id) {
+
+                $data1['campaign_id'] = $id->id;
+
+                $sql_count_lead_report = "SELECT count(1) as rowCountLearReport FROM lead_report WHERE campaign_id = :campaign_id ";
+                $record_count_lead = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_count_lead_report, $data1);
+                $id->rowLeadReport = $record_count_lead->rowCountLearReport;
+
+                $searchStr = array();
+                // $data1['is_deleted'] = 0;
+                if ($data1['campaign_id'] && is_numeric($data1['campaign_id'])) {
+                    array_push($searchStr, 'campaign_id = :campaign_id');
+                    $data1['campaign_id'] = $data1['campaign_id'];
+                }
+
+                if ($id->crm_title_url == 'hubspot') {
+                    $sql = "SELECT * FROM hubspot_campaign_list WHERE " . implode(" AND ", $searchStr) . " and status=1 and is_deleted=0";
+                    $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data1);
+                    $list = (array) $record;
+                    $count = count($list);
+                    $id_list = array();
+                    $id->rowList = $count;
+
+                    for ($i = 0; $i < $count; $i++) {
+                        $id_list[$i] = $list[$i]->list_id;
+                    }
+
+                    $list_ids = "'" . implode("', '", $id_list) . "'";
+                    $list_data['list_id'] = $list_ids;
+                } else {
+                    $sql = "SELECT * FROM campaign_list WHERE " . implode(" AND ", $searchStr) . " and status=1 and is_deleted=0";
+                    $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data1);
+                    $list = (array) $record;
+                    $count = count($list);
+                    $id_list = array();
+
+                    $id->rowList = $count;
+                    for ($i = 0; $i < $count; $i++) {
+                        $id_list[$i] = $list[$i]->list_id;
+                    }
+
+                    $list_ids = "'" . implode("', '", $id_list) . "'";
+                    $list_data['list_id'] = $list_ids;
+                }
+
+                if ($id->crm_title_url == 'hubspot') {
+
+                    $sql_count_list = "SELECT sum(size) as rowCountList FROM hubspot_lists WHERE list_id IN (" . $list_ids . ") ";
+                    $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_count_list, $list_data);
+
+                    $id->rowList = $count;
+                    $id->rowListData = $record_count_list[0]->rowCountList;
+                } else {
+
+                    $sql_count_list = "SELECT count(1) as rowCountList FROM list_data WHERE list_id IN (" . $list_ids . ") ";
+                    $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_count_list, $list_data);
+
+                    $id->rowList = $count;
+                    $id->rowListData = $record_count_list[0]->rowCountList;
+                }
+
+
+                //   return $data1;
+                $sql_lead_temp = "SELECT count(1) as rowLeadTemp FROM lead_temp WHERE campaign_id = :campaign_id ";
+                $record_rowLeadTemp = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_lead_temp, $data1);
+                $id->rowLeadTemp = $record_rowLeadTemp->rowLeadTemp;
+                $data_count[] = (array)$id;
+            }
+
+            if (!empty($data)) {
+                return array(
+                    'success' => 'true',
+                    'message' => 'Campaign detail.',
+                    'data' => $data_count,
+                );
+            }
+            return array(
+                'success' => 'false',
+                'message' => 'Campaign not created.',
+                'data' => array()
+            );
+        } catch (\Throwable $e) {
+            Log::error("Campaign.campaignDetail", [
+                "message" => $e->getMessage(),
+                "file" => $e->getFile(),
+                "line" => $e->getLine()
+            ]);
+        }
+    }
+    public function campaignDetail($request)
+    {
+        try {
+            $campaigns = self::allowedCampaigns($request->auth->parent_id, $request->auth->level, $request->auth->groups);
+
+            // // Apply pagination if present
+            // if ($request->has(['start', 'limit'])) {
+            //     $start = (int)$request->input('start');
+            //     $limit = (int)$request->input('limit');
+            //     $campaigns = array_slice($campaigns, $start, $limit, true); // paginate array
+            // }
+            if ($request->has(['start', 'limit'])) {
+                $start = (int)$request->input('start');
+                $limit = (int)$request->input('limit');
+
+                $totalRows = count($campaigns); // store total before slicing
+                $campaigns = array_slice($campaigns, $start, $limit, true); // paginate array
+            } else {
+                $totalRows = count($campaigns); // return total anyway
+            }
+            $data_count = [];
+
+            foreach ($campaigns as $key => $id) {
+
+                $data1['campaign_id'] = $id->id;
+
+                // 1. lead_report count
+                $sql_count_lead_report = "SELECT count(1) as rowCountLearReport FROM lead_report WHERE campaign_id = :campaign_id ";
+                $record_count_lead = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_count_lead_report, $data1);
+                $id->rowLeadReport = $record_count_lead->rowCountLearReport;
+
+                $searchStr = [];
+
+                if ($data1['campaign_id'] && is_numeric($data1['campaign_id'])) {
+                    $searchStr[] = 'campaign_id = :campaign_id';
+                }
+
+                // 2. campaign_list or hubspot_campaign_list
+                if ($id->crm_title_url == 'hubspot') {
+                    $sql = "SELECT * FROM hubspot_campaign_list WHERE " . implode(" AND ", $searchStr) . " AND status=1 AND is_deleted=0";
+                } else {
+                    $sql = "SELECT * FROM campaign_list WHERE " . implode(" AND ", $searchStr) . " AND status=1 AND is_deleted=0";
+                }
+
+                $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data1);
+                $list = (array) $record;
+                $count = count($list);
+                $id_list = [];
+
+                foreach ($list as $listItem) {
+                    $id_list[] = $listItem->list_id;
+                }
+
+                $list_ids = "'" . implode("','", $id_list) . "'";
+                $list_data['list_id'] = $list_ids;
+
+                $id->rowList = $count;
+
+                // 3. list_data or hubspot_lists
+                if ($id->crm_title_url == 'hubspot') {
+                    $sql_count_list = "SELECT sum(size) as rowCountList FROM hubspot_lists WHERE list_id IN (" . $list_ids . ")";
+                } else {
+                    $sql_count_list = "SELECT count(1) as rowCountList FROM list_data WHERE list_id IN (" . $list_ids . ")";
+                }
+
+                $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_count_list);
+                $id->rowListData = $record_count_list[0]->rowCountList ?? 0;
+
+                // 4. lead_temp count
+                $sql_lead_temp = "SELECT count(1) as rowLeadTemp FROM lead_temp WHERE campaign_id = :campaign_id ";
+                $record_rowLeadTemp = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_lead_temp, $data1);
+                $id->rowLeadTemp = $record_rowLeadTemp->rowLeadTemp ?? 0;
+
+                $data_count[] = (array) $id;
+                $data_count = array_reverse($data_count);
+            }
+
+            return [
+                'success' => 'true',
+                'message' => 'Campaign detail.',
+                'total_rows' => $totalRows,
+                'data' => $data_count,
+            ];
+        } catch (\Throwable $e) {
+            Log::error("Campaign.campaignDetail", [
+                "message" => $e->getMessage(),
+                "file" => $e->getFile(),
+                "line" => $e->getLine()
+            ]);
+
+            return [
+                'success' => 'false',
+                'message' => 'Server error.',
+                'data' => []
+            ];
+        }
+    }
+
+    /*
+     * Update Campaign details
+     * @param object $request
+     * @return array
+     */
+
+    public function updateCampaign($request)
+    {
+        try {
+            if ($request->has('campaign_id') && is_numeric($request->input('campaign_id'))) {
+                $validate = $this->validateCampaign($request);
+                $updateString = $validate['string'];
+                $data = $validate['data'];
+                $save = TRUE;
+                if (!empty($updateString) && !empty($data)) {
+                    $cmpId = $request->input('campaign_id');
+                    $date_time = date('Y-m-d h:i:s');
+                    $data['id'] = $request->input('campaign_id');
+                    $query = "UPDATE " . $this->table . " set updated= '{$date_time}' , " . implode(" , ", $updateString) . " WHERE id = :id";
+                    $save &= DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
+
+                    $queryDel = "DELETE FROM campaign_disposition WHERE campaign_id= " . $cmpId;
+                    $save &= DB::connection('mysql_' . $request->auth->parent_id)->update($queryDel);
+                    $disposition_id = $request->input('disposition_id');
+                    if (count($disposition_id) > 0) {
+                        foreach ($disposition_id as $key => $value) {
+                            $insert = "INSERT INTO campaign_disposition SET campaign_id= :campaign_id , disposition_id= :disposition_id , updated_at= :updated_at , is_deleted= :is_deleted ";
+                            $dataInsert = array('campaign_id' => $cmpId, 'disposition_id' => $value, 'updated_at' => date('Y-m-d h:i:s'), 'is_deleted' => 0);
+                            $save &= DB::connection('mysql_' . $request->auth->parent_id)->update($insert, $dataInsert);
+                        }
+                    }
+                    if ($save == 1) {
+                        return array(
+                            'success' => 'true',
+                            'message' => 'Campaign updated successfully.'
+                        );
+                    } else {
+                        return array(
+                            'success' => 'false',
+                            'message' => 'Campaign updated successfully.'
+                        );
+                    }
+                }
+            }
+            return array(
+                'success' => 'false',
+                'message' => 'Campaign doesn\'t exist.'
+            );
+        } catch (Exception $e) {
+            Log::log($e->getMessage());
+        } catch (InvalidArgumentException $e) {
+            Log::log($e->getMessage());
+        }
+    }
+
+    /*
+     * Add group details
+     * @param object $request
+     * @return array
+     */
+
+    public function copyApiByNewCampaign($request, $campaignId)
+    {
+        //  $api_id = $request->api_id;
+        if ($request->has('api_id') && is_numeric($request->input('api_id'))) {
+            $api_id = $request->api_id;
+        } else {
+            $api_id = 1; // Default value if 'api' is not in the request or invalid
+        }
+
+        $sql = "SELECT * FROM api  WHERE id = :id";
+        $record =  DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql, array('id' => $api_id));
+        $data = (array)$record;
+        $dataBase = 'mysql_' . $request->auth->parent_id;
+        $recordData = array(
+            'title'     => $data['title'],
+            'url'       => $data['url'],
+            'campaign_id' => $campaignId,
+            'method'    => $data['method'],
+            'is_deleted' => $data['is_deleted']
+        );
+
+        $insert_id =  DB::connection('mysql_' . $request->auth->parent_id)->table('api')->insertGetId($recordData);
+        $save_data = true;
+        $disposition = "SELECT * FROM api_disposition where api_id= :api_id ";
+        $recordDisposition =  DB::connection('mysql_' . $request->auth->parent_id)->select($disposition, array('api_id' => $api_id));
+        $dataDisposition = (array)$recordDisposition;
+        if (count($dataDisposition) > 0) {
+            foreach ($recordDisposition as $key => $val) {
+                $h_list['disposition_id']   = $val->disposition_id;
+                $h_list['api_id']           = $insert_id;
+                $h_list['is_deleted']       = $val->is_deleted;
+                $disposition_list[]         = $h_list;
+            }
+            $save_data &= DB::connection($dataBase)->table('api_disposition')->insert($disposition_list);
+        } else {
+            $save_data = false;
+        }
+
+        $apiParameter = "SELECT * FROM api_parameter where api_id= :api_id ";
+        $recordApiParameter =  DB::connection('mysql_' . $request->auth->parent_id)->select($apiParameter, array('api_id' => $api_id));
+        $dataApiParameter = (array)$recordApiParameter;
+        if (count($dataApiParameter) > 0) {
+            foreach ($dataApiParameter as $key1 => $val1) {
+                $ap_list['api_id']      = $insert_id;
+                $ap_list['type']        = $val1->type;
+                $ap_list['parameter']   = $val1->parameter;
+                $ap_list['value']       = $val1->value;
+                $ap_list['is_deleted']  = $val1->is_deleted;
+                $parameter_list[]       = $ap_list;
+            }
+            $save_data &= DB::connection($dataBase)->table('api_parameter')->insert($parameter_list);
+        } else {
+            $save_data = false;
+        }
+
+        if ($save_data) {
+            return array(
+                'success' => 'true',
+                'message' => 'New API added successfully.',
+                'list_id' => $insert_id,
+            );
+        } else {
+            return array(
+                'success' => 'false',
+                'message' => 'Api not added. Unable to add data in API table'
+            );
+        }
+    }
+
+    public function copyApiByNewCampaign_old_code($request, $campaignId)
+    {
+        $api_id = $request->api_id;
+
+        $sql = "SELECT * FROM api  WHERE id = :id";
+        $record =  DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql, array('id' => $api_id));
+        $data = (array)$record;
+        $dataBase = 'mysql_' . $request->auth->parent_id;
+        $recordData = array(
+            'title'     => $data['title'],
+            'url'       => $data['url'],
+            'campaign_id' => $campaignId,
+            'method'    => $data['method'],
+            'is_deleted' => $data['is_deleted']
+        );
+
+        $insert_id =  DB::connection('mysql_' . $request->auth->parent_id)->table('api')->insertGetId($recordData);
+        $save_data = true;
+        $disposition = "SELECT * FROM api_disposition where api_id= :api_id ";
+        $recordDisposition =  DB::connection('mysql_' . $request->auth->parent_id)->select($disposition, array('api_id' => $api_id));
+        $dataDisposition = (array)$recordDisposition;
+        if (count($dataDisposition) > 0) {
+            foreach ($recordDisposition as $key => $val) {
+                $h_list['disposition_id']   = $val->disposition_id;
+                $h_list['api_id']           = $insert_id;
+                $h_list['is_deleted']       = $val->is_deleted;
+                $disposition_list[]         = $h_list;
+            }
+            $save_data &= DB::connection($dataBase)->table('api_disposition')->insert($disposition_list);
+        } else {
+            $save_data = false;
+        }
+
+        $apiParameter = "SELECT * FROM api_parameter where api_id= :api_id ";
+        $recordApiParameter =  DB::connection('mysql_' . $request->auth->parent_id)->select($apiParameter, array('api_id' => $api_id));
+        $dataApiParameter = (array)$recordApiParameter;
+        if (count($dataApiParameter) > 0) {
+            foreach ($dataApiParameter as $key1 => $val1) {
+                $ap_list['api_id']      = $insert_id;
+                $ap_list['type']        = $val1->type;
+                $ap_list['parameter']   = $val1->parameter;
+                $ap_list['value']       = $val1->value;
+                $ap_list['is_deleted']  = $val1->is_deleted;
+                $parameter_list[]       = $ap_list;
+            }
+            $save_data &= DB::connection($dataBase)->table('api_parameter')->insert($parameter_list);
+        } else {
+            $save_data = false;
+        }
+
+        if ($save_data) {
+            return array(
+                'success' => 'true',
+                'message' => 'New API added successfully.',
+                'list_id' => $insert_id,
+            );
+        } else {
+            return array(
+                'success' => 'false',
+                'message' => 'Api not added. Unable to add data in API table'
+            );
+        }
+    }
+
+    public function addCampaign($request)
+    {
+        try {
+
+            if (!$request->has('api_id') || empty($request->api_id)) {
+    $request->merge(['api_id' => 1]);
+}
+            if ($request->has('title') && !empty($request->input('title'))) {
+                $validate = $this->validateCampaign($request);
+                $insertString = implode(" , ", $validate['string']);
+                $data = $validate['data'];
+
+                //echo "<pre>";print_r($insertString);die;
+                $query = "INSERT INTO " . $this->table . " SET " . $insertString;
+                $add = DB::connection('mysql_' . $request->auth->parent_id)->insert($query, $data);
+                if ($add == true) {
+                    $lastInsertId = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT * FROM " . $this->table . " ORDER BY id DESC");
+
+                    $campaignId = $lastInsertId->id;
+                    if ($request->has('disposition_id') && is_array($request->input('disposition_id'))) {
+                        foreach ($request->input('disposition_id') as $value) {
+                            $sql = "INSERT INTO campaign_disposition (campaign_id, disposition_id) VALUE (:campaign_id, :disposition_id) ON DUPLICATE KEY UPDATE is_deleted = :is_deleted";
+                            DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, array('is_deleted' => 0, 'campaign_id' => $campaignId, 'disposition_id' => $value));
+                        }
+                    }
+
+                    // add for new api
+
+                    $this->copyApiByNewCampaign($request, $campaignId);
+
+                    return array(
+                        'success' => 'true',
+                        'message' => 'Campaign added successfully.',
+                        'data' => (array) $lastInsertId
+                    );
+                } else {
+                    return array(
+                        'success' => 'false',
+                        'message' => 'Campaign are not added successfully, Due to some incorrect value.'
+                    );
+                }
+            }
+
+            return array(
+                'success' => 'false',
+                'message' => 'Campaign are not added successfully. Title is missing'
+            );
+        } catch (Exception $e) {
+            Log::log($e->getMessage());
+        } catch (InvalidArgumentException $e) {
+            Log::log($e->getMessage());
+        }
+    }
+
+    /*
+     * Validate Campaign
+     *
+     */
+
+    protected function validateCampaign($request)
+    {
+        $string = array();
+        $data = array();
+        if ($request->has('title') && !empty($request->input('title'))) {
+            array_push($string, 'title = :title');
+            $data['title'] = $request->input('title');
+        }
+        if ($request->has('description') && !empty($request->input('description'))) {
+            array_push($string, 'description = :description');
+            $data['description'] = $request->input('description');
+        }
+        if ($request->has('status') && is_numeric($request->input('status'))) {
+            array_push($string, 'status = :status');
+            $data['status'] = $request->input('status');
+        }
+        if ($request->has('caller_id') && !empty($request->input('caller_id')) && ($request->input('caller_id') == 'area_code' || $request->input('caller_id') == 'custom' || $request->input('caller_id') == 'area_code_random' || $request->input('caller_id') == 'area_code_3' || $request->input('caller_id') == 'area_code_4' || $request->input('caller_id') == 'area_code_5')) {
+            array_push($string, 'caller_id = :caller_id');
+            $data['caller_id'] = $request->input('caller_id');
+        }
+        if ($request->has('custom_caller_id') && is_numeric($request->input('custom_caller_id'))) {
+            array_push($string, 'custom_caller_id = :custom_caller_id');
+            $data['custom_caller_id'] = $request->input('custom_caller_id');
+        }
+        if ($request->has('time_based_calling') && is_numeric($request->input('time_based_calling'))) {
+            array_push($string, 'time_based_calling = :time_based_calling');
+            $data['time_based_calling'] = $request->input('time_based_calling');
+        }
+        if ($request->has('call_time_start') && !empty($request->input('call_time_start'))) {
+            array_push($string, 'call_time_start = :call_time_start');
+            $data['call_time_start'] = $request->input('call_time_start');
+        }
+        if ($request->has('call_time_end') && !empty($request->input('call_time_end'))) {
+            array_push($string, 'call_time_end = :call_time_end');
+            $data['call_time_end'] = $request->input('call_time_end');
+        }
+        if ($request->has('dial_mode') && !empty($request->input('dial_mode')) && ($request->input('dial_mode') == 'preview_and_dial' || $request->input('dial_mode') == 'power_dial' || $request->input('dial_mode') == 'super_power_dial' || $request->input('dial_mode') == 'predictive_dial') || $request->input('dial_mode') == 'outbound_ai') {
+            array_push($string, 'dial_mode = :dial_mode');
+            $data['dial_mode'] = $request->input('dial_mode');
+        }
+        if ($request->has('group_id') && is_numeric($request->input('group_id'))) {
+            array_push($string, 'group_id = :group_id');
+            $data['group_id'] = $request->input('group_id');
+        }
+        if ($request->has('max_lead_temp') && is_numeric($request->input('max_lead_temp')) && $request->input('max_lead_temp') < 1000) {
+            array_push($string, 'max_lead_temp = :max_lead_temp');
+            $data['max_lead_temp'] = $request->input('max_lead_temp');
+        }
+        if ($request->has('min_lead_temp') && !empty($request->input('min_lead_temp')) && $request->input('max_lead_temp') < 500) {
+            array_push($string, 'min_lead_temp = :min_lead_temp');
+            $data['min_lead_temp'] = $request->input('min_lead_temp');
+        }
+        // if ($request->has('api') && is_numeric($request->input('api'))) {
+        //     array_push($string, 'api = :api');
+        //     $data['api'] = $request->input('api');
+        // }
+        if ($request->has('api') && is_numeric($request->input('api'))) {
+            $data['api'] = $request->input('api');
+        } else {
+            $data['api'] = 1; // Default value if 'api' is not in the request or invalid
+        }
+
+        array_push($string, 'api = :api');
+        if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
+            array_push($string, 'is_deleted = :is_deleted');
+            $data['is_deleted'] = $request->input('is_deleted');
+        }
+        if ($request->has('send_report') && is_numeric($request->input('send_report'))) {
+            array_push($string, 'send_report = :send_report');
+            $data['send_report'] = $request->input('send_report');
+        }
+        if ($request->has('send_crm')) {
+            array_push($string, 'send_crm = :send_crm');
+            $data['send_crm'] = $request->input('send_crm');
+        }
+        if ($request->has('email')) {
+            array_push($string, 'email = :email');
+            $data['email'] = $request->input('email');
+        }
+        if ($request->has('sms')) {
+            array_push($string, 'sms = :sms');
+            $data['sms'] = $request->input('sms');
+        }
+
+        if ($request->has('hopper_mode')) {
+            array_push($string, 'hopper_mode = :hopper_mode');
+            $data['hopper_mode'] = $request->input('hopper_mode');
+        }
+
+        if ($request->has('call_ratio')) {
+            array_push($string, 'call_ratio = :call_ratio');
+            $data['call_ratio'] = $request->input('call_ratio');
+        }
+
+        if ($request->has('duration')) {
+            array_push($string, 'duration = :duration');
+            $data['duration'] = $request->input('duration');
+        }
+
+        if ($request->has('automated_duration')) {
+            array_push($string, 'automated_duration = :automated_duration');
+            $data['automated_duration'] = $request->input('automated_duration');
+        }
+
+        if ($request->has('amd')) {
+            array_push($string, 'amd = :amd');
+            $data['amd'] = $request->input('amd');
+        }
+        if ($request->has('amd_drop_action')) {
+            array_push($string, 'amd_drop_action = :amd_drop_action');
+            $data['amd_drop_action'] = $request->input('amd_drop_action');
+        }
+        if ($request->has('voicedrop_option_user_id')) {
+            array_push($string, 'voicedrop_option_user_id = :voicedrop_option_user_id');
+            $data['voicedrop_option_user_id'] = $request->input('voicedrop_option_user_id');
+        }
+
+        if ($request->has('no_agent_available_action')) {
+            array_push($string, 'no_agent_available_action = :no_agent_available_action');
+            $data['no_agent_available_action'] = $request->input('no_agent_available_action');
+        }
+
+        if ($request->has('no_agent_dropdown_action')) {
+            array_push($string, 'no_agent_dropdown_action = :no_agent_dropdown_action');
+            $data['no_agent_dropdown_action'] = $request->input('no_agent_dropdown_action');
+        }
+
+        if ($request->has('redirect_to')) {
+            array_push($string, 'redirect_to = :redirect_to');
+            $data['redirect_to'] = $request->input('redirect_to');
+        }
+
+        if ($request->has('redirect_to_dropdown')) {
+            array_push($string, 'redirect_to_dropdown = :redirect_to_dropdown');
+            $data['redirect_to_dropdown'] = $request->input('redirect_to_dropdown');
+        }
+
+        if ($request->has('country_code')) {
+            array_push($string, 'country_code = :country_code');
+            $data['country_code'] = $request->input('country_code');
+        }
+
+        if ($request->has('voip_configuration_id')) {
+            array_push($string, 'voip_configuration_id = :voip_configuration_id');
+            $data['voip_configuration_id'] = $request->input('voip_configuration_id');
+        }
+
+        if ($request->has('call_transfer')) {
+            array_push($string, 'call_transfer = :call_transfer');
+            $data['call_transfer'] = $request->input('call_transfer');
+        }
+        if ($request->has('call_metric')) {
+            array_push($string, 'call_metric = :call_metric');
+            $data['call_metric'] = $request->input('call_metric');
+        }
+        return array('string' => $string, 'data' => $data);
+    }
+
+    /*
+     * Fetch campaign for agent
+     * @param object $request
+     * @return array
+     */
+
+    public function getAgentCampaign($request)
+    {
+        try {
+            if (!empty($request->input('id')) && $request->auth->role == '2') {
+                $db = $request->auth->parent_id;
+                $extension = $request->auth->extension;
+                $extensionGroup = DB::connection('mysql_' . $db)->select(
+                    "SELECT * FROM extension_group_map WHERE extension = :extension AND is_deleted = :is_deleted",
+                    array('extension' => $extension, 'is_deleted' => 0)
+                );
+                if (!empty($extensionGroup)) {
+                    $inStr = array();
+                    $data['is_deleted'] = 0;
+                    $count = 1;
+                    foreach ($extensionGroup as $item => $value) {
+                        array_push($inStr, ":group_" . $count);
+                        $data["group_" . $count] = $value->group_id;
+                        $count++;
+                    }
+                    $campaign = DB::connection('mysql_' . $db)->select(
+                        "SELECT * FROM campaign WHERE group_id in (" . implode(' , ', $inStr) . ") AND is_deleted = :is_deleted",
+                        $data
+                    );
+                    if (!empty($campaign)) {
+                        return array(
+                            'success' => 'true',
+                            'message' => 'List of campaign for extension.',
+                            'data' => $campaign
+                        );
+                    } else {
+                        return array(
+                            'success' => 'true',
+                            'message' => 'Extension is not belong to any campaign.',
+                            'data' => array()
+                        );
+                    }
+                } else {
+                    return array(
+                        'success' => 'false',
+                        'message' => 'Extension not belong to any group'
+                    );
+                }
+            } else {
+                return array(
+                    'success' => 'false',
+                    'message' => 'User does not have agent permission'
+                );
+            }
+        } catch (Exception $e) {
+            echo $e->getMessage();
+        } catch (InvalidArgumentException $e) {
+            echo $e->getMessage();
+        }
+    }
+
+    function getCampaignCount($request)
+    {
+        try {
+            $data['is_deleted'] = 0;
+            $sql = "SELECT count(1) as rowCount FROM " . $this->table . " WHERE is_deleted = :is_deleted ";
+            $record = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql, $data);
+            $data = (array) $record;
+            return array(
+                'success' => 'true',
+                'message' => 'Extension is not belong to any campaign.',
+                'data' => $data['rowCount']
+            );
+        } catch (Exception $e) {
+            echo $e->getMessage();
+        } catch (InvalidArgumentException $e) {
+            echo $e->getMessage();
+        }
+    }
+
+    function getCampaignAndList($request)
+    {
+
+        try {
+            $data = array();
+            $searchStr = array();
+            if ($request->has('campaign_id') && is_numeric($request->input('campaign_id'))) {
+                $data['campaign_id'] = $request->input('campaign_id');
+                $data['is_deleted'] = $request->input('is_deleted');
+            }
+
+            $sql = "SELECT campaign_list.campaign_id,campaign_list.status,campaign_list.list_id,campaign_list.is_deleted,list.title as l_title,list.id,campaign.title,campaign.crm_title_url FROM campaign_list inner join list on campaign_list.list_id = list.id inner join campaign on campaign_list.campaign_id = campaign.id WHERE campaign_list.campaign_id = '" . $request->input('campaign_id') . "' and campaign_list.is_deleted ='" . $request->input('is_deleted') . "'";
+
+            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+            $data = (array) $record;
+
+            foreach ($data as $key => $id) {
+
+                $data1['campaign_id'] = $id->campaign_id;
+                $data1['list_id'] = $id->list_id;
+
+                $sql_count_lead_report = "SELECT count(1) as rowCountLearReport FROM lead_report WHERE campaign_id = :campaign_id  and list_id = :list_id";
+                $record_count_lead = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_count_lead_report, $data1);
+                $id->rowLeadReport = $record_count_lead->rowCountLearReport;
+
+                $list_data['list_id'] = $id->list_id;
+
+
+                $sql_count_list = "SELECT count(1) as rowCountList FROM list_data WHERE list_id=:list_id ";
+                $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_count_list, $list_data);
+
+                //return $data = (array)$record_count_list;
+                //$id->rowList = $count;
+                $id->rowListData = $record_count_list[0]->rowCountList;
+            }
+
+            //return $data;
+            if (!empty($data)) {
+                return array(
+                    'success' => 'true',
+                    'message' => 'Campaign List detail.',
+                    'data' => $data
+                );
+            }
+            return array(
+                'success' => 'false',
+                'message' => 'Campaign List Found.',
+                'data' => array()
+            );
+        } catch (Exception $e) {
+            echo $e->getMessage();
+        } catch (InvalidArgumentException $e) {
+            echo $e->getMessage();
+        }
+    }
+
+    function getDispositionAndList($request)
+    {
+
+
+
+        try {
+            $data = array();
+            $searchStr = array();
+            if ($request->has('list_id') && is_numeric($request->input('list_id'))) {
+                $data['list_id'] = $request->input('list_id');
+            }
+
+            $sql = "SELECT l.disposition_id as id, IF(l.disposition_id = 0 , 'Not Dialed', d.title) as name, COUNT(l.list_id) as record_count FROM lead_report as l
+                LEFT JOIN disposition as d ON l.disposition_id = d.id WHERE l.list_id = :list_id group by l.disposition_id";
+            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+            $data = (array) $record;
+
+
+
+
+
+
+
+            //return $data;
+            if (!empty($data)) {
+                return array(
+                    'success' => 'true',
+                    'message' => 'Disposition List detail.',
+                    'data' => $data
+                );
+            }
+            return array(
+                'success' => 'false',
+                'message' => 'Disposition List Not Found.',
+                'data' => array()
+            );
+        } catch (Exception $e) {
+            echo $e->getMessage();
+        } catch (InvalidArgumentException $e) {
+            echo $e->getMessage();
+        }
+    }
+
+    function deleteDispositionAndList($request)
+    {
+
+
+
+        try {
+            $data = array();
+            $searchStr = array();
+            if ($request->has('list_id') && is_numeric($request->input('list_id'))) {
+                $data['list_id'] = $request->input('list_id');
+            }
+
+            if ($request->has('campaign_id') && is_numeric($request->input('campaign_id'))) {
+                $data['campaign_id'] = $request->input('campaign_id');
+            }
+
+            $disposition = $request->input('disposition');
+            $select_id = $request->input('select_id');
+
+            $count_deletedLeads = 0;
+            foreach ($disposition as $dis => $dispositionId) {
+                $userCount = $select_id[$dis];
+                $data['disposition_id'] = $dispositionId;
+                $sql = "SELECT lr.list_id, lr.lead_id, if(p.total is null, '0', p.total) as total
+                    FROM lead_report as lr
+                    LEFT JOIN (
+                    SELECT lead_id, count(id) as total, campaign_id FROM cdr WHERE campaign_id = " . $request->input('campaign_id') . " group by lead_id
+                    UNION
+                    SELECT lead_id, count(id) as total, campaign_id FROM cdr WHERE campaign_id = " . $request->input('campaign_id') . " group by lead_id
+                    ) as p
+                    ON p.lead_id = lr.lead_id AND lr.campaign_id = p.campaign_id
+                    WHERE lr.campaign_id = " . $request->input('campaign_id') . " AND lr.list_id = " . $request->input('list_id') . " AND lr.disposition_id = " . $dispositionId . "";
+
+                $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+                //return $data = (array)$record;
+
+                $deleteId = array();
+                foreach ($record as $key => $value) {
+                    if ($value->total <= $userCount) {
+                        array_push($deleteId, $value->lead_id);
+                    }
+                }
+
+                //return $deleteId;
+
+                if (!empty($deleteId)) {
+                    $deleteSql = "DELETE FROM lead_report WHERE lead_id in (" . implode(",", $deleteId) . ")";
+                    DB::connection('mysql_' . $request->auth->parent_id)->update($deleteSql);
+                }
+
+                $count[$dispositionId] = count($deleteId);
+                $count_deletedLeads = $count_deletedLeads + $count[$dispositionId];
+                //Send Email
+            }
+
+            $recycle_data = [
+                "action" => "Recycle Data",
+                "listId" => $request->input('list_id'),
+                "records" => $count_deletedLeads,
+                //"deletedId" => $deleteId,
+                "disposition_count" => $count,
+                "disposition" => $disposition,
+                "campaignId" => $request->input('campaign_id')
+            ];
+            // return $recycle_data;
+
+
+
+            $campaignId = $request->input('campaign_id');
+            dispatch(new RecycleDeletedNotificationJob($request->auth->parent_id, $campaignId, $recycle_data))->onConnection("database");
+            //return $data;
+            if (!empty($data)) {
+                return array(
+                    'success' => 'true',
+                    'message' => 'Disposition List deleted successfully.',
+                    'data' => $data
+                );
+            }
+            return array(
+                'success' => 'false',
+                'message' => 'Disposition List Not Deleted Successfully.',
+                'data' => array()
+            );
+        } catch (Exception $e) {
+            echo $e->getMessage();
+        } catch (InvalidArgumentException $e) {
+            echo $e->getMessage();
+        }
+    }
+
+    public function copyCampaign($request)
+    {
+        $campignStatus = '';
+        $campaignId = $request->input('c_id');
+        $userArray = Campaign::on('mysql_' . $request->auth->parent_id)->where('id', $campaignId)->first();
+        if ($userArray['id']) {
+            $id = Campaign::on('mysql_' . $request->auth->parent_id)->insertGetId(
+                [
+                    'title' => 'Copy ' . $userArray['title'],
+                    'description' => $userArray['description'],
+                    'status' => $userArray['status'],
+                    'is_deleted' => $userArray['is_deleted'],
+                    'caller_id' => $userArray['caller_id'],
+                    'custom_caller_id' => $userArray['custom_caller_id'],
+                    'time_based_calling' => $userArray['time_based_calling'],
+                    'call_time_start' => $userArray['call_time_start'],
+                    'call_time_end' => $userArray['call_time_end'],
+                    'dial_mode' => $userArray['dial_mode'],
+                    'group_id' => $userArray['group_id'],
+                    'max_lead_temp' => $userArray['max_lead_temp'],
+                    'min_lead_temp' => $userArray['min_lead_temp'],
+                    'api' => $userArray['api'],
+                    'send_report' => $userArray['send_report'],
+                    'campaign' => $userArray['campaign'],
+                    'send_crm' => $userArray['send_crm'],
+                    'email' => $userArray['email'],
+                    'sms' => $userArray['sms'],
+                ]
+            );
+
+            //copy for API
+
+            $sql = "SELECT * FROM api  WHERE is_default = :is_default";
+            $record =  DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql, array('is_default' => '1'));
+            $data = (array)$record;
+            $request['api_id'] = $data['id'];
+
+            $campaignId_new = $id;
+
+            $this->copyApiByNewCampaign($request, $campaignId_new);
+
+            //end API
+
+
+            $now = date('Y-m-d h:i:s');
+            $campaignDispositionArray = CampaignDisposition::on('mysql_' . $request->auth->parent_id)->where('campaign_id', $campaignId)->get();
+            foreach ($campaignDispositionArray as $key => $val) {
+                $user_Record[] = array('disposition_id' => $val->disposition_id, 'campaign_id' => $id, 'is_deleted' => 0, 'updated_at' => $now);
+            }
+            if (!empty($user_Record)) {
+                $campignStatus = CampaignDisposition::on('mysql_' . $request->auth->parent_id)->insert($user_Record);
+            }
+
+            if ($campignStatus) {
+                return array(
+                    'success' => 'true',
+                    'message' => 'Copy campaign successfully.',
+                    'data' => $id
+                );
+            } else {
+                return array(
+                    'success' => 'false',
+                    'message' => 'Copy campaign failed.',
+                    'data' => array()
+                );
+            }
+        }
+    }
+
+    function campaignById($request)
+    {
+        $userArray = Campaign::on('mysql_' . $request->auth->parent_id)->where('id', $request->campaign_id)->get();
+        return $userArray;
+    }
+
+
+    //hubspot
+
+    function getCampaignAndListHubspot($request)
+    {
+
+        try {
+            $data = array();
+            $searchStr = array();
+            if ($request->has('campaign_id') && is_numeric($request->input('campaign_id'))) {
+                $data['campaign_id'] = $request->input('campaign_id');
+                $data['is_deleted'] = $request->input('is_deleted');
+            }
+
+            $sql = "SELECT campaign_list.campaign_id,campaign_list.status,campaign_list.list_id,campaign_list.is_deleted,list.title as l_title,list.id,campaign.title,campaign.crm_title_url,list.size as rowListData FROM hubspot_campaign_list as campaign_list inner join hubspot_lists as list on campaign_list.list_id = list.id inner join campaign on campaign_list.campaign_id = campaign.id WHERE campaign_list.campaign_id = '" . $request->input('campaign_id') . "' and campaign_list.is_deleted ='" . $request->input('is_deleted') . "'";
+
+            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+            $data = (array) $record;
+
+            foreach ($data as $key => $id) {
+
+                $data1['campaign_id'] = $id->campaign_id;
+                $data1['list_id'] = $id->list_id;
+
+                $sql_count_lead_report = "SELECT count(1) as rowCountLearReport FROM lead_report WHERE campaign_id = :campaign_id  and list_id = :list_id";
+                $record_count_lead = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_count_lead_report, $data1);
+                $id->rowLeadReport = $record_count_lead->rowCountLearReport;
+
+                $list_data['list_id'] = $id->list_id;
+
+
+                /*$sql_count_list = "SELECT count(1) as rowCountList FROM list_data WHERE list_id=:list_id ";
+                $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_count_list, $list_data);
+
+                //return $data = (array)$record_count_list;
+                //$id->rowList = $count;
+                $id->rowListData = $record_count_list[0]->rowCountList;*/
+            }
+
+            //return $data;
+            if (!empty($data)) {
+                return array(
+                    'success' => 'true',
+                    'message' => 'Campaign List detail.',
+                    'data' => $data
+                );
+            }
+            return array(
+                'success' => 'false',
+                'message' => 'Campaign List Found.',
+                'data' => array()
+            );
+        } catch (Exception $e) {
+            echo $e->getMessage();
+        } catch (InvalidArgumentException $e) {
+            echo $e->getMessage();
+        }
+    }
+
+    //close hubspot
+    function updateCampaignStatus($request)
+    {
+        $listId = $request->input('listId');
+        $status = $request->input('status');
+
+        $saveRecord = Campaign::on('mysql_' . $request->auth->parent_id)
+            ->where('id', $listId) // Use the actual listId received from the request
+            ->update(array('status' => $status));
+        // Log::debug('Update SQL query: ', ['sql' => Campaign::on('mysql_' . $request->auth->parent_id)
+        // ->where('id', $listId)
+        // ->toSql()]);
+        $saveRecordCampaignList = CampaignList::on('mysql_' . $request->auth->parent_id)
+            ->where('campaign_id', $listId)
+            ->update(array('status' => $status));
+
+        // Log::debug('Received listId: ', ['listId' => $listId]);
+        // Log::debug('Received status: ', ['status' => $status]);
+        // Log::debug('Number of updated rows: ', ['saveRecord' => $saveRecord]);
+        if ($saveRecord > 0 && $saveRecordCampaignList > 0) {
+            return response()->json([
+                'success' => 'true',
+                'status' => 'true',
+                'message' => 'Campaign status updated successfully'
+            ]);
+        } else {
+            return response()->json([
+                'success' => 'false',
+                'status' => 'false',
+                'message' => 'Campaign update failed'
+            ]);
+        }
+    }
+    function updateCampaignHopper($request)
+    {
+        $listId = $request->input('listId');
+        $hopper_mode = $request->input('status');
+
+        $saveRecord = Campaign::on('mysql_' . $request->auth->parent_id)
+            ->where('id', $listId) // Use the actual listId received from the request
+            ->update(array('hopper_mode' => $hopper_mode));
+        Log::debug('Update SQL query: ', ['sql' => Campaign::on('mysql_' . $request->auth->parent_id)
+            ->where('id', $listId)
+            ->toSql()]);
+
+        // Log::debug('Received listId: ', ['listId' => $listId]);
+        // Log::debug('Received status: ', ['status' => $hopper_mode]);
+        // Log::debug('Number of updated rows: ', ['saveRecord' => $saveRecord]);
+        if ($saveRecord > 0) {
+            return response()->json([
+                'success' => 'true',
+                'status' => 'true',
+                'message' => 'Hopper mode  updated successfully'
+            ]);
+        } else {
+            return response()->json([
+                'success' => 'false',
+                'status' => 'false',
+                'message' => 'Hopper mode  failed'
+            ]);
+        }
+    }
+}

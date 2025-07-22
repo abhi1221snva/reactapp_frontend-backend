@@ -1,0 +1,36 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+class AddReceiveSmsColumnToUsers extends Migration
+{
+    /**
+     * Run the migrations.
+     *
+     * @return void
+     */
+    public function up()
+    {
+        Schema::table('users', function (Blueprint $table) {
+            $table->enum('receive_sms_on_email', array('1','0'))->nullable()->default('0');
+            $table->enum('receive_sms_on_mobile', array('1','0'))->nullable()->default('0');
+
+            
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     *
+     * @return void
+     */
+    public function down()
+    {
+        Schema::table('users', function (Blueprint $table) {
+            $table->dropColumn('receive_sms_on_email');
+            $table->dropColumn('receive_sms_on_mobile');
+        });
+    }
+}

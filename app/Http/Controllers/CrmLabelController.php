@@ -1,0 +1,554 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Model\Client\CrmLabel;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
+use App\Model\Role;
+use App\Model\User;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
+use App\Http\Helper\Log;
+
+class CrmLabelController extends Controller
+{
+    /**
+     * Create a new controller instance.
+     *
+     * @return void
+     */
+    private $request;
+    public function __construct(Request $request, CrmLabel $CrmLabel)
+    {
+        $this->request = $request;
+        $this->model = $CrmLabel;
+    }
+    public function viewOnLead(Request $request)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            //$clientId = 3;
+            $Label = [];
+            $Label = CrmLabel::on("mysql_$clientId")->where('view_on_lead', '1')->where('status', '1')->orderBy('display_order', 'ASC')->get()->all();
+            return $this->successResponse("View List of Label", $Label);
+        } catch (\Throwable $exception) {
+            return $this->failResponse("Failed to View Label ", [$exception->getMessage()], $exception, $exception->getCode());
+        }
+    }
+    /*
+     * Fetch Label details
+     * @return json
+     */
+    /**
+     * @OA\Get(
+     *      path="/crm-labels",
+     *      summary="Labels",
+     *      tags={"CrmLabel"},
+     *      security={{"Bearer":{}}},
+     *       @OA\Parameter(
+     *         name="start",
+     *         in="query",
+     *         required=false,
+     *         description="Start index for pagination",
+     *         @OA\Schema(type="integer", default=0)
+     *     ),
+     *     @OA\Parameter(
+     *         name="limit",
+     *         in="query",
+     *         required=false,
+     *         description="Limit number of records returned",
+     *         @OA\Schema(type="integer", default=10)
+     *     ),
+     *      @OA\Response(
+     *          response="200",
+     *          description="label data"
+     *      )
+     * )
+     */
+    public function list(Request $request)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            //$clientId = 3;
+            $Label = [];
+            $Label = CrmLabel::on("mysql_$clientId")->orderBy('display_order', 'ASC')->get()->all();
+            if ($request->has('start') && $request->has('limit')) {
+                $total_row = count($Label);
+                $start = (int)$request->input('start'); // Start index (0-based)
+                $limit = (int)$request->input('limit'); // Limit number of records to fetch
+                $Label = array_slice($Label, $start, $limit, false); // Fetch data from start to start+length
+
+                return $this->successResponse("List of Label", [
+                    'start' => $start,
+                    'limit' => $limit,
+                    'total' => $total_row,
+                    'data' => $Label
+                ]);
+            }
+            return $this->successResponse("List of Label", $Label);
+        } catch (\Throwable $exception) {
+            return $this->failResponse("Failed to Label ", [$exception->getMessage()], $exception, $exception->getCode());
+        }
+    }
+
+    public function list_old(Request $request)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            //$clientId = 3;
+            $Label = [];
+            $Label = CrmLabel::on("mysql_$clientId")->orderBy('display_order', 'ASC')->get()->all();
+
+            return $this->successResponse("List of Label", $Label);
+        } catch (\Throwable $exception) {
+            return $this->failResponse("Failed to Label ", [$exception->getMessage()], $exception, $exception->getCode());
+        }
+    }
+    public function listAffiliates(Request $request, $client_id)
+    {
+        try {
+            $clientId = $client_id;
+            //$clientId = 3;
+            $Label = [];
+            $Label = CrmLabel::on("mysql_$clientId")->orderBy('display_order', 'ASC')->get()->all();
+            return $this->successResponse("List of Label", $Label);
+        } catch (\Throwable $exception) {
+            return $this->failResponse("Failed to Label ", [$exception->getMessage()], $exception, $exception->getCode());
+        }
+    }
+
+    /**
+     * @OA\Put(
+     *     path="/crm-add-label",
+     *     summary="Create a new CRM Label",
+     *     description="Creates a CRM label with dynamic fields and stores it in the client-specific database.",
+     *     tags={"CrmLabel"},
+     *     security={{"Bearer":{}}},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"title", "edit_mode", "data_type"},
+     *             @OA\Property(property="title", type="string", example="New Label 3"),
+     *             @OA\Property(property="edit_mode", type="boolean", example=true),
+     *             @OA\Property(property="data_type", type="string", example="text"),
+     *             @OA\Property(property="required", type="boolean", example=true),
+     *             @OA\Property(property="merchant_required", type="boolean", example=false),
+     *             @OA\Property(property="number_length", type="integer", example=10),
+     *             @OA\Property(property="icons", type="string", example="fa fa-user"),
+     *             @OA\Property(property="heading_type", type="string", example="owner"),
+     *             @OA\Property(property="values", type="string", example="option1,option2"),
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Label created successfully",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="boolean", example=true),
+     *             @OA\Property(property="message", type="string", example="Label Added Successfully"),
+     *             @OA\Property(property="data", type="object")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=422,
+     *         description="Validation error"
+     *     ),
+     *     @OA\Response(
+     *         response=500,
+     *         description="Internal server error"
+     *     )
+     * )
+     */
+
+    public function create(Request $request)
+    {
+        $clientId = $request->auth->parent_id;
+        $this->validate($request, [
+            'title' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique("mysql_" . $request->auth->parent_id . ".crm_label", 'title')
+                    ->where(function ($query) use ($request) {
+                        $query->whereNull('deleted_at');
+                    })
+                    ->ignore($request->id), // Assuming $request->id contains the record ID
+            ],
+            'edit_mode' => 'required|int',
+            'data_type' => 'required|string',
+        ]);
+
+        try {
+            $label_title_url = str_replace(' ', '_', trim(strtolower($request->title)));
+            $Label = new CrmLabel();
+            $Label->setConnection("mysql_$clientId");
+            $Label->title = $request->title;
+            $Label->label_title_url = $label_title_url;
+            $Label->edit_mode = $request->edit_mode;
+            $Label->data_type = $request->data_type;
+            $Label->required = $request->required;
+            $Label->merchant_required = $request->merchant_required;
+            $Label->number_length = $request->number_length;
+            $Label->icons = $request->icons;
+            $Label->heading_type = $request->heading_type;
+            $Label->values = $request->values;
+
+            $Label->saveOrFail();
+            $lastId = $Label->id;
+
+            $strDataType = $Label->data_type;
+            $Label->column_name = $strColumnName = 'option_' . $lastId;
+            $Label->save();
+
+            //DDL for client_*.crm_lead_data
+            Schema::connection("mysql_$clientId")->table('crm_lead_data', function (Blueprint $table) use ($clientId, $strColumnName, $strDataType) {
+                if (!Schema::connection("mysql_$clientId")->hasColumn('crm_lead_data', $strColumnName)) {
+                    switch ($strDataType) {
+                        case "text":
+                        case "select_option":
+                        case "email":
+                            $table->string($strColumnName)->nullable();
+                            break;
+                        case "number":
+                            $table->string($strColumnName)->nullable();
+                            break;
+                        // case "number":
+                        case "phone_number":
+                            $table->string($strColumnName)->nullable();
+                            break;
+                        case "date":
+                            $table->timestamp($strColumnName)->nullable();
+                            break;
+                        default:
+                            $table->string($strColumnName)->nullable();
+                    }
+                }
+            });
+
+
+            return $this->successResponse("Label Added Successfully", $Label->toArray());
+        } catch (\Exception $exception) {
+            return $this->failResponse("Failed to create Label ", [
+                $exception->getMessage()
+            ], $exception, 500);
+        }
+    }
+    /**
+     * @OA\Post(
+     *     path="/crm-update-label/{id}",
+     *     summary="Update an existing CRM Label",
+     *     description="Updates a CRM label and optionally modifies the datatype in the lead data table.",
+     *     tags={"CrmLabel"},
+     *     security={{"Bearer":{}}},
+     *     @OA\Parameter(
+     *         name="id",
+     *         in="path",
+     *         required=true,
+     *         description="ID of the CRM Label to update",
+     *         @OA\Schema(type="integer", example=1)
+     *     ),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"title"},
+     *             @OA\Property(property="title", type="string", example="Updated Label Title"),
+     *             @OA\Property(property="edit_mode", type="boolean", example=true),
+     *             @OA\Property(property="data_type", type="string", example="number"),
+     *             @OA\Property(property="required", type="boolean", example=true),
+     *             @OA\Property(property="merchant_required", type="boolean", example=true),
+     *             @OA\Property(property="number_length", type="integer", example=10),
+     *             @OA\Property(property="icons", type="string", example="fa fa-user"),
+     *             @OA\Property(property="heading_type", type="string", example="owner"),
+     *             @OA\Property(property="values", type="string", example="value1,value2")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Label updated successfully",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="boolean", example=true),
+     *             @OA\Property(property="message", type="string", example="Label Updated"),
+     *             @OA\Property(property="data", type="object")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=404,
+     *         description="Label Not Found"
+     *     ),
+     *     @OA\Response(
+     *         response=422,
+     *         description="Validation error"
+     *     )
+     * )
+     */
+
+    public function update(Request $request, $id)
+    {
+        $clientId = $request->auth->parent_id;
+
+        // Define the validation rules with the unique rule for title
+
+        $validationRules = [
+            'title' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique("mysql_$clientId.crm_label", 'title')->where(function ($query) use ($clientId) {
+                    $query->whereNull('deleted_at');
+                })->ignore($id),
+            ],
+        ];
+
+        $this->validate($request, $validationRules);
+
+        try {
+            $label_title_url = str_replace(' ', '_', trim(strtolower($request->input("title"))));
+            $Label = CrmLabel::on("mysql_$clientId")->findOrFail($id);
+
+            if ($request->has("title")) {
+                $Label->title = $request->input("title");
+                $Label->label_title_url = $label_title_url;
+            }
+
+            // Your other field updates...
+            if ($request->has("data_type")) {
+                $newDataType = $request->input("data_type");
+
+                // Update crm_lead_data column datatype
+                $columnName = 'option_' . $id; // Assuming you have a consistent naming convention
+                $this->updateLeadDataColumnType($clientId, $columnName, $newDataType);
+
+                $Label->data_type = $newDataType;
+            }
+
+            if ($request->has("required"))
+                $Label->required = $request->input("required");
+
+            if ($request->has("merchant_required"))
+                $Label->merchant_required = $request->input("merchant_required");
+
+            if ($request->has("edit_mode"))
+                $Label->edit_mode = $request->input("edit_mode");
+
+            if ($request->has("heading_type"))
+                $Label->heading_type = $request->input("heading_type");
+
+            if ($request->has("values"))
+                $Label->values = $request->input("values");
+            if ($request->has("icons"))
+                $Label->icons = $request->input("icons");
+            if ($request->input("data_type") === "number") {
+                $Label->number_length = $request->input("number_length");
+            } else {
+                $Label->number_length = null;
+            }
+
+            $Label->saveOrFail();
+            return $this->successResponse("Label Updated", $Label->toArray());
+        } catch (ModelNotFoundException $exception) {
+            return $this->failResponse("Label Not Found", ["Invalid Label id $id"], $exception, 404);
+        } catch (\Throwable $exception) {
+            return $this->failResponse("Failed to update Label", [$exception->getMessage()], $exception, 404);
+        }
+    }
+
+    /**
+     * Update crm_lead_data column datatype.
+     */
+    private function updateLeadDataColumnType($clientId, $columnName, $newDataType)
+    {
+        // Check if the column already exists
+        if (!Schema::connection("mysql_$clientId")->hasColumn('crm_lead_data', $columnName)) {
+            // You may choose to handle this case differently, for example, skip the update or throw an exception
+            return;
+        }
+
+        Schema::connection("mysql_$clientId")->table('crm_lead_data', function (Blueprint $table) use ($columnName, $newDataType) {
+            // Log or print debug statements
+            Log:
+            info("Updating column type for $columnName to $newDataType");
+
+            // Modify the existing column to the updated data type
+            switch ($newDataType) {
+                case "text":
+                case "select_option":
+                case "email":
+                    $table->string($columnName)->nullable()->change();
+                    break;
+
+                case "number":
+                    $table->string($columnName)->nullable()->change();
+                    break;
+
+                //case "number":
+                case "phone_number":
+                    $table->string($columnName)->nullable()->change();
+                    break;
+                case "date":
+                    $table->date($columnName)->nullable()->change();
+                    break;
+                default:
+                    $table->string($columnName)->nullable()->change();
+            }
+        });
+    }
+
+    /**
+     * @OA\Get(
+     *     path="/crm-delete-label/{id}",
+     *     summary="Delete a CRM Label",
+     *     description="Deletes the specified CRM label by ID.",
+     *     tags={"CrmLabel"},
+     *     security={{"Bearer":{}}},
+     *     @OA\Parameter(
+     *         name="id",
+     *         in="path",
+     *         required=true,
+     *         description="ID of the CRM Label to delete",
+     *         @OA\Schema(type="integer", example=1)
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Label deleted successfully",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="boolean", example=true),
+     *             @OA\Property(property="message", type="string", example="Label Deleted Successfully"),
+     *             @OA\Property(property="data", type="array", @OA\Items(type="boolean", example=true))
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=404,
+     *         description="Label not found"
+     *     ),
+     *     @OA\Response(
+     *         response=500,
+     *         description="Failed to delete Label"
+     *     )
+     * )
+     */
+
+    public function delete(Request $request, $id)
+    {
+        $clientId = $request->auth->parent_id;
+        try {
+            $Label = CrmLabel::on("mysql_$clientId")->find($id)->delete();
+            return $this->successResponse("Label Deleted Successfully", [$Label]);
+        } catch (ModelNotFoundException $exception) {
+            throw new NotFoundHttpException("No Label Name with id $id");
+        } catch (\Throwable $exception) {
+            return $this->failResponse("Failed to fetch Label Name info", [], $exception);
+        }
+    }
+    /**
+     * @OA\Post(
+     *     path="/crm-change-view-on-lead-status",
+     *     summary="Change the visibility of a CRM Label on the Lead page",
+     *     description="Updates the `view_on_lead` status of a CRM label.",
+     *     tags={"CrmLabel"},
+     *     security={{"Bearer":{}}},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"label_id", "view_on_lead"},
+     *             @OA\Property(property="label_id", type="integer", example=1, description="ID of the CRM Label"),
+     *             @OA\Property(property="view_on_lead", type="boolean", example=true, description="Whether the label should be visible on lead view")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Label updated successfully",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="boolean", example=true),
+     *             @OA\Property(property="message", type="string", example="Label Updated"),
+     *             @OA\Property(property="data", type="object")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=404,
+     *         description="Label Not Found"
+     *     ),
+     *     @OA\Response(
+     *         response=422,
+     *         description="Validation Error"
+     *     ),
+     *     @OA\Response(
+     *         response=500,
+     *         description="Internal Server Error"
+     *     )
+     * )
+     */
+
+    public function changeViewOnLead(Request $request)
+    {
+
+        $clientId = $request->auth->parent_id;
+        try {
+            $Label = CrmLabel::on("mysql_$clientId")->findOrFail($request->label_id);
+            $Label->view_on_lead = $request->view_on_lead;
+            $Label->saveOrFail();
+            return $this->successResponse("Label Updated", $Label->toArray());
+        } catch (ModelNotFoundException $exception) {
+            return $this->failResponse("Label Not Found", [
+                "Invalid Label id $id"
+            ], $exception, 404);
+        } catch (\Throwable $exception) {
+            return $this->failResponse("Failed to update Label", [
+                $exception->getMessage()
+            ], $exception, 404);
+        }
+    }
+
+    public function changeLabelStatus(Request $request)
+    {
+        $clientId = $request->auth->parent_id;
+        try {
+            $Label = CrmLabel::on("mysql_$clientId")->findOrFail($request->label_id);
+            $Label->status = $request->status;
+            $Label->saveOrFail();
+            return $this->successResponse("Label Updated", $Label->toArray());
+        } catch (ModelNotFoundException $exception) {
+            return $this->failResponse("Label Not Found", [
+                "Invalid Label id $id"
+            ], $exception, 404);
+        } catch (\Throwable $exception) {
+            return $this->failResponse("Failed to update Label", [
+                $exception->getMessage()
+            ], $exception, 404);
+        }
+    }
+
+
+    public function updateDisplayOrder(Request $request)
+    {
+
+
+
+        $clientId = $request->auth->parent_id;
+
+        $position = $request->display_order;
+
+
+
+        try {
+            $i = 1;
+            foreach ($position as $k => $v) {
+                $objLead = CrmLabel::on("mysql_$clientId")->findOrFail($v);
+                $objLead->display_order = $i;
+                $i++;
+                $objLead->saveOrFail();
+            }
+            return $this->successResponse("Label Updated Successfully", $objLead->toArray());
+        } catch (ModelNotFoundException $exception) {
+            return $this->failResponse("Lead Not Found", [
+                "Invalid Lead id: $id"
+            ], $exception, 404);
+        } catch (\Throwable $exception) {
+            return $this->failResponse("Failed to update Lead", [
+                $exception->getMessage()
+            ], $exception, 404);
+        }
+    }
+}
