@@ -19,6 +19,7 @@ $router->post('receiver-fax', 'FaxController@receiverFax');
 
 //login
 $router->POST('authentication', 'AuthenticationController@authentication');
+$router->POST('authentication_copy', 'AuthenticationController@authentication_copy');
 
 //cron job
 $router->get('add-lead-temp', 'CronController@addLeadTemp');

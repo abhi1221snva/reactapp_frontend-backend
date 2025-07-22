@@ -24,7 +24,8 @@ class EmailTempleteController extends Controller
      *     operationId="getEmailTemplates",
      *     tags={"EmailTemplate"},
      *     security={{"Bearer":{}}},
-     * *      @OA\Parameter(
+     *     @OA\Parameter(name="search", in="query", required=false, @OA\Schema(type="string"), description="Search term to filter by template_name or subject"),
+     *      @OA\Parameter(
      *         name="start",
      *         in="query",
      *         required=false,
@@ -73,6 +74,20 @@ class EmailTempleteController extends Controller
     public function index(Request $request)
     {
         $templates = EmailTemplete::on("mysql_" . $request->auth->parent_id)->get()->all();
+
+        if ($request->has('search') && !empty($request->input('search'))) {
+            $search = $request->input('search');
+            $connection = "mysql_" . $request->auth->parent_id;
+
+            $query = EmailTemplete::on($connection);
+
+            $query->where(function ($q) use ($search) {
+                $q->where('template_name', 'like', '%' . $search . '%')
+                    ->orWhere('subject', 'like', '%' . $search . '%');
+            });
+            $templates = $query->get();
+            return $this->successResponse("Template List", $templates->toArray());
+        }
         if ($request->has('start') && $request->has('limit')) {
             $total_row = count($templates);
             $start = (int)$request->input('start'); // Start index (0-based)
