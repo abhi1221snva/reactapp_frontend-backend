@@ -20,6 +20,8 @@ $router->post('receiver-fax', 'FaxController@receiverFax');
 //login
 $router->POST('authentication', 'AuthenticationController@authentication');
 $router->POST('authentication_copy', 'AuthenticationController@authentication_copy');
+$router->get('auth/google/redirect', 'GoogleController@redirectToGoogle');
+$router->post('auth/google/callback', 'GoogleController@handleGoogleCallback');
 
 //cron job
 $router->get('add-lead-temp', 'CronController@addLeadTemp');
@@ -128,7 +130,7 @@ $router->POST('merchants', 'Merchant\AuthController@get');
 ##########Merchant's routes ends
 
 $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
-  $router->post('auth/google/callback', 'UserMailController@googlecallback');
+  // $router->post('auth/google/callback', 'UserMailController@googlecallback');
 
   //Extension-Group Read Operations
   $router->get('extension-group', 'GroupController@list');
