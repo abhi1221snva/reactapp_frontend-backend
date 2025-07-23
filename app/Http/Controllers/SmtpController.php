@@ -30,6 +30,27 @@ class SmtpController extends Controller
      *     summary="Retrieve SMTP settings",
      *     tags={"SMTP"},
      *     security={{"Bearer":{}}},
+     *    @OA\Parameter(
+     *         name="search",
+     *         in="query",
+     *         required=false,
+     *         description="Search term to filter smtps",
+     *         @OA\Schema(type="string")
+     *     ),
+     *       @OA\Parameter(
+     *         name="start",
+     *         in="query",
+     *         required=false,
+     *         description="Start index for pagination",
+     *         @OA\Schema(type="integer", default=0)
+     *     ),
+     *     @OA\Parameter(
+     *         name="limit",
+     *         in="query",
+     *         required=false,
+     *         description="Limit number of records returned",
+     *         @OA\Schema(type="integer", default=10)
+     *     ),
      *     @OA\Response(
      *         response=200,
      *         description="extension data"  
@@ -37,6 +58,64 @@ class SmtpController extends Controller
      * )
      */
     public function index(Request $request)
+    {
+        $clientId = $request->auth->parent_id;
+
+        if ($request->auth->level < 7) {
+            $baseQuery = SmtpSetting::on("mysql_$clientId")->where("user_id", "=", $request->auth->id);
+        } else {
+            $baseQuery = SmtpSetting::on("mysql_$clientId")->orderBy("sender_type")->orderBy("mail_username");
+        }
+
+        // 🔍 Search handling
+        if ($request->has('search')) {
+            $searchTerm = $request->input('search');
+
+            $query = clone $baseQuery; // clone to avoid modifying the original if reused later
+
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('mail_username', 'LIKE', "%{$searchTerm}%")
+                    ->orWhere('mail_driver', 'LIKE', "%{$searchTerm}%")
+                    ->orWhere('mail_host', 'LIKE', "%{$searchTerm}%");
+            });
+
+            $allResults = $query->get()->all();
+            $total_row = count($allResults);
+
+            // Optional: add pagination to search results
+            if ($request->has('start') && $request->has('limit')) {
+                $start = (int)$request->input('start');
+                $limit = (int)$request->input('limit');
+                $allResults = array_slice($allResults, $start, $limit, false);
+            }
+
+            return $this->successResponse("SMTP List", [
+                'total' => $total_row,
+                'data' => $allResults
+            ]);
+        }
+
+        // 🧾 Default listing with pagination
+        $smtp = $baseQuery->get()->all();
+
+        if ($request->has('start') && $request->has('limit')) {
+            $total_row = count($smtp);
+            $start = (int)$request->input('start');
+            $limit = (int)$request->input('limit');
+            $smtp = array_slice($smtp, $start, $limit, false);
+
+            return $this->successResponse("SMTP List", [
+                'start' => $start,
+                'limit' => $limit,
+                'total' => $total_row,
+                'data' => $smtp
+            ]);
+        }
+
+        return $this->successResponse("SMTP List", $smtp);
+    }
+
+    public function index_old(Request $request)
     {
         $clientId = $request->auth->parent_id;
         if ($request->auth->level < 7) {
@@ -580,6 +659,53 @@ class SmtpController extends Controller
             return $this->failResponse("Failed to Copy SMTP setting", [$exception->getMessage()], $exception, 500);
         }
     }
+
+    /**
+     * @OA\Post(
+     *     path="/status-update-smtp",
+     *     summary="Update status of an status-update-smtp",
+     *     description="Updates the status of an status-update-smtp record by its ID for the authenticated user's account.",
+     *     tags={"SMTP"},
+     *     security={{"Bearer":{}}},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"listId", "status"},
+     *             @OA\Property(
+     *                 property="listId",
+     *                 type="integer",
+     *                 example=1,
+     *                 description="ID of the smtp record to update"
+     *             ),
+     *             @OA\Property(
+     *                 property="status",
+     *                 type="string",
+     *                 enum={"0", "1"},
+     *                 example="1",
+     *                 description="New status value (1 for active, 0 for inactive)"
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Smtp status updated successfully",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="string", example="true"),
+     *             @OA\Property(property="status", type="string", example="true"),
+     *             @OA\Property(property="message", type="string", example="Smtp Status updated successfully")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=400,
+     *         description="Update failed",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="string", example="false"),
+     *             @OA\Property(property="status", type="string", example="false"),
+     *             @OA\Property(property="message", type="string", example="smtp  Status  update failed")
+     *         )
+     *     )
+     * )
+     */
     function updateSmtpStatus(Request $request)
     {
         $listId = $request->input('listId');

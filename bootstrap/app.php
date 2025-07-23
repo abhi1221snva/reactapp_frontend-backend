@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__.'/../vendor/autoload.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 
 /* For CRM WEBPHONE EXAMPLE*/
 
@@ -28,9 +28,9 @@ $app = new Laravel\Lumen\Application(
     dirname(__DIR__)
 );
 
- $app->withFacades();
+$app->withFacades();
 
- $app->withEloquent();
+$app->withEloquent();
 
 if ($app->environment() === 'local') {
     $app->register(\Flipbox\LumenGenerator\LumenGeneratorServiceProvider::class);
@@ -105,7 +105,7 @@ $app->singleton(
 $app->router->group([
     'namespace' => 'App\Http\Controllers',
 ], function ($router) {
-    require __DIR__.'/../routes/web.php';
+    require __DIR__ . '/../routes/web.php';
 });
 $app->withFacades();
 $app->withEloquent();
@@ -143,4 +143,7 @@ if ($app->environment() !== 'production') {
     $app->register(\Barryvdh\LaravelIdeHelper\IdeHelperServiceProvider::class);
 }
 date_default_timezone_set(env('APP_TIMEZONE', 'UTC'));
+$app->withFacades();
+$app->configure('swagger-lume');
+$app->register(\SwaggerLume\ServiceProvider::class);
 return $app;

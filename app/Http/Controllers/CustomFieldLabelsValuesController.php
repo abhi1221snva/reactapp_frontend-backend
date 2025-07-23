@@ -15,7 +15,13 @@ class CustomFieldLabelsValuesController extends Controller
      *     summary="Get list of custom field label values",
      *     tags={"Custom Field Labels Value"},
      *     security={{"Bearer":{}}},
-     * 
+     *       @OA\Parameter(
+     *         name="search",
+     *         in="query",
+     *         required=false,
+     *         description="Search term to filter custom field label values",
+     *         @OA\Schema(type="string")
+     *     ),
      *      @OA\Parameter(
      *         name="start",
      *         in="query",
@@ -45,10 +51,30 @@ class CustomFieldLabelsValuesController extends Controller
      *     )
      * )
      */
+
     public function index(Request $request)
     {
         $custom_field_labels_values = CustomFieldLabelsValues::on("mysql_" . $request->auth->parent_id)->where('user_id', $request->auth->id)->get()->all();
 
+
+        if ($request->has('search')) {
+            $query = CustomFieldLabelsValues::on("mysql_" . $request->auth->parent_id)
+                ->where('user_id', $request->auth->id);
+
+            $searchTerm = $request->input('search');
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('title_match', 'LIKE', "%{$searchTerm}%")
+                    ->orWhere('title_links', 'LIKE', "%{$searchTerm}%");
+            });
+            $allResults = $query->get()->all();
+            $total_row = count($allResults);
+
+
+            return $this->successResponse("Custom Field Labels Values List", [
+                'total' => $total_row,
+                'data' =>  $allResults
+            ]);
+        }
         if ($request->has('start') && $request->has('limit')) {
             $total_row = count($custom_field_labels_values);
 
@@ -66,6 +92,7 @@ class CustomFieldLabelsValuesController extends Controller
         }
         return $this->successResponse("Custom Field Labels Values List", $custom_field_labels_values);
     }
+
     public function index_old(Request $request)
     {
         $custom_field_labels_values = CustomFieldLabelsValues::on("mysql_" . $request->auth->parent_id)->where('user_id', $request->auth->id)->get()->all();

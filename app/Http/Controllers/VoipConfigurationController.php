@@ -18,6 +18,13 @@ class VoipConfigurationController extends Controller
      *     tags={"VoipConfiguration"},
      *     security={{"Bearer": {}}},
      * *      @OA\Parameter(
+     *         name="search",
+     *         in="query",
+     *         required=false,
+     *         description="Search term to filter configurations by name, host, username, or prefix",
+     *         @OA\Schema(type="string")
+     *     ),
+     *       @OA\Parameter(
      *         name="start",
      *         in="query",
      *         required=false,
@@ -60,15 +67,26 @@ class VoipConfigurationController extends Controller
 
     public function index(Request $request)
     {
-        /*if($request->auth->level > 9)
-        {
-            $voip_configurations = VoipConfiguration::on("master")->get()->all();
-        }
-        else
-        {*/
-        $voip_configurations = VoipConfiguration::on("master")->where('parent_id', $request->auth->parent_id)->get()->all();
-        //}
 
+        // Start with the base query for the current user's parent_id
+        $query = VoipConfiguration::on("master")
+            ->where('parent_id', $request->auth->parent_id);
+
+        // Handle search
+        if ($request->has('search') && !empty($request->input('search'))) {
+            $search = $request->input('search');
+
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'LIKE', "%{$search}%")
+                    ->orWhere('host', 'LIKE', "%{$search}%")
+                    ->orWhere('username', 'LIKE', "%{$search}%")
+                    ->orWhere('prefix', 'LIKE', "%{$search}%");
+                // Do NOT include 'secret' in search for security reasons
+            });
+        }
+
+        // Fetch all results
+        $voip_configurations = $query->get()->all();
 
         if ($request->has('start') && $request->has('limit')) {
             $total_row = count($voip_configurations);

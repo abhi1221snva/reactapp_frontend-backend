@@ -9,6 +9,7 @@ use App\Model\Client\AllowedIp;
 class AllowedIpController extends Controller
 {
 
+
     /**
      * @OA\Get(
      *     path="/allowed-ips",
@@ -16,7 +17,27 @@ class AllowedIpController extends Controller
      *     description="Fetches the list of allowed IPs for the authenticated client's account.",
      *     tags={"Allowed IP"},
      *     security={{"Bearer":{}}},
-     *
+     **       @OA\Parameter(
+     *         name="search",
+     *         in="query",
+     *         required=false,
+     *         description="Search term to filter Allowed IP",
+     *         @OA\Schema(type="string")
+     *     ),
+     *      @OA\Parameter(
+     *         name="start",
+     *         in="query",
+     *         required=false,
+     *         description="Start index for pagination",
+     *         @OA\Schema(type="integer", default=0)
+     *     ),
+     *     @OA\Parameter(
+     *         name="limit",
+     *         in="query",
+     *         required=false,
+     *         description="Limit number of records returned",
+     *         @OA\Schema(type="integer", default=10)
+     *     ),
      *     @OA\Response(
      *         response=200,
      *         description="Allowed IPs List",
@@ -40,6 +61,46 @@ class AllowedIpController extends Controller
      */
 
     public function index(Request $request)
+    {
+        $allowed_ips = AllowedIp::on("mysql_" . $request->auth->parent_id)->get()->all();
+
+        if ($request->has('search')) {
+
+            $query = AllowedIp::on("mysql_" . $request->auth->parent_id);
+
+            $searchTerm = $request->input('search');
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('label', 'LIKE', "%{$searchTerm}%")
+                    ->orWhere('ip_address', 'LIKE', "%{$searchTerm}%");
+            });
+            $allResults = $query->get()->all();
+            $total_row = count($allResults);
+
+
+            return $this->successResponse("Allowed IPs List", [
+                'total' => $total_row,
+                'data' =>  $allResults
+            ]);
+        }
+        if ($request->has('start') && $request->has('limit')) {
+            $total_row = count($allowed_ips);
+
+            $start = (int) $request->input('start');  // Start index (0-based)
+            $limit = (int) $request->input('limit');  // Number of records to fetch
+
+            $allowed_ips = array_slice($allowed_ips, $start, $limit, false);
+
+            return $this->successResponse("Allowed IPs List", [
+                'start' => $start,
+                'limit' => $limit,
+                'total' => $total_row,
+                'data' => $allowed_ips
+            ]);
+        }
+
+        return $this->successResponse("Allowed IPs List", $allowed_ips);
+    }
+    public function index_old(Request $request)
     {
         $allowed_ips = AllowedIp::on("mysql_" . $request->auth->parent_id)->get()->all();
         return $this->successResponse("Allowed IPs List", $allowed_ips);
@@ -291,51 +352,52 @@ class AllowedIpController extends Controller
         }
     }
 
-/**
- * @OA\Post(
- *     path="/status-update-allowed-ip",
- *     summary="Update status of an allowed IP",
- *     description="Updates the status of an allowed IP record by its ID for the authenticated user's account.",
- *     tags={"Allowed IP"},
- *     security={{"Bearer":{}}},
- *     @OA\RequestBody(
- *         required=true,
- *         @OA\JsonContent(
- *             required={"listId", "status"},
- *             @OA\Property(
- *                 property="listId",
- *                 type="integer",
- *                 example=1,
- *                 description="ID of the allowed IP record to update"
- *             ),
- *             @OA\Property(
- *                 property="status",
- *                 type="integer",
- *                 example=1,
- *                 description="New status value (1 for active, 0 for inactive)"
- *             )
- *         )
- *     ),
- *     @OA\Response(
- *         response=200,
- *         description="Allowed IP status updated successfully",
- *         @OA\JsonContent(
- *             @OA\Property(property="success", type="string", example="true"),
- *             @OA\Property(property="status", type="string", example="true"),
- *             @OA\Property(property="message", type="string", example="Allowed IP Status updated successfully")
- *         )
- *     ),
- *     @OA\Response(
- *         response=400,
- *         description="Update failed",
- *         @OA\JsonContent(
- *             @OA\Property(property="success", type="string", example="false"),
- *             @OA\Property(property="status", type="string", example="false"),
- *             @OA\Property(property="message", type="string", example="Allowed IP  Status  update failed")
- *         )
- *     )
- * )
- */
+    /**
+     * @OA\Post(
+     *     path="/status-update-allowed-ip",
+     *     summary="Update status of an allowed IP",
+     *     description="Updates the status of an allowed IP record by its ID for the authenticated user's account.",
+     *     tags={"Allowed IP"},
+     *     security={{"Bearer":{}}},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"listId", "status"},
+     *             @OA\Property(
+     *                 property="listId",
+     *                 type="integer",
+     *                 example=1,
+     *                 description="ID of the allowed IP record to update"
+     *             ),
+     *             @OA\Property(
+     *                 property="status",
+     *                 type="string",
+     *                 enum={"0", "1"},
+     *                 example="1",
+     *                 description="New status value (1 for active, 0 for inactive)"
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Allowed IP status updated successfully",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="string", example="true"),
+     *             @OA\Property(property="status", type="string", example="true"),
+     *             @OA\Property(property="message", type="string", example="Allowed IP Status updated successfully")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=400,
+     *         description="Update failed",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="string", example="false"),
+     *             @OA\Property(property="status", type="string", example="false"),
+     *             @OA\Property(property="message", type="string", example="Allowed IP  Status  update failed")
+     *         )
+     *     )
+     * )
+     */
 
 
     function updateAllowedIpStatus(Request $request)
