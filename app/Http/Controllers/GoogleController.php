@@ -10,10 +10,9 @@ use Session;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
-use Laravel\Socialite\Facades\Socialite;
 use App\Model\User;
-
-
+use Illuminate\Support\Facades\Mail;
+use App\Mail\WelcomeGoogleLoginMail;
 
 
 class GoogleController  extends Controller
@@ -53,7 +52,7 @@ class GoogleController  extends Controller
     //         return redirect('/login')->withErrors(['msg' => 'Failed to login with Google']);
     //     }
     // }    
-      public function handleGoogleCallback(Request $request)
+      public function handleGoogleCallbacknew(Request $request)
     {
         Log::info('reached',['user_id'=>$request->id]);
         try {
@@ -85,4 +84,65 @@ class GoogleController  extends Controller
             dd($e->getMessage());
         }
     }
+public function handleGoogleCallback(Request $request)
+{
+    Log::info('Reached Google Callback', ['google_id' => $request->id]);
+
+    try {
+        $googleId = $request->get('id');
+        $email = $request->get('email');
+
+        if (!$googleId || !$email) {
+            return response()->json(['error' => 'Invalid Google data'], 400);
+        }
+
+        // Try to find user by google_id
+        $user = User::where('google_id', $googleId)->first();
+
+        if (!$user) {
+            // If not found, try to match by email
+            $user = User::where('email', $email)->first();
+
+            if (!$user) {
+                Log::warning('User not found during Google login', ['email' => $email]);
+                return response()->json(['error' => 'User not registered'], 401);
+            }
+
+            // Link Google ID to existing user
+            $user->google_id = $googleId;
+            $user->save();
+        }
+
+        // Login the user
+        // Auth::login($user);
+
+        // Send welcome email on first Google login
+        if (!$user->first_google_login) {
+            Mail::to($user->email)->send(new WelcomeGoogleLoginMail($user));
+
+            $user->first_google_login = true;
+            $user->save();
+        }
+
+        // // Generate JWT token using attempt
+        // $token = Auth::attempt(['email' => $user->email]);
+
+        // if (!$token) {
+        //     return response()->json(['error' => 'Token generation failed'], 500);
+        // }
+
+        return response()->json([
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->first_name,
+                'email' => $user->email,
+                // Add more user fields if needed
+            ]
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Google Login Exception', ['message' => $e->getMessage()]);
+        return response()->json(['error' => 'Login failed.'], 500);
+    }
+}
 }
