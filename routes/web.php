@@ -132,7 +132,11 @@ $router->POST('merchants', 'Merchant\AuthController@get');
 
 $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   // $router->post('auth/google/callback', 'UserMailController@googlecallback');
-
+  //profile
+  $router->get('profile', 'ProfileController@index');
+  $router->post('/profile/update-two-factor', 'ProfileController@updateTwoFactor');
+  $router->post('/profile/update-google-auth', 'ProfileController@updateGoogleAuthenticator');
+  $router->post('verify-google_otp', 'ProfileController@verifyGoogleAuthenticator');
   //Extension-Group Read Operations
   $router->get('extension-group', 'GroupController@list');
   $router->get('extension-group/{id}', 'GroupController@show');

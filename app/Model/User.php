@@ -33,7 +33,7 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
      *
      * @var array
      */
-    
+
     protected $guarded = ['id'];
 
     /**
@@ -45,7 +45,7 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
         'password',
     ];
 
-    protected $fillable = ['first_name', 'last_name', 'mobile', 'email', 'password', 'role', 'profile_pic', 'extension', 'rpm', 'vm_pin', 'voicemail', 'voicemail_greeting', 'asterisk_server_id', 'voicemail_send_to_email', 'follow_me', 'call_forward', 'dialpad', 'agent_voice_id', 'cli_setting', 'cli', 'local_ip', 'public_ip', 'phone_status', 'status', 'is_deleted', 'alt_extension', 'allowed_ip', 'twinning', 'directory_name', 'extension_type', 'vm_drop', 'vm_drop_location','country_code','dialpad_lastname','base_parent_id','sms_setting_id','receive_sms_on_email','receive_sms_on_mobile','ip_filtering','enable_2fa','voip_configuration_id','app_status','app_extension','affiliate_link','google_id','first_google_login','twitter_id','first_twitter_login'];
+    protected $fillable = ['first_name', 'last_name', 'mobile', 'email', 'password', 'role', 'profile_pic', 'extension', 'rpm', 'vm_pin', 'voicemail', 'voicemail_greeting', 'asterisk_server_id', 'voicemail_send_to_email', 'follow_me', 'call_forward', 'dialpad', 'agent_voice_id', 'cli_setting', 'cli', 'local_ip', 'public_ip', 'phone_status', 'status', 'is_deleted', 'alt_extension', 'allowed_ip', 'twinning', 'directory_name', 'extension_type', 'vm_drop', 'vm_drop_location', 'country_code', 'dialpad_lastname', 'base_parent_id', 'sms_setting_id', 'receive_sms_on_email', 'receive_sms_on_mobile', 'ip_filtering', 'enable_2fa', 'voip_configuration_id', 'app_status', 'app_extension', 'affiliate_link', 'google_id', 'first_google_login', 'twitter_id', 'first_twitter_login', 'is_2fa_google_enabled', 'is_2fa_phone_enabled', 'phone_number'];
 
     protected $connection = 'master';
 
@@ -70,7 +70,7 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
         #optional fields
         if (isset($input['last_name'])) $user->last_name = $input['last_name'];
         if (isset($input['mobile'])) $user->mobile = $input['mobile'];
-         if (isset($input['country_code'])) $user->country_code = $input['country_code'];
+        if (isset($input['country_code'])) $user->country_code = $input['country_code'];
         if (isset($input['profile_pic'])) $user->profile_pic = $input['profile_pic'];
         if (isset($input['rpm'])) $user->rpm = $input['rpm'];
         if (isset($input['vm_pin'])) $user->vm_pin = $input['vm_pin'];
@@ -207,7 +207,7 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
 
         #no permissions in cache. Fetch from DB
         $permissions = [];
-        foreach ( $this->fetchPermissions() as $permission ) {
+        foreach ($this->fetchPermissions() as $permission) {
             $clientInfo = ClientService::getById($permission->client_id);
             $role = RolesService::getById($permission->role);
             $nameRole = [
@@ -252,11 +252,10 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
         $role = RolesService::getById($data['role']);
         $data['role'] = $role["name"];
         $data['level'] = $role["level"];
-        $data['user_extension'] = UserExtension::where('name',$data['extension'])->get()->first();
+        $data['user_extension'] = UserExtension::where('name', $data['extension'])->get()->first();
         if (isset($data['permissions'][$this->parent_id])) {
             $data['logo'] = $data['permissions'][$this->parent_id]["companyLogo"];
             $data['company_name'] = $data['permissions'][$this->parent_id]["companyName"];
-
         }
         return $data;
     }
@@ -358,7 +357,6 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                     'success' => 'true',
                     'message' => 'Profile Detail updated successfully.'
                 );
-
             } else {
                 return array(
                     'success' => 'false',
@@ -387,7 +385,6 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                 'message' => 'User Menu detail.',
                 'data' => $arrAssignedUserComponents
             ];
-
         } catch (Exception $e) {
             Log::log($e->getMessage(), [$e->getLine(), $e->getFile(), $e->getCode()]);
             return array(
@@ -411,18 +408,16 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                 if (!empty($record)) {
                     if (!empty($record->password)) {
 
-                        $sql_extension = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =".$record->extension."";
+                        $sql_extension = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =" . $record->extension . "";
                         DB::connection('master')->update($sql_extension);
 
-                        $sql_alt = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =".$record->alt_extension."";
+                        $sql_alt = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =" . $record->alt_extension . "";
                         DB::connection('master')->update($sql_alt);
 
-                        if(!empty($record->app_extension))
-                        {
+                        if (!empty($record->app_extension)) {
 
-                        $sql_app_extension = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =".$record->app_extension."";
-                        DB::connection('master')->update($sql_app_extension);
-
+                            $sql_app_extension = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =" . $record->app_extension . "";
+                            DB::connection('master')->update($sql_app_extension);
                         }
 
 
@@ -461,59 +456,44 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
 
     public function resetUserPassword($email, $new_password)
     {
-        try
-        {
-            if (!empty($email))
-            {
+        try {
+            if (!empty($email)) {
                 $sql = "SELECT email,id,extension,alt_extension FROM users WHERE email = :email";
                 $record = DB::connection('master')->selectOne($sql, array('email' => $email));
-                if (!empty($record))
-                {
-                    if (!empty($record->email))
-                    {
-                        $sql = "UPDATE users set password = '" . Hash::make($new_password) . "' WHERE id ='".$record->id."'";
+                if (!empty($record)) {
+                    if (!empty($record->email)) {
+                        $sql = "UPDATE users set password = '" . Hash::make($new_password) . "' WHERE id ='" . $record->id . "'";
                         DB::connection('master')->update($sql);
 
-                        $sql_extension = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =".$record->extension."";
+                        $sql_extension = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =" . $record->extension . "";
                         DB::connection('master')->update($sql_extension);
 
-                        $sql_alt = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =".$record->alt_extension."";
+                        $sql_alt = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =" . $record->alt_extension . "";
                         DB::connection('master')->update($sql_alt);
 
-                        $reset_password_link = "UPDATE password_reset_email_varification set status = '0' WHERE email ='".$email."'";
+                        $reset_password_link = "UPDATE password_reset_email_varification set status = '0' WHERE email ='" . $email . "'";
                         DB::connection('master')->update($reset_password_link);
-                        return array
-                        (
+                        return array(
                             'success' => 'true',
                             'message' => 'Password changed successfully.',
                             'data' => array()
                         );
-                    }
-                    else
-                    {
-                        return array
-                        (
+                    } else {
+                        return array(
                             'success' => 'false',
                             'message' => 'Password change not successfully.'
                         );
                     }
-                }
-                else
-                {
-                    return array
-                    (
+                } else {
+                    return array(
                         'success' => 'false',
                         'message' => 'Password change not successfully.'
                     );
                 }
             }
-        }
-        catch (Exception $e)
-        {
+        } catch (Exception $e) {
             Log::log($e->getMessage());
-        }
-        catch (InvalidArgumentException $e)
-        {
+        } catch (InvalidArgumentException $e) {
             Log::log($e->getMessage());
         }
     }
@@ -522,10 +502,10 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
     {
         try {
             if (!empty($new_password)) {
-            // fetch user detail
-                
-                $UserData = User::where('id','=',$ext_id)->get()->first();
-               
+                // fetch user detail
+
+                $UserData = User::where('id', '=', $ext_id)->get()->first();
+
                 $sql_uext = "SELECT count(*) as row_count FROM user_extensions WHERE name = :name";
                 $record_ustext = DB::connection('master')->selectOne($sql_uext, array('name' => $UserData->extension));
                 $response_ust = (array)$record_ustext;
@@ -534,10 +514,10 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                     $dt['name'] = $response_data['extension'];
                     $dt['username'] = $response_data['extension'];
                     */
-                    $dt['name'] = $UserData->extension ;
-                    $dt['username'] = $UserData->extension ;
+                    $dt['name'] = $UserData->extension;
+                    $dt['username'] = $UserData->extension;
                     $dt['secret'] = $new_password;
-                    $dt['context'] = 'user-extensions-phones';//'default';
+                    $dt['context'] = 'user-extensions-phones'; //'default';
                     $dt['host'] = 'dynamic';
                     $dt['nat'] = 'force_rport,comedia';
                     $dt['qualify'] = 'no';
@@ -547,25 +527,21 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                     $record_ustextSav = DB::connection('master')->select($insertData, $dt);
                 } else {
                     // $dt['secret'] = $new_password;
-                  //  $dt['name'] = $UserData->extension;
+                    //  $dt['name'] = $UserData->extension;
                     //UserExtension::where('name', '=', $UserData->extension)->update(array('secret' => $new_password));
                     //$insertData = "UPDATE user_extensions SET secret= :secret WHERE name= :name ";
                     //$record_ustext = DB::connection('master')->select($insertData, $dt);
 
                     $sql = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =" . $UserData->extension;
-                $record = DB::connection('master')->update($sql);
+                    $record = DB::connection('master')->update($sql);
 
-                $sql_alt = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =" . $UserData->alt_extension;
-                $record = DB::connection('master')->update($sql_alt);
+                    $sql_alt = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =" . $UserData->alt_extension;
+                    $record = DB::connection('master')->update($sql_alt);
 
-                if(!empty($UserData->app_extension))
-                {
-                    $sql_app_extension = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =" . $UserData->app_extension;
-                    $record = DB::connection('master')->update($sql_app_extension);
-                }
-
-
-
+                    if (!empty($UserData->app_extension)) {
+                        $sql_app_extension = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =" . $UserData->app_extension;
+                        $record = DB::connection('master')->update($sql_app_extension);
+                    }
                 }
 
                 User::where('id', '=', $ext_id)->update(array('password' =>  Hash::make($new_password)));
@@ -582,8 +558,6 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                     'message' => 'Password changed not successfully.'
                 );
             }
-
-
         } catch (Exception $e) {
             Log::log($e->getMessage());
         } catch (InvalidArgumentException $e) {
@@ -611,8 +585,6 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                     'message' => 'Allowed Ip changed not successfully.'
                 );
             }
-
-
         } catch (Exception $e) {
             Log::log($e->getMessage());
         } catch (InvalidArgumentException $e) {
@@ -620,7 +592,7 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
         }
     }
 
-    public function deleteVoicemail($auto_id,$voicemail_id,$parentId)
+    public function deleteVoicemail($auto_id, $voicemail_id, $parentId)
     {
         try {
 
@@ -628,7 +600,7 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                 // Verify the password and generate the token
 
                 $sql = "delete from voicemail_drop WHERE id =" . $voicemail_id;
-                $record = DB::connection('mysql_'.$parentId)->delete($sql);
+                $record = DB::connection('mysql_' . $parentId)->delete($sql);
                 return array(
                     'success' => 'true',
                     'message' => 'Vm Drop Location delete successfully.',
@@ -652,8 +624,6 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                     'message' => 'Vm Drop Location delete not successfully.'
                 );
             }
-
-
         } catch (Exception $e) {
             Log::log($e->getMessage());
         } catch (InvalidArgumentException $e) {
@@ -682,7 +652,6 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                     'message' => 'Vm Drop Location update not successfully.'
                 );
             }
-
         } catch (Exception $e) {
             Log::log($e->getMessage());
         } catch (InvalidArgumentException $e) {
@@ -690,7 +659,7 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
         }
     }
 
-    public function editVoiceMailDrop($voicemail_id,$parentId)
+    public function editVoiceMailDrop($voicemail_id, $parentId)
     {
 
 
@@ -699,7 +668,7 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                 // Verify the password and generate the token
 
                 $sql = "select * from voicemail_drop where id =" . $voicemail_id;
-                $record = DB::connection('mysql_'.$parentId)->select($sql);
+                $record = DB::connection('mysql_' . $parentId)->select($sql);
                 return array(
                     'success' => 'true',
                     'message' => 'Vm Drop Location Update successfully.',
@@ -711,14 +680,13 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                     'message' => 'Vm Drop Location update not successfully.'
                 );
             }
-
         } catch (Exception $e) {
             Log::log($e->getMessage());
         } catch (InvalidArgumentException $e) {
             Log::log($e->getMessage());
         }
     }
-    public function editVoiceAi($voicemail_id,$parentId)
+    public function editVoiceAi($voicemail_id, $parentId)
     {
 
 
@@ -739,14 +707,13 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                     'message' => 'Voice Ai update not successfully.'
                 );
             }
-
         } catch (Exception $e) {
             Log::log($e->getMessage());
         } catch (InvalidArgumentException $e) {
             Log::log($e->getMessage());
         }
     }
-    public function deleteVoiceAi($auto_id,$voicemail_id,$parentId)
+    public function deleteVoiceAi($auto_id, $voicemail_id, $parentId)
     {
         try {
 
@@ -761,9 +728,6 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                     //'data'   => array()
                 );
             }
-
-
-
         } catch (Exception $e) {
             Log::log($e->getMessage());
         } catch (InvalidArgumentException $e) {
@@ -783,7 +747,7 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
         ];
     }
 
-    function updateEmailSetting($emails,$chk)
+    function updateEmailSetting($emails, $chk)
     {
 
         //return $this->id;die;
@@ -796,26 +760,24 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
 
                     //return $emails;
 
-                    foreach($emails as $key=>$email){
+                    foreach ($emails as $key => $email) {
 
 
-                         $mails = json_encode($email);
-                         if(empty($chk[$key][0])){
-                            $chk[$key][0] =0;
-                         }
+                        $mails = json_encode($email);
+                        if (empty($chk[$key][0])) {
+                            $chk[$key][0] = 0;
+                        }
 
 
 
-                    $updateData = "Update user_setting set sender_list='" . $mails . "',status='".$chk[$key][0]."' where auto_id= '".$key."'";
-                    $record_updateData = DB::connection('mysql_' . $this->parent_id)->select($updateData, array());
-                     }
+                        $updateData = "Update user_setting set sender_list='" . $mails . "',status='" . $chk[$key][0] . "' where auto_id= '" . $key . "'";
+                        $record_updateData = DB::connection('mysql_' . $this->parent_id)->select($updateData, array());
+                    }
                     return array(
                         'success' => 'true',
                         'message' => 'Email Setting  Updated Successfully.'
                     );
                 }
-
-
             }
             return array(
                 'success' => 'false',
@@ -830,32 +792,31 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
 
 
     /**
-    * Get all user ids for pusher
-    * @param type $request
-    * @return type
-    */
-    function checkAndGetUserIdForPusher($platform, $to, $event) {
+     * Get all user ids for pusher
+     * @param type $request
+     * @return type
+     */
+    function checkAndGetUserIdForPusher($platform, $to, $event)
+    {
         try {
             $user_ids = [];
-            switch($platform) {
+            switch ($platform) {
                 case "fax":
                     $didData = $this->getUserAndParentFromDid($to);
-                    if(isset($didData['parent_id']))
-                    {
+                    if (isset($didData['parent_id'])) {
                         $user_ids = $this->getFaxPusherNotifcationData($didData['parent_id'], $to);
                     }
-                break;
+                    break;
                 case "text":
                     $didData = $this->getUserAndParentFromDid($to);
-                    if(isset($didData['user_id']))
-                    {
+                    if (isset($didData['user_id'])) {
                         $user_ids = [$didData['user_id']];
                     }
-                break;
+                    break;
                 case "call":
                 case "voicemail":
                     $user_ids = $this->getCallPusherNotifcationData($to, $event);
-                break;
+                    break;
             }
 
             return array(
@@ -869,39 +830,38 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
     }
 
     /**
-    *
-    * @param type $to
-    * @return type
-    */
-    public function getUserAndParentFromDid($to) {
+     *
+     * @param type $to
+     * @return type
+     */
+    public function getUserAndParentFromDid($to)
+    {
         $data = [];
         $data['cli'] = $to;
         $sql = "SELECT parent_id, user_id FROM did WHERE cli = :cli ";
         $did_record = DB::connection('master')->selectOne($sql, $data);
-        if(!empty($did_record))
-        {
+        if (!empty($did_record)) {
             return ['parent_id' => $did_record->parent_id, 'user_id' => $did_record->user_id];
-        }
-        else
-        {
+        } else {
             return [];
         }
     }
 
     /**
-    *
-    * @param type $parent_id
-    * @param type $to
-    * @return type
-    */
-    public function getFaxPusherNotifcationData($parent_id, $to) {
+     *
+     * @param type $parent_id
+     * @param type $to
+     * @return type
+     */
+    public function getFaxPusherNotifcationData($parent_id, $to)
+    {
         $user_ids = [];
         $data['to'] = $to;
         $sql = "SELECT userId FROM fax_did WHERE did = :to";
         $record = DB::connection('mysql_' . $parent_id)->select($sql, $data);
         $response = (array)$record;
-        if(!empty($response)) {
-            foreach($response as $usr) {
+        if (!empty($response)) {
+            foreach ($response as $usr) {
                 $user_ids[] = $usr->userId;
             }
         }
@@ -909,25 +869,26 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
     }
 
     /**
-    *
-    * @param type $parent_id
-    * @param type $user_id
-    * @param type $ext
-    * @return type
-    * @throws type
-    */
-    public function getCallPusherNotifcationData($ext, $event) {
+     *
+     * @param type $parent_id
+     * @param type $user_id
+     * @param type $ext
+     * @return type
+     * @throws type
+     */
+    public function getCallPusherNotifcationData($ext, $event)
+    {
         $user_ids = $extensions = [];
         $data['extension'] = $ext;
         $data['is_deleted'] = 0;
         $sql = "SELECT id, parent_id, extension, extension_type FROM users "
-                . "WHERE extension = :extension and is_deleted = :is_deleted ";
+            . "WHERE extension = :extension and is_deleted = :is_deleted ";
         $record = DB::connection('master')->selectOne($sql, $data);
         $response = (array)$record;
-        if(empty($response)) {
+        if (empty($response)) {
             throw new \Exception('No record found in user for given extension');
         } else {
-            if($event == 'received' || $event == 'completed') { //return single user id if event is rec || comp
+            if ($event == 'received' || $event == 'completed') { //return single user id if event is rec || comp
                 $user_ids[] = $response['id'];
                 return $user_ids;
             }
@@ -939,17 +900,17 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                 $sql = "SELECT extensions FROM ring_group WHERE title = :extension";
                 $record = DB::connection('mysql_' . $response['parent_id'])->select($sql, $data);
                 $response = (array)$record;
-                if(isset($response[0]->extensions) && $response[0]->extensions != '') {
+                if (isset($response[0]->extensions) && $response[0]->extensions != '') {
                     $arrExt = explode("&", $response[0]->extensions);
-                    foreach($arrExt as $ext) {
+                    foreach ($arrExt as $ext) {
                         $extensions[] = str_replace("SIP/", "", trim($ext));
                     }
 
-                    $sql = "SELECT id FROM users WHERE extension IN (".implode(',', $extensions).")";
+                    $sql = "SELECT id FROM users WHERE extension IN (" . implode(',', $extensions) . ")";
                     $record = DB::connection('master')->select($sql);
                     $response = (array)$record;
-                    if(!empty($response)) {
-                        foreach($response as $row) {
+                    if (!empty($response)) {
+                        foreach ($response as $row) {
                             $user_ids[] = $row->id;
                         }
                     }
@@ -964,7 +925,7 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
         $arrToSend = [];
         foreach ($arrToPrepare as $modulesResult) {
             $arrModulesResult = (array)$modulesResult;
-            $arrToSend = array_merge( $arrToSend, json_decode( $arrModulesResult[$key] ) );
+            $arrToSend = array_merge($arrToSend, json_decode($arrModulesResult[$key]));
         }
         return array_unique($arrToSend);
     }
@@ -1065,39 +1026,32 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
         return $adminIds;
     }
 
-    public function activePlanList($request,$cleint_id="")
+    public function activePlanList($request, $cleint_id = "")
     {
-        if($request->auth->level > 7)
-        {
+        if ($request->auth->level > 7) {
             $packageSql = "SELECT cp.*, p.* from master.client_packages as cp JOIN  packages as p ON ( p.key = cp.package_key ) WHERE cp.client_id = :client_id AND cp.end_time >= :current_date";
 
-            $package = DB::select($packageSql,array('client_id' =>$cleint_id, 'current_date' => Carbon::now()));
+            $package = DB::select($packageSql, array('client_id' => $cleint_id, 'current_date' => Carbon::now()));
             $data = (array) $package;
-            foreach($data as $key => $used)
-            {
+            foreach ($data as $key => $used) {
                 $usedPackage = "SELECT count(user_id) as InUsed from client_{$request->auth->parent_id}.user_packages where client_package_id=:client_id";
 
-                $licencedInUsed    = DB::select($usedPackage, array('client_id' =>$used->client_id));
+                $licencedInUsed    = DB::select($usedPackage, array('client_id' => $used->client_id));
                 $data[$key]->InUsed = $licencedInUsed[0]->InUsed;
             }
-        }
-
-        else
-        {
+        } else {
             $packageSql = "SELECT cp.*, p.*,up.* from master.client_packages as cp JOIN client_{$request->auth->parent_id}.user_packages as up ON ( cp.id = up.client_package_id ) JOIN packages as p ON ( p.key = cp.package_key ) WHERE up.user_id = :user_id AND cp.end_time >= :current_date";
 
-            $package    = DB::select($packageSql, array('user_id' =>$request->auth->id, 'current_date' => Carbon::now()));
+            $package    = DB::select($packageSql, array('user_id' => $request->auth->id, 'current_date' => Carbon::now()));
             $data = (array) $package;
-            foreach($data as $key => $used)
-            {
+            foreach ($data as $key => $used) {
                 $usedPackage = "SELECT count(user_id) as InUsed from client_{$request->auth->parent_id}.user_packages where client_package_id=:client_id";
-                $licencedInUsed    = DB::select($usedPackage, array('client_id' =>$used->client_id));
+                $licencedInUsed    = DB::select($usedPackage, array('client_id' => $used->client_id));
                 $data[$key]->InUsed = $licencedInUsed[0]->InUsed;
             }
         }
 
-        if (isset($data))
-        {
+        if (isset($data)) {
             return $data;
         }
         return null;
