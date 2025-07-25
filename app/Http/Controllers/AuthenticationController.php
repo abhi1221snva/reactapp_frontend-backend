@@ -109,6 +109,23 @@ class AuthenticationController extends Controller
                     }
                 }
 
+                //call google authenticator //
+                if ($data['is_2fa_phone_enabled'] == 1) {
+                    //  $otp_value = mt_rand(100000, 999999);
+                    $otp_value = 123456;
+                    $otp = new OtpVerification();
+                    $otp->id = Str::uuid()->toString();
+                    $otp->user_id = $data['id'];
+                    $otp->country_code = $data['country_code'];
+                    $otp->phone_number = $data['mobile'];
+                    $otp->code = $otp_value;
+                    $otp->expiry = (new \DateTime())->modify("+15 minutes");
+                    //$otp->status = 2;//self::REQUESTED;
+                    $otp->saveOrFail();
+                    //throw new RenderableException('Enable 2FA', [$res], 401);
+                    $data["otpId"] = $otp->id;
+                }
+
                 //call when enable_2fa is active
 
                 if ($data['enable_2fa'] == 1) {
