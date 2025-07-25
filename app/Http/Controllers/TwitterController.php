@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Mail;
 use App\Mail\WelcomeGoogleLoginMail;
 
 
-class GoogleController  extends Controller
+class TwitterController  extends Controller
 {
     /**
      * Create a new controller instance.
@@ -29,48 +29,41 @@ class GoogleController  extends Controller
         $this->request = $request;
     }
 
- 
-
-public function handleGoogleCallback(Request $request)
+public function handleTwitterCallback(Request $request)
 {
-    Log::info('Reached Google Callback', ['google_id' => $request->id]);
+    Log::info('Reached Twitter Callback', ['twitter_id' => $request->id]);
 
     try {
-        $googleId = $request->get('id');
+        $twitterId = $request->get('id');
         $email = $request->get('email');
+        $avatar = $request->get('avatar');
 
-        if (!$googleId || !$email) {
-            return response()->json(['error' => 'Invalid Google data'], 400);
+        if (!$twitterId) {
+            return response()->json(['error' => 'Invalid Twitter data'], 400);
         }
 
-        // Try to find user by google_id
-        $user = User::where('google_id', $googleId)->first();
-    Log::info('Reached Google user', ['user' => $user]);
+        $user = User::where('twitter_id', $twitterId)->orWhere('email', $email)->first();
 
         if (!$user) {
-            // If not found, try to match by email
-            $user = User::where('email', $email)->first();
-
-            if (!$user) {
-                Log::warning('User not found during Google login', ['email' => $email]);
-                return response()->json(['error' => 'User not registered'], 401);
-            }
-
-            // Link Google ID to existing user
-            $user->google_id = $googleId;
-            $user->save();
+            Log::warning('User not found during Twitter login', ['email' => $email, 'twitter_id' => $twitterId]);
+            return response()->json(['error' => 'User not registered'], 401);
         }
 
-        // Send welcome email on first Google login
-        if (!$user->first_google_login) {
-            Mail::to($user->email)->send(new WelcomeGoogleLoginMail($user));
+        // Link Twitter ID if not already linked
+        if (!$user->twitter_id) {
+            $user->twitter_id = $twitterId;
+            $user->first_twitter_login = true;
+            $user->avatar =$avatar;
 
-            $user->first_google_login = true;
-            $user->save();
+            // Send welcome email
+            Mail::to($user->email)->send(new WelcomeTwitterLoginMail($user));
         }
 
+        $user->save();
+
+        // Return user details
         return response()->json([
-            'user' => [
+       'user' => [
                 'id' => $user->id,
                 'first_name' => $user->first_name,
                 'last_name' => $user->last_name,
@@ -97,8 +90,9 @@ public function handleGoogleCallback(Request $request)
         ]);
 
     } catch (\Exception $e) {
-        Log::error('Google Login Exception', ['message' => $e->getMessage()]);
-        return response()->json(['error' => 'Login failed.'], 500);
+        \Log::error('Twitter login error: ' . $e->getMessage());
+        return response()->json(['error' => 'Something went wrong'], 500);
     }
 }
+
 }
