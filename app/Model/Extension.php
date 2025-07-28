@@ -1364,6 +1364,9 @@ class Extension extends Model
         $data['voip_configuration_id'] = $request->input('voip_configuration_id');
         $data['app_status'] = $request->input('app_status');
         $data['app_extension'] = $request->auth->parent_id . $intGeneratedAppExtension;
+        $data['allow_google_authenticator'] = $request->allow_google_authenticator;
+        $data['two_factor_authentication'] = $request->two_factor_authentication;
+        $data['allow_mobile_login'] = $request->allow_mobile_login;
 
         //generate affiliate links
         $unique_token = $this->generateCode();
