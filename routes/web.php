@@ -19,7 +19,7 @@ $router->post('receiver-fax', 'FaxController@receiverFax');
 
 //login
 $router->POST('authentication', 'AuthenticationController@authentication');
-$router->POST('authentication_copy', 'AuthenticationController@authentication_copy');
+//$router->POST('authentication_copy', 'AuthenticationController@authentication_copy');
 $router->get('auth/google/redirect', 'GoogleController@redirectToGoogle');
 $router->post('auth/google/callback', 'GoogleController@handleGoogleCallback');
 $router->post('auth/twitter/callback', 'TwitterController@handleTwitterCallback');
