@@ -107,104 +107,190 @@ class RingGroup extends Model
             Log::log($e->getMessage());
         }
     }
-public function ringGroupDetail($request)
-    {
-        try
-        {
-            $data = array();
-            $searchConditions = []; // Renamed for clarity, holds the SQL WHERE clauses
+// public function ringGroupDetail($request)
+//     {
+//         try
+//         {
+//             $data = array();
+//             $searchConditions = []; // Renamed for clarity, holds the SQL WHERE clauses
             
-            // Ensure $this->table is correctly defined in your class:
-            // protected $table = 'ring_group'; // Or your actual table name
+//             // Ensure $this->table is correctly defined in your class:
+//             // protected $table = 'ring_group'; // Or your actual table name
 
-            if($request->has('ring_id') && is_numeric($request->input('ring_id')))
-            {
-                // Ensure the placeholder is consistently :id (named parameter)
-                $searchConditions[] = 'id = :id'; // Using [] for array push is cleaner
-                $data['id'] = $request->input('ring_id');
-            }
+//             if($request->has('ring_id') && is_numeric($request->input('ring_id')))
+//             {
+//                 // Ensure the placeholder is consistently :id (named parameter)
+//                 $searchConditions[] = 'id = :id'; // Using [] for array push is cleaner
+//                 $data['id'] = $request->input('ring_id');
+//             }
             
-            // Add backticks around the table name for safety
-            $tableName = "`".$this->table."`";
+//             // Add backticks around the table name for safety
+//             $tableName = "`".$this->table."`";
 
-            $str = !empty($searchConditions) ? " WHERE ".implode(" AND ", $searchConditions) : '';
+//             $str = !empty($searchConditions) ? " WHERE ".implode(" AND ", $searchConditions) : '';
 
-            // --- Apply the change here ---
-            $sql_data = "SELECT count(*) as rowCount FROM ".$tableName.$str;
-            $recordCount = DB::connection('mysql_'.$request->auth->parent_id)->select($sql_data, $data);
-            $recCount = $recordCount[0]->rowCount;
+//             // --- Apply the change here ---
+//             $sql_data = "SELECT count(*) as rowCount FROM ".$tableName.$str;
+//             $recordCount = DB::connection('mysql_'.$request->auth->parent_id)->select($sql_data, $data);
+//             $recCount = $recordCount[0]->rowCount;
 
-            if($recCount == 0){
-                return array(
-                    'success'=> 'true',
-                    'message'=> 'Record not found.',
-                    'data'   => array()
-                );
-            }
+//             if($recCount == 0){
+//                 return array(
+//                     'success'=> 'true',
+//                     'message'=> 'Record not found.',
+//                     'data'   => array()
+//                 );
+//             }
 
-            // --- Apply the change here too ---
-            $sql = "SELECT * FROM ".$tableName.$str;
-            $record = DB::connection('mysql_'.$request->auth->parent_id)->select($sql, $data);
-            $ringGroupsData = (array)$record; // Renamed $data to $ringGroupsData
+//             // --- Apply the change here too ---
+//             $sql = "SELECT * FROM ".$tableName.$str;
+//             $record = DB::connection('mysql_'.$request->auth->parent_id)->select($sql, $data);
+//             $ringGroupsData = (array)$record; // Renamed $data to $ringGroupsData
 
-            foreach($ringGroupsData as $key_ext => $ext)
-            {
-                $array_extension = array();
-                $exten = str_replace('SIP/','', $ext->extensions ?? '');
-                $replace = str_replace('-','&',$exten);
-                $extension = array_filter(array_unique(explode('&',$replace)));
+//             foreach($ringGroupsData as $key_ext => $ext)
+//             {
+//                 $array_extension = array();
+//                 $exten = str_replace('SIP/','', $ext->extensions ?? '');
+//                 $replace = str_replace('-','&',$exten);
+//                 $extension = array_filter(array_unique(explode('&',$replace)));
 
-                foreach($extension as $key=> $check)
-                {
-                    if (!empty($check) && is_numeric($check)) { 
-                        // Using different named parameters for each instance in the OR clause
-                        $userSql = "SELECT * FROM users WHERE extension = :extension_num1 OR alt_extension = :extension_num2 LIMIT 1";
-                        $userRecord = DB::connection('master')->selectOne(
-                            $userSql, 
-                            [
-                                'extension_num1' => $check,
-                                'extension_num2' => $check
-                            ]
-                        );
+//                 foreach($extension as $key=> $check)
+//                 {
+//                     if (!empty($check) && is_numeric($check)) { 
+//                         // Using different named parameters for each instance in the OR clause
+//                         $userSql = "SELECT * FROM users WHERE extension = :extension_num1 OR alt_extension = :extension_num2 LIMIT 1";
+//                         $userRecord = DB::connection('master')->selectOne(
+//                             $userSql, 
+//                             [
+//                                 'extension_num1' => $check,
+//                                 'extension_num2' => $check
+//                             ]
+//                         );
                         
-                        if(!empty($userRecord))
-                        {
-                            $array_extension[] = $userRecord->first_name.' '.$userRecord->last_name.'-'.$check;
-                        }
-                    }
-                }
-                $ringGroupsData[$key_ext]->extension_name = implode(',',$array_extension);
-            }
-             // Apply pagination if present
-        if ($request->has(['start', 'limit'])) {
-            $start = (int)$request->input('start');
-            $limit = (int)$request->input('limit');
-            $ringGroupsData = array_slice($ringGroupsData, $start, $limit, true); // paginate array
+//                         if(!empty($userRecord))
+//                         {
+//                             $array_extension[] = $userRecord->first_name.' '.$userRecord->last_name.'-'.$check;
+//                         }
+//                     }
+//                 }
+//                 $ringGroupsData[$key_ext]->extension_name = implode(',',$array_extension);
+//             }
+//              // Apply pagination if present
+//         if ($request->has(['start', 'limit'])) {
+//             $start = (int)$request->input('start');
+//             $limit = (int)$request->input('limit');
+//             $ringGroupsData = array_slice($ringGroupsData, $start, $limit, true); // paginate array
+//         }
+//             if(!empty($ringGroupsData))
+//             {
+//                 return array(
+//                     'success'=> 'true',
+//                     'message'=> 'Ring Group detail.',
+//                     'data'=> $ringGroupsData
+//                 );
+//             }
+//             return array(
+//                 'success'=> 'false',
+//                 'message'=> 'Ring Group not created.',
+//                 'data' => array()
+//             );
+//         }
+//         catch (Exception $e)
+//         {
+//             Log::error("Error in ringGroupDetail: " . $e->getMessage(), ['exception' => $e]);
+//             return [
+//                 'success' => false, // Return actual boolean false
+//                 'message' => 'Oops! Something failed.',
+//                 'errors'  => [$e->getMessage()]
+//             ];
+//         }
+//     }
+public function ringGroupDetail($request)
+{
+    try {
+        $data = [];
+        $searchConditions = [];
+
+        // If `ring_id` is passed, filter by it
+        if ($request->has('ring_id') && is_numeric($request->input('ring_id'))) {
+            $searchConditions[] = 'id = :id';
+            $data['id'] = $request->input('ring_id');
         }
-            if(!empty($ringGroupsData))
-            {
-                return array(
-                    'success'=> 'true',
-                    'message'=> 'Ring Group detail.',
-                    'data'=> $ringGroupsData
-                );
-            }
-            return array(
-                'success'=> 'false',
-                'message'=> 'Ring Group not created.',
-                'data' => array()
-            );
+
+        // If `search` is passed, add search filter (on name column as example)
+        if ($request->filled('search')) {
+            $searchConditions[] = 'title LIKE :search';
+            $data['search'] = '%' . $request->input('search') . '%';
         }
-        catch (Exception $e)
-        {
-            Log::error("Error in ringGroupDetail: " . $e->getMessage(), ['exception' => $e]);
+
+        $tableName = "`" . $this->table . "`";
+        $whereClause = !empty($searchConditions) ? " WHERE " . implode(" AND ", $searchConditions) : '';
+
+        // Count query
+        $sqlCount = "SELECT count(*) as rowCount FROM $tableName $whereClause";
+        $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->select($sqlCount, $data);
+        $recCount = $recordCount[0]->rowCount;
+
+        if ($recCount == 0) {
             return [
-                'success' => false, // Return actual boolean false
-                'message' => 'Oops! Something failed.',
-                'errors'  => [$e->getMessage()]
+                'success' => true,
+                'message' => 'Record not found.',
+                'data'    => [],
+                'total'   => 0
             ];
         }
+
+        // Fetch records
+        $sql = "SELECT * FROM $tableName $whereClause";
+        $records = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+        $ringGroupsData = (array) $records;
+
+        // Extension processing
+        foreach ($ringGroupsData as $key_ext => $ext) {
+            $array_extension = [];
+            $exten = str_replace('SIP/', '', $ext->extensions ?? '');
+            $replace = str_replace('-', '&', $exten);
+            $extension = array_filter(array_unique(explode('&', $replace)));
+
+            foreach ($extension as $check) {
+                if (!empty($check) && is_numeric($check)) {
+                    $userSql = "SELECT * FROM users WHERE extension = :ext1 OR alt_extension = :ext2 LIMIT 1";
+                    $userRecord = DB::connection('master')->selectOne($userSql, [
+                        'ext1' => $check,
+                        'ext2' => $check
+                    ]);
+
+                    if (!empty($userRecord)) {
+                        $array_extension[] = $userRecord->first_name . ' ' . $userRecord->last_name . '-' . $check;
+                    }
+                }
+            }
+
+            $ringGroupsData[$key_ext]->extension_name = implode(',', $array_extension);
+        }
+
+        // Manual pagination using array_slice
+        $start = (int) $request->input('start', 0);
+        $limit = (int) $request->input('limit', 10);
+        $paginatedData = array_slice($ringGroupsData, $start, $limit);
+
+        return [
+            'success' => true,
+            'message' => 'Ring Group detail.',
+            'data'    => $paginatedData,
+            'total'   => $recCount,
+            'start'   => $start,
+            'limit'   => $limit
+        ];
+    } catch (\Exception $e) {
+        return [
+            'success' => false,
+            'message' => 'Oops! Something failed.',
+            'errors'  => [$e->getMessage()]
+        ];
     }
+}
+
     /*
      *Update dnc details
      *@param object $request
