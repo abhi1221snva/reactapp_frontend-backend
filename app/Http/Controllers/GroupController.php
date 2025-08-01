@@ -46,30 +46,86 @@ class GroupController extends Controller
      *      )
      * )
      */
-    public function list(Request $request)
-    {
-        try {
-            $clientId = $request->auth->parent_id;
-            $extGroups = [];
-            if ($request->auth->level < 7) {
-                if (!empty($request->auth->groups)) {
-                    $extGroups = ExtensionGroup::on("mysql_$clientId")->whereIn("id", $request->auth->groups)->get()->all();
-                }
-            } else {
-                $extGroups = ExtensionGroup::on("mysql_$clientId")->where(["is_deleted" => 0])->get()->all();
-            }
+    // public function list(Request $request)
+    // {
+    //     try {
+    //         $clientId = $request->auth->parent_id;
+    //         $extGroups = [];
+    //         if ($request->auth->level < 7) {
+    //             if (!empty($request->auth->groups)) {
+    //                 $extGroups = ExtensionGroup::on("mysql_$clientId")->whereIn("id", $request->auth->groups)->get()->all();
+    //             }
+    //         } else {
+    //             $extGroups = ExtensionGroup::on("mysql_$clientId")->where(["is_deleted" => 0])->get()->all();
+    //         }
             
-        // Apply pagination if present
+    //     // Apply pagination if present
+    //     if ($request->has(['start', 'limit'])) {
+    //         $start = (int)$request->input('start');
+    //         $limit = (int)$request->input('limit');
+    //         $extGroups = array_slice($extGroups, $start, $limit, true); // paginate array
+    //     }
+    //         return $this->successResponse("Extension Groups", $extGroups);
+    //     } catch (\Throwable $exception) {
+    //         return $this->failResponse("Failed to list extension groups", [$exception->getMessage()], $exception, $exception->getCode());
+    //     }
+    // }
+public function list(Request $request)
+{
+    try {
+        $clientId = $request->auth->parent_id;
+        $extGroups = [];
+
+        // Step 1: Fetch all extension groups based on user level
+        if ($request->auth->level < 7) {
+            if (!empty($request->auth->groups)) {
+                $extGroups = ExtensionGroup::on("mysql_$clientId")
+                    ->whereIn("id", $request->auth->groups)
+                    ->where("is_deleted", 0)
+                    ->get()
+                    ->toArray();
+            }
+        } else {
+            $extGroups = ExtensionGroup::on("mysql_$clientId")
+                ->where("is_deleted", 0)
+                ->get()
+                ->toArray();
+        }
+
+        // Step 2: Apply search filter (case-insensitive)
+        if ($request->filled('search')) {
+            $search = strtolower($request->input('search'));
+
+            $extGroups = array_filter($extGroups, function ($group) use ($search) {
+                return str_contains(strtolower($group['title'] ?? ''), $search);
+            });
+        }
+
+        // Step 3: Save total before pagination
+        $total = count($extGroups);
+
+        // Step 4: Apply pagination if start and limit exist
         if ($request->has(['start', 'limit'])) {
-            $start = (int)$request->input('start');
-            $limit = (int)$request->input('limit');
-            $extGroups = array_slice($extGroups, $start, $limit, true); // paginate array
+            $start = (int) $request->input('start', 0);
+            $limit = (int) $request->input('limit', 10);
+            $extGroups = array_slice($extGroups, $start, $limit);
         }
-            return $this->successResponse("Extension Groups", $extGroups);
-        } catch (\Throwable $exception) {
-            return $this->failResponse("Failed to list extension groups", [$exception->getMessage()], $exception, $exception->getCode());
-        }
+
+        // Step 5: Return data with total
+        return response()->json([
+            'success' => true,
+            'message' => 'Extension Groups',
+            'data' => array_values($extGroups),
+            'total' => $total,
+        ]);
+    } catch (\Throwable $exception) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to list extension groups',
+            'errors' => [$exception->getMessage()],
+        ], 500);
     }
+}
 
     /**
      * @OA\Get(
