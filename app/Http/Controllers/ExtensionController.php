@@ -13,6 +13,8 @@ use Illuminate\Validation\Rule;
 use App\Model\User;
 use Illuminate\Support\Facades\Log;
 
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
 class ExtensionController extends Controller
 {
@@ -31,32 +33,32 @@ class ExtensionController extends Controller
         $this->model = $extension;
     }
 
-   /**
- * @OA\Get(
- *      path="/extension",
- *      summary="List extensions",
- *      tags={"Extensions"},
- *      security={{"Bearer":{}}},
- *      @OA\Parameter(
- *          name="start",
- *          in="query",
- *          description="Start index for pagination",
- *          required=false,
- *          @OA\Schema(type="integer", default=0)
- *      ),
- *      @OA\Parameter(
- *          name="limit",
- *          in="query",
- *          description="Limit number of records returned",
- *          required=false,
- *          @OA\Schema(type="integer", default=10)
- *      ),
- *      @OA\Response(
- *          response=200,
- *          description="extension data"
- *      )
- * )
- */
+    /**
+     * @OA\Get(
+     *      path="/extension",
+     *      summary="List extensions",
+     *      tags={"Extensions"},
+     *      security={{"Bearer":{}}},
+     *      @OA\Parameter(
+     *          name="start",
+     *          in="query",
+     *          description="Start index for pagination",
+     *          required=false,
+     *          @OA\Schema(type="integer", default=0)
+     *      ),
+     *      @OA\Parameter(
+     *          name="limit",
+     *          in="query",
+     *          description="Limit number of records returned",
+     *          required=false,
+     *          @OA\Schema(type="integer", default=10)
+     *      ),
+     *      @OA\Response(
+     *          response=200,
+     *          description="extension data"
+     *      )
+     * )
+     */
 
     public function list(Request $request)
     {
@@ -130,29 +132,29 @@ class ExtensionController extends Controller
      *     tags={"Extensions"},
      *     security={{"Bearer":{}}},
      *     @OA\RequestBody(
- *         required=false,
- *         @OA\JsonContent(
- *             type="object",
- *    * @OA\Property(
+     *         required=false,
+     *         @OA\JsonContent(
+     *             type="object",
+     *    * @OA\Property(
      * property="extension_id",
      * type="integer",
      * example=1,
      * description="ID of the extension to fetch (optional, for single detail)"
      * ),
- *             @OA\Property(
- *                 property="start",
- *                 type="integer",
- *                 default=0,
- *                 description="Start index for pagination"
- *             ),
- *             @OA\Property(
- *                 property="limit",
- *                 type="integer",
- *                 default=10,
- *                 description="Limit number of records returned"
- *             )
- *         )
- *     ),
+     *             @OA\Property(
+     *                 property="start",
+     *                 type="integer",
+     *                 default=0,
+     *                 description="Start index for pagination"
+     *             ),
+     *             @OA\Property(
+     *                 property="limit",
+     *                 type="integer",
+     *                 default=10,
+     *                 description="Limit number of records returned"
+     *             )
+     *         )
+     *     ),
      *     @OA\Response(
      *         response=200,
      *         description="extension-list details retrieved successfully",
@@ -201,7 +203,7 @@ class ExtensionController extends Controller
         $users = array_merge($users_all, $users_admin);
         return $this->successResponse("Users List", $users);
     }
-        /**
+    /**
      * @OA\Get(
      *     path="/users-list-new",
      *     summary="Retrieve Users List",
@@ -230,40 +232,40 @@ class ExtensionController extends Controller
      *     )
      * )
      */
-  public function getExtensionListCRMNew(Request $request)
-{
-    $clientId = $request->auth->parent_id;
+    public function getExtensionListCRMNew(Request $request)
+    {
+        $clientId = $request->auth->parent_id;
 
-    // Get users with roles
-    $users_all = User::join('roles', 'users.role', '=', 'roles.id')
-        ->where('users.parent_id', $clientId)
-        ->orderBy('users.id', 'DESC')
-        ->get(['users.*', 'roles.name as role_name', 'roles.level']);
+        // Get users with roles
+        $users_all = User::join('roles', 'users.role', '=', 'roles.id')
+            ->where('users.parent_id', $clientId)
+            ->orderBy('users.id', 'DESC')
+            ->get(['users.*', 'roles.name as role_name', 'roles.level']);
 
-    // Get admin-level users
-    $users_admin = User::join('roles', 'users.role', '=', 'roles.id')
-        ->where(function ($query) {
-            $query->where('users.user_level', '9')
-                  ->orWhere('users.user_level', '11');
-        })
-        ->orderBy('users.id', 'DESC')
-        ->get(['users.*', 'roles.name as role_name', 'roles.level']);
+        // Get admin-level users
+        $users_admin = User::join('roles', 'users.role', '=', 'roles.id')
+            ->where(function ($query) {
+                $query->where('users.user_level', '9')
+                    ->orWhere('users.user_level', '11');
+            })
+            ->orderBy('users.id', 'DESC')
+            ->get(['users.*', 'roles.name as role_name', 'roles.level']);
 
-    // Combine both groups
-    $all_users = $users_all->merge($users_admin);
+        // Combine both groups
+        $all_users = $users_all->merge($users_admin);
 
-    // Append 'secret' from user_extensions where extension = username
-    $users_with_secret = $all_users->map(function ($user) {
-        $userExtension = \DB::table('user_extensions')
-            ->where('username', $user->extension)
-            ->first();
+        // Append 'secret' from user_extensions where extension = username
+        $users_with_secret = $all_users->map(function ($user) {
+            $userExtension = \DB::table('user_extensions')
+                ->where('username', $user->extension)
+                ->first();
 
-        $user->secret = $userExtension ? $userExtension->secret : null;
-        return $user;
-    });
+            $user->secret = $userExtension ? $userExtension->secret : null;
+            return $user;
+        });
 
-return $this->successResponse("Users List", $users_with_secret->toArray());
-}
+        return $this->successResponse("Users List", $users_with_secret->toArray());
+    }
 
     /*
      * Add extension
@@ -778,6 +780,73 @@ return $this->successResponse("Users List", $users_with_secret->toArray());
      * )
      */
     function saveNewExtension()
+    {
+        $call_forward = $this->request->call_forward;
+        $twinning = $this->request->twinning;
+        $follow_me = $this->request->follow_me;
+        $country_code = $this->request->country_code;
+
+        $rules = [
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'string|min:1|max:255',
+            'email' => 'required|email|unique:master.users',
+            'password' => 'required|string|min:4',
+            'profile_pic' => ["sometimes", "required", "string", "min:1", "regex:/^.+\.(jpg|png)$/"],
+            'extension' => 'required|int|min:1000|max:9999',
+            'rpm' => 'sometimes|required|string|min:1|max:100',
+            'vm_pin' => 'sometimes|required|int',
+            'voicemail' => 'sometimes|required|int',
+            'voicemail_greeting' => 'sometimes|required|string|min:1|max:255',
+            'asterisk_server_id' => 'required|int',
+            'voicemail_send_to_email' => 'sometimes|required|int',
+            'follow_me' => 'sometimes|required|int',
+            'call_forward' => 'sometimes|required|int',
+            'dialpad' => 'sometimes|required|string|min:1|max:100',
+            'agent_voice_id' => 'sometimes|required|string|min:1|max:255',
+            'cli_setting' => 'sometimes|required|int',
+            'cli' => 'required_if:cli_setting,1|min:1|string|max:14',
+            'local_ip' => 'sometimes|required|ip',
+            'public_ip' => 'sometimes|required|ip',
+            'phone_status' => 'sometimes|required|string|min:1|max:255',
+            'status' => 'sometimes|required|int',
+            'is_deleted' => 'sometimes|required|int',
+            'allowed_ip' => 'sometimes|required|ip',
+            'twinning' => 'sometimes|required|string|min:1|max:3',
+            'directory_name' => 'sometimes|required|string|min:1|max:50',
+            'extension_type' => 'sometimes|required|string|min:1|max:3',
+            'vm_drop' => 'sometimes|required|int',
+            'vm_drop_location' => 'required_if:vm_drop,1|min:1|string|max:255',
+            'timezone' => 'required',
+            'mobile' => Rule::requiredIf(function () use ($call_forward, $twinning, $follow_me) {
+                return ($call_forward == 1 || $twinning == 1 || $follow_me == 1);
+            }),
+        ];
+
+        $messages = [
+            'email.required' => 'The email field is mandatory.',
+            'email.email' => 'Please enter a valid email address.',
+            'email.unique' => 'This email is already registered. Please use another.',
+            'extension.required' => "Extention already assigned"
+        ];
+
+        try {
+            Validator::make($this->request->all(), $rules, $messages)->validate();
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'errors' => $e->errors()
+            ], 422);
+        }
+
+        Log::info('Request data:', $this->request->all());
+        $response = $this->model->newExtensionSave($this->request);
+
+        return response()->json([
+            'success' => true,
+            'data' => $response
+        ]);
+    }
+    function saveNewExtension_old()
     {
         $call_forward = $this->request->call_forward;
         $twinning = $this->request->twinning;
