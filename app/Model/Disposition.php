@@ -18,48 +18,115 @@ class Disposition extends Model
      *@param integer $id
      *@return array
      */
+    // public function dispositionDetail($request)
+    // {
+    //     $searchStr = array('is_deleted = :is_deleted');
+    //     $data['is_deleted'] = 0;
+    //     if($request->has('disposition_id') && is_numeric($request->input('disposition_id')))
+    //     {
+    //         array_push($searchStr, 'id = :id');
+    //         $data['id'] = $request->input('disposition_id');
+    //     }
+    //     //Fetch data from master
+    //     $sql = "SELECT * FROM disposition  WHERE ".implode(" AND ", $searchStr);;
+    //     //$record =  DB::connection('master')->select($sql, $data);
+    //     $record =  DB::connection('master')->select($sql, $data);
+    //     $dataMaster = (array)$record;
+
+    //     //Fetch data from client
+    //     $sql = "SELECT * FROM disposition  WHERE ".implode(" AND ", $searchStr)." order by title";
+    //     $record =  DB::connection('mysql_'.$request->auth->parent_id)->select($sql, $data);
+    //     $dataClient = (array)$record;
+    //     //$data = array_merge($dataMaster, $dataClient);
+    //     $data = array_merge($dataClient);
+        
+    //     // Apply pagination if present
+    //     if ($request->has(['start', 'limit'])) {
+    //         $start = (int)$request->input('start');
+    //         $limit = (int)$request->input('limit');
+    //         $data = array_slice($data, $start, $limit, true); // paginate array
+    //     }
+    //     if(!empty($data))
+    //     {
+    //         return array(
+    //             'success'=> 'true',
+    //             'message'=> 'Dispositions detail.',
+    //             'data'   => $data
+    //         );
+    //     }
+    //     return array(
+    //         'success'=> 'false',
+    //         'message'=> 'Dispositions not created.',
+    //         'data'   => array()
+    //     );
+    // }
     public function dispositionDetail($request)
-    {
-        $searchStr = array('is_deleted = :is_deleted');
+{
+    try {
+        $searchStr = ['is_deleted = :is_deleted'];
         $data['is_deleted'] = 0;
-        if($request->has('disposition_id') && is_numeric($request->input('disposition_id')))
-        {
-            array_push($searchStr, 'id = :id');
+
+        // Filter by disposition ID
+        if ($request->has('disposition_id') && is_numeric($request->input('disposition_id'))) {
+            $searchStr[] = 'id = :id';
             $data['id'] = $request->input('disposition_id');
         }
-        //Fetch data from master
-        $sql = "SELECT * FROM disposition  WHERE ".implode(" AND ", $searchStr);;
-        //$record =  DB::connection('master')->select($sql, $data);
-        $record =  DB::connection('master')->select($sql, $data);
-        $dataMaster = (array)$record;
 
-        //Fetch data from client
-        $sql = "SELECT * FROM disposition  WHERE ".implode(" AND ", $searchStr)." order by title";
-        $record =  DB::connection('mysql_'.$request->auth->parent_id)->select($sql, $data);
-        $dataClient = (array)$record;
-        //$data = array_merge($dataMaster, $dataClient);
-        $data = array_merge($dataClient);
-        
+        // Filter by search keyword (e.g. title or description)
+        if ($request->has('search') && !empty($request->input('search'))) {
+            $searchKeyword = '%' . $request->input('search') . '%';
+            $searchStr[] = '(title LIKE :search)';
+            $data['search'] = $searchKeyword;
+        }
+
+        $whereClause = implode(" AND ", $searchStr);
+
+        // Fetch from master DB
+        $sqlMaster = "SELECT * FROM disposition WHERE $whereClause";
+        $masterRecords = DB::connection('master')->select($sqlMaster, $data);
+
+        // Fetch from client DB
+        $sqlClient = "SELECT * FROM disposition WHERE $whereClause ORDER BY title";
+        $clientRecords = DB::connection('mysql_' . $request->auth->parent_id)->select($sqlClient, $data);
+
+        // Merge both
+        $mergedData = array_merge((array)$clientRecords);
+
+        // Total before pagination
+        $total = count($mergedData);
+
         // Apply pagination if present
-        if ($request->has(['start', 'limit'])) {
+        if ($request->has('start') && $request->has('limit')) {
             $start = (int)$request->input('start');
             $limit = (int)$request->input('limit');
-            $data = array_slice($data, $start, $limit, true); // paginate array
+            $mergedData = array_slice($mergedData, $start, $limit, true);
         }
-        if(!empty($data))
-        {
-            return array(
-                'success'=> 'true',
-                'message'=> 'Dispositions detail.',
-                'data'   => $data
-            );
+
+        if (!empty($mergedData)) {
+            return [
+                'success' => 'true',
+                'message' => 'Dispositions detail.',
+                'data'    => $mergedData,
+                'total'   => $total,
+            ];
         }
-        return array(
-            'success'=> 'false',
-            'message'=> 'Dispositions not created.',
-            'data'   => array()
-        );
+
+        return [
+            'success' => 'false',
+            'message' => 'No dispositions found.',
+            'data'    => [],
+            'total'   => 0,
+        ];
+    } catch (\Exception $e) {
+        return [
+            'success' => 'false',
+            'message' => 'Something went wrong: ' . $e->getMessage(),
+            'data'    => [],
+            'total'   => 0,
+        ];
     }
+}
+
 
     /*
      *Update disposition details
