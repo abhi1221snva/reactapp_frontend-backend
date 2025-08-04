@@ -45,12 +45,6 @@ class RingGroupController extends Controller
      * default=10,
      * description="Number of records to return (limit of the returned array)"
      * ),
-     *    * @OA\Property(
-     * property="ring_id",
-     * type="integer",
-     * example=1,
-     * description="ID of the ringgroup to fetch (optional, for single detail)"
-     * ),
      * )
      * ),
      *     @OA\Response(
