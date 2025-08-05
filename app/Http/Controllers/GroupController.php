@@ -229,7 +229,14 @@ class GroupController extends Controller
      *             @OA\Property(property="data", type="object",
      *                 @OA\Property(property="id", type="integer", example=1),
      *                 @OA\Property(property="title", type="string", example="Sales Support Group"),
-     *                 @OA\Property(property="status", type="boolean", example=true)
+     *                 @OA\Property(property="status", type="boolean", example=true),
+     * *                 @OA\Property(
+*                     property="extensions",
+*                     type="array",
+*                     @OA\Items(type="string"),
+*                     example={"31006", "38187"}
+*                 )
+     *                  
      *             )
      *         )
      *     ),
