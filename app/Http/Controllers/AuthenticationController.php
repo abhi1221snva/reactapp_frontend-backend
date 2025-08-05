@@ -155,7 +155,7 @@ class AuthenticationController extends Controller
                 }
 
                 //call google authenticator //
-                if ($data['is_2fa_phone_enabled'] == 1) {
+if (!empty($data['is_2fa_phone_enabled']) && $data['is_2fa_phone_enabled'] == 1) {
                     //  $otp_value = mt_rand(100000, 999999);
                     $otp_value = 123456;
                     $otp = new OtpVerification();
@@ -173,7 +173,7 @@ class AuthenticationController extends Controller
 
                 //call when enable_2fa is active
 
-                if ($data['enable_2fa'] == 1) {
+if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
                     if (empty($data['country_code'])) {
                         throw new RenderableException('Country Code not found for otp varification', [], 401);
                     }
