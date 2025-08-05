@@ -19,19 +19,19 @@ class GroupController extends Controller
      *      tags={"Extension Group"},
      *      security={{"Bearer":{}}},
      *        @OA\Parameter(
-    *          name="start",
-    *          in="query",
-    *          description="Start index for pagination",
-    *          required=false,
-    *          @OA\Schema(type="integer", default=0)
-    *      ),
-    *      @OA\Parameter(
-    *          name="limit",
-    *          in="query",
-    *          description="Limit number of records returned",
-    *          required=false,
-    *          @OA\Schema(type="integer", default=10)
-    *      ),
+     *          name="start",
+     *          in="query",
+     *          description="Start index for pagination",
+     *          required=false,
+     *          @OA\Schema(type="integer", default=0)
+     *      ),
+     *      @OA\Parameter(
+     *          name="limit",
+     *          in="query",
+     *          description="Limit number of records returned",
+     *          required=false,
+     *          @OA\Schema(type="integer", default=10)
+     *      ),
      *      @OA\Response(
      *          response="200",
      *          description="Group list"
@@ -58,7 +58,7 @@ class GroupController extends Controller
     //         } else {
     //             $extGroups = ExtensionGroup::on("mysql_$clientId")->where(["is_deleted" => 0])->get()->all();
     //         }
-            
+
     //     // Apply pagination if present
     //     if ($request->has(['start', 'limit'])) {
     //         $start = (int)$request->input('start');
@@ -70,62 +70,62 @@ class GroupController extends Controller
     //         return $this->failResponse("Failed to list extension groups", [$exception->getMessage()], $exception, $exception->getCode());
     //     }
     // }
-public function list(Request $request)
-{
-    try {
-        $clientId = $request->auth->parent_id;
-        $extGroups = [];
+    public function list(Request $request)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            $extGroups = [];
 
-        // Step 1: Fetch all extension groups based on user level
-        if ($request->auth->level < 7) {
-            if (!empty($request->auth->groups)) {
+            // Step 1: Fetch all extension groups based on user level
+            if ($request->auth->level < 7) {
+                if (!empty($request->auth->groups)) {
+                    $extGroups = ExtensionGroup::on("mysql_$clientId")
+                        ->whereIn("id", $request->auth->groups)
+                        ->where("is_deleted", 0)
+                        ->get()
+                        ->toArray();
+                }
+            } else {
                 $extGroups = ExtensionGroup::on("mysql_$clientId")
-                    ->whereIn("id", $request->auth->groups)
                     ->where("is_deleted", 0)
                     ->get()
                     ->toArray();
             }
-        } else {
-            $extGroups = ExtensionGroup::on("mysql_$clientId")
-                ->where("is_deleted", 0)
-                ->get()
-                ->toArray();
+
+            // Step 2: Apply search filter (case-insensitive)
+            if ($request->filled('search')) {
+                $search = strtolower($request->input('search'));
+
+                $extGroups = array_filter($extGroups, function ($group) use ($search) {
+                    return str_contains(strtolower($group['title'] ?? ''), $search);
+                });
+            }
+
+            // Step 3: Save total before pagination
+            $total = count($extGroups);
+
+            // Step 4: Apply pagination if start and limit exist
+            if ($request->has(['start', 'limit'])) {
+                $start = (int) $request->input('start', 0);
+                $limit = (int) $request->input('limit', 10);
+                $extGroups = array_slice($extGroups, $start, $limit);
+            }
+
+            // Step 5: Return data with total
+            return response()->json([
+                'success' => true,
+                'message' => 'Extension Groups',
+                'data' => array_values($extGroups),
+                'total' => $total,
+            ]);
+        } catch (\Throwable $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to list extension groups',
+                'errors' => [$exception->getMessage()],
+            ], 500);
         }
-
-        // Step 2: Apply search filter (case-insensitive)
-        if ($request->filled('search')) {
-            $search = strtolower($request->input('search'));
-
-            $extGroups = array_filter($extGroups, function ($group) use ($search) {
-                return str_contains(strtolower($group['title'] ?? ''), $search);
-            });
-        }
-
-        // Step 3: Save total before pagination
-        $total = count($extGroups);
-
-        // Step 4: Apply pagination if start and limit exist
-        if ($request->has(['start', 'limit'])) {
-            $start = (int) $request->input('start', 0);
-            $limit = (int) $request->input('limit', 10);
-            $extGroups = array_slice($extGroups, $start, $limit);
-        }
-
-        // Step 5: Return data with total
-        return response()->json([
-            'success' => true,
-            'message' => 'Extension Groups',
-            'data' => array_values($extGroups),
-            'total' => $total,
-        ]);
-    } catch (\Throwable $exception) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to list extension groups',
-            'errors' => [$exception->getMessage()],
-        ], 500);
     }
-}
 
     /**
      * @OA\Get(
@@ -184,59 +184,70 @@ public function list(Request $request)
 
     /**
      * @OA\Patch(
-     *      path="/extension-group/{id}",
-     *      summary="Update Extension Group",
-     *      tags={"Extension Group"},
-     *      security={{"Bearer":{}}},
-     *      @OA\Parameter(
-     *          name="id",
-     *          description="Id",
-     *          required=true,
-     *          in="path",
-     *          @OA\Schema(
-     *              type="integer"
-     *          )
-     *      ),
-     *      @OA\RequestBody(
-     *          description="Extension group properties",
-     *          required=true,
-     *          content={
-     *              @OA\MediaType(
-     *                  mediaType="application/json",
-     *                  @OA\Schema(
-     *                      type="object",
-     *                      example={"title":"group title", "status":1},
-     *                      required={},
-     *                      @OA\Property(
-     *                          property="title",
-     *                          type="string",
-     *                      ),
-     *                      @OA\Property(
-     *                          property="status",
-     *                          type="boolean"
-     *                      )
-     *                  )
-     *              )
-     *          }
-     *      ),
-     *      @OA\Response(
-     *          response="200",
-     *          description="Updated extension group data"
-     *      ),
-     *      @OA\Response(
-     *          response="401",
-     *          description="Access denied"
-     *      ),
-     *      @OA\Response(
-     *          response="403",
-     *          description="Forbidden"
-     *      ),
-     *      @OA\Response(
-     *          response="404",
-     *          description="No extension group with id xx"
-     *      )
+     *     path="/extension-group/{id}",
+     *     summary="Update Extension Group",
+     *     tags={"Extension Group"},
+     *     security={{"Bearer":{}}},
+     *     @OA\Parameter(
+     *         name="id",
+     *         in="path",
+     *         required=true,
+     *         description="Extension Group ID",
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         description="Extension group update data",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             required={"title", "status", "extensions"},
+     *             @OA\Property(
+     *                 property="title",
+     *                 type="string",
+     *                 example="Sales Support Group"
+     *             ),
+     *             @OA\Property(
+     *                 property="status",
+     *                 type="boolean",
+     *                 example=true
+     *             ),
+     *             @OA\Property(
+     *                 property="extensions",
+     *                 type="array",
+     *                 @OA\Items(type="string"),
+     *                 example={"31006,38187"}
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Updated extension group data",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="success", type="boolean", example=true),
+     *             @OA\Property(property="message", type="string", example="Extension group updated"),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="id", type="integer", example=1),
+     *                 @OA\Property(property="title", type="string", example="Sales Support Group"),
+     *                 @OA\Property(property="status", type="boolean", example=true)
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=401,
+     *         description="Access denied"
+     *     ),
+     *     @OA\Response(
+     *         response=403,
+     *         description="Forbidden"
+     *     ),
+     *     @OA\Response(
+     *         response=404,
+     *         description="No extension group with id XX"
+     *     )
      * )
      */
+
     public function patch(Request $request, $id)
     {
         $this->validate($request, [
@@ -259,16 +270,15 @@ public function list(Request $request)
 
                 foreach ($extension as $value) {
 
-                    $allTypeExtension = User::where('extension',$value)->first();
+                    $allTypeExtension = User::where('extension', $value)->first();
                     $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
                     $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, array('extension' => $value, 'group_id' => $id));
 
-                     $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
+                    $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
                     $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, array('extension' => $allTypeExtension->alt_extension, 'group_id' => $id));
 
-                     $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
+                    $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
                     $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, array('extension' => $allTypeExtension->app_extension, 'group_id' => $id));
-
                 }
 
                 return $this->successResponse("Extension group updated", $extGroup->toArray());
@@ -320,7 +330,7 @@ public function list(Request $request)
         try {
             $extGroup = ExtensionGroup::on("mysql_" . $request->auth->parent_id)->findOrFail($id);
             if (!$extGroup->is_deleted) {
-                $extGroup->title = $extGroup->title ."| Deleted on " . date("Y-m-d H:i:s");
+                $extGroup->title = $extGroup->title . "| Deleted on " . date("Y-m-d H:i:s");
                 $extGroup->is_deleted = 1;
                 $extGroup->saveOrFail();
                 return $this->successResponse("Extension group deleted", $extGroup->toArray());
@@ -336,80 +346,94 @@ public function list(Request $request)
 
     /**
      * @OA\Put(
-     *      path="/extension-group",
-     *      summary="Add Extension Group",
-     *      tags={"Extension Group"},
-     *      security={{"Bearer":{}}},
-     *      @OA\RequestBody(
-     *          description="Extension group properties",
-     *          required=true,
-     *          content={
-     *              @OA\MediaType(
-     *                  mediaType="application/json",
-     *                  @OA\Schema(
-     *                      type="object",
-     *                      example={"title":"group title"},
-     *                      required={"title"},
-     *                      @OA\Property(
-     *                          property="title",
-     *                          type="string",
-     *                      )
-     *                  )
-     *              )
-     *          }
-     *      ),
-     *      @OA\Response(
-     *          response="200",
-     *          description="Extension group created"
-     *      ),
-     *      @OA\Response(
-     *          response="401",
-     *          description="Access denied"
-     *      ),
-     *      @OA\Response(
-     *          response="403",
-     *          description="Forbidden"
-     *      )
+     *     path="/extension-group",
+     *     summary="Create Extension Group",
+     *     tags={"Extension Group"},
+     *     security={{"Bearer":{}}},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         description="Create a new extension group with optional extensions",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             required={"title"},
+     *             @OA\Property(
+     *                 property="title",
+     *                 type="string",
+     *                 example="Support Group"
+     *             ),
+     *             @OA\Property(
+     *                 property="extensions",
+     *                 type="array",
+     *                 @OA\Items(type="string"),
+     *                 example={"1010", "2020", "3030"}
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Extension group added successfully",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="success", type="boolean", example=true),
+     *             @OA\Property(property="message", type="string", example="Extension group added successfully"),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="id", type="integer", example=1),
+     *                 @OA\Property(property="title", type="string", example="Support Group"),
+     *                 @OA\Property(property="status", type="boolean", example=true)
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=400,
+     *         description="Validation error"
+     *     ),
+     *     @OA\Response(
+     *         response=401,
+     *         description="Unauthorized"
+     *     ),
+     *     @OA\Response(
+     *         response=500,
+     *         description="Failed to add new extension group"
+     *     )
      * )
      */
     public function add(Request $request)
-{
-  $this->validate($request, [
-    'title' => 'required|string|max:255',
-    'extensions' => 'nullable|array',
-    'extensions.*' => 'nullable|string',
-]);
+    {
+        $this->validate($request, [
+            'title' => 'required|string|max:255',
+            'extensions' => 'nullable|array',
+            'extensions.*' => 'nullable|string',
+        ]);
 
-    try {
-        $extensionGroup = new ExtensionGroup();
-        $extensionGroup->setConnection("mysql_" . $request->auth->parent_id);
-        $extensionGroup->title = $request->get('title');
+        try {
+            $extensionGroup = new ExtensionGroup();
+            $extensionGroup->setConnection("mysql_" . $request->auth->parent_id);
+            $extensionGroup->title = $request->get('title');
 
-        $extensionGroup->saveOrFail();
-if(!empty($request->get('extensions'))){
-        $extensionIds = $request->get('extensions');
-        $id = $extensionGroup->id; // Assign the generated id to $id
+            $extensionGroup->saveOrFail();
+            if (!empty($request->get('extensions'))) {
+                $extensionIds = $request->get('extensions');
+                $id = $extensionGroup->id; // Assign the generated id to $id
 
-        foreach ($extensionIds as $extensionId) {
+                foreach ($extensionIds as $extensionId) {
 
-                    $allTypeExtension = User::where('extension',$extensionId)->first();
+                    $allTypeExtension = User::where('extension', $extensionId)->first();
 
-            $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
-            $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, ['extension' => $extensionId, 'group_id' => $id]);
+                    $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
+                    $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, ['extension' => $extensionId, 'group_id' => $id]);
 
-            $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
-            $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, ['extension' => $allTypeExtension->alt_extension, 'group_id' => $id]);
+                    $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
+                    $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, ['extension' => $allTypeExtension->alt_extension, 'group_id' => $id]);
 
-            $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
-            $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, ['extension' => $allTypeExtension->app_extension, 'group_id' => $id]);
+                    $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
+                    $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, ['extension' => $allTypeExtension->app_extension, 'group_id' => $id]);
+                }
+            }
+            return $this->successResponse("Extension group added successfully", $extensionGroup->toArray());
+        } catch (\Throwable $exception) {
+            return $this->failResponse("Failed to add new extension group", [$exception->getMessage()], $exception, 500);
         }
     }
-        return $this->successResponse("Extension group added successfully", $extensionGroup->toArray());
-        
-    } catch (\Throwable $exception) {
-        return $this->failResponse("Failed to add new extension group", [$exception->getMessage()], $exception, 500);
-    }
-}
 
     // public function add(Request $request)
     // {
@@ -421,7 +445,7 @@ if(!empty($request->get('extensions'))){
     //         $extensionGroup->setConnection("mysql_" . $request->auth->parent_id);
     //         $extensionGroup->title = $request->get("title");
     //         extension = $request->extensions;
-             
+
     //             //return $extension;
 
     //             foreach ($extension as $value) {
@@ -435,30 +459,85 @@ if(!empty($request->get('extensions'))){
     //         return $this->failResponse("Failed to add new extension group", [$exception->getMessage()], $exception, 500);
     //     }
     // }
-    function updateGroupStatus(Request $request) {
+
+    /**
+     * @OA\Post(
+     *     path="/status-update-group",
+     *     summary="Update Extension Group Status",
+     *     tags={"Extension Group"},
+     *     security={{"Bearer":{}}},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         description="Provide group ID and new status",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             required={"listId", "status"},
+     *             @OA\Property(
+     *                 property="listId",
+     *                 type="integer",
+     *                 example=1,
+     *                 description="ID of the extension group"
+     *             ),
+     *             @OA\Property(
+     *                 property="status",
+     *                 type="boolean",
+     *                 example=true,
+     *                 description="New status of the extension group (true for active, false for inactive)"
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Status update response",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="success", type="string", example="true"),
+     *             @OA\Property(property="status", type="string", example="true"),
+     *             @OA\Property(property="message", type="string", example="Group status updated successfully")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=400,
+     *         description="Status update failed",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="success", type="string", example="false"),
+     *             @OA\Property(property="status", type="string", example="false"),
+     *             @OA\Property(property="message", type="string", example="Status update failed")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=401,
+     *         description="Unauthorized"
+     *     )
+     * )
+     */
+
+    function updateGroupStatus(Request $request)
+    {
         $listId = $request->input('listId');
         $status = $request->input('status');
 
         $saveRecord = ExtensionGroup::on('mysql_' . $request->auth->parent_id)
-        ->where('id', $listId) // Use the actual listId received from the request
-        ->update(array('status' => $status));
-     
-        
-    // Log::debug('Received listId: ', ['listId' => $listId]);
-    // Log::debug('Received status: ', ['status' => $status]);
-    // Log::debug('Number of updated rows: ', ['saveRecord' => $saveRecord]);
-if ($saveRecord > 0) {
-    return response()->json([
-        'success'=>'true',
-        'status' => 'true',
-        'message' => 'Group status updated successfully'
-    ]);
-} else {
-    return response()->json([
-        'success'=>'false',
-        'status' => 'false',
-        'message' => 'Status  update failed'
-    ]);
+            ->where('id', $listId) // Use the actual listId received from the request
+            ->update(array('status' => $status));
+
+
+        // Log::debug('Received listId: ', ['listId' => $listId]);
+        // Log::debug('Received status: ', ['status' => $status]);
+        // Log::debug('Number of updated rows: ', ['saveRecord' => $saveRecord]);
+        if ($saveRecord > 0) {
+            return response()->json([
+                'success' => 'true',
+                'status' => 'true',
+                'message' => 'Group status updated successfully'
+            ]);
+        } else {
+            return response()->json([
+                'success' => 'false',
+                'status' => 'false',
+                'message' => 'Status  update failed'
+            ]);
         }
     }
 }

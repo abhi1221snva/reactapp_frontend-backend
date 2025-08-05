@@ -56,67 +56,66 @@ class Extension extends Model
      */
 
     public function extensionDetail(Request $request, int $extension_id = null)
-{
-    $data['parent_id'] = $request->auth->parent_id;
+    {
+        $data['parent_id'] = $request->auth->parent_id;
 
-    if ($extension_id) {
-        $user = User::findOrFail($extension_id);
-        $response = $user->toArray();
-        $extension = $response['extension'];
+        if ($extension_id) {
+            $user = User::findOrFail($extension_id);
+            $response = $user->toArray();
+            $extension = $response['extension'];
 
-        if (strlen($extension) == 4) {
-            $extension = $request->auth->parent_id . $extension;
-        }
+            if (strlen($extension) == 4) {
+                $extension = $request->auth->parent_id . $extension;
+            }
 
-        // Fetch extension group
-        $extensionGroupSql = "SELECT group_id FROM extension_group_map WHERE extension = :extension AND is_deleted = :is_deleted";
-        $extensionGroup = DB::connection('mysql_' . $request->auth->parent_id)->select($extensionGroupSql, [
-            'extension' => $extension,
-            'is_deleted' => 0
-        ]);
-        $response['group'] = $extensionGroup;
+            // Fetch extension group
+            $extensionGroupSql = "SELECT group_id FROM extension_group_map WHERE extension = :extension AND is_deleted = :is_deleted";
+            $extensionGroup = DB::connection('mysql_' . $request->auth->parent_id)->select($extensionGroupSql, [
+                'extension' => $extension,
+                'is_deleted' => 0
+            ]);
+            $response['group'] = $extensionGroup;
 
-        // Fetch server list
-        $serverSql = "SELECT asterisk_server.id, host AS ip_address, detail, domain, title_name 
+            // Fetch server list
+            $serverSql = "SELECT asterisk_server.id, host AS ip_address, detail, domain, title_name 
                       FROM client_server 
                       LEFT JOIN asterisk_server ON asterisk_server.id = client_server.ip_address 
                       WHERE client_server.client_id = :parent_id";
-        $serverList = DB::connection('master')->select($serverSql, [
-            'parent_id' => $request->auth->parent_id
-        ]);
-        $response['serverList'] = $serverList;
+            $serverList = DB::connection('master')->select($serverSql, [
+                'parent_id' => $request->auth->parent_id
+            ]);
+            $response['serverList'] = $serverList;
 
-        // Assigned package
-        $packageName = $user->getAssignedUserPackage();
-        if (!empty($packageName)) {
-            $response['assignedPackageKey'] = $packageName->package_key;
-            $response['assignedPackage'] = ucfirst($packageName->name) . ' - ' .
-                date('Y-m-d', strtotime($packageName->start_time)) . ' to ' .
-                date('Y-m-d', strtotime($packageName->end_time));
+            // Assigned package
+            $packageName = $user->getAssignedUserPackage();
+            if (!empty($packageName)) {
+                $response['assignedPackageKey'] = $packageName->package_key;
+                $response['assignedPackage'] = ucfirst($packageName->name) . ' - ' .
+                    date('Y-m-d', strtotime($packageName->start_time)) . ' to ' .
+                    date('Y-m-d', strtotime($packageName->end_time));
+            } else {
+                $response['assignedPackageKey'] = null;
+                $response['assignedPackage'] = null;
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Extension detail.',
+                'data' => $response,
+                'total_rows' => 1
+            ];
         } else {
-            $response['assignedPackageKey'] = null;
-            $response['assignedPackage'] = null;
-        }
+            $response = [];
+            $parentId = $request->auth->parent_id;
+            $status = 0;
+            $isDeleted = 0;
+            $totalRows = 0;
 
-        return [
-            'success' => true,
-            'message' => 'Extension detail.',
-            'data' => $response,
-            'total_rows' => 1
-        ];
+            if ($request->auth->level > 5) {
+                $orderBy = $request->get('orderBy', 'users.extension');
 
-    } else {
-        $response = [];
-        $parentId = $request->auth->parent_id;
-        $status = 0;
-        $isDeleted = 0;
-        $totalRows = 0;
-
-        if ($request->auth->level > 5) {
-            $orderBy = $request->get('orderBy', 'users.extension');
-
-            // Count query with user_level condition
-            $countSql = "SELECT COUNT(*) as total FROM users 
+                // Count query with user_level condition
+                $countSql = "SELECT COUNT(*) as total FROM users 
                          WHERE id IN (
                              SELECT user_id FROM permissions WHERE client_id = ?
                          ) 
@@ -124,11 +123,11 @@ class Extension extends Model
                          AND status = ? 
                          AND base_parent_id = ?
                          AND user_level < 9";
-            $countResult = DB::connection('master')->selectOne($countSql, [$parentId, $isDeleted, $status, $parentId]);
-            $totalRows = $countResult->total ?? 0;
+                $countResult = DB::connection('master')->selectOne($countSql, [$parentId, $isDeleted, $status, $parentId]);
+                $totalRows = $countResult->total ?? 0;
 
-            // Data query with user_level condition
-            $sql = "SELECT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
+                // Data query with user_level condition
+                $sql = "SELECT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
                     FROM users
                     LEFT JOIN user_extensions ON user_extensions.name = users.extension
                     WHERE users.id IN (
@@ -140,21 +139,20 @@ class Extension extends Model
                     AND users.user_level < 9
                     ORDER BY $orderBy";
 
-            $bindings = [$parentId, $isDeleted, $status, $parentId];
+                $bindings = [$parentId, $isDeleted, $status, $parentId];
 
-            if ($request->has(['start', 'limit'])) {
-                $start = (int)$request->input('start');
-                $limit = (int)$request->input('limit');
-                $sql .= " LIMIT ?, ?";
-                $bindings[] = $start;
-                $bindings[] = $limit;
-            }
+                if ($request->has(['start', 'limit'])) {
+                    $start = (int)$request->input('start');
+                    $limit = (int)$request->input('limit');
+                    $sql .= " LIMIT ?, ?";
+                    $bindings[] = $start;
+                    $bindings[] = $limit;
+                }
+            } else {
+                $totalRows = 1;
 
-        } else {
-            $totalRows = 1;
-
-            // Non-admin query with user_level condition
-            $sql = "SELECT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
+                // Non-admin query with user_level condition
+                $sql = "SELECT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
                     FROM users
                     LEFT JOIN user_extensions ON user_extensions.name = users.extension
                     WHERE users.parent_id = ?
@@ -165,35 +163,35 @@ class Extension extends Model
                     AND users.user_level < 9
                     ORDER BY users.extension";
 
-            $bindings = [$parentId, $request->auth->id, $isDeleted, $status, $parentId];
-        }
-
-        $record = DB::connection('master')->select($sql, $bindings);
-        foreach ($record as $res) {
-            if ($res->id == $request->auth->id) {
-                $response[0] = $res;
-            } else {
-                $response[] = $res;
+                $bindings = [$parentId, $request->auth->id, $isDeleted, $status, $parentId];
             }
-        }
 
-        if (!empty($response)) {
+            $record = DB::connection('master')->select($sql, $bindings);
+            foreach ($record as $res) {
+                if ($res->id == $request->auth->id) {
+                    $response[0] = $res;
+                } else {
+                    $response[] = $res;
+                }
+            }
+
+            if (!empty($response)) {
+                return [
+                    'success' => true,
+                    'total_rows' => $totalRows,
+                    'message' => 'Extension detail.',
+                    'data' => $response
+                ];
+            }
+
             return [
-                'success' => true,
-                'total_rows' => $totalRows,
-                'message' => 'Extension detail.',
-                'data' => $response
+                'success' => false,
+                'total_rows' => 0,
+                'message' => 'Extension not found',
+                'data' => [],
             ];
         }
-
-        return [
-            'success' => false,
-            'total_rows' => 0,
-            'message' => 'Extension not found',
-            'data' => [],
-        ];
     }
-}
 
 
     public function extensionDetailold(Request $request, int $extension_id = null)
@@ -329,7 +327,7 @@ class Extension extends Model
     //     }
     //     }
 
-   
+
     //     if (!empty($response)) {
     //         return array(
     //             'success' => true,
@@ -344,103 +342,103 @@ class Extension extends Model
     //     );
     // }
 
-public function extensionDetailList(Request $request, int $extension_id = null)
-{
-    $data['parent_id'] = $request->auth->parent_id;
+    public function extensionDetailList(Request $request, int $extension_id = null)
+    {
+        $data['parent_id'] = $request->auth->parent_id;
 
-    if ($extension_id) {
-        $user = User::findOrFail($extension_id);
-        $response = $user->toArray();
-        $extension = $response['extension'];
+        if ($extension_id) {
+            $user = User::findOrFail($extension_id);
+            $response = $user->toArray();
+            $extension = $response['extension'];
 
-        if (strlen($extension) == 4) {
-            $extension = $request->auth->parent_id . $extension;
-        }
+            if (strlen($extension) == 4) {
+                $extension = $request->auth->parent_id . $extension;
+            }
 
-        $extensionGroupSql = "SELECT group_id FROM extension_group_map as egm  
+            $extensionGroupSql = "SELECT group_id FROM extension_group_map as egm  
                               WHERE egm.extension = :extension AND egm.is_deleted = :is_deleted";
-        $extensionGroup = DB::connection('mysql_' . $request->auth->parent_id)->select(
-            $extensionGroupSql,
-            ['extension' => $extension, 'is_deleted' => '0']
-        );
-        $response['group'] = (array) $extensionGroup;
+            $extensionGroup = DB::connection('mysql_' . $request->auth->parent_id)->select(
+                $extensionGroupSql,
+                ['extension' => $extension, 'is_deleted' => '0']
+            );
+            $response['group'] = (array) $extensionGroup;
 
-        $serverSql = "SELECT asterisk_server.id,host as ip_address,detail,domain,title_name 
+            $serverSql = "SELECT asterisk_server.id,host as ip_address,detail,domain,title_name 
                       FROM client_server 
                       LEFT JOIN asterisk_server ON asterisk_server.id = client_server.ip_address 
                       WHERE client_server.client_id = :parent_id";
-        $serverList = DB::connection('master')->select($serverSql, ['parent_id' => $request->auth->parent_id]);
-        $response['serverList'] = (array) $serverList;
+            $serverList = DB::connection('master')->select($serverSql, ['parent_id' => $request->auth->parent_id]);
+            $response['serverList'] = (array) $serverList;
 
-        $packageName = $user->getAssignedUserPackage();
-        $response['assignedPackageKey'] = $packageName->package_key ?? null;
-        $response['assignedPackage'] = $packageName 
-            ? ucfirst($packageName->name) . ' - ' . date('Y-m-d', strtotime($packageName->start_time)) . ' to ' . date('Y-m-d', strtotime($packageName->end_time)) 
-            : null;
-    } else {
-        $data['status'] = 0;
-        $data['is_deleted'] = 0;
-
-        $where = "users.is_deleted = :is_deleted AND users.status = :status";
-        $bindings = $data;
-
-        if ($request->auth->level >= 7) {
-            $bindings['parent_id'] = $request->auth->parent_id;
-            $where .= " AND users.id IN (SELECT user_id FROM permissions WHERE client_id = :parent_id)";
+            $packageName = $user->getAssignedUserPackage();
+            $response['assignedPackageKey'] = $packageName->package_key ?? null;
+            $response['assignedPackage'] = $packageName
+                ? ucfirst($packageName->name) . ' - ' . date('Y-m-d', strtotime($packageName->start_time)) . ' to ' . date('Y-m-d', strtotime($packageName->end_time))
+                : null;
         } else {
-            $bindings['id'] = $request->auth->id;
-            $where .= " AND users.parent_id = :parent_id AND users.id = :id";
-        }
+            $data['status'] = 0;
+            $data['is_deleted'] = 0;
 
-       // Search filter
-if ($request->filled('search')) {
-    $search = '%' . $request->input('search') . '%';
-    $where .= " AND (users.extension LIKE :search_ext OR users.first_name LIKE :search_name)";
-    $bindings['search_ext'] = $search;
-    $bindings['search_name'] = $search;
-}
+            $where = "users.is_deleted = :is_deleted AND users.status = :status";
+            $bindings = $data;
 
-$orderBy = $request->get('orderBy', 'users.extension');
+            if ($request->auth->level >= 7) {
+                $bindings['parent_id'] = $request->auth->parent_id;
+                $where .= " AND users.id IN (SELECT user_id FROM permissions WHERE client_id = :parent_id)";
+            } else {
+                $bindings['id'] = $request->auth->id;
+                $where .= " AND users.parent_id = :parent_id AND users.id = :id";
+            }
 
-$sql = "SELECT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret 
+            // Search filter
+            if ($request->filled('search')) {
+                $search = '%' . $request->input('search') . '%';
+                $where .= " AND (users.extension LIKE :search_ext OR users.first_name LIKE :search_name)";
+                $bindings['search_ext'] = $search;
+                $bindings['search_name'] = $search;
+            }
+
+            $orderBy = $request->get('orderBy', 'users.extension');
+
+            $sql = "SELECT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret 
         FROM users 
         LEFT JOIN user_extensions ON user_extensions.fullname = users.extension 
         WHERE $where 
         ORDER BY $orderBy";
 
-$record = DB::connection('master')->select($sql, $bindings);
+            $record = DB::connection('master')->select($sql, $bindings);
 
-        $total = count($record); // Total before pagination
+            $total = count($record); // Total before pagination
 
-        // Apply pagination
-        if ($request->has(['start', 'limit'])) {
-            $start = (int) $request->input('start');
-            $limit = (int) $request->input('limit');
-            $record = array_slice($record, $start, $limit, true);
+            // Apply pagination
+            if ($request->has(['start', 'limit'])) {
+                $start = (int) $request->input('start');
+                $limit = (int) $request->input('limit');
+                $record = array_slice($record, $start, $limit, true);
+            }
+
+            $response = [
+                'data' => $record,
+                'total' => $total
+            ];
         }
 
-        $response = [
-            'data' => $record,
-            'total' => $total
-        ];
-    }
+        if (!empty($response)) {
+            return [
+                'success' => true,
+                'message' => 'Extension detail.',
+                'data' => $response['data'] ?? $response,
+                'total' => $response['total'] ?? null
+            ];
+        }
 
-    if (!empty($response)) {
         return [
-            'success' => true,
-            'message' => 'Extension detail.',
-            'data' => $response['data'] ?? $response,
-            'total' => $response['total'] ?? null
+            'success' => false,
+            'message' => 'Extension not found',
+            'data' => [],
+            'total' => 0
         ];
     }
-
-    return [
-        'success' => false,
-        'message' => 'Extension not found',
-        'data' => [],
-        'total' => 0
-    ];
-}
 
 
     function move_to_first_in_array($array, $key)
@@ -1346,7 +1344,7 @@ $record = DB::connection('master')->select($sql, $bindings);
         $recordCheck = DB::connection('master')->selectOne($sqlExtensionCheck, array('parent_id' => $request->auth->parent_id, 'oldExtension' => $request->extension, 'extension' => $request->auth->parent_id . $request->extension));
         if ($recordCheck->rowCount > 0) {
             throw new RenderableException(
-                "Invalid input",
+                "",
                 [
                     "extension" => [
                         "Extention " . $request->extension . " already assigned"
@@ -1667,17 +1665,17 @@ $record = DB::connection('master')->select($sql, $bindings);
     //         Log::log($e->getMessage());
     //     }
     // }
-function getExtensionCount($request)
-{
-    try {
-        $parent_id = $request->parentId;
+    function getExtensionCount($request)
+    {
+        try {
+            $parent_id = $request->parentId;
 
-        if (is_numeric($parent_id)) {
-            $status = 0;
-            $isDeleted = 0;
-            $userLevel = 9;
+            if (is_numeric($parent_id)) {
+                $status = 0;
+                $isDeleted = 0;
+                $userLevel = 9;
 
-            $sql = "SELECT COUNT(1) as rowCount
+                $sql = "SELECT COUNT(1) as rowCount
                     FROM users
                     LEFT JOIN user_extensions ON user_extensions.name = users.extension
                     WHERE users.id IN (
@@ -1688,38 +1686,38 @@ function getExtensionCount($request)
                     AND users.base_parent_id = :base_parent_id
                     AND users.user_level < :user_level";
 
-            $bindings = [
-                'parent_id' => $parent_id,
-                'is_deleted' => $isDeleted,
-                'status' => $status,
-                'base_parent_id' => $parent_id,
-                'user_level' => $userLevel
-            ];
+                $bindings = [
+                    'parent_id' => $parent_id,
+                    'is_deleted' => $isDeleted,
+                    'status' => $status,
+                    'base_parent_id' => $parent_id,
+                    'user_level' => $userLevel
+                ];
 
-            $record = DB::connection('master')->selectOne($sql, $bindings);
-            $userCount = (array)$record;
+                $record = DB::connection('master')->selectOne($sql, $bindings);
+                $userCount = (array)$record;
 
-            return [
-                'success' => 'true',
-                'message' => 'Extension count',
-                'data' => $userCount['rowCount'] ?? 0
-            ];
-        } else {
+                return [
+                    'success' => 'true',
+                    'message' => 'Extension count',
+                    'data' => $userCount['rowCount'] ?? 0
+                ];
+            } else {
+                return [
+                    'success' => 'false',
+                    'message' => 'Invalid parent ID',
+                    'data' => 0
+                ];
+            }
+        } catch (\Exception $e) {
+            Log::error('getExtensionCount error: ' . $e->getMessage());
             return [
                 'success' => 'false',
-                'message' => 'Invalid parent ID',
+                'message' => 'Exception occurred',
                 'data' => 0
             ];
         }
-    } catch (\Exception $e) {
-        Log::error('getExtensionCount error: ' . $e->getMessage());
-        return [
-            'success' => 'false',
-            'message' => 'Exception occurred',
-            'data' => 0
-        ];
     }
-}
 
     /**
      * Get all extensions of client
