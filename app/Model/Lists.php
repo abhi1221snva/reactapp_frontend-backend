@@ -449,151 +449,321 @@ class Lists extends Model
      * @return array
      */
 
-    public function addList($request, $filePath)
-    {
-        ini_set('max_execution_time', 1800);
-        ini_set('memory_limit', '-1');
+    // public function addList($request, $filePath)
+    // {
+    //     ini_set('max_execution_time', 1800);
+    //     ini_set('memory_limit', '-1');
 
 
-        $dataBase = 'mysql_' . $request->auth->parent_id;
-        $campaignId = $request->input('campaign');
+    //     $dataBase = 'mysql_' . $request->auth->parent_id;
+    //     $campaignId = $request->input('campaign');
 
-        try {
-            $reader = Excel::toArray(new Excel(), $filePath);
-        } catch (\Exception $e) {
-            return array(
-                'success' => 'false',
-                'message' => 'Unable to read excel.'
-            );
+    //     try {
+    //         $reader = Excel::toArray(new Excel(), $filePath);
+    //     } catch (\Exception $e) {
+    //         return array(
+    //             'success' => 'false',
+    //             'message' => 'Unable to read excel.'
+    //         );
+    //     }
+
+    //     if (!empty($reader)) {
+    //         ////////////////////////////
+    //         $query = "INSERT INTO list (title) VALUE (:title)";
+    //         $add = DB::connection($dataBase)->insert($query, ['title' => $request->input('title')]);
+    //         if ($add == 1) {
+    //             $sql = "SELECT id FROM list ORDER BY id DESC";
+    //             $record = DB::connection($dataBase)->selectOne($sql, array());
+    //             $data = (array) $record;
+    //             $list_id = $data['id'];
+    //             $listId = $list_id;
+
+    //             $query = "INSERT INTO campaign_list (campaign_id, list_id) VALUE (:campaign_id, :list_id)";
+    //             DB::connection($dataBase)->insert($query, array('campaign_id' => $campaignId, 'list_id' => $list_id));
+
+    //             $date_array = array();
+    //             $header_list = [];
+    //             ////////////////////////////
+    //             foreach ($reader as $row) {
+    //                 if (is_array($row)) {
+    //                     foreach ($row as $key => $value) {
+    //                         if ($key == 0) {
+    //                             $np = 0;
+    //                             foreach ($value as $em => $ep) {
+    //                                 $ncr = ++$np;
+    //                                 $column_name = 'option_' . $ncr;
+    //                                 if ($ncr > 30) {
+    //                                     continue;
+    //                                 }
+    //                                 //$header_list[] = array('list_id'=>$list_id , 'column_name'=>$column_name , 'header'=>$ep );
+    //                                 $h_list['list_id'] = $list_id;
+    //                                 $h_list['column_name'] = $column_name;
+    //                                 if (empty($ep)) {
+    //                                     $ep = null;
+    //                                 }
+    //                                 $h_list['header'] = $ep;
+    //                                 //	if(empty($column_name) && empty($ep)){ continue; }
+    //                                 $check_date = strlen(strrchr(strtolower($ep), "date"));
+
+    //                                 if (strpos(strtolower($ep), 'date')) {
+    //                                     $date_array[$ncr] = $ncr;
+    //                                 }
+    //                                 if (!empty($h_list['header'])) {
+    //                                     $header_list[] = $h_list;
+    //                                 }
+
+    //                                 // $query[] = "INSERT INTO list_header (list_id, column_name, header) VALUE ($list_id, $column_name , $ep)";
+    //                             }
+    //                         } else {
+    //                             $var_element[] = 'list_id';
+    //                             $var_data[] = $list_id;
+    //                             // $list_data['list_id']=$list_id;
+    //                             $list_data = array("list_id" => $list_id);
+    //                             if (empty($value[2]) && empty($value[3]) && empty($value[4])) {
+    //                                 continue;
+    //                             }
+    //                             $k = 0;
+    //                             foreach ($value as $emt => $ept) {
+    //                                 $r = ++$k;
+    //                                 if ($r > 30) {
+    //                                     continue;
+    //                                 }
+    //                                 $var_element[] = 'option_' . $r;
+    //                                 if (!empty($date_array[$r])) {
+    //                                     if (is_int($ept)) {
+    //                                         // +1 day difference added with date
+    //                                         $ept = date("Y-m-d", (($ept - 25569) * 86400));
+    //                                         $ept = date('Y-m-d', strtotime('+1 day', strtotime($ept)));
+    //                                     }
+    //                                 }
+
+    //                                 $var_data[] = $ept;
+    //                                 $list_data['option_' . $r] = $ept;
+    //                             }
+    //                             if (count($list_data) > 0) {
+    //                                 $query_1[] = $list_data;
+    //                             }
+    //                             unset($var_data);
+    //                             unset($var_element);
+    //                             unset($list_data);
+    //                         }
+    //                         # code...
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     } else {
+    //         return array(
+    //             'success' => 'false',
+    //             'message' => 'Failed list upload process, File is empty',
+    //             'list_id' => '',
+    //             'campaign_id' => $campaignId
+    //         );
+    //     }
+
+    //     if (count($query_1) > 0) {
+    //         $save_data = true;
+    //         foreach (array_chunk($header_list, 2000) as $t) {
+    //             $save_data &= DB::connection($dataBase)->table('list_header')->insert($t);
+    //         }
+    //         foreach (array_chunk($query_1, 2000) as $t1) {
+    //             $save_data &= DB::connection($dataBase)->table('list_data')->insert($t1);
+    //         }
+
+    //         DB::connection($dataBase)->table('list_data')->where('option_1', '=', '')->delete();
+
+    //         $data = [
+    //             "action" => "List added",
+    //             "listId" => $listId,
+    //             "listName" => $request->input('title'),
+    //             "records" => count($query_1),
+    //             "columns" => $header_list
+    //         ];
+    //         dispatch(new ListAddedNotificationJob($request->auth->parent_id, $campaignId, $data))->onConnection("database");
+
+    //         return array(
+    //             'success' => 'true',
+    //             'message' => 'List added successfully.',
+    //             'list_id' => $listId,
+    //             'campaign_id' => $campaignId
+    //         );
+    //     }
+
+    //     return array(
+    //         'success' => 'false',
+    //         'message' => 'Lists are not added. Unable to add data in list table'
+    //     );
+    // }
+public function addList($request, $filePath)
+{
+    ini_set('max_execution_time', 1800);
+    ini_set('memory_limit', '-1');
+
+    $dataBase = 'mysql_' . $request->auth->parent_id;
+    $campaignId = $request->input('campaign');
+    $duplicateCheck = $request->input('duplicate_check'); 
+    $seenNumbers = []; 
+
+    try {
+        $reader = Excel::toArray(new Excel(), $filePath);
+    } catch (\Exception $e) {
+        return [
+            'success' => 'false',
+            'message' => 'Unable to read excel.'
+        ];
+    }
+
+    // ===== Fetch existing phone numbers for duplicate checking =====
+    $existingNumbers = [];
+    if ($duplicateCheck == 1) {
+        $columns = [];
+        for ($i = 1; $i <= 30; $i++) {
+            $columns[] = 'option_' . $i;
         }
 
-        if (!empty($reader)) {
-            ////////////////////////////
-            $query = "INSERT INTO list (title) VALUE (:title)";
-            $add = DB::connection($dataBase)->insert($query, ['title' => $request->input('title')]);
-            if ($add == 1) {
-                $sql = "SELECT id FROM list ORDER BY id DESC";
-                $record = DB::connection($dataBase)->selectOne($sql, array());
-                $data = (array) $record;
-                $list_id = $data['id'];
-                $listId = $list_id;
+        $allNumbers = DB::connection($dataBase)
+            ->table('list_data')
+            ->select($columns)
+            ->get();
 
-                $query = "INSERT INTO campaign_list (campaign_id, list_id) VALUE (:campaign_id, :list_id)";
-                DB::connection($dataBase)->insert($query, array('campaign_id' => $campaignId, 'list_id' => $list_id));
+        foreach ($allNumbers as $row) {
+            foreach ($row as $value) {
+                if (preg_match('/^\+?\d{7,15}$/', trim($value))) {
+                    $existingNumbers[] = trim($value);
+                }
+            }
+        }
+        $existingNumbers = array_unique($existingNumbers);
+    }
+    // ===============================================================
 
-                $date_array = array();
-                $header_list = [];
-                ////////////////////////////
-                foreach ($reader as $row) {
-                    if (is_array($row)) {
-                        foreach ($row as $key => $value) {
-                            if ($key == 0) {
-                                $np = 0;
-                                foreach ($value as $em => $ep) {
-                                    $ncr = ++$np;
-                                    $column_name = 'option_' . $ncr;
-                                    if ($ncr > 30) {
-                                        continue;
-                                    }
-                                    //$header_list[] = array('list_id'=>$list_id , 'column_name'=>$column_name , 'header'=>$ep );
-                                    $h_list['list_id'] = $list_id;
-                                    $h_list['column_name'] = $column_name;
-                                    if (empty($ep)) {
-                                        $ep = null;
-                                    }
-                                    $h_list['header'] = $ep;
-                                    //	if(empty($column_name) && empty($ep)){ continue; }
-                                    $check_date = strlen(strrchr(strtolower($ep), "date"));
+    if (!empty($reader)) {
+        $query = "INSERT INTO list (title) VALUE (:title)";
+        $add = DB::connection($dataBase)->insert($query, ['title' => $request->input('title')]);
 
-                                    if (strpos(strtolower($ep), 'date')) {
-                                        $date_array[$ncr] = $ncr;
-                                    }
-                                    if (!empty($h_list['header'])) {
-                                        $header_list[] = $h_list;
-                                    }
+        if ($add == 1) {
+            $record = DB::connection($dataBase)
+                ->selectOne("SELECT id FROM list ORDER BY id DESC");
+            $list_id = $record->id;
+            $listId = $list_id;
 
-                                    // $query[] = "INSERT INTO list_header (list_id, column_name, header) VALUE ($list_id, $column_name , $ep)";
+            DB::connection($dataBase)->insert(
+                "INSERT INTO campaign_list (campaign_id, list_id) VALUE (:campaign_id, :list_id)",
+                ['campaign_id' => $campaignId, 'list_id' => $list_id]
+            );
+
+            $date_array = [];
+            $header_list = [];
+            $query_1 = [];
+
+            foreach ($reader as $row) {
+                if (is_array($row)) {
+                    foreach ($row as $key => $value) {
+                        if ($key == 0) {
+                            // Header row
+                            $np = 0;
+                            foreach ($value as $ep) {
+                                $ncr = ++$np;
+                                if ($ncr > 30) continue;
+
+                                $h_list = [
+                                    'list_id' => $list_id,
+                                    'column_name' => 'option_' . $ncr,
+                                    'header' => empty($ep) ? null : $ep
+                                ];
+
+                                if (strpos(strtolower($ep), 'date') !== false) {
+                                    $date_array[$ncr] = $ncr;
                                 }
-                            } else {
-                                $var_element[] = 'list_id';
-                                $var_data[] = $list_id;
-                                // $list_data['list_id']=$list_id;
-                                $list_data = array("list_id" => $list_id);
-                                if (empty($value[2]) && empty($value[3]) && empty($value[4])) {
-                                    continue;
+                                if (!empty($h_list['header'])) {
+                                    $header_list[] = $h_list;
                                 }
-                                $k = 0;
-                                foreach ($value as $emt => $ept) {
-                                    $r = ++$k;
-                                    if ($r > 30) {
-                                        continue;
-                                    }
-                                    $var_element[] = 'option_' . $r;
-                                    if (!empty($date_array[$r])) {
-                                        if (is_int($ept)) {
-                                            // +1 day difference added with date
-                                            $ept = date("Y-m-d", (($ept - 25569) * 86400));
-                                            $ept = date('Y-m-d', strtotime('+1 day', strtotime($ept)));
-                                        }
-                                    }
-
-                                    $var_data[] = $ept;
-                                    $list_data['option_' . $r] = $ept;
-                                }
-                                if (count($list_data) > 0) {
-                                    $query_1[] = $list_data;
-                                }
-                                unset($var_data);
-                                unset($var_element);
-                                unset($list_data);
                             }
-                            # code...
+                        } else {
+                            // Data rows
+                            $list_data = ["list_id" => $list_id];
+                            if (empty($value[2]) && empty($value[3]) && empty($value[4])) {
+                                continue;
+                            }
+
+                            $phoneNumber = null;
+
+                            $k = 0;
+                            foreach ($value as $ept) {
+                                $r = ++$k;
+                                if ($r > 30) continue;
+
+                                if (!empty($date_array[$r]) && is_int($ept)) {
+                                    $ept = date("Y-m-d", (($ept - 25569) * 86400));
+                                    $ept = date('Y-m-d', strtotime('+1 day', strtotime($ept)));
+                                }
+
+                                $list_data['option_' . $r] = $ept;
+
+                                // Detect phone number dynamically
+                                if (preg_match('/^\+?\d{7,15}$/', trim($ept))) {
+                                    $phoneNumber = trim($ept);
+                                }
+                            }
+
+                            // Duplicate check
+                            if ($duplicateCheck == 1 && $phoneNumber !== null) {
+                                if (in_array($phoneNumber, $seenNumbers) || in_array($phoneNumber, $existingNumbers)) {
+                                    continue; // Skip if duplicate
+                                }
+                                $seenNumbers[] = $phoneNumber;
+                            }
+
+                            if (count($list_data) > 1) {
+                                $query_1[] = $list_data;
+                            }
                         }
                     }
                 }
             }
-        } else {
-            return array(
-                'success' => 'false',
-                'message' => 'Failed list upload process, File is empty',
-                'list_id' => '',
-                'campaign_id' => $campaignId
-            );
         }
-
-        if (count($query_1) > 0) {
-            $save_data = true;
-            foreach (array_chunk($header_list, 2000) as $t) {
-                $save_data &= DB::connection($dataBase)->table('list_header')->insert($t);
-            }
-            foreach (array_chunk($query_1, 2000) as $t1) {
-                $save_data &= DB::connection($dataBase)->table('list_data')->insert($t1);
-            }
-
-            DB::connection($dataBase)->table('list_data')->where('option_1', '=', '')->delete();
-
-            $data = [
-                "action" => "List added",
-                "listId" => $listId,
-                "listName" => $request->input('title'),
-                "records" => count($query_1),
-                "columns" => $header_list
-            ];
-            dispatch(new ListAddedNotificationJob($request->auth->parent_id, $campaignId, $data))->onConnection("database");
-
-            return array(
-                'success' => 'true',
-                'message' => 'List added successfully.',
-                'list_id' => $listId,
-                'campaign_id' => $campaignId
-            );
-        }
-
-        return array(
+    } else {
+        return [
             'success' => 'false',
-            'message' => 'Lists are not added. Unable to add data in list table'
-        );
+            'message' => 'Failed list upload process, File is empty',
+            'list_id' => '',
+            'campaign_id' => $campaignId
+        ];
     }
+
+    if (count($query_1) > 0) {
+        $save_data = true;
+        foreach (array_chunk($header_list, 2000) as $t) {
+            $save_data &= DB::connection($dataBase)->table('list_header')->insert($t);
+        }
+        foreach (array_chunk($query_1, 2000) as $t1) {
+            $save_data &= DB::connection($dataBase)->table('list_data')->insert($t1);
+        }
+
+        DB::connection($dataBase)->table('list_data')->where('option_1', '=', '')->delete();
+
+        $data = [
+            "action" => "List added",
+            "listId" => $listId,
+            "listName" => $request->input('title'),
+            "records" => count($query_1),
+            "columns" => $header_list
+        ];
+        dispatch(new ListAddedNotificationJob($request->auth->parent_id, $campaignId, $data))->onConnection("database");
+
+        return [
+            'success' => 'true',
+            'message' => 'List added successfully.',
+            'list_id' => $listId,
+            'campaign_id' => $campaignId
+        ];
+    }
+
+    return [
+        'success' => 'false',
+        'message' => 'Lists are not added. Duplicate numbers exists in database.'
+    ];
+}
 
     function getLeadCount($request)
     {
