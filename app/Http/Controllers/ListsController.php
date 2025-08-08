@@ -326,9 +326,8 @@ class ListsController extends Controller
             //commented  not able to upload file directory
             //$path = ".." . DIRECTORY_SEPARATOR . "upload" . DIRECTORY_SEPARATOR;
             //$this->request->file('file')->move($path, $this->request->file('file')->getClientOriginalName());
-            // $filePath = "var/www/html/api/upload/" . $this->request->input('file');
-            $filePath = env('LIST_FILE_UPLOAD_PATH') . $this->request->input('file');
-
+            // $filePath = env('LIST_FILE_UPLOAD_PATH') . $this->request->input('file');
+             $filePath = base_path() . "/upload/" . $this->request->input('file');
         }
         if (!empty($filePath) && file_exists($filePath)) {
             $response = $this->model->addList($this->request, $filePath);
