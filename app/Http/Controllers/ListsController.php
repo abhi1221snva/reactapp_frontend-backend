@@ -319,7 +319,6 @@ class ListsController extends Controller
         $this->validate($this->request, [
             'title'          => 'required|string|max:255',
             'file'           => 'required|string', //|mimes:xls,xlsx', //commented  not able to upload file directory
-            'duplicate_check' => 'string|max:255',
             'campaign'       => 'required|numeric',
             'id'             => 'required|numeric'
         ]);
@@ -327,7 +326,9 @@ class ListsController extends Controller
             //commented  not able to upload file directory
             //$path = ".." . DIRECTORY_SEPARATOR . "upload" . DIRECTORY_SEPARATOR;
             //$this->request->file('file')->move($path, $this->request->file('file')->getClientOriginalName());
-            $filePath = base_path() . "/upload/" . $this->request->input('file');
+            // $filePath = "var/www/html/api/upload/" . $this->request->input('file');
+            $filePath = env('LIST_FILE_UPLOAD_PATH') . $this->request->input('file');
+
         }
         if (!empty($filePath) && file_exists($filePath)) {
             $response = $this->model->addList($this->request, $filePath);
