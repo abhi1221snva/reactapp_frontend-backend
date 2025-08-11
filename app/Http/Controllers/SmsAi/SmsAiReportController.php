@@ -240,128 +240,257 @@ class SmsAiReportController extends Controller
      */
 
 
-    public function list(Request $request)
-    {
-        Log::info('Reached function', ['lead_status' => $request->lead_status]);
+    // public function list(Request $request)
+    // {
+    //     Log::info('Reached function', ['lead_status' => $request->lead_status]);
 
-        ini_set('max_execution_time', 1800);
+    //     ini_set('max_execution_time', 1800);
 
-        try {
-            $search = [];
-            $searchString = [];
-            $limitString = '';
+    //     try {
+    //         $search = [];
+    //         $searchString = [];
+    //         $limitString = '';
 
-            $clientId = $request->auth->parent_id;
-            $level = $request->auth->user_level;
-            $userId = $request->auth->id;
+    //         $clientId = $request->auth->parent_id;
+    //         $level = $request->auth->user_level;
+    //         $userId = $request->auth->id;
 
-            // Date Range Filter
-            if ($request->has('start_date') && $request->has('end_date') && !empty($request->input('start_date')) && !empty($request->input('end_date'))) {
-                $start = date('Y-m-d', strtotime($request->input('start_date'))) . " 00:00:00";
-                $end = date('Y-m-d', strtotime($request->input('end_date'))) . " 23:59:59";
-                $search['start_time'] = $start;
-                $search['end_time'] = $end;
-                $searchString[] = "created_at BETWEEN ? AND ?";
-            }
+    //         // Date Range Filter
+    //         if ($request->has('start_date') && $request->has('end_date') && !empty($request->input('start_date')) && !empty($request->input('end_date'))) {
+    //             $start = date('Y-m-d', strtotime($request->input('start_date'))) . " 00:00:00";
+    //             $end = date('Y-m-d', strtotime($request->input('end_date'))) . " 23:59:59";
+    //             $search['start_time'] = $start;
+    //             $search['end_time'] = $end;
+    //             $searchString[] = "created_at BETWEEN ? AND ?";
+    //         }
 
-            // Pagination Limits
-            $lowerLimit = (int) $request->input('lower_limit', 0);
-            $upperLimit = (int) $request->input('upper_limit', 10000);
+    //         // Pagination Limits
+    //         $lowerLimit = (int) $request->input('lower_limit', 0);
+    //         $upperLimit = (int) $request->input('upper_limit', 10000);
 
-            // Search Term Filter
-            $searchTerm = null;
-            if ($request->has('search') && !empty($request->input('search'))) {
-                $searchTerm = $request->input('search') . '%';
-                $searchString[] = "(number LIKE ? OR did LIKE ?)";
-            }
+    //         // Search Term Filter
+    //         $searchTerm = null;
+    //         if ($request->has('search') && !empty($request->input('search'))) {
+    //             $searchTerm = $request->input('search') . '%';
+    //             $searchString[] = "(number LIKE ? OR did LIKE ?)";
+    //         }
 
-            if ($level > 1) {
-                // ✅ **Case when $level > 1 → Query sms_ai**
-                $filter = !empty($searchString) ? " WHERE " . implode(" AND ", $searchString) : '';
+    //         if ($level > 1) {
+    //             // ✅ **Case when $level > 1 → Query sms_ai**
+    //             $filter = !empty($searchString) ? " WHERE " . implode(" AND ", $searchString) : '';
 
-                // ✅ **Fixed SQL Query with Correct Parameter Binding**
-                $query_string = "SELECT SQL_CALC_FOUND_ROWS *  
-                            FROM sms_ai  
-                            WHERE id IN (
-                                SELECT MAX(id) FROM sms_ai $filter GROUP BY number
-                            )  
-                            ORDER BY created_at DESC  
-                            LIMIT ?, ?";
+    //             // ✅ **Fixed SQL Query with Correct Parameter Binding**
+    //             $query_string = "SELECT SQL_CALC_FOUND_ROWS *  
+    //                         FROM sms_ai  
+    //                         WHERE id IN (
+    //                             SELECT MAX(id) FROM sms_ai $filter GROUP BY number
+    //                         )  
+    //                         ORDER BY created_at DESC  
+    //                         LIMIT ?, ?";
 
-                Log::info('Generated SQL Query for sms_ai', ['query' => $query_string]);
+    //             Log::info('Generated SQL Query for sms_ai', ['query' => $query_string]);
 
-                // ✅ **Building Query Parameters**
-                $queryParams = [];
-                if (!empty($search['start_time']) && !empty($search['end_time'])) {
-                    $queryParams[] = $search['start_time'];
-                    $queryParams[] = $search['end_time'];
-                }
-                if ($searchTerm) {
-                    $queryParams[] = $searchTerm;
-                    $queryParams[] = $searchTerm;
-                }
-                $queryParams[] = $lowerLimit;
-                $queryParams[] = $upperLimit;
+    //             // ✅ **Building Query Parameters**
+    //             $queryParams = [];
+    //             if (!empty($search['start_time']) && !empty($search['end_time'])) {
+    //                 $queryParams[] = $search['start_time'];
+    //                 $queryParams[] = $search['end_time'];
+    //             }
+    //             if ($searchTerm) {
+    //                 $queryParams[] = $searchTerm;
+    //                 $queryParams[] = $searchTerm;
+    //             }
+    //             $queryParams[] = $lowerLimit;
+    //             $queryParams[] = $upperLimit;
 
-                // ✅ **Executing Query**
-                $record = DB::connection('mysql_' . $clientId)->select($query_string, $queryParams);
-                $recordCount = DB::connection('mysql_' . $clientId)->selectOne("SELECT FOUND_ROWS() as count");
-            } else {
-                // ✅ **Case when $level <= 1 → Query crm_lead_data**
-                if ($userId) {
-                    $search['assigned_to'] = $userId;
-                    $searchString[] = 'assigned_to = ?';
-                }
+    //             // ✅ **Executing Query**
+    //             $record = DB::connection('mysql_' . $clientId)->select($query_string, $queryParams);
+    //             $recordCount = DB::connection('mysql_' . $clientId)->selectOne("SELECT FOUND_ROWS() as count");
+    //         } else {
+    //             // ✅ **Case when $level <= 1 → Query crm_lead_data**
+    //             if ($userId) {
+    //                 $search['assigned_to'] = $userId;
+    //                 $searchString[] = 'assigned_to = ?';
+    //             }
 
-                $filter = (!empty($searchString)) ? " WHERE " . implode(" AND ", $searchString) : '';
+    //             $filter = (!empty($searchString)) ? " WHERE " . implode(" AND ", $searchString) : '';
 
-                $query_string = "SELECT SQL_CALC_FOUND_ROWS * FROM crm_lead_data as crm $filter ORDER BY created_at DESC LIMIT ?, ?";
+    //             $query_string = "SELECT SQL_CALC_FOUND_ROWS * FROM crm_lead_data as crm $filter ORDER BY created_at DESC LIMIT ?, ?";
 
-                Log::info('Generated SQL Query for crm_lead_data', ['query' => $query_string]);
+    //             Log::info('Generated SQL Query for crm_lead_data', ['query' => $query_string]);
 
-                // ✅ **Building Query Parameters**
-                $queryParams = [];
-                if (isset($search['assigned_to'])) {
-                    $queryParams[] = $search['assigned_to'];
-                }
-                if (!empty($search['start_time']) && !empty($search['end_time'])) {
-                    $queryParams[] = $search['start_time'];
-                    $queryParams[] = $search['end_time'];
-                }
-                $queryParams[] = $lowerLimit;
-                $queryParams[] = $upperLimit;
+    //             // ✅ **Building Query Parameters**
+    //             $queryParams = [];
+    //             if (isset($search['assigned_to'])) {
+    //                 $queryParams[] = $search['assigned_to'];
+    //             }
+    //             if (!empty($search['start_time']) && !empty($search['end_time'])) {
+    //                 $queryParams[] = $search['start_time'];
+    //                 $queryParams[] = $search['end_time'];
+    //             }
+    //             $queryParams[] = $lowerLimit;
+    //             $queryParams[] = $upperLimit;
 
-                // ✅ **Executing Query**
-                $record = DB::connection('mysql_' . $clientId)->select($query_string, $queryParams);
-                $recordCount = DB::connection('mysql_' . $clientId)->selectOne("SELECT FOUND_ROWS() as count");
-            }
+    //             // ✅ **Executing Query**
+    //             $record = DB::connection('mysql_' . $clientId)->select($query_string, $queryParams);
+    //             $recordCount = DB::connection('mysql_' . $clientId)->selectOne("SELECT FOUND_ROWS() as count");
+    //         }
 
-            // ✅ **Processing Query Results**
-            $recordCount = (array) $recordCount;
+    //         // ✅ **Processing Query Results**
+    //         $recordCount = (array) $recordCount;
 
-            if (!empty($record)) {
-                $data = (array) $record;
-                return [
-                    'success' => true,
-                    'message' => 'Call Data Report.',
-                    'record_count' => $recordCount['count'] ?? 0,
-                    'data' => $data
-                ];
-            } else {
-                return [
-                    'success' => true,
-                    'message' => 'No Call Data Report found.',
-                    'record_count' => 0,
-                    'data' => []
-                ];
-            }
-        } catch (\Throwable $exception) {
-            Log::error('SQL Query Error', [
-                'message' => $exception->getMessage(),
-                'file' => $exception->getFile(),
-                'line' => $exception->getLine()
-            ]);
-            return $this->failResponse("Failed to Load Data", [$exception->getMessage()], $exception, $exception->getCode());
+    //         if (!empty($record)) {
+    //             $data = (array) $record;
+    //             return [
+    //                 'success' => true,
+    //                 'message' => 'Call Data Report.',
+    //                 'record_count' => $recordCount['count'] ?? 0,
+    //                 'data' => $data
+    //             ];
+    //         } else {
+    //             return [
+    //                 'success' => true,
+    //                 'message' => 'No Call Data Report found.',
+    //                 'record_count' => 0,
+    //                 'data' => []
+    //             ];
+    //         }
+    //     } catch (\Throwable $exception) {
+    //         Log::error('SQL Query Error', [
+    //             'message' => $exception->getMessage(),
+    //             'file' => $exception->getFile(),
+    //             'line' => $exception->getLine()
+    //         ]);
+    //         return $this->failResponse("Failed to Load Data", [$exception->getMessage()], $exception, $exception->getCode());
+    //     }
+    // }
+ public function list(Request $request)
+{
+    Log::info('Reached function', ['lead_status' => $request->lead_status]);
+
+    ini_set('max_execution_time', 1800);
+
+    try {
+        $clientId = $request->auth->parent_id;
+        $level = $request->auth->user_level;
+        $userId = $request->auth->id;
+
+        // Pagination params from DataTables
+        $start = $request->input('start', null);       // offset
+        $length = $request->input('length', null);     // limit
+
+        // Search value
+        $searchTerm = $request->input('search.value', null);
+
+        // Date Range Filter
+        $dateFilter = [];
+        $searchString = [];
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $startDate = date('Y-m-d 00:00:00', strtotime($request->start_date));
+            $endDate = date('Y-m-d 23:59:59', strtotime($request->end_date));
+            $dateFilter = [$startDate, $endDate];
+            $searchString[] = "created_at BETWEEN ? AND ?";
         }
+
+        // Search filter
+        if ($searchTerm) {
+            $searchTermLike = $searchTerm . '%';
+            $searchString[] = "(number LIKE ? OR did LIKE ?)";
+        }
+
+        // Determine if LIMIT should be applied or not
+        $applyLimit = true;
+        if (is_null($start) || is_null($length) || intval($length) == -1) {
+            $applyLimit = false;  // Fetch all records
+        } else {
+            $start = (int) $start;
+            $length = (int) $length;
+        }
+
+        if ($level > 1) {
+            // Query sms_ai for level > 1
+            $whereClause = !empty($searchString) ? " WHERE " . implode(" AND ", $searchString) : '';
+
+            $sql = "SELECT SQL_CALC_FOUND_ROWS * FROM sms_ai
+                    WHERE id IN (
+                        SELECT MAX(id) FROM sms_ai $whereClause GROUP BY number
+                    )
+                    ORDER BY created_at DESC";
+
+            if ($applyLimit) {
+                $sql .= " LIMIT ?, ?";
+            }
+
+            $params = [];
+            if (!empty($dateFilter)) {
+                $params = array_merge($params, $dateFilter);
+            }
+            if ($searchTerm) {
+                $params[] = $searchTermLike;
+                $params[] = $searchTermLike;
+            }
+            if ($applyLimit) {
+                $params[] = $start;
+                $params[] = $length;
+            }
+
+            $records = DB::connection('mysql_' . $clientId)->select($sql, $params);
+            $countObj = DB::connection('mysql_' . $clientId)->selectOne("SELECT FOUND_ROWS() as count");
+        } else {
+            // Query crm_lead_data for level <= 1
+            if ($userId) {
+                $searchString[] = "assigned_to = ?";
+            }
+
+            $whereClause = !empty($searchString) ? " WHERE " . implode(" AND ", $searchString) : '';
+
+            $sql = "SELECT SQL_CALC_FOUND_ROWS * FROM crm_lead_data $whereClause ORDER BY created_at DESC";
+
+            if ($applyLimit) {
+                $sql .= " LIMIT ?, ?";
+            }
+
+            $params = [];
+            if ($userId) {
+                $params[] = $userId;
+            }
+            if (!empty($dateFilter)) {
+                $params = array_merge($params, $dateFilter);
+            }
+            // Note: you can add search for crm_lead_data if needed here
+
+            if ($applyLimit) {
+                $params[] = $start;
+                $params[] = $length;
+            }
+
+            $records = DB::connection('mysql_' . $clientId)->select($sql, $params);
+            $countObj = DB::connection('mysql_' . $clientId)->selectOne("SELECT FOUND_ROWS() as count");
+        }
+
+        $totalRecords = $countObj->count ?? 0;
+
+        return response()->json([
+            'draw' => intval($request->input('draw')),
+            'recordsTotal' => $totalRecords,
+            'recordsFiltered' => $totalRecords,
+            'data' => $records,
+        ]);
+    } catch (\Throwable $e) {
+        Log::error('SQL Query Error', [
+            'message' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine()
+        ]);
+        return response()->json([
+            'draw' => intval($request->input('draw')),
+            'recordsTotal' => 0,
+            'recordsFiltered' => 0,
+            'data' => [],
+            'error' => 'Failed to load data: ' . $e->getMessage(),
+        ]);
     }
+}
+
+
 }
