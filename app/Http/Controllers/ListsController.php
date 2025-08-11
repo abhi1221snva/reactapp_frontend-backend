@@ -339,6 +339,100 @@ class ListsController extends Controller
             ));
         }
     }
+
+
+       /**
+ * @OA\Post(
+ *     path="/add-list-api",
+ *     summary="Upload and add a contact list via Excel or CSV file",
+ *     tags={"Lists"},
+ *     security={{"Bearer": {}}},
+ *     @OA\RequestBody(
+ *         required=true,
+ *         @OA\MediaType(
+ *             mediaType="multipart/form-data",
+ *             @OA\Schema(
+ *                 required={"title", "file", "campaign"},
+ *                 @OA\Property(
+ *                     property="title",
+ *                     type="string",
+ *                     description="Name of the list",
+ *                     example="June Leads"
+ *                 ),
+ *                 @OA\Property(
+ *                     property="file",
+ *                     type="string",
+ *                     format="binary",
+ *                     description="File to upload (.xls, .xlsx, or .csv)"
+ *                 ),
+ *                 @OA\Property(
+ *                     property="campaign",
+ *                     type="integer",
+ *                     description="Campaign ID",
+ *                     example=101
+ *                 )
+ *             )
+ *         )
+ *     ),
+ *     @OA\Response(
+ *         response=200,
+ *         description="List upload successful",
+ *         @OA\JsonContent(
+ *             @OA\Property(property="success", type="string", example="true"),
+ *             @OA\Property(property="message", type="string", example="List added successfully."),
+ *             @OA\Property(property="list_id", type="integer", example=33),
+ *             @OA\Property(property="campaign_id", type="integer", example=101)
+ *         )
+ *     ),
+ *     @OA\Response(
+ *         response=400,
+ *         description="Upload failed",
+ *         @OA\JsonContent(
+ *             @OA\Property(property="success", type="string", example="false"),
+ *             @OA\Property(property="message", type="string", example="Unable to upload file.")
+ *         )
+ *     )
+ * )
+ */
+
+
+        public function addListUsingApi()
+        {
+            $this->validate($this->request, [
+                'title'    => 'required|string|max:255',
+                //'file'     => 'required|file|mimes:xls,xlsx', // Accept actual file
+                'file'     => 'required|file', // |mimes:xls,xlsxAccept actual file
+                'campaign' => 'required|numeric',
+                // 'id'       => 'required|numeric'
+            ]);
+
+
+            if ($this->request->hasFile('file')) {
+        // Create upload path if not exists
+        $uploadPath = base_path('upload');
+        if (!file_exists($uploadPath)) {
+            mkdir($uploadPath, 0777, true);
+        }
+
+        // Move uploaded file
+        $filename = time() . '_' . $this->request->file('file')->getClientOriginalName();
+        $this->request->file('file')->move($uploadPath, $filename);
+
+         $filePath = $uploadPath . DIRECTORY_SEPARATOR . $filename;
+
+        if (file_exists($filePath)) {
+            $response = $this->model->addList($this->request, $filePath);
+            return response()->json($response);
+        }
+    }
+
+    return response()->json([
+        'success' => 'false',
+        'message' => 'Unable to upload file.'
+    ]);
+}
+
+
     /**
      * @OA\Post(
      *     path="/lead-count",

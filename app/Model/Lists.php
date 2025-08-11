@@ -303,7 +303,7 @@ class Lists extends Model
      * @return array
      */
 
-    public function editList($request)
+  public function editList($request)
     {
         $saveRecord = true;
         try {
@@ -412,6 +412,39 @@ class Lists extends Model
                     }
                     $saveRecord &= Lists::on('mysql_' . $request->auth->parent_id)->where('id', $request->input('list_id'))->update(array('is_active' => 1));
                 }
+
+                $sql_list_data = "SELECT * FROM list_header WHERE list_id = :list_id and is_dialing=1 ";
+                        $record_list_data = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_list_data, array('list_id' => $request->input('list_id')));
+
+                       // echo "<pre>";print_r($record_list_data);die;
+
+$listId = $request->input('list_id');
+$columnName = $record_list_data->column_name;
+
+$sql_delete_duplicates = "
+DELETE ld
+FROM list_data ld
+JOIN (
+    SELECT MIN(id) AS keep_id, `$columnName` AS phone_number
+    FROM list_data
+    WHERE list_id = :list_id1
+      AND `$columnName` IS NOT NULL
+      AND `$columnName` != ''
+    GROUP BY `$columnName`
+) AS keep_rows
+ON ld.`$columnName` = keep_rows.phone_number
+AND ld.list_id = :list_id2
+AND ld.id <> keep_rows.keep_id
+";
+
+DB::connection('mysql_' . $request->auth->parent_id)
+    ->statement($sql_delete_duplicates, [
+        'list_id1' => $listId,
+        'list_id2' => $listId
+    ]);
+
+
+
 
                 //TODO: Think about having separate Job to do this.
                 /*if($boolIsDialingFound && $strIsDialSelectedColumn != ''){
