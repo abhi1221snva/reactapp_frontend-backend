@@ -157,94 +157,105 @@ class Lists extends Model
         }
     }
 
-    public function getList($request)
-    {
-        if ($request->has('list_id') && is_numeric($request->input('list_id')) && $request->has('campaign_id') && is_numeric($request->input('campaign_id'))) {
-            $sql = "SELECT
-                    c.title as campaign, l.title as list, cl.campaign_id, cl.list_id, cl.updated_at , l.is_active
+     public function getList($request)
+{
+    $titleSearch = null;
+    if ($request->has('title') && !empty(trim($request->input('title')))) {
+        $titleSearch = trim($request->input('title'));
+    }
+
+    if (
+        $request->has('list_id') && is_numeric($request->input('list_id')) &&
+        $request->has('campaign_id') && is_numeric($request->input('campaign_id'))
+    ) {
+        $sql = "SELECT
+                    c.title as campaign, l.title as list, cl.campaign_id, cl.list_id, cl.updated_at, l.is_active
                 FROM
-                campaign_list as cl
+                    campaign_list as cl
                 LEFT JOIN list as l ON l.id = cl.list_id
                 LEFT JOIN campaign as c ON c.id = cl.campaign_id
-                WHERE cl.is_deleted = :is_deleted AND list_id = :list_id AND campaign_id = :campaign_id";
-            $record = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql, array('is_deleted' => 0, 'list_id' => $request->input('list_id'), 'campaign_id' => $request->input('campaign_id')));
-            $data = (array) $record;
+                WHERE cl.is_deleted = :is_deleted 
+                  AND list_id = :list_id 
+                  AND campaign_id = :campaign_id";
 
-            $sql = "SELECT * FROM list_header WHERE list_id = :list_id AND is_deleted = :is_deleted";
-            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, array('is_deleted' => 0, 'list_id' => $request->input('list_id')));
-            $listHeader = (array) $record;
-            $data['list_header'] = $listHeader;
-            $totalRows = count($listHeader);
-
-            if ($request->has('start') && $request->has('limit')) {
-                $start = (int)$request->input('start'); // Start index (0-based)
-                $limit = (int)$request->input('limit'); // Limit number of records to fetch
-
-                // Show all data if start is 0 and limit is provided
-                if ($start == 0 && $limit > 0) {
-                    $listHeader = array_slice($listHeader, 0, $limit); // Fetch only the first 'limit' records
-                } else {
-                    // For normal pagination, calculate length from start and limit
-                    $length = $limit;
-                    $listHeader = array_slice($listHeader, $start, $length); // Fetch data from start to start+length
-                }
-                $data['list_header'] = $listHeader;
-            }
-        } else {
-            $sql = "SELECT
-                          c.title as campaign, l.title as list, cl.campaign_id, cl.list_id, cl.updated_at, l.is_active
-                        FROM
-                        campaign_list as cl
-                        LEFT JOIN list as l ON l.id = cl.list_id
-                        LEFT JOIN campaign as c ON c.id = cl.campaign_id
-                        WHERE cl.is_deleted = :is_deleted";
-            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, array('is_deleted' => 0));
-            $data = (array) $record;
-
-            foreach ($data as $key => $id) {
-                $list['list_id'] = $id->list_id;
-                $sql_count_list = "SELECT count(1) as rowCountList FROM list_data WHERE list_id = :list_id ";
-                $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_count_list, $list);
-                $id->rowListData = $record_count_list->rowCountList;
-            }
-            $totalRows = count($data);
+        // Search by title if provided
+        $params = [
+            'is_deleted' => 0,
+            'list_id'    => $request->input('list_id'),
+            'campaign_id'=> $request->input('campaign_id')
+        ];
+        if ($titleSearch) {
+            $sql .= " AND l.title LIKE :title";
+            $params['title'] = '%' . $titleSearch . '%';
         }
 
+        $record = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql, $params);
+        $data = (array) $record;
 
+        $sql = "SELECT * FROM list_header WHERE list_id = :list_id AND is_deleted = :is_deleted";
+        $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, [
+            'is_deleted' => 0,
+            'list_id' => $request->input('list_id')
+        ]);
+        $listHeader = (array) $record;
+        $data['list_header'] = $listHeader;
+        $totalRows = count($listHeader);
 
         if ($request->has('start') && $request->has('limit')) {
-            $start = (int)$request->input('start'); // Start index (0-based)
-            $limit = (int)$request->input('limit'); // Limit number of records to fetch
+            $start = (int)$request->input('start');
+            $limit = (int)$request->input('limit');
+            $length = $limit;
+            $listHeader = array_slice($listHeader, $start, $length);
+            $data['list_header'] = $listHeader;
+        }
+    } else {
+        $sql = "SELECT
+                    c.title as campaign, l.title as list, cl.campaign_id, cl.list_id, cl.updated_at, l.is_active
+                FROM
+                    campaign_list as cl
+                LEFT JOIN list as l ON l.id = cl.list_id
+                LEFT JOIN campaign as c ON c.id = cl.campaign_id
+                WHERE cl.is_deleted = :is_deleted";
 
-            // Show all data if start is 0 and limit is provided
-            if ($start == 0 && $limit > 0) {
-                $data = array_slice($data, 0, $limit); // Fetch only the first 'limit' records
-            } else {
-                // For normal pagination, calculate length from start and limit
-                $length = $limit;
-                $data = array_slice($data, $start, $length); // Fetch data from start to start+length
-            }
+        $params = ['is_deleted' => 0];
+        if ($titleSearch) {
+            $sql .= " AND l.title LIKE :title";
+            $params['title'] = '%' . $titleSearch . '%';
         }
 
-        // If no pagination parameters, return all data
-        if (!$request->has('start') && !$request->has('limit')) {
-            $data = $data; // No pagination, return all data
+        $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $params);
+        $data = (array) $record;
 
+        foreach ($data as $key => $id) {
+            $list['list_id'] = $id->list_id;
+            $sql_count_list = "SELECT count(1) as rowCountList FROM list_data WHERE list_id = :list_id";
+            $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_count_list, $list);
+            $id->rowListData = $record_count_list->rowCountList;
         }
-        if (!empty($data)) {
-            return array(
-                'success' => 'true',
-                'message' => 'Lists detail.',
-                'total_rows' => $totalRows,
-                'data' => $data
-            );
-        }
-        return array(
-            'success' => 'false',
-            'message' => 'Lists not created.',
-            'data' => array()
-        );
+        $totalRows = count($data);
     }
+
+    if ($request->has('start') && $request->has('limit')) {
+        $start = (int)$request->input('start');
+        $limit = (int)$request->input('limit');
+        $length = $limit;
+        $data = array_slice($data, $start, $length);
+    }
+
+    if (!empty($data)) {
+        return [
+            'success' => 'true',
+            'message' => 'Lists detail.',
+            'total_rows' => $totalRows,
+            'data' => $data
+        ];
+    }
+    return [
+        'success' => 'false',
+        'message' => 'Lists not created.',
+        'data' => []
+    ];
+}
 
 
     public function getList_oldcode($request)
