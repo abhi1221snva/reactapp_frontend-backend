@@ -733,11 +733,21 @@ class LeadController extends Controller
                 $search[] = $end;
             }
 
-            if ($request->has('lower_limit') && $request->has('upper_limit')) {
-                $lower = (int) $request->input('lower_limit');
-                $upper = (int) $request->input('upper_limit');
-                $limitString = " LIMIT $lower, $upper ";
-            }
+            // if ($request->has('lower_limit') && $request->has('upper_limit')) {
+            //     $lower = (int) $request->input('lower_limit');
+            //     $upper = (int) $request->input('upper_limit');
+            //     $limitString = " LIMIT $lower, $upper ";
+            // }
+            // Pagination handling
+if ($request->has('start') && $request->has('limit')) {
+    $start = (int) $request->input('start');
+    $limit = (int) $request->input('limit');
+    $limitString = " LIMIT $start, $limit ";
+} else {
+    // No pagination — fetch all data
+    $limitString = '';
+}
+
 
             // User restriction
             if ($level <= 1) {

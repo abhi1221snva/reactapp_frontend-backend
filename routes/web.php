@@ -372,6 +372,7 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->post('list', 'ListsController@getList');
   $router->post('edit-list', 'ListsController@editList');
   $router->post('add-list', 'ListsController@addList');
+  $router->post('add-list-api',  'ListsController@addListUsingApi');
   $router->post('search-leads', 'ListsController@searchLeads');
   $router->post('list-header', 'ListsController@getListHeader');
   $router->post('status-update-list', 'ListsController@updateListStatus');
