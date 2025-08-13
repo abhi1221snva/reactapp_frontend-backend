@@ -22,65 +22,75 @@ class Label extends Model
      *@param integer $id
      *@return array
      */
-    public function labelDetail($request)
-    {
-        try {
-            $data = array();
-            $searchStr = array();
+   public function labelDetail($request)
+{
+    try {
+        $data = [];
+        $searchStr = [];
 
-            if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
-                array_push($searchStr, 'is_deleted = :is_deleted');
-                $data['is_deleted'] = $request->input('is_deleted');
-            }
-
-            if ($request->has('label_id') && is_numeric($request->input('label_id'))) {
-                array_push($searchStr, 'id = :id');
-                $data['id'] = $request->input('label_id');
-            }
-            if ($request->has('extension') && is_numeric($request->input('extension'))) {
-                array_push($searchStr, 'title = :title');
-                $data['title'] = $request->input('title');
-            }
-            $str = !empty($searchStr) ? "  WHERE " . implode(" AND ", $searchStr) : '';
-            $sql = "SELECT * FROM " . $this->table . $str . " order by display_order ASC";
-            $record =  DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
-            $data = (array)$record;
-            if (!empty($data)) {
-                if ($request->has('start') && $request->has('limit')) {
-                    $total_row = count($data);
-
-                    $start = (int) $request->input('start');  // Start index (0-based)
-                    $limit = (int) $request->input('limit');  // Number of records to fetch
-
-                    $data = array_slice($data, $start, $limit, false);
-
-
-                    return array(
-                        'success' => 'true',
-                        'start' => $start,
-                        'limit' => $limit,
-                        'total' => $total_row,
-                        'message' => 'label detail.',
-                        'data'   => $data
-                    );
-                }
-                return array(
-                    'success' => 'true',
-                    'message' => 'label detail.',
-                    'data'   => $data
-                );
-            }
-            return array(
-                'success' => 'false',
-                'message' => 'label not created.',
-                'data'   => array()
-            );
-        } catch (Exception $e) {
-            Log::log($e->getMessage());
-        } catch (InvalidArgumentException $e) {
-            Log::log($e->getMessage());
+        // Filter by is_deleted
+        if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
+            $searchStr[] = 'is_deleted = :is_deleted';
+            $data['is_deleted'] = $request->input('is_deleted');
         }
+
+        // Filter by label_id
+        if ($request->has('label_id') && is_numeric($request->input('label_id'))) {
+            $searchStr[] = 'id = :id';
+            $data['id'] = $request->input('label_id');
+        }
+
+        // Filter by title (partial match)
+        if ($request->has('title') && trim($request->input('title')) !== '') {
+            $searchStr[] = 'title LIKE :title';
+            $data['title'] = '%' . $request->input('title') . '%';
+        }
+
+        // Build WHERE clause
+        $str = !empty($searchStr) ? " WHERE " . implode(" AND ", $searchStr) : '';
+
+        // SQL query
+        $sql = "SELECT * FROM " . $this->table . $str . " ORDER BY display_order ASC";
+        $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+        $data = (array)$record;
+
+        if (!empty($data)) {
+            // Pagination if start & limit are provided
+            if ($request->has('start') && $request->has('limit')) {
+                $total_row = count($data);
+                $start = (int) $request->input('start');
+                $limit = (int) $request->input('limit');
+
+                $data = array_slice($data, $start, $limit, false);
+
+                return [
+                    'success' => 'true',
+                    'total'   => $total_row,
+                    'message' => 'Label detail.',
+                    'data'    => $data
+                ];
+            }
+
+            return [
+                'success' => 'true',
+                'message' => 'Label detail.',
+                'data'    => $data
+            ];
+        }
+
+        return [
+            'success' => 'false',
+            'message' => 'Label not created.',
+            'data'    => []
+        ];
+
+    } catch (Exception $e) {
+        Log::error($e->getMessage());
+    } catch (InvalidArgumentException $e) {
+        Log::error($e->getMessage());
     }
+}
+
 
     public function labelDetail_old_code($request)
     {
