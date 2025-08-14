@@ -344,10 +344,12 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->post('upload-exclude-number', 'ExcludeNumberController@uploadExcludeNumber');
 
   //Label
-  $router->post('label', 'LabelController@getLabel');
-  $router->post('edit-label', 'LabelController@editLabel');
-  $router->post('add-label', 'LabelController@addLabel');
-  $router->post('status-update-label', 'LabelController@updateLabelStatus');
+  $router->post('label', 'LabelController@getLabel');  //done
+  $router->post('edit-label', 'LabelController@editLabel'); //done
+  $router->post('add-label', 'LabelController@addLabel'); //done
+  $router->post('status-update-label', 'LabelController@updateLabelStatus'); //done
+  $router->post('/label/updateDisplayOrder', 'LabelController@updateDisplayOrder');//pending
+
 
 
   //Api
@@ -367,15 +369,15 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
 
   //List
   $router->get('count-lists', 'ListsController@countList');
-  $router->get('list-data/{id}/content', 'ListsController@getListContentView');
-  $router->post('list-data/{id}/content', 'ListsController@getListContentView');
-  $router->post('list', 'ListsController@getList');
-  $router->post('edit-list', 'ListsController@editList');
+  $router->get('list-data/{id}/content', 'ListsController@getListContentView'); //done
+  $router->post('list-data/{id}/content', 'ListsController@getListContentView'); //done
+  $router->post('list', 'ListsController@getList'); //done
+  $router->post('edit-list', 'ListsController@editList');  //done for delete not edit
   $router->post('add-list', 'ListsController@addList');
-  $router->post('add-list-api',  'ListsController@addListUsingApi');
+  $router->post('add-list-api',  'ListsController@addListUsingApi');//done
   $router->post('search-leads', 'ListsController@searchLeads');
   $router->post('list-header', 'ListsController@getListHeader');
-  $router->post('status-update-list', 'ListsController@updateListStatus');
+  $router->post('status-update-list', 'ListsController@updateListStatus'); //done
   $router->post('status-update-campaign-list', 'ListsController@updateCampaignListStatus');
   $router->post('get-data-for-edit-lead-page', 'ListsController@getDataForEditLeadPage');
   $router->post('get-data-for-edit-lead-page_copy', 'ListsController@getDataForEditLeadPage_copy');
@@ -1099,7 +1101,6 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   //label
   $router->post('change-label-status', 'LabelController@changeLabelStatus');
   $router->post('change-view-on-lead-status', 'LabelController@changeViewOnLead');
-  $router->post('/label/updateDisplayOrder', 'LabelController@updateDisplayOrder');
 
   //Lead Source
   //lead source
