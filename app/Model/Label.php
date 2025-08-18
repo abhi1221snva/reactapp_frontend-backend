@@ -29,10 +29,13 @@ class Label extends Model
         $searchStr = [];
 
         // Filter by is_deleted
-        if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
+        /*if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
             $searchStr[] = 'is_deleted = :is_deleted';
             $data['is_deleted'] = $request->input('is_deleted');
-        }
+        }*/
+
+            $data['is_deleted'] = 0;
+
 
         // Filter by label_id
         if ($request->has('label_id') && is_numeric($request->input('label_id'))) {
