@@ -1225,68 +1225,144 @@ class Extension extends Model
         }
     }
 
-    public function checkExtension($request)
-    {
-        try {
-            $clientId = $request->auth->parent_id;
-            if ($request->has('extension') && is_numeric($request->input('extension'))) {
-                $data['extension'] = $clientId . $request->input('extension');
-                $data['is_deleted'] = 0;
-                $sql = "SELECT * FROM users  WHERE extension = :extension and is_deleted = :is_deleted ";
-                $record = DB::connection('master')->selectOne($sql, $data);
-                $response = (array)$record;
-            }
+//     public function checkExtension($request)
+//     {
+//         try {
+//             $clientId = $request->auth->parent_id;
+//             if ($request->has('extension') && is_numeric($request->input('extension'))) {
+//                 $data['extension'] = $clientId . $request->input('extension');
+//                 $data['is_deleted'] = 0;
+//                 $sql = "SELECT * FROM users  WHERE extension = :extension and is_deleted = :is_deleted ";
+//                 $record = DB::connection('master')->selectOne($sql, $data);
+//                 $response = (array)$record;
+//             }
+// Log::info('response',['response'=>$response]);
+//             if (!is_null($response)) {
+//                 return array(
+//                     'success' => 'false',
+//                     'message' => 'Extension Already Exists.',
+//                     //'data'   => $response
+//                 );
+//             }
+//             return array(
+//                 'success' => 'true',
+//                 'message' => 'Extension is Available.',
+//                 //'data'   => array()
+//             );
+//         } catch (Exception $e) {
+//             Log::log($e->getMessage());
+//         } catch (InvalidArgumentException $e) {
+//             Log::log($e->getMessage());
+//         }
+//     }
+public function checkExtension($request)
+{
+    try {
+        $clientId = $request->auth->parent_id;
+        $response = null;
 
-            if (!empty($response)) {
-                return array(
-                    'success' => 'false',
-                    'message' => 'Extension Already Exists.',
-                    //'data'   => $response
-                );
-            }
-            return array(
-                'success' => 'true',
-                'message' => 'Extension is Available.',
-                //'data'   => array()
-            );
-        } catch (Exception $e) {
-            Log::log($e->getMessage());
-        } catch (InvalidArgumentException $e) {
-            Log::log($e->getMessage());
+        if ($request->has('extension') && is_numeric($request->input('extension'))) {
+            // 🔹 Adjust based on how you store extensions in DB
+            $data['extension'] = $request->input('extension');  
+            //$data['extension'] = $clientId . $request->input('extension'); // if stored with parentId prefix
+            $data['is_deleted'] = 0;
+
+            $sql = "SELECT * FROM users WHERE extension = :extension AND is_deleted = :is_deleted";
+            $record = DB::connection('master')->selectOne($sql, $data);
+
+            $response = $record; // object or null
         }
-    }
 
+        Log::info('response', ['response' => $response]);
+
+        if ($response !== null) {
+            return [
+                'success' => 'false',
+                'message' => 'Extension Already Exists.',
+            ];
+        }
+
+        return [
+            'success' => 'true',
+            'message' => 'Extension is Available.',
+        ];
+
+    } catch (Exception $e) {
+        Log::error($e->getMessage());
+    } catch (InvalidArgumentException $e) {
+        Log::error($e->getMessage());
+    }
+}
+
+    // public function checkAltExtension($request)
+    // {
+    //     try {
+    //         $clientId = $request->auth->parent_id;
+    //         if ($request->has('alt_extension') && is_numeric($request->input('alt_extension'))) {
+    //             $data['alt_extension'] = $clientId . $request->input('alt_extension');
+    //             $data['is_deleted'] = 0;
+    //             $sql = "SELECT * FROM users  WHERE alt_extension = :alt_extension and is_deleted = :is_deleted ";
+    //             $record = DB::connection('master')->selectOne($sql, $data);
+    //             $response = (array)$record;
+    //         }
+
+    //         if (!empty($response)) {
+    //             return array(
+    //                 'success' => 'false',
+    //                 'message' => 'Alternate Extension Already Exists.',
+    //                 //'data'   => $response
+    //             );
+    //         }
+    //         return array(
+    //             'success' => 'true',
+    //             'message' => 'Alternate Extension is Available.',
+    //             //'data'   => array()
+    //         );
+    //     } catch (Exception $e) {
+    //         Log::log($e->getMessage());
+    //     } catch (InvalidArgumentException $e) {
+    //         Log::log($e->getMessage());
+    //     }
+    // }
     public function checkAltExtension($request)
     {
+        Log::info('Request received in checkAltExtension', [
+            'alt_extension' => $request->input('alt_extension')        ]);
+        
         try {
             $clientId = $request->auth->parent_id;
-            if ($request->has('alt_extension') && is_numeric($request->input('alt_extension'))) {
-                $data['alt_extension'] = $clientId . $request->input('alt_extension');
-                $data['is_deleted'] = 0;
-                $sql = "SELECT * FROM users  WHERE alt_extension = :alt_extension and is_deleted = :is_deleted ";
-                $record = DB::connection('master')->selectOne($sql, $data);
-                $response = (array)$record;
+            $response = null;
+            if ($request->input('alt_extension')) {
+                $altExtension = trim((string) $request->input('alt_extension'));
+    
+                $sql = "SELECT id FROM users WHERE alt_extension = :alt_extension AND is_deleted = 0 LIMIT 1";
+                $record = DB::connection('master')->selectOne($sql, ['alt_extension' => $altExtension]);
+    
+                Log::info('Check Alt Extension Query', [
+                    'alt_extension' => $altExtension,
+                    'record' => $record
+                ]);
+    
+                if ($record) {
+                    return [
+                        'success' => 'false',
+                        'message' => 'Alternate Extension Already Exists.'
+                    ];
+                }
             }
-
-            if (!empty($response)) {
-                return array(
-                    'success' => 'false',
-                    'message' => 'Alternate Extension Already Exists.',
-                    //'data'   => $response
-                );
-            }
-            return array(
+    
+            return [
                 'success' => 'true',
-                'message' => 'Alternate Extension is Available.',
-                //'data'   => array()
-            );
+                'message' => 'Alternate Extension is Available.'
+            ];
+    
         } catch (Exception $e) {
-            Log::log($e->getMessage());
-        } catch (InvalidArgumentException $e) {
-            Log::log($e->getMessage());
+            Log::error($e->getMessage());
+            return ['success' => 'false', 'message' => 'Server error occurred.'];
         }
     }
-
+    
+    
     public function updateEmail($request)
     {
         try {
