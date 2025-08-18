@@ -176,7 +176,7 @@ class Label extends Model
                 } else {
                     return [
                         'success' => 'false',
-                        'message' => 'Label was not updated successfully.'
+                        'message' => 'Label Already Deleted.'
                     ];
                 }
             }
