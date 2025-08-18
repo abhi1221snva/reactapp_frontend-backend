@@ -28,11 +28,9 @@ class Label extends Model
         $data = [];
         $searchStr = [];
 
-        // Filter by is_deleted
-        if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
-            $searchStr[] = 'is_deleted = :is_deleted';
-            $data['is_deleted'] = $request->input('is_deleted');
-        }
+        // Always exclude deleted records (default is_deleted = 0)
+        $searchStr[] = 'is_deleted = :is_deleted';
+        $data['is_deleted'] = 0;
 
         // Filter by label_id
         if ($request->has('label_id') && is_numeric($request->input('label_id'))) {
@@ -47,7 +45,7 @@ class Label extends Model
         }
 
         // Build WHERE clause
-        $str = !empty($searchStr) ? " WHERE " . implode(" AND ", $searchStr) : '';
+        $str = " WHERE " . implode(" AND ", $searchStr);
 
         // SQL query
         $sql = "SELECT * FROM " . $this->table . $str . " ORDER BY display_order ASC";
