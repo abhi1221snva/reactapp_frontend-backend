@@ -154,6 +154,9 @@ class Label extends Model
             if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
                 array_push($updateString, 'is_deleted = :is_deleted');
                 $data['is_deleted'] = $request->input('is_deleted');
+
+                array_push($updateString, 'status = :status');
+                $data['status'] = '0';
             }
 
             if (!empty($updateString) && !empty($data)) {
