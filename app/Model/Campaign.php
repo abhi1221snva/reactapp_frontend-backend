@@ -1047,23 +1047,21 @@ class Campaign extends Model
     //close hubspot
     function updateCampaignStatus($request)
     {
+        
         $listId = $request->input('listId');
         $status = $request->input('status');
+        Log::debug('Received status: ', ['status' => $status]);
 
         $saveRecord = Campaign::on('mysql_' . $request->auth->parent_id)
             ->where('id', $listId) // Use the actual listId received from the request
             ->update(array('status' => $status));
-        // Log::debug('Update SQL query: ', ['sql' => Campaign::on('mysql_' . $request->auth->parent_id)
-        // ->where('id', $listId)
-        // ->toSql()]);
         $saveRecordCampaignList = CampaignList::on('mysql_' . $request->auth->parent_id)
             ->where('campaign_id', $listId)
             ->update(array('status' => $status));
 
         // Log::debug('Received listId: ', ['listId' => $listId]);
-        // Log::debug('Received status: ', ['status' => $status]);
         // Log::debug('Number of updated rows: ', ['saveRecord' => $saveRecord]);
-        if ($saveRecord > 0 && $saveRecordCampaignList > 0) {
+        if ($saveRecord >= 0 && $saveRecordCampaignList >= 0) {
             return response()->json([
                 'success' => 'true',
                 'status' => 'true',
