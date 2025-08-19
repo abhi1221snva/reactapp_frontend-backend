@@ -300,8 +300,7 @@ class FaxController extends Controller
     public function sendFax()
     {
         $this->validate($this->request, [
-            'callid' => 'required|numeric',
-            'dialednumber' => 'required|numeric',
+       
             'faxurl' => 'required'
         ]);
         return $response = $this->model->sendFax($this->request);
