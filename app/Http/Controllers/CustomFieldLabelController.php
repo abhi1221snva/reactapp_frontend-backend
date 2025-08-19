@@ -114,7 +114,7 @@ class CustomFieldLabelController extends Controller
 
             $custom_field_values = CustomFieldLabelsValues::on("mysql_" . $request->auth->parent_id)->where('custom_id',$id);
             $custom_field_values->delete();
-            return $this->successResponse("Custom Field Label info", [$data]);
+            return $this->successResponse("Custom Field Label Deleted Sucessfully", [$data]);
         }
         catch (ModelNotFoundException $exception)
         {

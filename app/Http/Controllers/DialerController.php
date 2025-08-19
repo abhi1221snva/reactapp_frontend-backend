@@ -777,7 +777,6 @@ class DialerController extends Controller
     public function saveDisposition()
     {
         $this->validate($this->request, [
-            'id' => 'required|numeric',
             'campaign_id' => 'required|numeric',
             'disposition_id' => 'required|numeric',
             'lead_id' => 'required|numeric',
