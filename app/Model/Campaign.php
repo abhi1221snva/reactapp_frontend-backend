@@ -874,7 +874,9 @@ class Campaign extends Model
                     ON p.lead_id = lr.lead_id AND lr.campaign_id = p.campaign_id
                     WHERE lr.campaign_id = " . $request->input('campaign_id') . " AND lr.list_id = " . $request->input('list_id') . " AND lr.disposition_id = " . $dispositionId . "";
 
-                $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+                // $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+                                $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
+
                 //return $data = (array)$record;
 
                 $deleteId = array();
