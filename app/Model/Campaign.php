@@ -732,9 +732,30 @@ class Campaign extends Model
                 $data['is_deleted'] = $request->input('is_deleted');
             }
 
-            $sql = "SELECT campaign_list.campaign_id,campaign_list.status,campaign_list.list_id,campaign_list.is_deleted,list.title as l_title,list.id,campaign.title,campaign.crm_title_url FROM campaign_list inner join list on campaign_list.list_id = list.id inner join campaign on campaign_list.campaign_id = campaign.id WHERE campaign_list.campaign_id = '" . $request->input('campaign_id') . "' and campaign_list.is_deleted ='" . $request->input('is_deleted') . "'";
+            // $sql = "SELECT campaign_list.campaign_id,campaign_list.status,campaign_list.list_id,campaign_list.is_deleted,list.title as l_title,list.id,campaign.title,campaign.crm_title_url FROM campaign_list inner join list on campaign_list.list_id = list.id inner join campaign on campaign_list.campaign_id = campaign.id WHERE campaign_list.campaign_id = '" . $request->input('campaign_id') . "' and campaign_list.is_deleted ='" . $request->input('is_deleted') . "'";
 
-            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+            // $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+            $sql = "SELECT campaign_list.campaign_id,
+               campaign_list.status,
+               campaign_list.list_id,
+               campaign_list.is_deleted,
+               list.title as l_title,
+               list.id,
+               campaign.title,
+               campaign.crm_title_url 
+                FROM campaign_list 
+                INNER JOIN list ON campaign_list.list_id = list.id 
+                INNER JOIN campaign ON campaign_list.campaign_id = campaign.id 
+                WHERE campaign_list.campaign_id = :campaign_id 
+                AND campaign_list.is_deleted = :is_deleted";
+
+        $params = [
+            'campaign_id' => $request->input('campaign_id'),
+            'is_deleted'  => $request->input('is_deleted'),
+        ];
+
+        $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $params);
+
             $data = (array) $record;
 
             foreach ($data as $key => $id) {
