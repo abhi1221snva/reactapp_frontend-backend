@@ -1,7 +1,7 @@
 <?php
 
 namespace App\Http\Controllers;
-use App\Http\Controllers\Controller;
+
 use App\Helper\Helper;
 use GuzzleHttp\Exception\RequestException;
 use Illuminate\Http\Request;
@@ -13,16 +13,11 @@ use Illuminate\Support\Facades\Auth;
 use App\Model\User;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\WelcomeGoogleLoginMail;
+use App\Http\Helper\JwtToken;
 
-
-class GoogleController  extends Controller
+class GoogleController extends Controller
 {
-    /**
-     * Create a new controller instance.
-     *
-     * @return void
-     */
-    private $request;
+   private $request;
 
     public function __construct(Request $request)
     {
@@ -59,18 +54,21 @@ public function handleGoogleCallback(Request $request)
             // Link Google ID to existing user
             $user->google_id = $googleId;
             $user->save();
+          
         }
-
+  $token = JwtToken::createToken($user->id);
+                $token = $token[0];
         // Send welcome email on first Google login
-        if (!$user->first_google_login) {
-            Mail::to($user->email)->send(new WelcomeGoogleLoginMail($user));
+        // if (!$user->first_google_login) {
+        //     Mail::to($user->email)->send(new WelcomeGoogleLoginMail($user));
 
-            $user->first_google_login = true;
-            $user->save();
-        }
+        //     $user->first_google_login = true;
+        //     $user->save();
+        // }
 
         return response()->json([
             'user' => [
+                'token'=>$token,
                 'id' => $user->id,
                 'first_name' => $user->first_name,
                 'last_name' => $user->last_name,
