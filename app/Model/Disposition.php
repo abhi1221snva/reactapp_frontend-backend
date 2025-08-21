@@ -60,7 +60,7 @@ class Disposition extends Model
     //         'data'   => array()
     //     );
     // }
-    public function dispositionDetail($request)
+   public function dispositionDetail($request)
 {
     try {
         $searchStr = ['is_deleted = :is_deleted'];
@@ -72,9 +72,9 @@ class Disposition extends Model
             $data['id'] = $request->input('disposition_id');
         }
 
-        // Filter by search keyword (e.g. title or description)
-        if ($request->has('search') && !empty($request->input('search'))) {
-            $searchKeyword = '%' . $request->input('search') . '%';
+        // Filter by search keyword (title)
+        if ($request->has('title') && !empty($request->input('title'))) {
+            $searchKeyword = '%' . $request->input('title') . '%';
             $searchStr[] = '(title LIKE :search)';
             $data['search'] = $searchKeyword;
         }
@@ -86,11 +86,14 @@ class Disposition extends Model
         $masterRecords = DB::connection('master')->select($sqlMaster, $data);
 
         // Fetch from client DB
-        $sqlClient = "SELECT * FROM disposition WHERE $whereClause ORDER BY title";
+        $sqlClient = "SELECT * FROM disposition WHERE $whereClause";
         $clientRecords = DB::connection('mysql_' . $request->auth->parent_id)->select($sqlClient, $data);
 
         // Merge both
-        $mergedData = array_merge((array)$clientRecords);
+        $mergedData = array_merge((array)$masterRecords, (array)$clientRecords);
+
+        // Sort by title
+        usort($mergedData, fn($a, $b) => strcmp($a->title, $b->title));
 
         // Total before pagination
         $total = count($mergedData);
@@ -99,15 +102,15 @@ class Disposition extends Model
         if ($request->has('start') && $request->has('limit')) {
             $start = (int)$request->input('start');
             $limit = (int)$request->input('limit');
-            $mergedData = array_slice($mergedData, $start, $limit, true);
+            $mergedData = array_slice($mergedData, $start, $limit);
         }
 
         if (!empty($mergedData)) {
             return [
                 'success' => 'true',
                 'message' => 'Dispositions detail.',
+                'total_rows'   => $total,
                 'data'    => $mergedData,
-                'total'   => $total,
             ];
         }
 
@@ -126,6 +129,7 @@ class Disposition extends Model
         ];
     }
 }
+
 
 
     /*
@@ -336,17 +340,15 @@ class Disposition extends Model
     // Log::debug('Received status: ', ['status' => $status]);
     // Log::debug('Number of updated rows: ', ['saveRecord' => $saveRecord]);
 if ($saveRecord > 0) {
-    return response()->json([
-        'success'=>'true',
-        'status' => 'true',
+    return array(
+                    'success'=>'true',
         'message' => 'Disposition status updated successfully'
-    ]);
+                );
 } else {
-    return response()->json([
-        'success'=>'false',
-        'status' => 'false',
+    return array(
+                    'status' => 'false',
         'message' => 'Status  update failed'
-    ]);
+                );
         }
     }
 }

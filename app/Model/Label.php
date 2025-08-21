@@ -28,11 +28,9 @@ class Label extends Model
         $data = [];
         $searchStr = [];
 
-        // Filter by is_deleted
-        if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
-            $searchStr[] = 'is_deleted = :is_deleted';
-            $data['is_deleted'] = $request->input('is_deleted');
-        }
+        // Always exclude deleted records (default is_deleted = 0)
+        $searchStr[] = 'is_deleted = :is_deleted';
+        $data['is_deleted'] = 0;
 
         // Filter by label_id
         if ($request->has('label_id') && is_numeric($request->input('label_id'))) {
@@ -47,7 +45,7 @@ class Label extends Model
         }
 
         // Build WHERE clause
-        $str = !empty($searchStr) ? " WHERE " . implode(" AND ", $searchStr) : '';
+        $str = " WHERE " . implode(" AND ", $searchStr);
 
         // SQL query
         $sql = "SELECT * FROM " . $this->table . $str . " ORDER BY display_order ASC";
@@ -139,46 +137,64 @@ class Label extends Model
      *@param object $request
      *@return array
      */
-    public function labelUpdate($request)
-    {
-        try {
-            if ($request->has('label_id') && is_numeric($request->input('label_id'))) {
-                $updateString = array();
-                $data['id'] = $request->input('label_id');
-                if ($request->has('title') && !empty($request->input('title'))) {
-                    array_push($updateString, 'title = :title');
-                    $data['title'] = $request->input('title');
-                }
-                if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
-                    array_push($updateString, 'is_deleted = :is_deleted');
-                    $data['is_deleted'] = $request->input('is_deleted');
-                }
-                if (!empty($updateString) && !empty($data)) {
-                    $query = "UPDATE " . $this->table . " set " . implode(" , ", $updateString) . " WHERE id = :id";
-                    $save =  DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
-                    if ($save == 1) {
-                        return array(
+   public function labelUpdate($request)
+{
+    try {
+        if ($request->has('label_id') && is_numeric($request->input('label_id'))) {
+            $updateString = array();
+            $data['id'] = $request->input('label_id');
+
+            if ($request->has('title') && !empty($request->input('title'))) {
+                array_push($updateString, 'title = :title');
+                $data['title'] = $request->input('title');
+            }
+
+            if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
+                array_push($updateString, 'is_deleted = :is_deleted');
+                $data['is_deleted'] = $request->input('is_deleted');
+
+                array_push($updateString, 'status = :status');
+                $data['status'] = '0';
+            }
+
+            if (!empty($updateString) && !empty($data)) {
+                $query = "UPDATE " . $this->table . " SET " . implode(" , ", $updateString) . " WHERE id = :id";
+                $save = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
+
+                if ($save == 1) {
+                    // Check if update is a delete action
+                    if (isset($data['is_deleted']) && $data['is_deleted'] == 1) {
+                        return [
                             'success' => 'true',
-                            'message' => 'Label updated successfully.'
-                        );
-                    } else {
-                        return array(
-                            'success' => 'false',
-                            'message' => 'Label are not updated successfully.'
-                        );
+                            'message' => 'Label deleted successfully.'
+                        ];
                     }
+
+                    return [
+                        'success' => 'true',
+                        'message' => 'Label updated successfully.'
+                    ];
+                } else {
+                    return [
+                        'success' => 'false',
+                        'message' => 'Label Already Deleted.'
+                    ];
                 }
             }
-            return array(
-                'success' => 'false',
-                'message' => 'Label doesn\'t exist.'
-            );
-        } catch (Exception $e) {
-            Log::log($e->getMessage());
-        } catch (InvalidArgumentException $e) {
-            Log::log($e->getMessage());
         }
+
+        return [
+            'success' => 'false',
+            'message' => 'Label doesn\'t exist.'
+        ];
+
+    } catch (Exception $e) {
+        Log::log($e->getMessage());
+    } catch (InvalidArgumentException $e) {
+        Log::log($e->getMessage());
     }
+}
+
     /*
      *Add label details
      *@param object $request

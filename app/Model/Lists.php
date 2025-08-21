@@ -315,177 +315,207 @@ class Lists extends Model
      */
 
   public function editList($request)
-    {
-        $saveRecord = true;
-        try {
-            if ($request->has('list_id') && is_numeric($request->input('list_id')) && $request->has('campaign_id') && is_numeric($request->input('campaign_id'))) {
-                $save_1 = '';
-                $save_2 = '';
-                $save_3 = '';
-                $isDeleted = "false";
-                $updateString = array();
-                if ($request->has('title') && !empty($request->input('title'))) {
-                    $query = "UPDATE list set title = :title WHERE id = :id";
-                    $save_1 = DB::connection('mysql_' . $request->auth->parent_id)->update($query, array('title' => $request->input('title'), 'id' => $request->input('list_id')));
-                }
-                if ($request->has('new_campaign_id') && is_numeric($request->input('new_campaign_id'))) {
-                    array_push($updateString, 'campaign_id = :new_campaign_id');
-                    $data['new_campaign_id'] = $request->input('new_campaign_id');
-                }
-                if ($request->has('status') && is_numeric($request->input('status'))) {
-                    array_push($updateString, 'status = :status');
-                    $data['status'] = $request->input('status');
-                }
-                if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
-                    array_push($updateString, 'is_deleted = :is_deleted');
-                    $data['is_deleted'] = $request->input('is_deleted');
-                    $isDeleted = "true";
-                }
-                if (!empty($updateString) && !empty($data)) {
-                    $data['list_id'] = $request->input('list_id');
-                    $data['campaign_id'] = $request->input('campaign_id');
+{
+    $saveRecord = true;
 
-                    if ($isDeleted == "true") {
-                        $sql_campaign_list = "SELECT count(1) as rowCountListCampaign FROM campaign_list WHERE list_id = :list_id ";
-                        $record_campaign_list = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_campaign_list, array('list_id' => $request->input('list_id')));
-                        if ($record_campaign_list->rowCountListCampaign > 0) {
-                            $query = "DELETE FROM campaign_list WHERE list_id = :list_id";
-                            $save_2 = DB::connection('mysql_' . $request->auth->parent_id)->delete($query, array('list_id' => $request->input('list_id')));
+    try {
+        if (
+            $request->has('list_id') && is_numeric($request->input('list_id')) &&
+            $request->has('campaign_id') && is_numeric($request->input('campaign_id'))
+        ) {
+            $save_1 = $save_2 = $save_3 = '';
+            $isDeleted = false;
+            $updateString = [];
+            $data = [];
+
+            // Update title if provided
+            if ($request->has('title') && !empty($request->input('title'))) {
+                $query = "UPDATE list SET title = :title WHERE id = :id";
+                $save_1 = DB::connection('mysql_' . $request->auth->parent_id)
+                    ->update($query, [
+                        'title' => $request->input('title'),
+                        'id'    => $request->input('list_id')
+                    ]);
+            }
+
+            // Campaign ID update
+            if ($request->has('new_campaign_id') && is_numeric($request->input('new_campaign_id'))) {
+                $updateString[] = 'campaign_id = :new_campaign_id';
+                $data['new_campaign_id'] = $request->input('new_campaign_id');
+            }
+
+            // Status update
+            if ($request->has('status') && is_numeric($request->input('status'))) {
+                $updateString[] = 'status = :status';
+                $data['status'] = $request->input('status');
+            }
+
+            // Deleted flag
+            if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
+                $updateString[] = 'is_deleted = :is_deleted';
+                $data['is_deleted'] = $request->input('is_deleted');
+                $isDeleted = true;
+            }
+
+            // If we have something to update
+            if (!empty($updateString) && !empty($data)) {
+                $data['list_id'] = $request->input('list_id');
+                $data['campaign_id'] = $request->input('campaign_id');
+
+                if ($isDeleted) {
+                    // Delete related records
+                    $relatedTables = [
+                        'campaign_list',
+                        'list_data',
+                        'lead_report',
+                        'lead_temp',
+                        'list_header'
+                    ];
+
+                    foreach ($relatedTables as $table) {
+                        $sqlCount = "SELECT count(1) as rowCount FROM $table WHERE list_id = :list_id";
+                        $record = DB::connection('mysql_' . $request->auth->parent_id)
+                            ->selectOne($sqlCount, ['list_id' => $request->input('list_id')]);
+
+                        if ($record && $record->rowCount > 0) {
+                            $query = "DELETE FROM $table WHERE list_id = :list_id";
+                            DB::connection('mysql_' . $request->auth->parent_id)
+                                ->delete($query, ['list_id' => $request->input('list_id')]);
                         }
-
-                        $sql_list_data = "SELECT count(1) as rowCountListData FROM list_data WHERE list_id = :list_id ";
-                        $record_list_data = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_list_data, array('list_id' => $request->input('list_id')));
-                        if ($record_list_data->rowCountListData > 0) {
-                            $query = "DELETE FROM list_data WHERE list_id = :list_id";
-                            $save_3 = DB::connection('mysql_' . $request->auth->parent_id)->delete($query, array('list_id' => $request->input('list_id')));
-                        }
-                        $sql_lead_report = "SELECT count(1) as rowCountListLeadReport FROM lead_report WHERE list_id = :list_id ";
-                        $record_lead_report = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_lead_report, array('list_id' => $request->input('list_id')));
-                        if ($record_lead_report->rowCountListLeadReport > 0) {
-                            $query = "DELETE FROM lead_report WHERE list_id = :list_id";
-                            $save_6 = DB::connection('mysql_' . $request->auth->parent_id)->delete($query, array('list_id' => $request->input('list_id')));
-                        }
-
-                        $sql_lead_temp = "SELECT count(1) as rowCountListLeadTemp FROM lead_temp WHERE list_id = :list_id ";
-                        $record_lead_temp = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_lead_temp, array('list_id' => $request->input('list_id')));
-
-                        if ($record_lead_temp->rowCountListLeadTemp > 0) {
-                            $query = "DELETE FROM lead_temp WHERE list_id = :list_id";
-                            $save_4 = DB::connection('mysql_' . $request->auth->parent_id)->delete($query, array('list_id' => $request->input('list_id')));
-                        }
-
-                        $sql_list_header = "SELECT count(1) as rowCountListHeader FROM list_header WHERE list_id = :list_id ";
-                        $record_list_header = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_list_header, array('list_id' => $request->input('list_id')));
-                        if ($record_list_header->rowCountListHeader > 0) {
-                            $query = "DELETE FROM list_header WHERE list_id = :list_id";
-                            $save_5 = DB::connection('mysql_' . $request->auth->parent_id)->delete($query, array('list_id' => $request->input('list_id')));
-                        }
-
-                        #$query = "DELETE FROM list WHERE id = :id";
-                        #$delete_1 = DB::connection('mysql_' . $request->auth->parent_id)->delete($query, array('id' => $request->input('list_id')));
-                        $listModel = Lists::on('mysql_' . $request->auth->parent_id)->findOrFail($request->input('list_id'));
-                        $notificationData = [
-                            "action" => "List deleted",
-                            "listId" => $request->input('list_id'),
-                            "listName" => $listModel->title
-                        ];
-                        $listModel->delete();
-
-                        dispatch(new ListAddedNotificationJob($request->auth->parent_id, $request->input('campaign_id'), $notificationData))->onConnection("database");
-                    } else {
-                        $query = "UPDATE campaign_list set " . implode(" AND ", $updateString) . " WHERE list_id = :list_id AND campaign_id = :campaign_id";
-                        $save_2 = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
                     }
-                }
 
+                    // Delete list itself
+                    $listModel = Lists::on('mysql_' . $request->auth->parent_id)
+                        ->findOrFail($request->input('list_id'));
+
+                    $notificationData = [
+                        "action"   => "List deleted",
+                        "listId"   => $request->input('list_id'),
+                        "listName" => $listModel->title
+                    ];
+
+                    $listModel->delete();
+
+                    dispatch(new ListAddedNotificationJob(
+                        $request->auth->parent_id,
+                        $request->input('campaign_id'),
+                        $notificationData
+                    ))->onConnection("database");
+
+                } else {
+                    // Normal update
+                    $query = "UPDATE campaign_list SET " . implode(", ", $updateString) .
+                             " WHERE list_id = :list_id AND campaign_id = :campaign_id";
+                    $save_2 = DB::connection('mysql_' . $request->auth->parent_id)
+                        ->update($query, $data);
+                }
+            }
+
+            // Update list_header only if not deleted
+            if (!$isDeleted && !empty($request->input('list_header')) && is_array($request->input('list_header'))) {
                 $strIsDialSelectedColumn = '';
                 $boolIsDialingFound = false;
 
-                if (!empty($request->input('list_header')) && is_array($request->input('list_header'))) {
-                    foreach ($request->input('list_header') as $item => $value) {
-                        if (!empty($value['id']) && is_numeric($value['id'])) {
-                            $update['id'] = $value['id'];
-                            $update['is_search'] = (!empty($value['is_search']) && is_numeric($value['is_search'])) ? $value['is_search'] : 0;
-                            $update['is_dialing'] = (!empty($value['is_dialing']) && is_numeric($value['is_dialing'])) ? $value['is_dialing'] : 0;
-                            $update['is_visible'] = (!empty($value['is_visible']) && is_numeric($value['is_visible'])) ? $value['is_visible'] : 0;
-                            $update['is_editable'] = (!empty($value['is_editable']) && is_numeric($value['is_editable'])) ? $value['is_editable'] : 0;
-                            $update['label_id'] = (!empty($value['label_id']) && is_numeric($value['label_id'])) ? $value['label_id'] : null;
-                            $query = "UPDATE list_header set is_search = :is_search , is_dialing = :is_dialing, is_visible = :is_visible, is_editable = :is_editable, label_id = :label_id WHERE id = :id";
-                            $save_3 = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $update);
-                            //$query = "UPDATE list_header set is_search = :is_search , is_dialing = :is_dialing, is_visible = :is_visible, is_editable = :is_editable, label_id = :label_id WHERE id = :id";
-                            //$saveRecord &=  DB::connection('mysql_'.$request->auth->parent_id)->update($query, $update);
+                foreach ($request->input('list_header') as $value) {
+                    if (!empty($value['id']) && is_numeric($value['id'])) {
+                        $update = [
+                            'id'         => $value['id'],
+                            'is_search'  => (!empty($value['is_search']) && is_numeric($value['is_search'])) ? $value['is_search'] : 0,
+                            'is_dialing' => (!empty($value['is_dialing']) && is_numeric($value['is_dialing'])) ? $value['is_dialing'] : 0,
+                            'is_visible' => (!empty($value['is_visible']) && is_numeric($value['is_visible'])) ? $value['is_visible'] : 0,
+                            'is_editable'=> (!empty($value['is_editable']) && is_numeric($value['is_editable'])) ? $value['is_editable'] : 0,
+                            'label_id'   => (!empty($value['label_id']) && is_numeric($value['label_id'])) ? $value['label_id'] : null
+                        ];
 
-                            if ($update['is_dialing'] == 1) {
-                                $strIsDialSelectedColumn = $value['column_name'];
-                                $boolIsDialingFound = true;
-                            }
+                        $query = "UPDATE list_header 
+                                  SET is_search = :is_search,
+                                      is_dialing = :is_dialing,
+                                      is_visible = :is_visible,
+                                      is_editable = :is_editable,
+                                      label_id = :label_id
+                                  WHERE id = :id";
+
+                        DB::connection('mysql_' . $request->auth->parent_id)->update($query, $update);
+
+                        if ($update['is_dialing'] == 1 && !empty($value['column_name'])) {
+                            $strIsDialSelectedColumn = $value['column_name'];
+                            $boolIsDialingFound = true;
                         }
                     }
-                    $saveRecord &= Lists::on('mysql_' . $request->auth->parent_id)->where('id', $request->input('list_id'))->update(array('is_active' => 1));
                 }
 
-                $sql_list_data = "SELECT * FROM list_header WHERE list_id = :list_id and is_dialing=1 ";
-                        $record_list_data = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_list_data, array('list_id' => $request->input('list_id')));
+                Lists::on('mysql_' . $request->auth->parent_id)
+                    ->where('id', $request->input('list_id'))
+                    ->update(['is_active' => 1]);
 
-                       // echo "<pre>";print_r($record_list_data);die;
+                // Remove duplicates if dialing column exists
+                $record_list_data = DB::connection('mysql_' . $request->auth->parent_id)
+                    ->selectOne("SELECT * FROM list_header WHERE list_id = :list_id AND is_dialing = 1", [
+                        'list_id' => $request->input('list_id')
+                    ]);
 
-$listId = $request->input('list_id');
-$columnName = $record_list_data->column_name;
+                if ($record_list_data && !empty($record_list_data->column_name)) {
+                    $listId = $request->input('list_id');
+                    $columnName = $record_list_data->column_name;
 
-$sql_delete_duplicates = "
-DELETE ld
-FROM list_data ld
-JOIN (
-    SELECT MIN(id) AS keep_id, `$columnName` AS phone_number
-    FROM list_data
-    WHERE list_id = :list_id1
-      AND `$columnName` IS NOT NULL
-      AND `$columnName` != ''
-    GROUP BY `$columnName`
-) AS keep_rows
-ON ld.`$columnName` = keep_rows.phone_number
-AND ld.list_id = :list_id2
-AND ld.id <> keep_rows.keep_id
-";
+                    $sql_delete_duplicates = "
+                        DELETE ld
+                        FROM list_data ld
+                        JOIN (
+                            SELECT MIN(id) AS keep_id, `$columnName` AS phone_number
+                            FROM list_data
+                            WHERE list_id = :list_id1
+                              AND `$columnName` IS NOT NULL
+                              AND `$columnName` != ''
+                            GROUP BY `$columnName`
+                        ) AS keep_rows
+                        ON ld.`$columnName` = keep_rows.phone_number
+                        AND ld.list_id = :list_id2
+                        AND ld.id <> keep_rows.keep_id
+                    ";
 
-DB::connection('mysql_' . $request->auth->parent_id)
-    ->statement($sql_delete_duplicates, [
-        'list_id1' => $listId,
-        'list_id2' => $listId
-    ]);
-
-
-
-
-                //TODO: Think about having separate Job to do this.
-                /*if($boolIsDialingFound && $strIsDialSelectedColumn != ''){
-                    $strSql = "UPDATE client_8.list_data SET ".$strIsDialSelectedColumn." = REPLACE(".$strIsDialSelectedColumn.", '(', ''), ".$strIsDialSelectedColumn." = REPLACE(".$strIsDialSelectedColumn.", ')', ''), ".$strIsDialSelectedColumn." = REPLACE(".$strIsDialSelectedColumn.", '-', '') WHERE list_id = :list_id";
-                    DB::connection('mysql_' . $request->auth->parent_id)->update($strSql, [ 'list_id' => $request->input('list_id')]);
-                }*/
+                    DB::connection('mysql_' . $request->auth->parent_id)
+                        ->statement($sql_delete_duplicates, [
+                            'list_id1' => $listId,
+                            'list_id2' => $listId
+                        ]);
+                }
             }
-            if ($saveRecord) {
-                return array(
-                    'success' => 'true',
-                    'message' => 'Lists updated successfully.'
-                );
-            } else {
-                return array(
-                    'success' => 'false',
-                    'message' => 'Lists update failed.'
-                );
-            }
-        } catch (\Throwable $e) {
-            Log::error("Lists.editList.error", [
-                "message" => $e->getMessage(),
-                "file" => $e->getFile(),
-                "line" => $e->getLine()
-            ]);
-            return array(
-                'success' => 'false',
-                'message' => $e->getMessage()
-            );
         }
+
+
+        if($request->input('is_deleted') == 1)
+        {
+
+             return [
+            'success' => 'true',
+            'message' => 'Lists deleted successfully.'
+        ];
+        }
+        else
+        {
+
+        }
+
+        return [
+            'success' => 'true',
+            'message' => 'Lists updated successfully.'
+        ];
+
+    } catch (\Throwable $e) {
+        Log::error("Lists.editList.error", [
+            "message" => $e->getMessage(),
+            "file"    => $e->getFile(),
+            "line"    => $e->getLine()
+        ]);
+
+        return [
+            'success' => 'false',
+            'message' => $e->getMessage()
+        ];
     }
+}
+
 
     /*
      * Add List

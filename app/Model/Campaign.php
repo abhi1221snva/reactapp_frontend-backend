@@ -828,9 +828,30 @@ class Campaign extends Model
                 $data['is_deleted'] = $request->input('is_deleted');
             }
 
-            $sql = "SELECT campaign_list.campaign_id,campaign_list.status,campaign_list.list_id,campaign_list.is_deleted,list.title as l_title,list.id,campaign.title,campaign.crm_title_url FROM campaign_list inner join list on campaign_list.list_id = list.id inner join campaign on campaign_list.campaign_id = campaign.id WHERE campaign_list.campaign_id = '" . $request->input('campaign_id') . "' and campaign_list.is_deleted ='" . $request->input('is_deleted') . "'";
+            // $sql = "SELECT campaign_list.campaign_id,campaign_list.status,campaign_list.list_id,campaign_list.is_deleted,list.title as l_title,list.id,campaign.title,campaign.crm_title_url FROM campaign_list inner join list on campaign_list.list_id = list.id inner join campaign on campaign_list.campaign_id = campaign.id WHERE campaign_list.campaign_id = '" . $request->input('campaign_id') . "' and campaign_list.is_deleted ='" . $request->input('is_deleted') . "'";
 
-            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+            // $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+            $sql = "SELECT campaign_list.campaign_id,
+               campaign_list.status,
+               campaign_list.list_id,
+               campaign_list.is_deleted,
+               list.title as l_title,
+               list.id,
+               campaign.title,
+               campaign.crm_title_url 
+                FROM campaign_list 
+                INNER JOIN list ON campaign_list.list_id = list.id 
+                INNER JOIN campaign ON campaign_list.campaign_id = campaign.id 
+                WHERE campaign_list.campaign_id = :campaign_id 
+                AND campaign_list.is_deleted = :is_deleted";
+
+        $params = [
+            'campaign_id' => $request->input('campaign_id'),
+            'is_deleted'  => $request->input('is_deleted'),
+        ];
+
+        $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $params);
+
             $data = (array) $record;
 
             foreach ($data as $key => $id) {
@@ -949,7 +970,9 @@ class Campaign extends Model
                     ON p.lead_id = lr.lead_id AND lr.campaign_id = p.campaign_id
                     WHERE lr.campaign_id = " . $request->input('campaign_id') . " AND lr.list_id = " . $request->input('list_id') . " AND lr.disposition_id = " . $dispositionId . "";
 
-                $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+                // $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+                                $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
+
                 //return $data = (array)$record;
 
                 $deleteId = array();
@@ -1226,23 +1249,21 @@ class Campaign extends Model
     //close hubspot
     function updateCampaignStatus($request)
     {
+        
         $listId = $request->input('listId');
         $status = $request->input('status');
+        Log::debug('Received status: ', ['status' => $status]);
 
         $saveRecord = Campaign::on('mysql_' . $request->auth->parent_id)
             ->where('id', $listId) // Use the actual listId received from the request
             ->update(array('status' => $status));
-        // Log::debug('Update SQL query: ', ['sql' => Campaign::on('mysql_' . $request->auth->parent_id)
-        // ->where('id', $listId)
-        // ->toSql()]);
         $saveRecordCampaignList = CampaignList::on('mysql_' . $request->auth->parent_id)
             ->where('campaign_id', $listId)
             ->update(array('status' => $status));
 
         // Log::debug('Received listId: ', ['listId' => $listId]);
-        // Log::debug('Received status: ', ['status' => $status]);
         // Log::debug('Number of updated rows: ', ['saveRecord' => $saveRecord]);
-        if ($saveRecord > 0 && $saveRecordCampaignList > 0) {
+        if ($saveRecord >= 0 && $saveRecordCampaignList >= 0) {
             return response()->json([
                 'success' => 'true',
                 'status' => 'true',
