@@ -62,7 +62,28 @@ class DidsController extends Controller
      *      summary="Show complete did list",
      *      operationId="getList",
      *      tags={"DID"},
-     *      security={{"Bearer":{}}},
+     *     security={{"Bearer":{}}},
+     *     @OA\Parameter(
+     *          name="start",
+     *          in="query",
+     *          description="Start index for pagination",
+     *          required=false,
+     *          @OA\Schema(type="integer", default=0)
+     *      ),
+     *      @OA\Parameter(
+     *          name="limit",
+     *          in="query",
+     *          description="Limit number of records returned",
+     *          required=false,
+     *          @OA\Schema(type="integer", default=10)
+     *      ),
+     * *      @OA\Parameter(
+     *          name="search",
+     *          in="query",
+     *          description="serrch cli number",
+     *          required=false,
+     *          @OA\Schema(type="string")
+     *      ),
      *     @OA\RequestBody(
      *         @OA\MediaType(
      *             mediaType="application/json",

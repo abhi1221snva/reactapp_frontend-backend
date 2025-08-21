@@ -75,6 +75,59 @@ class Dids extends Model
 
             $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
             $data = (array)$record;
+            if ($request->has('search')) {
+
+                $sql = "SELECT * FROM " . $this->table . " where is_deleted='0' and cli='" . $request->input('search') . "' ";
+                //$sql = "SELECT * FROM " . $this->table;
+
+                $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
+                $data = (array)$record;
+            }
+            if ($request->has('start') && $request->has('limit')) {
+                //  $total_row = count($record);
+
+                $start = (int) $request->input('start');  // Start index (0-based)
+                $limit = (int) $request->input('limit');
+                //  $data = array_slice($record, $start, $limit, false);
+
+
+                $sql = "SELECT * FROM " . $this->table . " where is_deleted='0' LIMIT $start, $limit ";
+                //$sql = "SELECT * FROM " . $this->table;
+
+                $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
+                $data = (array)$record;
+            }
+
+            if (!empty($data)) {
+                return array(
+                    'success' => 'true',
+                    'message' => 'Lists detail.',
+                    'data' => $data
+                );
+            }
+
+            return array(
+                'success' => 'false',
+                'message' => 'Lists not created.',
+                'data' => array()
+            );
+        } catch (Exception $e) {
+            Log::log($e->getMessage());
+        } catch (InvalidArgumentException $e) {
+            Log::log($e->getMessage());
+        }
+    }
+
+
+    public function getList_old($request)
+    {
+        try {
+
+            $sql = "SELECT * FROM " . $this->table . " where is_deleted='0' ";
+            //$sql = "SELECT * FROM " . $this->table;
+
+            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
+            $data = (array)$record;
             if (!empty($data)) {
                 return array(
                     'success' => 'true',
@@ -101,10 +154,7 @@ class Dids extends Model
      *@param object $request
      * @return array
      */
-    public function editList($request)
-    {
-
-    }
+    public function editList($request) {}
 
     /*
      *Add List
@@ -153,7 +203,7 @@ class Dids extends Model
                 $data['sms_type'] = $request->input('sms_type');
                 $data['voip_provider'] = $request->input('voip_provider');
 
-                if($data['sms']) //Active and forward SMS for did
+                if ($data['sms']) //Active and forward SMS for did
                 {
                     $this->activateSMS($data['cli']);
                     $this->forwardSMS($data['cli']);
@@ -165,24 +215,24 @@ class Dids extends Model
                 $data['call_time_department_id']    =  $request->input('call_time_department_id');
                 $data['call_time_holiday']          =  $request->input('call_time_holiday');
                 $data['dest_type_ooh']          =  $request->input('dest_type_ooh');
-                $data['ivr_id_ooh']             =  $request->input('dest_type_ooh')==0?$request->input('ivr_id_ooh'):'';
-                $data['extension_ooh']          =  $request->input('dest_type_ooh')==1?$request->input('extension_ooh'):'';
-                $data['voicemail_id_ooh']       =  $request->input('dest_type_ooh')==2?$request->input('voicemail_id_ooh'):'';
-                $data['forward_number_ooh']     =  $request->input('dest_type_ooh')==4?$request->input('forward_number_ooh'):'';
-                $data['conf_id_ooh']            =  $request->input('dest_type_ooh')==5?$request->input('conf_id_ooh'):'';
-                $data['ingroup_ooh']            =  $request->input('dest_type_ooh')==8?$request->input('ingroup_ooh'):'';
+                $data['ivr_id_ooh']             =  $request->input('dest_type_ooh') == 0 ? $request->input('ivr_id_ooh') : '';
+                $data['extension_ooh']          =  $request->input('dest_type_ooh') == 1 ? $request->input('extension_ooh') : '';
+                $data['voicemail_id_ooh']       =  $request->input('dest_type_ooh') == 2 ? $request->input('voicemail_id_ooh') : '';
+                $data['forward_number_ooh']     =  $request->input('dest_type_ooh') == 4 ? $request->input('forward_number_ooh') : '';
+                $data['conf_id_ooh']            =  $request->input('dest_type_ooh') == 5 ? $request->input('conf_id_ooh') : '';
+                $data['ingroup_ooh']            =  $request->input('dest_type_ooh') == 8 ? $request->input('ingroup_ooh') : '';
 
                 $query = "INSERT INTO did (cli,cnam,area_code,dest_type,ivr_id,extension,voicemail_id,"
-                        . "forward_number,country_code,conf_id,ingroup,operator,default_did,voice,fax,voip_provider,sms,sms_phone,sms_email,"
-                        . "call_time_department_id, call_time_holiday, dest_type_ooh, ivr_id_ooh, extension_ooh, "
-                        . "voicemail_id_ooh, forward_number_ooh, conf_id_ooh, ingroup_ooh,set_exclusive_for_user,call_screening_status,call_screening_ivr_id,language,voice_name,ivr_audio_option,speech_text,prompt_option,redirect_last_agent,sms_type) "
-                        . "VALUE "
-                        . "(:cli,:cnam,:area_code,:dest_type,:ivr_id,:extension,:voicemail_id,:forward_number,:country_code,:conf_id,"
-                        . ":ingroup,:operator,:default_did,:voice,:fax,:voip_provider,:sms,:sms_phone,:sms_email,"
-                        . ":call_time_department_id, :call_time_holiday, :dest_type_ooh, :ivr_id_ooh, :extension_ooh, "
-                        . ":voicemail_id_ooh, :forward_number_ooh, :conf_id_ooh, :ingroup_ooh ,:set_exclusive_for_user,:call_screening_status,:call_screening_ivr_id,:language,:voice_name,:ivr_audio_option,:speech_text,:prompt_option,:redirect_last_agent,:sms_type"
-                        . ")";
-           
+                    . "forward_number,country_code,conf_id,ingroup,operator,default_did,voice,fax,voip_provider,sms,sms_phone,sms_email,"
+                    . "call_time_department_id, call_time_holiday, dest_type_ooh, ivr_id_ooh, extension_ooh, "
+                    . "voicemail_id_ooh, forward_number_ooh, conf_id_ooh, ingroup_ooh,set_exclusive_for_user,call_screening_status,call_screening_ivr_id,language,voice_name,ivr_audio_option,speech_text,prompt_option,redirect_last_agent,sms_type) "
+                    . "VALUE "
+                    . "(:cli,:cnam,:area_code,:dest_type,:ivr_id,:extension,:voicemail_id,:forward_number,:country_code,:conf_id,"
+                    . ":ingroup,:operator,:default_did,:voice,:fax,:voip_provider,:sms,:sms_phone,:sms_email,"
+                    . ":call_time_department_id, :call_time_holiday, :dest_type_ooh, :ivr_id_ooh, :extension_ooh, "
+                    . ":voicemail_id_ooh, :forward_number_ooh, :conf_id_ooh, :ingroup_ooh ,:set_exclusive_for_user,:call_screening_status,:call_screening_ivr_id,:language,:voice_name,:ivr_audio_option,:speech_text,:prompt_option,:redirect_last_agent,:sms_type"
+                    . ")";
+
                 $add = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
                 $data2['parent_id'] = $request->auth->parent_id;
                 $data2['cli'] = $request->input('cli');
@@ -192,17 +242,19 @@ class Dids extends Model
                 $data2['provider'] = 1;
                 $data2['voip_provider'] = $request->input('voip_provider');
                 $query2 = "INSERT INTO did (parent_id,cli,user_id,area_code,"
-                . "country_code,provider,voip_provider)"
-                . "VALUE "
-                . "(:parent_id,:cli,:user_id,:area_code,:country_code,:provider,"
-                . ":voip_provider"
-                . ")";
-                $addMaster= DB::connection('master')->update($query2, $data2);
-                if($request->option_1=='f' && !empty($request->fax_did)){
+                    . "country_code,provider,voip_provider)"
+                    . "VALUE "
+                    . "(:parent_id,:cli,:user_id,:area_code,:country_code,:provider,"
+                    . ":voip_provider"
+                    . ")";
+                $addMaster = DB::connection('master')->update($query2, $data2);
+                if ($request->option_1 == 'f' && !empty($request->fax_did)) {
                     foreach ($request->fax_did as $key => $value) {
-                        if($cli==''){ continue; }
+                        if ($cli == '') {
+                            continue;
+                        }
                         FaxDid::on('mysql_' . $request->auth->parent_id)->insert(
-                            array('userId' =>  $value,'did' => $request->cli , 'created_at'=> date('Y-m-d h:i:s'))
+                            array('userId' =>  $value, 'did' => $request->cli, 'created_at' => date('Y-m-d h:i:s'))
                         );
                     }
                 }
@@ -212,11 +264,10 @@ class Dids extends Model
                     $didInsertedId = $lastInsertId->id;
 
                     //update default did set
-                    if($request->input('default_did') == '1')
-                    {
+                    if ($request->input('default_did') == '1') {
                         $data_default['id'] = $didInsertedId;
                         $query_default = "UPDATE did set default_did='' WHERE id != :id";
-                        DB::connection('mysql_'.$request->auth->parent_id)->update($query_default, $data_default);
+                        DB::connection('mysql_' . $request->auth->parent_id)->update($query_default, $data_default);
                     }
 
                     return array(
@@ -225,7 +276,6 @@ class Dids extends Model
                         'data' => (array)$lastInsertId
                     );
                 }
-
             } else {
                 return array(
                     'success' => 'false',
@@ -233,7 +283,6 @@ class Dids extends Model
                 );
             }
         }
-
     }
 
     function didDetail($request)
@@ -264,7 +313,7 @@ class Dids extends Model
         if ($request->has('did_id')) {
             $did_id = $request->input("did_id");
             $cli = $request->input("cli");
-            $checkDid = Dids::on('mysql_' . $request->auth->parent_id)->where('id','<>',$request->did_id)->where('cli',$request->cli)->get()->toarray();
+            $checkDid = Dids::on('mysql_' . $request->auth->parent_id)->where('id', '<>', $request->did_id)->where('cli', $request->cli)->get()->toarray();
 
             //$query = 'SELECT count(1) AS row_count FROM did WHERE id !="' . $did_id . '" AND cli ="' . $cli . '"   ';
             //$countObj = collect(DB::connection('mysql_' . $request->auth->parent_id)->select($query))->first();
@@ -275,21 +324,21 @@ class Dids extends Model
                 $didObj->cnam               =  $request->cnam;
                 $didObj->area_code          =  $request->area_code;
                 $didObj->dest_type          =  $request->dest_type;
-                $didObj->ivr_id             =  $request->dest_type==0?$request->ivr_id:'';
-                $didObj->extension          =  $request->dest_type==1?$request->extension:'';
-                $didObj->voicemail_id       =  $request->dest_type==2?$request->voicemail_id:'';
-                $didObj->forward_number     =  $request->dest_type==4?$request->forward_number:'';
-                $didObj->country_code       =  $request->dest_type==4?$request->country_code:'';
-                $didObj->conf_id            =  $request->dest_type==5?$request->conf_id:'';
-                $didObj->ingroup            =  $request->dest_type==8?$request->ingroup:'';
-                $didObj->operator           =  $request->operator_check!=''?$request->operator:'';
+                $didObj->ivr_id             =  $request->dest_type == 0 ? $request->ivr_id : '';
+                $didObj->extension          =  $request->dest_type == 1 ? $request->extension : '';
+                $didObj->voicemail_id       =  $request->dest_type == 2 ? $request->voicemail_id : '';
+                $didObj->forward_number     =  $request->dest_type == 4 ? $request->forward_number : '';
+                $didObj->country_code       =  $request->dest_type == 4 ? $request->country_code : '';
+                $didObj->conf_id            =  $request->dest_type == 5 ? $request->conf_id : '';
+                $didObj->ingroup            =  $request->dest_type == 8 ? $request->ingroup : '';
+                $didObj->operator           =  $request->operator_check != '' ? $request->operator : '';
                 $didObj->default_did        =  $request->default_did;
-                $didObj->voice              =  $request->option_1!=''?'1':'';
-                $didObj->fax                =  $request->option_1==''?'1':'';
-                $didObj->sms                =  $request->sms!=''?1:0;
-                $didObj->sms_phone          =  $request->sms!=''?$request->sms_phone:'';
+                $didObj->voice              =  $request->option_1 != '' ? '1' : '';
+                $didObj->fax                =  $request->option_1 == '' ? '1' : '';
+                $didObj->sms                =  $request->sms != '' ? 1 : 0;
+                $didObj->sms_phone          =  $request->sms != '' ? $request->sms_phone : '';
                 $request_fax                = $didObj->fax;
-                $didObj->sms_email          =   $request->sms!=''?$request->sms_email:'';
+                $didObj->sms_email          =   $request->sms != '' ? $request->sms_email : '';
                 //$didObj->fax_did            =   $request->fax_did;
                 $didObj->set_exclusive_for_user = $request->set_exclusive_for_user;
 
@@ -306,11 +355,11 @@ class Dids extends Model
                 $didObj->sms_type = $request->sms_type;
                 $didObj->voip_provider = $request->voip_provider;
 
-                
-                
 
 
-                if($didObj->sms) //Active and forward SMS for did
+
+
+                if ($didObj->sms) //Active and forward SMS for did
                 {
                     $this->activateSMS($didObj->cli);
                     $this->forwardSMS($didObj->cli);
@@ -318,12 +367,9 @@ class Dids extends Model
                     $this->deactivateSMS($didObj->cli);
                 }
 
-                if($request->dest_type == 6)
-                {
+                if ($request->dest_type == 6) {
                     $this->forwardDidToFaxUrl($didObj->cli); //DId forward fax url api
-                }
-                else
-                {
+                } else {
                     $this->configDidToIp($didObj->cli, $request); //set did to ip on voice
                 }
 
@@ -331,60 +377,56 @@ class Dids extends Model
                 $didObj->call_time_department_id    =  $request->call_time_department_id;
                 $didObj->call_time_holiday          =  $request->call_time_holiday;
                 $didObj->dest_type_ooh          =  $request->dest_type_ooh;
-                $didObj->ivr_id_ooh             =  $request->dest_type_ooh==0?$request->ivr_id_ooh:'';
-                $didObj->extension_ooh          =  $request->dest_type_ooh==1?$request->extension_ooh:'';
-                $didObj->voicemail_id_ooh       =  $request->dest_type_ooh==2?$request->voicemail_id_ooh:'';
-                $didObj->forward_number_ooh     =  $request->dest_type_ooh==4?$request->forward_number_ooh:'';
-                $didObj->country_code_ooh       =  $request->dest_type_ooh==4?$request->country_code_ooh:'';
+                $didObj->ivr_id_ooh             =  $request->dest_type_ooh == 0 ? $request->ivr_id_ooh : '';
+                $didObj->extension_ooh          =  $request->dest_type_ooh == 1 ? $request->extension_ooh : '';
+                $didObj->voicemail_id_ooh       =  $request->dest_type_ooh == 2 ? $request->voicemail_id_ooh : '';
+                $didObj->forward_number_ooh     =  $request->dest_type_ooh == 4 ? $request->forward_number_ooh : '';
+                $didObj->country_code_ooh       =  $request->dest_type_ooh == 4 ? $request->country_code_ooh : '';
 
-                $didObj->conf_id_ooh            =  $request->dest_type_ooh==5?$request->conf_id_ooh:'';
-                $didObj->ingroup_ooh            =  $request->dest_type_ooh==8?$request->ingroup_ooh:'';
+                $didObj->conf_id_ooh            =  $request->dest_type_ooh == 5 ? $request->conf_id_ooh : '';
+                $didObj->ingroup_ooh            =  $request->dest_type_ooh == 8 ? $request->ingroup_ooh : '';
 
                 $editRecord = $didObj->save();
 
-                if($request->sms_type == '1')
-                {
-                    if($didObj->voip_provider == 'telnyx')
-                    {
+                if ($request->sms_type == '1') {
+                    if ($didObj->voip_provider == 'telnyx') {
                         $TELNYX_SMS_AI_TOKEN = env('TELNYX_SMS_AI_TOKEN');
                         $TELNYX_SMS_AI_URL   = env('TELNYX_SMS_AI_URL');
                         $TELNYX_SMS_AI_WEBHOOK   = env('TELNYX_SMS_AI_WEBHOOK');
 
-                        $sms_setting = SmsProviders::on('mysql_'.$request->auth->parent_id)->where("status",'1')->where('provider','telnyx')->get()->first();
+                        $sms_setting = SmsProviders::on('mysql_' . $request->auth->parent_id)->where("status", '1')->where('provider', 'telnyx')->get()->first();
                         $telnyx_api_key = $sms_setting->api_key;
 
-                        $addCli = $TELNYX_SMS_AI_URL.'sms/user-cli';
+                        $addCli = $TELNYX_SMS_AI_URL . 'sms/user-cli';
                         $ch = curl_init();
                         curl_setopt($ch, CURLOPT_URL, $addCli);
                         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
-                        curl_setopt($ch, CURLOPT_HTTPHEADER,['accept:application/json','x-api-key: '.$TELNYX_SMS_AI_TOKEN,'Content-Type: application/json',]);
+                        curl_setopt($ch, CURLOPT_HTTPHEADER, ['accept:application/json', 'x-api-key: ' . $TELNYX_SMS_AI_TOKEN, 'Content-Type: application/json',]);
 
-                        $array = ['cli'=>'+'.$request->cli,'webhook'=>$TELNYX_SMS_AI_WEBHOOK,'telnyx_key' => $telnyx_api_key,'telnyx_public_key' => 'string'];
+                        $array = ['cli' => '+' . $request->cli, 'webhook' => $TELNYX_SMS_AI_WEBHOOK, 'telnyx_key' => $telnyx_api_key, 'telnyx_public_key' => 'string'];
                         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($array));
                         $response = curl_exec($ch);
                         curl_close($ch);
-                    }
-                    else
-                    if($didObj->voip_provider == 'twilio')
-                    {
+                    } else
+                    if ($didObj->voip_provider == 'twilio') {
                         $TELNYX_SMS_AI_TOKEN = env('TELNYX_SMS_AI_TOKEN');
                         $TELNYX_SMS_AI_URL   = env('TELNYX_SMS_AI_URL');
-                        $TELNYX_SMS_AI_WEBHOOK   = env('TELNYX_SMS_AI_WEBHOOK').'?provider=twilio';
+                        $TELNYX_SMS_AI_WEBHOOK   = env('TELNYX_SMS_AI_WEBHOOK') . '?provider=twilio';
 
-                        $sms_setting = SmsProviders::on('mysql_'.$request->auth->parent_id)->where("status",'1')->where('provider','twilio')->get()->first();
+                        $sms_setting = SmsProviders::on('mysql_' . $request->auth->parent_id)->where("status", '1')->where('provider', 'twilio')->get()->first();
                         $twilio_api_key = $sms_setting->api_key;
                         $twilio_auth_id = $sms_setting->auth_id;
 
 
-                        $addCli = $TELNYX_SMS_AI_URL.'sms/user-cli';
+                        $addCli = $TELNYX_SMS_AI_URL . 'sms/user-cli';
                         $ch = curl_init();
                         curl_setopt($ch, CURLOPT_URL, $addCli);
                         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
-                        curl_setopt($ch, CURLOPT_HTTPHEADER,['accept:application/json','x-api-key: '.$TELNYX_SMS_AI_TOKEN,'Content-Type: application/json',]);
+                        curl_setopt($ch, CURLOPT_HTTPHEADER, ['accept:application/json', 'x-api-key: ' . $TELNYX_SMS_AI_TOKEN, 'Content-Type: application/json',]);
 
-                        $array = ['cli'=>'+'.$request->cli,'webhook'=>$TELNYX_SMS_AI_WEBHOOK,'twilio_account_sid' => $twilio_auth_id,'twilio_auth_token' => $twilio_api_key];
+                        $array = ['cli' => '+' . $request->cli, 'webhook' => $TELNYX_SMS_AI_WEBHOOK, 'twilio_account_sid' => $twilio_auth_id, 'twilio_auth_token' => $twilio_api_key];
                         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($array));
                         $response = curl_exec($ch);
                         curl_close($ch);
@@ -392,33 +434,34 @@ class Dids extends Model
                 }
 
                 //update for set default did
-                if($request->default_did == '1')
-                {
+                if ($request->default_did == '1') {
                     $data['id'] = $request->did_id;
                     $query = "UPDATE did set default_did='' WHERE id != :id";
-                    DB::connection('mysql_'.$request->auth->parent_id)->update($query, $data);
+                    DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
                 }
                 //$data_fax['cli'] = $cli;
                 //$query_did = "DELETE FROM fax_did WHERE did= :cli ";
                 //$deleteRecord = DB::connection('mysql_' . $request->auth->parent_id)->update($query_did, $data_fax);
 
-                if($request->option_1=='' && !empty($request->fax_did)){
-                    $faxDid = FaxDid::on('mysql_' . $request->auth->parent_id)->where('did',$request->cli)->delete();
+                if ($request->option_1 == '' && !empty($request->fax_did)) {
+                    $faxDid = FaxDid::on('mysql_' . $request->auth->parent_id)->where('did', $request->cli)->delete();
                     foreach ($request->fax_did as $key => $value) {
-                        if($cli==''){ continue; }
+                        if ($cli == '') {
+                            continue;
+                        }
                         FaxDid::on('mysql_' . $request->auth->parent_id)->insert(
-                            array('userId' =>  $value,'did' => $cli , 'created_at'=> date('Y-m-d h:i:s'))
+                            array('userId' =>  $value, 'did' => $cli, 'created_at' => date('Y-m-d h:i:s'))
                         );
                     }
                 }
 
 
-                if(!empty($request->sms_email) && !empty($request->sms_email) ){
+                if (!empty($request->sms_email) && !empty($request->sms_email)) {
                     Did::where('cli', $request->cli)->update(['user_id' => $request->sms_email]);
                 }
 
                 if ($editRecord == true) {
-                    $lastInsertId = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT * FROM " . $this->table . " where id='" .$request->did_id. "' ");
+                    $lastInsertId = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT * FROM " . $this->table . " where id='" . $request->did_id . "' ");
                     //$didInsertedId =  $lastInsertId->id;
                     return array(
                         'success' => 'true',
@@ -426,7 +469,6 @@ class Dids extends Model
                         'data' => (array)$lastInsertId
                     );
                 }
-
             } else {
                 return array(
                     'success' => 'false',
@@ -441,7 +483,7 @@ class Dids extends Model
         }
     }
 
-    
+
 
     public function deleteDid($request)
     {
@@ -461,7 +503,6 @@ class Dids extends Model
                     'message' => 'Phone Number not deleted in list'
                 );
             }
-
         } else {
             return array(
                 'success' => 'false',
@@ -469,7 +510,7 @@ class Dids extends Model
             );
         }
     }
-    
+
     public function getListCount($request)
     {
         try {
@@ -511,7 +552,7 @@ class Dids extends Model
         $record = DB::connection('master')->select($sql);
         $data = (array)$record;
         if (count($data) > 0) {
-            foreach ( $data as $key => $val ) {
+            foreach ($data as $key => $val) {
                 $addNewRecord = strtotime(date('Y-m-d', strtotime($val->created_at)));
                 $today = strtotime(date('Y-m-d'));
                 if ($addNewRecord >= $today) {
@@ -543,7 +584,6 @@ class Dids extends Model
             'message' => 'extension count not created.',
             'data' => array()
         );
-
     }
 
     function getInboundCountAvg($request)
@@ -612,144 +652,139 @@ class Dids extends Model
         }
     }
 
-    function faxDidList($request){
-        try{
+    function faxDidList($request)
+    {
+        try {
             return FaxDid::on('mysql_' . $request->auth->parent_id)->where(['did' => $request->did])->get();
-        }  catch (Exception $e) {
+        } catch (Exception $e) {
             Log::log($e->getMessage());
         } catch (InvalidArgumentException $e) {
             Log::log($e->getMessage());
         }
-
     }
 
-    function faxDidUserList($request){
-        try{
+    function faxDidUserList($request)
+    {
+        try {
             return FaxDid::on('mysql_' . $request->auth->parent_id)->where(['userId' => $request->auth->id])->get();
-        }  catch (Exception $e) {
+        } catch (Exception $e) {
             Log::log($e->getMessage());
         } catch (InvalidArgumentException $e) {
             Log::log($e->getMessage());
         }
-
     }
 
     /**
-    * Save Did
-    * @param type $request
-    * @return type
-    */
+     * Save Did
+     * @param type $request
+     * @return type
+     */
 
     function buySaveDidPlivo($request)
     {
-        foreach($request->data['number'] as $objNumber)
-        {
+        foreach ($request->data['number'] as $objNumber) {
             $objNumberDecoded = json_decode($objNumber);
             $result = $this->buyDidFromPlivo($request->data['country_code'], $objNumberDecoded, $request);
-          /*  if($result['status'])
+            /*  if($result['status'])
             {
             }*/
 
-                $this->saveDIdPLIVO($request, $objNumberDecoded->value);
+            $this->saveDIdPLIVO($request, $objNumberDecoded->value);
         }
 
         return array(
-             'success' => 'true',
-             'message' => 'Phone Number has been added successfully.',
-             'data' => []
-         );
+            'success' => 'true',
+            'message' => 'Phone Number has been added successfully.',
+            'data' => []
+        );
     }
 
     function buySaveDidTelnyx($request)
     {
-        foreach($request->data['number'] as $objNumber)
-        {
+        foreach ($request->data['number'] as $objNumber) {
             $objNumberDecoded = json_decode($objNumber);
-            $sms_setting = SmsProviders::on('mysql_' . $request->auth->parent_id)->where("status",'1')->where('provider','telnyx')->get()->first();
+            $sms_setting = SmsProviders::on('mysql_' . $request->auth->parent_id)->where("status", '1')->where('provider', 'telnyx')->get()->first();
             $phone_number = $objNumberDecoded->value;
 
-            $number = ["phone_numbers" => [
-                ["phone_number" => $phone_number]
-            ]
-        ];
+            $number = [
+                "phone_numbers" => [
+                    ["phone_number" => $phone_number]
+                ]
+            ];
 
             $telnyxApiKey = $sms_setting->api_key;
 
-        //check balance
+            //check balance
 
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, 'https://api.telnyx.com/v2/balance');
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Authorization: Bearer '.$telnyxApiKey,
-        ]);
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, 'https://api.telnyx.com/v2/balance');
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Authorization: Bearer ' . $telnyxApiKey,
+            ]);
 
-        $result = curl_exec($ch);
-        curl_close($ch);
-        $res = json_decode($result);
-        $balance =  $res->data->balance;
-        //$balance =0.01;
+            $result = curl_exec($ch);
+            curl_close($ch);
+            $res = json_decode($result);
+            $balance =  $res->data->balance;
+            //$balance =0.01;
 
-        if($balance >= 0.20)
-        {
-           
+            if ($balance >= 0.20) {
+            } else {
+                return array(
+                    'success' => 'false',
+                    'message' => 'Telnyx Balance is Low',
+                    'data' => array()
+                );
+            }
+
+
+            //echo $hell;die;
+
+
+            $ch = curl_init();
+            $send = json_encode($number);
+            curl_setopt($ch, CURLOPT_URL, 'https://api.telnyx.com/v2/number_orders');
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+            curl_setopt($ch, CURLOPT_POST, 1);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $send);
+
+            $headers = array();
+            $headers[] = 'Content-Type: application/json';
+            $headers[] = 'Accept: application/json';
+            $headers[] = 'Authorization: Bearer ' . $telnyxApiKey;
+
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+            $response = curl_exec($ch);
+
+            $this->saveDIdTelnyx($request, $objNumberDecoded->value);
         }
-        else
-        {
-            return array(
-                'success' => 'false',
-                'message' => 'Telnyx Balance is Low',
-                'data' => array()
-            );
-        }
-
-        
-        //echo $hell;die;
-
-
-        $ch = curl_init();
-        $send = json_encode($number);
-        curl_setopt($ch, CURLOPT_URL, 'https://api.telnyx.com/v2/number_orders');
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($ch, CURLOPT_POST, 1);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $send);
-
-        $headers = array();
-        $headers[] = 'Content-Type: application/json';
-        $headers[] = 'Accept: application/json';
-        $headers[] = 'Authorization: Bearer '. $telnyxApiKey;
-
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-        $response = curl_exec($ch);
-
-        $this->saveDIdTelnyx($request, $objNumberDecoded->value);
-    }
 
         return array(
-             'success' => 'true',
-             'message' => 'Phone Number has been added successfully.',
-             'data' => []
-         );
+            'success' => 'true',
+            'message' => 'Phone Number has been added successfully.',
+            'data' => []
+        );
     }
 
 
     function buySaveDidTwilio($request)
     {
-        foreach($request->data['number'] as $objNumber)
-        {
+        foreach ($request->data['number'] as $objNumber) {
             $objNumberDecoded = json_decode($objNumber);
-            $sms_setting = SmsProviders::on('mysql_' . $request->auth->parent_id)->where("status",'1')->where('provider','twilio')->get()->first();
+            $sms_setting = SmsProviders::on('mysql_' . $request->auth->parent_id)->where("status", '1')->where('provider', 'twilio')->get()->first();
             $phone_number = $objNumberDecoded->value;
 
-            $number = ["phone_numbers" => [
-                ["phone_number" => $phone_number]
-            ]
-        ];
+            $number = [
+                "phone_numbers" => [
+                    ["phone_number" => $phone_number]
+                ]
+            ];
 
             $telnyxApiKey = $sms_setting->api_key;
 
-       /* $ch = curl_init();
+            /* $ch = curl_init();
         $send = json_encode($number);
         curl_setopt($ch, CURLOPT_URL, 'https://api.telnyx.com/v2/number_orders');
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
@@ -764,23 +799,23 @@ class Dids extends Model
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         $response = curl_exec($ch);*/
 
-        $sid = $sms_setting->auth_id;
-        $token = $sms_setting->api_key;
+            $sid = $sms_setting->auth_id;
+            $token = $sms_setting->api_key;
 
-        $twilio = new \Twilio\Rest\Client($sid, $token);
-        $incoming_phone_number = $twilio->incomingPhoneNumbers
-                                ->create(["phoneNumber" => $phone_number]);
+            $twilio = new \Twilio\Rest\Client($sid, $token);
+            $incoming_phone_number = $twilio->incomingPhoneNumbers
+                ->create(["phoneNumber" => $phone_number]);
 
-//print($incoming_phone_number->sid);
+            //print($incoming_phone_number->sid);
 
-        $this->saveDIdTwilio($request, $objNumberDecoded->value);
-    }
+            $this->saveDIdTwilio($request, $objNumberDecoded->value);
+        }
 
         return array(
-             'success' => 'true',
-             'message' => 'Phone Number has been added successfully.',
-             'data' => []
-         );
+            'success' => 'true',
+            'message' => 'Phone Number has been added successfully.',
+            'data' => []
+        );
     }
 
 
@@ -791,16 +826,16 @@ class Dids extends Model
         // $data['cli'] = str_replace('+','',$number);
 
         // $data['area_code'] = substr($number, 1, 3);
-            $cleanNumber = str_replace('+', '', $number); // "13465918900"
+        $cleanNumber = str_replace('+', '', $number); // "13465918900"
         $data['cli'] = $cleanNumber;
         $data['area_code'] = substr($cleanNumber, 1, 3); // works if country code is 1 digit
-        $data['country_code'] = "+".$country_code;
+        $data['country_code'] = "+" . $country_code;
         $data['provider'] = $request->data['provider'];
         $data['voip_provider'] = $request->data['voip_provider'];
 
         $query = "INSERT INTO did (parent_id,cli,area_code,country_code,provider,voip_provider) "
-                    . "VALUE "
-                    . "(:parent_id,:cli,:area_code,:country_code,:provider,:voip_provider)";
+            . "VALUE "
+            . "(:parent_id,:cli,:area_code,:country_code,:provider,:voip_provider)";
         DB::connection('master')->update($query, $data);
 
         $data = [];
@@ -809,8 +844,8 @@ class Dids extends Model
         $data['voip_provider'] = $request->data['voip_provider'];
 
         $query = "INSERT INTO did (cli,area_code,voip_provider) "
-                    . "VALUE "
-                    . "(:cli,:area_code,:voip_provider)";
+            . "VALUE "
+            . "(:cli,:area_code,:voip_provider)";
         DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
     }
 
@@ -818,7 +853,7 @@ class Dids extends Model
     private function saveDIdTwilio($request, $number, $provider = 1)
     {
         $country_code = $request->data['country_code'];
-      
+
 
         $data['parent_id'] = $request->auth->parent_id;
         // $data['cli'] = str_replace('+','',$number);
@@ -827,13 +862,13 @@ class Dids extends Model
         $data['cli'] = $cleanNumber;
         $data['area_code'] = substr($cleanNumber, 1, 3); // works if country code is 1 digit
 
-        $data['country_code'] = "+".$country_code;
+        $data['country_code'] = "+" . $country_code;
         $data['provider'] = $request->data['provider'];
         $data['voip_provider'] = $request->data['voip_provider'];
 
         $query = "INSERT INTO did (parent_id,cli,area_code,country_code,provider,voip_provider) "
-                    . "VALUE "
-                    . "(:parent_id,:cli,:area_code,:country_code,:provider,:voip_provider)";
+            . "VALUE "
+            . "(:parent_id,:cli,:area_code,:country_code,:provider,:voip_provider)";
         DB::connection('master')->update($query, $data);
 
         $data = [];
@@ -842,44 +877,41 @@ class Dids extends Model
         $data['voip_provider'] = $request->data['voip_provider'];
 
         $query = "INSERT INTO did (cli,area_code,voip_provider) "
-                    . "VALUE "
-                    . "(:cli,:area_code,:voip_provider)";
+            . "VALUE "
+            . "(:cli,:area_code,:voip_provider)";
         DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
     }
 
 
     function buySaveDid($request)
     {
-        foreach($request->data['number'] as $objNumber)
-        {
+        foreach ($request->data['number'] as $objNumber) {
             $objNumberDecoded = json_decode($objNumber);
             $result = $this->buyDidFromSale($request->data['country_code'], $objNumberDecoded, $request);
-            if($result['status'])
-            {
+            if ($result['status']) {
                 $this->saveDId($request, $objNumberDecoded->value);
             }
-
         }
 
         return array(
-             'success' => 'true',
-             'message' => 'Phone Number has been added successfully.',
-             'data' => []
-         );
+            'success' => 'true',
+            'message' => 'Phone Number has been added successfully.',
+            'data' => []
+        );
     }
 
     /**
-    * Buy numbers from didforsale.com
-    * @param type $country_code
-    * @param type $number
-    * @param type $ip
-    * @return type
-    */
+     * Buy numbers from didforsale.com
+     * @param type $country_code
+     * @param type $number
+     * @param type $ip
+     * @return type
+     */
 
     private function buyDidFromPlivo($countryCode, $objNumber, $request)
     {
 
-        $sms_setting = SmsProviders::on('mysql_' . $request->auth->parent_id)->where("status",'1')->where('provider','plivo')->get()->first();
+        $sms_setting = SmsProviders::on('mysql_' . $request->auth->parent_id)->where("status", '1')->where('provider', 'plivo')->get()->first();
 
         $auth_id = $sms_setting->auth_id;
         $api_key = $sms_setting->api_key;
@@ -888,35 +920,35 @@ class Dids extends Model
         $auth_id = $sms_setting->auth_id;
         $api_key = $sms_setting->api_key;
 
-        $client = new RestClient($auth_id,$api_key);
+        $client = new RestClient($auth_id, $api_key);
 
         $response = $client->phonenumbers->buy($objNumber->value);
-        $this->configDidToIp($countryCode.$objNumber->value, $request);
+        $this->configDidToIp($countryCode . $objNumber->value, $request);
         return $response;
     }
 
     private function buyDidFromTelnyx($countryCode, $objNumber, $request)
     {
 
-         $sms_setting = SmsProviders::on('mysql_' . $request->auth->parent_id)->where("status",'1')->where('provider','telnyx')->get()->first();
+        $sms_setting = SmsProviders::on('mysql_' . $request->auth->parent_id)->where("status", '1')->where('provider', 'telnyx')->get()->first();
 
-         return array(
-             'success' => 'true',
-             'message' => 'Phone Number has been added successfully.',
-             'data' => $sms_setting
-         );
-
-        $auth_id = $sms_setting->auth_id;
-        $api_key = $sms_setting->api_key;
-
+        return array(
+            'success' => 'true',
+            'message' => 'Phone Number has been added successfully.',
+            'data' => $sms_setting
+        );
 
         $auth_id = $sms_setting->auth_id;
         $api_key = $sms_setting->api_key;
 
-        $client = new RestClient($auth_id,$api_key);
+
+        $auth_id = $sms_setting->auth_id;
+        $api_key = $sms_setting->api_key;
+
+        $client = new RestClient($auth_id, $api_key);
 
         $response = $client->phonenumbers->buy($objNumber->value);
-        $this->configDidToIp($countryCode.$objNumber->value, $request);
+        $this->configDidToIp($countryCode . $objNumber->value, $request);
         return $response;
     }
 
@@ -930,43 +962,43 @@ class Dids extends Model
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
         curl_setopt($ch, CURLOPT_HEADER, FALSE);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array("Accept: application/json","Authorization: Basic ".base64_encode(env('DID_SALE_SERVICE_KEY').':'.env('DID_SALE_SERVICE_TOKEN'))));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array("Accept: application/json", "Authorization: Basic " . base64_encode(env('DID_SALE_SERVICE_KEY') . ':' . env('DID_SALE_SERVICE_TOKEN'))));
         $response = curl_exec($ch);
         $response = json_decode($response, 1);
 
-        $this->configDidToIp($countryCode.$objNumber->value, $request);
+        $this->configDidToIp($countryCode . $objNumber->value, $request);
         return $response;
     }
 
     /**
-    * Save bought did data in DB
-    * @param type $request
-    * @param type $number
-    * @param type $provider
-    */
+     * Save bought did data in DB
+     * @param type $request
+     * @param type $number
+     * @param type $provider
+     */
     private function saveDId($request, $number, $provider = 1)
     {
         $country_code = $request->data['country_code'];
         $data['parent_id'] = $request->auth->parent_id;
-        $data['cli'] = $country_code.$number;
+        $data['cli'] = $country_code . $number;
         $data['area_code'] = substr($number, 0, 3);
-        $data['country_code'] = "+".$country_code;
+        $data['country_code'] = "+" . $country_code;
         $data['provider'] = $request->data['provider'];
         $data['voip_provider'] = $request->data['voip_provider'];
 
         $query = "INSERT INTO did (parent_id,cli,area_code,country_code,provider,voip_provider) "
-                    . "VALUE "
-                    . "(:parent_id,:cli,:area_code,:country_code,:provider,:voip_provider)";
+            . "VALUE "
+            . "(:parent_id,:cli,:area_code,:country_code,:provider,:voip_provider)";
         DB::connection('master')->update($query, $data);
 
         $data = [];
-        $data['cli'] = $country_code.$number;
+        $data['cli'] = $country_code . $number;
         $data['area_code'] = substr($number, 0, 3);
         $data['voip_provider'] = $request->data['voip_provider'];
 
         $query = "INSERT INTO did (cli,area_code,voip_provider) "
-                    . "VALUE "
-                    . "(:cli,:area_code,:voip_provider)";
+            . "VALUE "
+            . "(:cli,:area_code,:voip_provider)";
         DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
     }
 
@@ -977,13 +1009,13 @@ class Dids extends Model
         $data['parent_id'] = $request->auth->parent_id;
         $data['cli'] = $number;
         $data['area_code'] = substr($number, 1, 3);
-        $data['country_code'] = "+".$country_code;
+        $data['country_code'] = "+" . $country_code;
         $data['provider'] = $request->data['provider'];
         $data['voip_provider'] = $request->data['voip_provider'];
 
         $query = "INSERT INTO did (parent_id,cli,area_code,country_code,provider,voip_provider) "
-                    . "VALUE "
-                    . "(:parent_id,:cli,:area_code,:country_code,:provider,:voip_provider)";
+            . "VALUE "
+            . "(:parent_id,:cli,:area_code,:country_code,:provider,:voip_provider)";
         DB::connection('master')->update($query, $data);
 
         $data = [];
@@ -992,29 +1024,27 @@ class Dids extends Model
         $data['voip_provider'] = $request->data['voip_provider'];
 
         $query = "INSERT INTO did (cli,area_code,voip_provider) "
-                    . "VALUE "
-                    . "(:cli,:area_code,:voip_provider)";
+            . "VALUE "
+            . "(:cli,:area_code,:voip_provider)";
         DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
     }
-    
+
     /**
-    * Get asterisk server detail
-    * @param type $request
-    * @return type
-    */
+     * Get asterisk server detail
+     * @param type $request
+     * @return type
+     */
     private function getAsteriskServerDetails($request)
     {
         $hostIp = '';
         $sql = "select ip_address from client_server where client_id ={$request->auth->parent_id}  Limit 1 ";
         $record = DB::connection('master')->select($sql);
         $data = (array)$record;
-        if (isset($data[0]->ip_address))
-        {
-            $sql = "select host from asterisk_server where id = ".$data[0]->ip_address."  Limit 1 ";
+        if (isset($data[0]->ip_address)) {
+            $sql = "select host from asterisk_server where id = " . $data[0]->ip_address . "  Limit 1 ";
             $record = DB::connection('master')->select($sql);
             $data = (array)$record;
-            if (isset($data[0]->host))
-            {
+            if (isset($data[0]->host)) {
                 $hostIp = $data[0]->host;
             }
         }
@@ -1022,20 +1052,20 @@ class Dids extends Model
     }
 
     /**
-    * Active SMS
-    * @param type $request
-    * @return string
-    */
+     * Active SMS
+     * @param type $request
+     * @return string
+     */
     private function activateSMS($did)
     {
-        $result= [];
+        $result = [];
         $url = env('DID_SALE_API_URL') . "SMS/ActivateSMS";
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
         curl_setopt($ch, CURLOPT_POSTFIELDS, ['did' => $did]);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array("Accept: application/json","Authorization: Basic ".base64_encode(env('DID_SALE_SERVICE_KEY').':'.env('DID_SALE_SERVICE_TOKEN'))));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array("Accept: application/json", "Authorization: Basic " . base64_encode(env('DID_SALE_SERVICE_KEY') . ':' . env('DID_SALE_SERVICE_TOKEN'))));
         $result = curl_exec($ch);
         $result = json_decode($result, 1);
 
@@ -1043,20 +1073,20 @@ class Dids extends Model
     }
 
     /**
-    * DeActive SMS
-    * @param type $request
-    * @return string
-    */
+     * DeActive SMS
+     * @param type $request
+     * @return string
+     */
     private function deactivateSMS($did)
     {
-        $result= [];
+        $result = [];
         $url = env('DID_SALE_API_URL') . "SMS/DeactivateSMS";
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
         curl_setopt($ch, CURLOPT_POSTFIELDS, ['did' => $did]);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array("Accept: application/json","Authorization: Basic ".base64_encode(env('DID_SALE_SERVICE_KEY').':'.env('DID_SALE_SERVICE_TOKEN'))));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array("Accept: application/json", "Authorization: Basic " . base64_encode(env('DID_SALE_SERVICE_KEY') . ':' . env('DID_SALE_SERVICE_TOKEN'))));
         $result = curl_exec($ch);
         $result = json_decode($result, 1);
 
@@ -1064,13 +1094,13 @@ class Dids extends Model
     }
 
     /**
-    * Forward SMS
-    * @param type $request
-    * @return string
-    */
+     * Forward SMS
+     * @param type $request
+     * @return string
+     */
     private function forwardSMS($did)
     {
-        $result= [];
+        $result = [];
         $url = env('DID_SALE_API_URL') . "SMS/Forward";
         $forwardTo = env('DID_FORWARD_SMS_URL');
         $ch = curl_init();
@@ -1078,7 +1108,7 @@ class Dids extends Model
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
         curl_setopt($ch, CURLOPT_POSTFIELDS, ['from' => $did, 'action' => 'update', 'forward_to' => $forwardTo]);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array("Accept: application/json","Authorization: Basic ".base64_encode(env('DID_SALE_SERVICE_KEY').':'.env('DID_SALE_SERVICE_TOKEN'))));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array("Accept: application/json", "Authorization: Basic " . base64_encode(env('DID_SALE_SERVICE_KEY') . ':' . env('DID_SALE_SERVICE_TOKEN'))));
         $result = curl_exec($ch);
         $result = json_decode($result, 1);
 
@@ -1086,10 +1116,10 @@ class Dids extends Model
     }
 
     /**
-    * Forward Fax to Url
-    * @param type $request
-    * @return string
-    */
+     * Forward Fax to Url
+     * @param type $request
+     * @return string
+     */
     private function forwardDidToFaxUrl($did)
     {
         $res = [];
@@ -1100,32 +1130,31 @@ class Dids extends Model
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['did' => [$did], 'forward_url' => $forwardUrl, 'callerid' => "none"]));
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array("Accept: application/json","Authorization: Basic ".base64_encode(env('DID_SALE_SERVICE_KEY').':'.env('DID_SALE_SERVICE_TOKEN'))));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array("Accept: application/json", "Authorization: Basic " . base64_encode(env('DID_SALE_SERVICE_KEY') . ':' . env('DID_SALE_SERVICE_TOKEN'))));
         $result = curl_exec($ch);
         $result = json_decode($result, 1);
         return $result;
     }
 
     /**
-    * Forward DID to Url
-    * @param type $request
-    * @return string
-    */
+     * Forward DID to Url
+     * @param type $request
+     * @return string
+     */
     private function configDidToIp($did, $request)
     {
         $ip = $this->getAsteriskServerDetails($request);
-        $result= [];
+        $result = [];
         $url = env('DID_SALE_API_URL') . "products/ManageDID/config1";
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['did' => [$did], 'ip1' => $ip, 'ip1_port' => "5060"]));
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array("Accept: application/json","Authorization: Basic ".base64_encode(env('DID_SALE_SERVICE_KEY').':'.env('DID_SALE_SERVICE_TOKEN'))));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array("Accept: application/json", "Authorization: Basic " . base64_encode(env('DID_SALE_SERVICE_KEY') . ':' . env('DID_SALE_SERVICE_TOKEN'))));
         $result = curl_exec($ch);
         $result = json_decode($result, 1);
 
         return $result;
     }
-
 }
