@@ -572,9 +572,9 @@ class Lists extends Model
                                     //$header_list[] = array('list_id'=>$list_id , 'column_name'=>$column_name , 'header'=>$ep );
                                     $h_list['list_id'] = $list_id;
                                     $h_list['column_name'] = $column_name;
-                                    if (empty($ep)) {
+                                   /* if (empty($ep)) {
                                         $ep = null;
-                                    }
+                                    }*/
                                     $h_list['header'] = $ep;
                                     //	if(empty($column_name) && empty($ep)){ continue; }
                                     $check_date = strlen(strrchr(strtolower($ep), "date"));
@@ -582,9 +582,12 @@ class Lists extends Model
                                     if (strpos(strtolower($ep), 'date')) {
                                         $date_array[$ncr] = $ncr;
                                     }
-                                    if (!empty($h_list['header'])) {
+                                    /*if (!empty($h_list['header'])) {
                                         $header_list[] = $h_list;
-                                    }
+                                    }*/
+
+                                    
+                                        $header_list[] = $h_list;
 
                                     // $query[] = "INSERT INTO list_header (list_id, column_name, header) VALUE ($list_id, $column_name , $ep)";
                                 }
