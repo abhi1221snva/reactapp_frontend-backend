@@ -81,7 +81,7 @@ class Lists extends Model
                 $data['list_id'] = $list;
                 $sql = "SELECT list_header.column_name,label.title FROM list_header inner join label on label.id = list_header.label_id  WHERE list_header.list_id IN(" . $list . ") group by label.title";
             }
-            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
             $data = (array) $record;
             if (!empty($data)) {
                 return array(
@@ -136,7 +136,7 @@ class Lists extends Model
                 $data['list_id'] = $list;
                 $sql = "SELECT * FROM list_data WHERE list_id IN(" . $list . ") and " . $request->input('header_column') . "='" . $number . "'";
             }
-            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
             $data = (array) $record;
             if (!empty($data)) {
                 return array(
@@ -754,70 +754,90 @@ class Lists extends Model
      * @return type
      */
     function getLeadDataForEditPage($lead_id, $parent_id)
-    {
-        try {
-            $leadDataArr = $inLabelArr = $inLeadArr = $finalLeadArr = $temp = [];
-            $sql = "(SELECT * FROM list_data WHERE id = $lead_id) UNION (SELECT * FROM list_data_archive WHERE id = $lead_id)";
+{
+    try {
+        $leadDataArr = $inLabelArr = $inLeadArr = $finalLeadArr = $temp = [];
+
+        // Fetch lead data from main or archive table
+        $sql = "(SELECT * FROM list_data WHERE id = $lead_id) 
+                UNION 
+                (SELECT * FROM list_data_archive WHERE id = $lead_id)";
+        $record = DB::connection('mysql_' . $parent_id)->select($sql);
+        $listData = (array) $record;
+
+        if (!empty($listData)) {
+            $list_id = $listData[0]->list_id;
+            foreach ($listData[0] as $key => $val) {
+                $inLeadArr[$key] = $val;
+            }
+        } else { // if no lead found, get a default list_id from list table
+            $sql = "SELECT id FROM list WHERE type = 2";
             $record = DB::connection('mysql_' . $parent_id)->select($sql);
-            $listData = (array) $record;
-
-            if (!empty($listData)) {
-                $list_id = $listData[0]->list_id;
-                foreach ($listData[0] as $key => $val) {
-                    $inLeadArr[$key] = $val;
-                }
-            } else { //if no lead id found then get from list table having type = 2
-                $sql = "SELECT id FROM list WHERE type = 2";
-                $record = DB::connection('mysql_' . $parent_id)->select($sql);
-                $list = (array) $record;
-                $list_id = $list[0]->id;
-            }
-
-            if ($list_id > 0) {
-                $sql = "SELECT id, title FROM label ORDER BY label.id ASC"; //get all labels
-                $labels = DB::connection('mysql_' . $parent_id)->select($sql);
-
-                //get all list_header columun (option_1,option_2)
-                $sql = $sql = "SELECT list_header.is_dialing, list_header.column_name, label.title, label.id "
-                    . "FROM list_header inner join label on label.id = list_header.label_id  "
-                    . "WHERE list_header.list_id IN(" . $list_id . ") group by label.title ORDER BY label.id ASC";
-                $listHeaders = DB::connection('mysql_' . $parent_id)->select($sql);
-
-                //intermidiate label array
-                foreach ($labels as $lab) {
-                    $inLabelArr[$lab->id] = $lab->title;
-                }
-                //Create lead array from intermidiate List header array
-                foreach ($listHeaders as $header) {
-                    $temp['id'] = $header->id;
-                    $temp['title'] = $header->title;
-                    $temp['is_dialing'] = $header->is_dialing;
-                    $temp['column_name'] = $header->column_name;
-                    $temp['value'] = isset($inLeadArr[$header->column_name]) ? $inLeadArr[$header->column_name] : '';
-                    $leadDataArr[$header->id] = $temp;
-                    $temp = [];
-                }
-                //Create final lead array from  Lead array
-                foreach ($inLabelArr as $key => $val) {
-                    if (isset($leadDataArr[$key])) {
-                        $finalLeadArr[$key] = $leadDataArr[$key];
-                    } else {
-                        $temp['id'] = $key;
-                        $temp['title'] = $val;
-                        $temp['value'] = '';
-                        $temp['is_dialing'] = 0;
-                        $finalLeadArr[$key] = $temp;
-                    }
-                    $temp = [];
-                }
-            }
-            return ['leadData' => (array) $finalLeadArr];
-        } catch (Exception $e) {
-            Log::log($e->getMessage());
-        } catch (InvalidArgumentException $e) {
-            Log::log($e->getMessage());
+            $list = (array) $record;
+            $list_id = $list[0]->id;
         }
+
+        if ($list_id > 0) {
+            // Get all labels
+            $labels = DB::connection('mysql_' . $parent_id)
+                        ->select("SELECT id, title FROM label ORDER BY id ASC");
+
+            // Get all list_header columns for the list
+            $listHeaders = DB::connection('mysql_' . $parent_id)
+                             ->select("SELECT list_header.is_dialing, list_header.column_name, label.title, label.id
+                                       FROM list_header
+                                       INNER JOIN label ON label.id = list_header.label_id
+                                       WHERE list_header.list_id = $list_id
+                                       GROUP BY label.title
+                                       ORDER BY label.id ASC");
+
+            // Intermediate label array
+            foreach ($labels as $lab) {
+                $inLabelArr[$lab->id] = $lab->title;
+            }
+
+            // Create lead array from list headers
+            foreach ($listHeaders as $header) {
+                $temp['id'] = $header->id;
+                $temp['title'] = $header->title;
+                $temp['is_dialing'] = $header->is_dialing;
+                $temp['column_name'] = $header->column_name;
+                $temp['value'] = isset($inLeadArr[$header->column_name]) ? $inLeadArr[$header->column_name] : '';
+                $leadDataArr[$header->id] = $temp;
+                $temp = [];
+            }
+
+            // Create final lead array from labels
+            foreach ($inLabelArr as $key => $val) {
+                if (isset($leadDataArr[$key])) {
+                    $finalLeadArr[$key] = $leadDataArr[$key];
+                } else {
+                    $temp['id'] = $key;
+                    $temp['title'] = $val;
+                    $temp['value'] = '';
+                    $temp['is_dialing'] = 0;
+                    $finalLeadArr[$key] = $temp;
+                }
+                $temp = [];
+            }
+
+            // Filter only fields with non-empty values
+            $finalLeadArr = array_filter($finalLeadArr, function($item) {
+                return isset($item['value']) && $item['value'] !== '';
+            });
+        }
+
+        return ['leadData' => (array) $finalLeadArr];
+
+    } catch (Exception $e) {
+        Log::error($e->getMessage());
+        return ['leadData' => []];
+    } catch (InvalidArgumentException $e) {
+        Log::error($e->getMessage());
+        return ['leadData' => []];
     }
+}
+
 
 
     function getLeadDataForEditPage_copy($lead_id, $parent_id)
