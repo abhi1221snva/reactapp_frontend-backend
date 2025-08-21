@@ -967,158 +967,103 @@ class ListsController extends Controller
 
 
     public function getListContentView(Request $request)
-    {
-        //  Log::info('reached', $request->all());
+{
+    try {
+        $intListId = $request->route('id');
+        $excel = $request->input('excel');
+        $search = $request->input('search');
 
-        try {
-            $intListId = $request->route('id');
-            $show = $request->input('show');
-            $arrList = Lists::on("mysql_" . $request->auth->parent_id)->find($intListId)->toArray();
+        $arrList = Lists::on("mysql_" . $request->auth->parent_id)->find($intListId)?->toArray();
 
-            if (empty($arrList)) {
-                return $this->failResponse("List data does not exist", []);
-            }
-
-            // Fetch list headers
-            $strListHeaderSql = "SELECT GROUP_CONCAT(header ORDER BY column_name + 0 ASC SEPARATOR ',') as list_headers
-                FROM list_header
-                WHERE list_id = :list_id";
-            $arrListHeaders = DB::connection('mysql_' . $request->auth->parent_id)->select($strListHeaderSql, ['list_id' => $intListId]);
-            $arrFinalListHeaders = array_reverse(explode(",", $arrListHeaders[0]->list_headers));
-
-            $search = [];
-            $limitString = '';
-
-            // Handle search results differently
-            if ($request->has('search') && !empty($request->input('search'))) {
-                $search['search_term'] = '%' . $request->input('search') . '%';
-            }
-
-            // Initialize parameters array
-            $parameters = ['list_id' => $intListId];
-
-            // Prepare search query and parameters
-            if (!empty($search)) {
-                $searchQuery = 'AND (';
-                $options = [];
-                for ($i = 1; $i <= 30; $i++) {
-                    $options[] = "option_$i LIKE :search_term_$i";
-                    $parameters["search_term_$i"] = $search['search_term'];
-                }
-                $searchQuery .= implode(' OR ', $options);
-                $searchQuery .= ')';
-            } else {
-                $searchQuery = '';
-            }
-
-            // Fetch total records count
-            $strTotalRecordsSql = "SELECT COUNT(*) as total_records
-                FROM list_data
-                WHERE list_id = :list_id $searchQuery";
-            $totalRecordsResult = DB::connection('mysql_' . $request->auth->parent_id)->select($strTotalRecordsSql, $parameters);
-            $totalRecords = $totalRecordsResult[0]->total_records;
-            $excel = $request->input('excel');
-
-
-            Log::info('reached', ['excel' => $excel]);
-
-
-            if ($request->has(['start', 'limit'])) {
-                // Pagination logic
-
-                $start = (int)$request->input('start', 0);
-                $limit = (int)$request->input('limit', 10);
-                $parameters['start'] = $start;
-                $parameters['limit'] = $limit;
-
-                $strListDataSql = "SELECT " . implode(', ', array_map(fn($i) => "option_$i", range(1, 30))) . "
-            FROM list_data
-            WHERE list_id = :list_id $searchQuery
-            LIMIT :limit OFFSET :start";
-                $arrFinalListData = DB::connection('mysql_' . $request->auth->parent_id)
-                    ->select($strListDataSql, $parameters);
-
-
-                return $this->successResponse("Paginated list data", [
-                    "total_records" => $totalRecords,
-                    "list_name" => $arrList["title"],
-                    "list_header" => $arrFinalListHeaders,
-                    "list_data" => $arrFinalListData,
-                    "list_data_count" => count($arrFinalListData),
-                    "search_term" => $request->input('search'),
-                    "start" => $start,
-                    "limit" => $limit
-                ]);
-            }
-            // Check if it's a download request
-            if ($excel) {
-                // Fetch all list data without pagination
-                $strListDataSql = "SELECT  option_1, option_2, option_3, option_4, option_5, option_6, option_7, option_8, option_9,
-                option_10, option_11, option_12, option_13, option_14, option_15, option_16, option_17,
-                option_18, option_19, option_20, option_21, option_22, option_23, option_24, option_25,
-                option_26, option_27, option_28, option_29, option_30
-                    FROM list_data
-                    WHERE list_id = :list_id $searchQuery";
-                $arrFinalListData = DB::connection('mysql_' . $request->auth->parent_id)->select($strListDataSql, $parameters);
-                // Return success response with all list data
-                return $this->successResponse("All list data for download", [
-                    "list_name" => $arrList["title"],
-                    "list_header" => $arrFinalListHeaders,
-                    "list_data" => $arrFinalListData,
-                    "total_records" => $totalRecords,
-                ]);
-            }
-
-
-            // Apply pagination for regular requests
-            //              // Get lower and upper limits from the request
-            $lowerLimit = $request->input('lower_limit');
-            $upperLimit = $request->input('upper_limit');
-
-
-            $strTotalRecordsSql = "SELECT COUNT(*) as total_records
-        FROM list_data
-        WHERE list_id = :list_id $searchQuery";
-            $totalRecordsResult = DB::connection('mysql_' . $request->auth->parent_id)->select($strTotalRecordsSql, $parameters);
-            $totalRecords = $totalRecordsResult[0]->total_records;
-
-
-
-            // Fetch paginated data using the calculated offset and items per page
-            // Fetch data using lower and upper limits
-            $strListDataSql = "SELECT  option_1, option_2, option_3, option_4, option_5, option_6, option_7, option_8, option_9,
-   option_10, option_11, option_12, option_13, option_14, option_15, option_16, option_17,
-    option_18, option_19, option_20, option_21, option_22, option_23, option_24, option_25,
-    option_26, option_27, option_28, option_29, option_30
-   FROM list_data
-   WHERE list_id = :list_id $searchQuery
-   LIMIT :lower_limit, :upper_limit";
-            $arrFinalListData = DB::connection('mysql_' . $request->auth->parent_id)
-                ->select($strListDataSql, array_merge($parameters, ['lower_limit' => $lowerLimit, 'upper_limit' => $upperLimit]));
-            if (empty($arrFinalListData)) {
-                return $this->failResponse("No data found for your search", []);
-            }
-            $filename = $arrList["title"] . "_" . date("Y-m-d") . ".csv";
-            $this->storeDownloadHistory($request->auth->id, $filename, $request);
-
-
-
-
-
-            // Return success response with paginated list data and total records
-            return $this->successResponse("Paginated list data", [
-                "list_name" => $arrList["title"],
-                "list_header" => $arrFinalListHeaders,
-                "list_data" => $arrFinalListData,
-                "list_data_count" => count($arrFinalListData),
-                "search_term" => $request->input('search'),
-                "total_records" => $totalRecords,
-            ]);
-        } catch (Exception $e) {
-            Log::error($e->getMessage());
-            return $this->failResponse("Error occurred", []);
+        if (empty($arrList)) {
+            return $this->failResponse("List data does not exist", []);
         }
+
+        // Fetch list headers with label titles
+        $arrListHeaders = DB::connection('mysql_' . $request->auth->parent_id)
+            ->table('list_header as l')
+            ->leftJoin('label as lb', 'l.label_id', '=', 'lb.id')
+            ->where('l.list_id', $intListId)
+            ->where('l.is_deleted', 0)
+            ->where('lb.is_deleted', 0)
+            ->orderByRaw('l.column_name + 0 ASC')
+            ->select('l.column_name', 'lb.title', 'l.label_id')
+            ->get();
+
+        if ($arrListHeaders->isEmpty()) {
+            return $this->failResponse("No headers found for this list", []);
+        }
+
+        // Map column_name => label title (use exact column name, no extra 'option_')
+        $columnToLabelMap = [];
+        foreach ($arrListHeaders as $header) {
+            $columnToLabelMap[$header->column_name] = $header->title;
+        }
+
+        $optionColumns = array_keys($columnToLabelMap);
+
+        // Initialize query builder
+        $listDataQuery = DB::connection('mysql_' . $request->auth->parent_id)
+            ->table('list_data')
+            ->where('list_id', $intListId)
+            ->select($optionColumns);
+
+        // Apply search if exists
+        if (!empty($search)) {
+            $listDataQuery->where(function($q) use ($search, $optionColumns) {
+                foreach ($optionColumns as $column) {
+                    $q->orWhere($column, 'LIKE', "%$search%");
+                }
+            });
+        }
+
+        // Clone query for total records
+        $totalRecords = (clone $listDataQuery)->count();
+
+        // Pagination
+        if (!$excel) {
+            $start = (int)$request->input('start', 0);
+            $limit = (int)$request->input('limit', 10);
+            $listDataQuery->offset($start)->limit($limit);
+        }
+
+        // Fetch list data
+        $arrListData = $listDataQuery->get();
+
+        // Map options to label titles and remove empty/null values
+        $arrFinalListData = [];
+        foreach ($arrListData as $row) {
+            $rowData = [];
+            foreach ($columnToLabelMap as $column => $labelTitle) {
+                if (isset($row->$column) && $row->$column !== null && $row->$column !== '') {
+                    $rowData[$labelTitle] = $row->$column;
+                }
+            }
+            if (!empty($rowData)) {
+                $arrFinalListData[] = $rowData;
+            }
+        }
+
+        // Prepare list headers for response
+        $arrFinalListHeaders = array_values($columnToLabelMap);
+
+        return $this->successResponse($excel ? "All list data for download" : "Paginated list data", [
+            "list_name" => $arrList["title"],
+            "list_header" => $arrFinalListHeaders,
+            "list_data" => $arrFinalListData,
+            "list_data_count" => count($arrFinalListData),
+            "total_records" => $totalRecords,
+            "search_term" => $search,
+            "start" => $start ?? 0,
+            "limit" => $limit ?? 0,
+        ]);
+
+    } catch (Exception $e) {
+        Log::error($e->getMessage());
+        return $this->failResponse("Error occurred", []);
     }
+}
+
     public function getListContentView_old_copy(Request $request)
     {
         Log::info('reached', $request->all());
