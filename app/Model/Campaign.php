@@ -429,8 +429,8 @@ class Campaign extends Model
         try {
 
             if (!$request->has('api_id') || empty($request->api_id)) {
-    $request->merge(['api_id' => 1]);
-}
+                $request->merge(['api_id' => 1]);
+            }
             if ($request->has('title') && !empty($request->input('title'))) {
                 $validate = $this->validateCampaign($request);
                 $insertString = implode(" , ", $validate['string']);
@@ -721,7 +721,103 @@ class Campaign extends Model
         }
     }
 
-    function getCampaignAndList($request)
+    public function getCampaignAndList($request)
+    {
+        $campaignId = $request->input('campaign_id');
+        $isDeleted = $request->input('is_deleted', 0); // default to 0 if not passed
+
+        // Validate input
+        if (!is_numeric($campaignId)) {
+            return [
+                'success' => 'false',
+                'message' => 'Invalid campaign_id',
+                'data' => []
+            ];
+        }
+
+        try {
+            // Main campaign + list fetch
+            $sql = "
+            SELECT 
+                campaign_list.campaign_id,
+                campaign_list.status,
+                campaign_list.list_id,
+                campaign_list.is_deleted,
+                list.title AS l_title,
+                campaign_list.updated_at,
+                list.id,
+                campaign.title,
+                campaign.crm_title_url,
+               campaign.updated 
+            FROM campaign_list
+            INNER JOIN list ON campaign_list.list_id = list.id
+            INNER JOIN campaign ON campaign_list.campaign_id = campaign.id
+            WHERE campaign_list.campaign_id = :campaign_id
+            AND campaign_list.is_deleted = :is_deleted
+        ";
+
+            $bindings = [
+                'campaign_id' => $campaignId,
+                'is_deleted' => $isDeleted,
+            ];
+
+            $records = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $bindings);
+
+            if (empty($records)) {
+                return [
+                    'success' => 'false',
+                    'message' => 'No campaign list found.',
+                    'data' => []
+                ];
+            }
+
+            // Enrich records with counts
+            foreach ($records as $record) {
+                $data1 = [
+                    'campaign_id' => $record->campaign_id,
+                    'list_id' => $record->list_id,
+                ];
+
+                // Lead Report count
+                $sqlLeadReport = "
+                SELECT COUNT(1) as rowCountLeadReport 
+                FROM lead_report 
+                WHERE campaign_id = :campaign_id 
+                  AND list_id = :list_id
+            ";
+                $leadCount = DB::connection('mysql_' . $request->auth->parent_id)
+                    ->selectOne($sqlLeadReport, $data1);
+                $record->rowLeadReport = $leadCount->rowCountLeadReport ?? 0;
+
+                // List Data count
+                $sqlListData = "
+                SELECT COUNT(1) as rowCountList 
+                FROM list_data 
+                WHERE list_id = :list_id
+            ";
+                $listCount = DB::connection('mysql_' . $request->auth->parent_id)
+                    ->selectOne($sqlListData, ['list_id' => $record->list_id]);
+                $record->rowListData = $listCount->rowCountList ?? 0;
+                $record->happer_count = $listCount->rowCountList ?? 0;
+                $record->created_date = $record->updated_at;
+            }
+
+            return [
+                'success' => 'true',
+                'message' => 'Campaign List detail.',
+                'data' => $records,
+            ];
+        } catch (\Exception $e) {
+            return [
+                'success' => 'false',
+                'message' => 'Error: ' . $e->getMessage(),
+                'data' => []
+            ];
+        }
+    }
+
+
+    function getCampaignAndList_old($request)
     {
 
         try {
@@ -1004,10 +1100,93 @@ class Campaign extends Model
 
     function campaignById($request)
     {
+
+        $campaignId = $request->campaign_id;
+
+        $campaign = Campaign::on('mysql_' . $request->auth->parent_id)
+            ->where('id', $campaignId)
+            ->first();
+
+        if (!$campaign) {
+            return [
+                'success' => 'false',
+                'message' => 'Campaign not found.',
+                'data' => []
+            ];
+        }
+
+        // Convert for query bindings
+        $data1['campaign_id'] = $campaign->id;
+
+        // 1. lead_report count
+        $sql_count_lead_report = "SELECT count(1) as rowCountLeadReport FROM lead_report WHERE campaign_id = :campaign_id ";
+        $record_count_lead = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_count_lead_report, $data1);
+        $campaign->rowLeadReport = $record_count_lead->rowCountLeadReport ?? 0;
+
+        // 2. campaign_list or hubspot_campaign_list
+        $searchStr = [];
+        if ($data1['campaign_id'] && is_numeric($data1['campaign_id'])) {
+            $searchStr[] = 'campaign_id = :campaign_id';
+        }
+
+        if ($campaign->crm_title_url === 'hubspot') {
+            $sql = "SELECT * FROM hubspot_campaign_list WHERE " . implode(" AND ", $searchStr) . " AND status=1 AND is_deleted=0";
+        } else {
+            $sql = "SELECT * FROM campaign_list WHERE " . implode(" AND ", $searchStr) . " AND status=1 AND is_deleted=0";
+        }
+
+        $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data1);
+        $list = (array) $record;
+        $count = count($list);
+        $id_list = [];
+
+        foreach ($list as $listItem) {
+            $id_list[] = $listItem->list_id;
+        }
+
+        $campaign->rowList = $count;
+
+        $list_ids = "'" . implode("','", $id_list) . "'";
+        if ($campaign->crm_title_url === 'hubspot') {
+            $sql_count_list = "SELECT sum(size) as rowCountList FROM hubspot_lists WHERE list_id IN ($list_ids)";
+        } else {
+            $sql_count_list = "SELECT count(1) as rowCountList FROM list_data WHERE list_id IN ($list_ids)";
+        }
+
+        $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_count_list);
+        $campaign->rowListData = $record_count_list[0]->rowCountList ?? 0;
+
+        // 4. lead_temp count
+        $sql_lead_temp = "SELECT count(1) as rowLeadTemp FROM lead_temp WHERE campaign_id = :campaign_id ";
+        $record_rowLeadTemp = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_lead_temp, $data1);
+        $campaign->rowLeadTemp = $record_rowLeadTemp->rowLeadTemp ?? 0;
+
+        // Optional: add created_date or hopper_count
+        $campaign->created_date = $campaign->created_at;
+        $campaign->hopper_count = 1; // Replace with real count if needed
+
+        //  $hopper_count=0;
+        $hopper_count = $campaign->rowLeadTemp;
+        $userArray = Campaign::on('mysql_' . $request->auth->parent_id)
+            ->where('id', $request->campaign_id)
+            ->get()
+            ->map(function ($campaign) use ($hopper_count) {
+                // Add created_date
+                $campaign->setAttribute('created_date', $campaign->updated ?: null);
+
+                // Add hopper_count
+                $campaign->setAttribute('hopper_count', $hopper_count);
+
+                return $campaign;
+            });
+
+        return $userArray;
+    }
+    function campaignById_old($request)
+    {
         $userArray = Campaign::on('mysql_' . $request->auth->parent_id)->where('id', $request->campaign_id)->get();
         return $userArray;
     }
-
 
     //hubspot
 

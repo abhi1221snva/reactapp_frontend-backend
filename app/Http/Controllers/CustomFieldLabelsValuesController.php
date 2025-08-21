@@ -333,7 +333,7 @@ class CustomFieldLabelsValuesController extends Controller
         try {
             $custom_field_labels = CustomFieldLabelsValues::on("mysql_" . $request->auth->parent_id)->findOrFail($id);
             $data = $custom_field_labels->delete();
-            return $this->successResponse("Custom Field value info", [$data]);
+            return $this->successResponse("Custom Field value deleted successfully", [$data]);
         } catch (ModelNotFoundException $exception) {
             throw new NotFoundHttpException("No Custom Field value with id $id");
         } catch (\Throwable $exception) {

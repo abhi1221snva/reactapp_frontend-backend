@@ -456,7 +456,19 @@ class CampaignController extends Controller
      * )
      */
 
-    function getCampaignAndList()
+    public function getCampaignAndList()
+    {
+        $campaign = Campaign::on("mysql_" . $this->request->auth->parent_id)->where('id', $this->request->campaign_id)->get()->first();
+
+        if ($campaign->crm_title_url == 'hubspot') {
+            $response = $this->hubspot->getCampaignAndListHubspot($this->request);
+        } else {
+            $response = $this->model->getCampaignAndList($this->request);
+        }
+        return response()->json($response);
+    }
+
+    function getCampaignAndList_old()
     {
 
 
