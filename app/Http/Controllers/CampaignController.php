@@ -336,33 +336,36 @@ class CampaignController extends Controller
     public function addCampaign(Request $request)
     {
         Log::info('campaign reached', [$request->all()]);
-        $this->validate($this->request, [
-            // 'id'                => 'required|numeric',
-            'title'             => 'required|string|max:255',
-            'description'       => 'string|max:255',
-            'status'            => 'numeric',
-            'is_deleted'        => 'numeric',
-            'caller_id'         => 'string|max:255',
-            'custom_caller_id'  => 'numeric',
-            'time_based_calling' => 'numeric',
-            'call_time_start'   => 'date_format:H:i',
-            'call_time_end'     => 'date_format:H:i',
-            'dial_mode'         => 'string|max:255',
-            // 'group_id'          => 'numeric',
-            'max_lead_temp'     => 'numeric',
-            'min_lead_temp'     => 'numeric',
-            'api'               => 'numeric',
-            'group_id'          => 'required|numeric',
-            'send_report'       => 'numeric',
-            'disposition_id'    => 'required|array',
-            'hopper_mode'       => 'numeric',
-            'call_ratio'        => 'string',
-            'duration'          => 'string',
-            'automated_duration' => 'string',
-            'call_metric' => 'string',
+        $this->validate($request, [
+    'title'              => 'required|string|max:255',
+    'description'        => 'nullable|string|max:255',
+    'status'             => 'nullable|numeric',
+    'is_deleted'         => 'nullable|numeric',
+    'caller_id'          => 'nullable|string|max:255',
+    'custom_caller_id'   => 'nullable|numeric',
+    'time_based_calling' => 'nullable|numeric',
+    'dial_mode'          => 'nullable|string|max:255',
+    'max_lead_temp'      => 'nullable|numeric',
+    'min_lead_temp'      => 'nullable|numeric',
+    'api'                => 'nullable|numeric',
+    'group_id'           => 'required|numeric',
+    'send_report'        => 'nullable|numeric',
+    'disposition_id'     => 'required|array',
+    'hopper_mode'        => 'nullable|numeric',
+    'call_ratio'         => 'nullable|string',
+    'duration'           => 'nullable|string',
+    'automated_duration' => 'nullable|string',
+    'call_metric'        => 'nullable|string',
 
+    // ✅ new call schedule validation
+    'call_schedule'                           => 'required|array',
+    'call_schedule.default.start'             => 'required|date_format:H:i',
+    'call_schedule.default.end'               => 'required|date_format:H:i',
+    'call_schedule.*.enabled'                 => 'nullable|boolean',
+    'call_schedule.*.start'                   => 'nullable|date_format:H:i',
+    'call_schedule.*.end'                     => 'nullable|date_format:H:i',
+]);
 
-        ]);
 
         if ($this->request->crm_title_url == 'hubspot') {
             $response = $this->hubspot->addCampaignHubspot($this->request);
@@ -859,4 +862,60 @@ class CampaignController extends Controller
         $response = $this->model->updateCampaignHopper($this->request);
         return response()->json($response);
     }
+
+
+    public function getCallSchedule($id, Request $request)
+{
+
+     $campaignId = $id;
+    try {
+        // Fetch the campaign
+        $campaign = DB::connection('mysql_' . $request->auth->parent_id)
+                      ->table('campaign')
+                      ->where('id', $campaignId)
+                      ->first();
+
+        if (!$campaign) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Campaign not found'
+            ], 404);
+        }
+
+        // Fetch the campaign schedules
+        $schedules = DB::connection('mysql_' . $request->auth->parent_id)
+                       ->table('campaign_schedules')
+                       ->where('campaign_id', $campaignId)
+                       ->get()
+                       ->keyBy('day_of_week');
+
+        // Format schedules for cleaner response
+        $formattedSchedules = [];
+        foreach ($schedules as $day => $schedule) {
+            $formattedSchedules[$day] = [
+                'enabled'    => (bool) $schedule->enabled,
+                'start_time' => $schedule->start_time,
+                'end_time'   => $schedule->end_time
+            ];
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Call schedule fetched successfully',
+            'data'    => [
+                'campaign_id' => $campaign->id,
+                'title'       => $campaign->title,
+                'call_schedule' => $formattedSchedules
+            ]
+        ]);
+
+    } catch (Exception $e) {
+        Log::error($e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Something went wrong: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
 }
