@@ -11,6 +11,8 @@ use App\Model\Client\CampaignList;
 class Campaign extends Model
 {
 
+    
+
     /**
      * The attributes that are mass assignable.
      *
