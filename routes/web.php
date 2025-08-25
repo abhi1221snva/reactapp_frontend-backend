@@ -231,6 +231,9 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->post('status-update-campaign', 'CampaignController@updateCampaignStatus');
   $router->post('status-update-hopper', 'CampaignController@updateCampaignHopper');
 
+   //call timing schedule
+  $router->post('/campaign/{id}/schedule', 'CampaignController@getCallSchedule');
+
   //show history
   $router->post('show-upload-history', 'ShowHistoryController@HistoryList');
 
