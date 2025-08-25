@@ -111,7 +111,7 @@ $app->withFacades();
 $app->withEloquent();
 $app->configure('mail');
 $app->configure('services');
-$app->configure('swagger-lume');
+//$app->configure('swagger-lume');
 $app->configure('geoip');
 $app->configure('cache');
 $app->configure('otp');
@@ -145,5 +145,5 @@ if ($app->environment() !== 'production') {
 date_default_timezone_set(env('APP_TIMEZONE', 'UTC'));
 $app->withFacades();
 $app->configure('swagger-lume');
-$app->register(\SwaggerLume\ServiceProvider::class);
+//$app->register(\SwaggerLume\ServiceProvider::class);
 return $app;
