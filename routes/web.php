@@ -234,6 +234,17 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
    //call timing schedule
   $router->post('/campaign/{id}/schedule', 'CampaignController@getCallSchedule');
 
+  $router->group(['prefix' => 'call-timers'], function () use ($router) {
+    $router->get('/', 'CallTimerController@index');
+    $router->get('/{id}', 'CallTimerController@show');
+    $router->post('/', 'CallTimerController@store');
+    $router->post('/{id}', 'CallTimerController@update');
+    $router->delete('/{id}', 'CallTimerController@destroy');
+});
+
+
+
+
   //show history
   $router->post('show-upload-history', 'ShowHistoryController@HistoryList');
 
