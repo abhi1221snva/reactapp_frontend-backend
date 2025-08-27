@@ -641,6 +641,11 @@ class Campaign extends Model
             array_push($string, 'call_metric = :call_metric');
             $data['call_metric'] = $request->input('call_metric');
         }
+
+        if ($request->has('call_schedule_id')) {
+            array_push($string, 'call_schedule_id = :call_schedule_id');
+            $data['call_schedule_id'] = $request->input('call_schedule_id');
+        }
         return array('string' => $string, 'data' => $data);
     }
 
