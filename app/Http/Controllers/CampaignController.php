@@ -336,36 +336,33 @@ class CampaignController extends Controller
     public function addCampaign(Request $request)
     {
         Log::info('campaign reached', [$request->all()]);
-        $this->validate($request, [
-    'title'              => 'required|string|max:255',
-    'description'        => 'nullable|string|max:255',
-    'status'             => 'nullable|numeric',
-    'is_deleted'         => 'nullable|numeric',
-    'caller_id'          => 'nullable|string|max:255',
-    'custom_caller_id'   => 'nullable|numeric',
-    'time_based_calling' => 'nullable|numeric',
-    'dial_mode'          => 'nullable|string|max:255',
-    'max_lead_temp'      => 'nullable|numeric',
-    'min_lead_temp'      => 'nullable|numeric',
-    'api'                => 'nullable|numeric',
-    'group_id'           => 'required|numeric',
-    'send_report'        => 'nullable|numeric',
-    'disposition_id'     => 'required|array',
-    'hopper_mode'        => 'nullable|numeric',
-    'call_ratio'         => 'nullable|string',
-    'duration'           => 'nullable|string',
-    'automated_duration' => 'nullable|string',
-    'call_metric'        => 'nullable|string',
+        $this->validate($this->request, [
+            // 'id'                => 'required|numeric',
+            'title'             => 'required|string|max:255',
+            'description'       => 'string|max:255',
+            'status'            => 'numeric',
+            'is_deleted'        => 'numeric',
+            'caller_id'         => 'string|max:255',
+            'custom_caller_id'  => 'numeric',
+            'time_based_calling' => 'numeric',
+            'call_time_start'   => 'date_format:H:i',
+            'call_time_end'     => 'date_format:H:i',
+            'dial_mode'         => 'string|max:255',
+            // 'group_id'          => 'numeric',
+            'max_lead_temp'     => 'numeric',
+            'min_lead_temp'     => 'numeric',
+            'api'               => 'numeric',
+            'group_id'          => 'required|numeric',
+            'send_report'       => 'numeric',
+            'disposition_id'    => 'required|array',
+            'hopper_mode'       => 'numeric',
+            'call_ratio'        => 'string',
+            'duration'          => 'string',
+            'automated_duration' => 'string',
+            'call_metric' => 'string',
 
-    // ✅ new call schedule validation
-    'call_schedule'                           => 'required|array',
-    'call_schedule.default.start'             => 'required|date_format:H:i',
-    'call_schedule.default.end'               => 'required|date_format:H:i',
-    'call_schedule.*.enabled'                 => 'nullable|boolean',
-    'call_schedule.*.start'                   => 'nullable|date_format:H:i',
-    'call_schedule.*.end'                     => 'nullable|date_format:H:i',
-]);
 
+        ]);
 
         if ($this->request->crm_title_url == 'hubspot') {
             $response = $this->hubspot->addCampaignHubspot($this->request);
