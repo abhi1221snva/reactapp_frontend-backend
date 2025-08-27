@@ -426,115 +426,59 @@ class Campaign extends Model
         }
     }
 
-    public function addCampaign($request)
-{
-    try {
-        if (!$request->has('api_id') || empty($request->api_id)) {
-            $request->merge(['api_id' => 1]);
-        }
+   public function addCampaign($request)
+    {
+        try {
 
-        if ($request->has('title') && !empty($request->input('title'))) {
-            $validate = $this->validateCampaign($request);
-
-            $insertString = implode(" , ", $validate['string']);
-            $data = $validate['data'];
-
-            $query = "INSERT INTO " . $this->table . " SET " . $insertString;
-            $add = DB::connection('mysql_' . $request->auth->parent_id)->insert($query, $data);
-
-            if ($add) {
-                $lastInsertId = DB::connection('mysql_' . $request->auth->parent_id)
-                                    ->selectOne("SELECT * FROM " . $this->table . " ORDER BY id DESC");
-
-                $campaignId = $lastInsertId->id;
-
-                // Insert campaign_disposition
-                if ($request->has('disposition_id') && is_array($request->input('disposition_id'))) {
-                    foreach ($request->input('disposition_id') as $value) {
-                        $sql = "INSERT INTO campaign_disposition (campaign_id, disposition_id) 
-                                VALUE (:campaign_id, :disposition_id) 
-                                ON DUPLICATE KEY UPDATE is_deleted = :is_deleted";
-                        DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, [
-                            'is_deleted' => 0,
-                            'campaign_id' => $campaignId,
-                            'disposition_id' => $value
-                        ]);
-                    }
-                }
-
-                // Insert campaign_schedules with unique bindings
-                if ($request->has('call_schedule') && is_array($request->input('call_schedule'))) {
-                    foreach ($request->input('call_schedule') as $day => $schedule) {
-                        $enabled = $schedule['enabled'] ?? 1;
-                        $start  = $schedule['start'] ?? null;
-                        $end    = $schedule['end'] ?? null;
-
-                        $sql = "INSERT INTO campaign_schedules 
-                                (campaign_id, day_of_week, enabled, start_time, end_time, created_at, updated_at) 
-                                VALUES 
-                                (:campaign_id, :day_of_week, :enabled, :start_time, :end_time, NOW(), NOW())
-                                ON DUPLICATE KEY UPDATE 
-                                    enabled = :enabled_upd, 
-                                    start_time = :start_time_upd, 
-                                    end_time = :end_time_upd";
-
-                        DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, [
-                            'campaign_id'    => $campaignId,
-                            'day_of_week'    => $day,
-                            'enabled'        => $enabled,
-                            'start_time'     => $start,
-                            'end_time'       => $end,
-                            'enabled_upd'    => $enabled,
-                            'start_time_upd' => $start,
-                            'end_time_upd'   => $end
-                        ]);
-                    }
-                }
-
-                $this->copyApiByNewCampaign($request, $campaignId);
-
-                // ✅ Fetch campaign schedules for response
-                $schedules = DB::connection('mysql_' . $request->auth->parent_id)
-                               ->table('campaign_schedules')
-                               ->where('campaign_id', $campaignId)
-                               ->get()
-                               ->keyBy('day_of_week');
-
-                $responseData = (array) $lastInsertId;
-                $responseData['call_schedule'] = $schedules;
-
-                return [
-                    'success' => true,
-                    'message' => 'Campaign added successfully.',
-                    'data'    => $responseData
-                ];
-            } else {
-                return [
-                    'success' => false,
-                    'message' => 'Campaign not added successfully due to invalid data.'
-                ];
-            }
-        }
-
-        return [
-            'success' => false,
-            'message' => 'Campaign not added successfully. Title is missing.'
-        ];
-
-    } catch (Exception $e) {
-        Log::error($e->getMessage());
-        return [
-            'success' => false,
-            'message' => 'Something went wrong: ' . $e->getMessage()
-        ];
-    } catch (InvalidArgumentException $e) {
-        Log::error($e->getMessage());
-        return [
-            'success' => false,
-            'message' => 'Invalid argument: ' . $e->getMessage()
-        ];
-    }
+            if (!$request->has('api_id') || empty($request->api_id)) {
+    $request->merge(['api_id' => 1]);
 }
+            if ($request->has('title') && !empty($request->input('title'))) {
+                $validate = $this->validateCampaign($request);
+                $insertString = implode(" , ", $validate['string']);
+                $data = $validate['data'];
+
+                //echo "<pre>";print_r($insertString);die;
+                $query = "INSERT INTO " . $this->table . " SET " . $insertString;
+                $add = DB::connection('mysql_' . $request->auth->parent_id)->insert($query, $data);
+                if ($add == true) {
+                    $lastInsertId = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT * FROM " . $this->table . " ORDER BY id DESC");
+
+                    $campaignId = $lastInsertId->id;
+                    if ($request->has('disposition_id') && is_array($request->input('disposition_id'))) {
+                        foreach ($request->input('disposition_id') as $value) {
+                            $sql = "INSERT INTO campaign_disposition (campaign_id, disposition_id) VALUE (:campaign_id, :disposition_id) ON DUPLICATE KEY UPDATE is_deleted = :is_deleted";
+                            DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, array('is_deleted' => 0, 'campaign_id' => $campaignId, 'disposition_id' => $value));
+                        }
+                    }
+
+                    // add for new api
+
+                    $this->copyApiByNewCampaign($request, $campaignId);
+
+                    return array(
+                        'success' => 'true',
+                        'message' => 'Campaign added successfully.',
+                        'data' => (array) $lastInsertId
+                    );
+                } else {
+                    return array(
+                        'success' => 'false',
+                        'message' => 'Campaign are not added successfully, Due to some incorrect value.'
+                    );
+                }
+            }
+
+            return array(
+                'success' => 'false',
+                'message' => 'Campaign are not added successfully. Title is missing'
+            );
+        } catch (Exception $e) {
+            Log::log($e->getMessage());
+        } catch (InvalidArgumentException $e) {
+            Log::log($e->getMessage());
+        }
+    }
 
 
     /*
