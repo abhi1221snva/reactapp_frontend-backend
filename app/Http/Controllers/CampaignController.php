@@ -915,4 +915,41 @@ class CampaignController extends Controller
     }
 }
 
+
+
+public function assignLists(Request $request)
+{
+    $request->validate([
+        'campaign_id'    => 'required|integer|exists:campaigns,id',
+        'lead_list_ids'  => 'required|array|min:1',
+        'lead_list_ids.*'=> 'integer|exists:list,id',
+    ]);
+
+    $campaignId = $request->campaign_id;
+    $leadListIds = $request->lead_list_ids;
+
+    foreach ($leadListIds as $listId) {
+        DB::table('campaign_list')->updateOrInsert(
+            [
+                'campaign_id' => $campaignId,
+                'list_id'     => $listId,
+            ],
+            [
+                'is_deleted' => 0,
+                'status'     => '1',
+                'updated_at' => now(),
+            ]
+        );
+    }
+
+    return response()->json([
+        'success'       => true,
+        'message'       => 'Campaign assigned to lead lists successfully.',
+        'campaign_id'   => $campaignId,
+        'lead_list_ids' => $leadListIds,
+    ]);
+}
+
+
+
 }

@@ -231,6 +231,14 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->post('status-update-campaign', 'CampaignController@updateCampaignStatus');
   $router->post('status-update-hopper', 'CampaignController@updateCampaignHopper');
 
+//campaign assign list
+
+  $router->post('/campaign/assign-lists', 'CampaignController@updateCampaignHopper');
+
+
+  Route::post('/campaign/assign-lists', [CampaignController::class, 'assignLists']);
+
+
    //call timing schedule
   $router->post('/campaign/{id}/schedule', 'CampaignController@getCallSchedule');
 

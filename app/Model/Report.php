@@ -1041,12 +1041,22 @@ public function loginHistory($request)
      * @param type $request
      * @return type
      */
-    public function getActiveExtensionByGroup($request)
+    public function getActiveExtensionByGroupold($request)
     {
         $sql_extension = "SELECT * FROM master.users WHERE "
             . "parent_id = '" . $request->auth->parent_id . "' AND is_deleted = 0 order by  first_name asc";
         $extensionListData = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_extension);
 
+        return $extensionListData;
+    }
+
+     public function getActiveExtensionByGroup($request)
+    {
+        $sql_extension = "SELECT * FROM users WHERE "
+            . "parent_id = '" . $request->auth->parent_id . "' AND is_deleted = 0 order by  first_name asc";
+        // $extensionListData = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_extension);
+         $extensionListData = DB::connection('master')->select($sql_extension);
+ 
         return $extensionListData;
     }
 
