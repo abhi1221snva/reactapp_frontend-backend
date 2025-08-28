@@ -87,7 +87,7 @@ class Extension extends Model
             $response['serverList'] = $serverList;
 
             // Assigned package
-            $packageName = $user->getAssignedUserPackage();
+            /*$packageName = $user->getAssignedUserPackage();
             if (!empty($packageName)) {
                 $response['assignedPackageKey'] = $packageName->package_key;
                 $response['assignedPackage'] = ucfirst($packageName->name) . ' - ' .
@@ -96,7 +96,10 @@ class Extension extends Model
             } else {
                 $response['assignedPackageKey'] = null;
                 $response['assignedPackage'] = null;
-            }
+            }*/
+
+            //echo "<pre>";print_r($user);die;
+
 
             return [
                 'success' => true,
