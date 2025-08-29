@@ -210,8 +210,8 @@ class Campaign extends Model
             $id->rowLeadTemp = $record_rowLeadTemp->rowLeadTemp ?? 0;
 
             $data_count[] = (array) $id;
-            $data_count = array_reverse($data_count);
         }
+        $data_count = array_reverse($data_count);
 
         return [
             'success' => 'true',
