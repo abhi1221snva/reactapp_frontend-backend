@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\DB;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
+use Carbon\Carbon;
 
 class CampaignController extends Controller
 {
@@ -917,19 +919,55 @@ class CampaignController extends Controller
 
 
 
+
 public function assignLists(Request $request)
 {
-    $request->validate([
-        'campaign_id'    => 'required|integer|exists:campaigns,id',
+    // 1. Basic request validation (format only)
+    $validator = Validator::make($request->all(), [
+        'campaign_id'    => 'required|integer',
         'lead_list_ids'  => 'required|array|min:1',
-        'lead_list_ids.*'=> 'integer|exists:list,id',
+        'lead_list_ids.*'=> 'integer',
     ]);
 
-    $campaignId = $request->campaign_id;
-    $leadListIds = $request->lead_list_ids;
+    if ($validator->fails()) {
+        return response()->json([
+            'success' => false,
+            'errors'  => $validator->errors()
+        ], 422);
+    }
 
+    $campaignId = $request->input('campaign_id');
+    $leadListIds = $request->input('lead_list_ids');
+
+    // 2. Check if campaign exists
+    $campaignExists = DB::connection('mysql_' . $request->auth->parent_id)->table('campaign')->where('id', $campaignId)->exists();
+    if (!$campaignExists) {
+        return response()->json([
+            'success' => false,
+            'message' => "Campaign ID {$campaignId} does not exist."
+        ], 404);
+    }
+
+    // 3. Check each lead list id exists
+    $invalidLists = [];
     foreach ($leadListIds as $listId) {
-        DB::table('campaign_list')->updateOrInsert(
+        $exists = DB::connection('mysql_' . $request->auth->parent_id)->table('list')->where('id', $listId)->exists();
+        if (!$exists) {
+            $invalidLists[] = $listId;
+        }
+    }
+
+    if (!empty($invalidLists)) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Some lead list IDs do not exist.',
+            'invalid_list_ids' => $invalidLists
+        ], 404);
+    }
+
+    // 4. Insert/update mapping
+    foreach ($leadListIds as $listId) {
+        DB::connection('mysql_' . $request->auth->parent_id)->table('campaign_list')->updateOrInsert(
             [
                 'campaign_id' => $campaignId,
                 'list_id'     => $listId,
@@ -937,7 +975,7 @@ public function assignLists(Request $request)
             [
                 'is_deleted' => 0,
                 'status'     => '1',
-                'updated_at' => now(),
+                'updated_at' => Carbon::now(),
             ]
         );
     }
@@ -949,6 +987,7 @@ public function assignLists(Request $request)
         'lead_list_ids' => $leadListIds,
     ]);
 }
+
 
 
 
