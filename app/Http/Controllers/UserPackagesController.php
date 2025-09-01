@@ -220,43 +220,80 @@ class UserPackagesController extends Controller
  *     )
  * )
  */
+public function getClientPackages(Request $request)
+{
+    $arrClientPackages = [];
 
-    public function getClientPackages(Request $request)
-    {
-        $arrClientPackages = [];
+    // fetch packages
+    $packages           = Package::all()->toArray();
+    $packagesRekeyed    = self::rekeyArray($packages, 'key');
 
-        //fetch packages
-        $packages           = Package::all()->toArray();
-        $packagesRekeyed    = self::rekeyArray( $packages, 'key' );
+    // fetch client_packages
+    $clientId = $request->auth->parent_id;
+    $clientPackages = ClientPackage::where('client_id', '=', $clientId)
+        ->where('end_time', '>=', date('Y-m-d h:i:s'))
+        ->get()
+        ->toArray();
 
-        //fetch client_packages
-        $clientId = $request->auth->parent_id;
+    // fetch client_xxx.user_packages
+    $userPackages = DB::connection('mysql_'.$clientId)->table('user_packages')->get()->toArray();
+    $arrClientPackageAvailability = $this->getUsersByPackage($userPackages);
 
-        //fetch client_packages
-        $clientPackages         = ClientPackage::where('client_id','=', $clientId)->where('end_time', '>=', date('Y-m-d h:i:s'))->get()->toArray();
-        $clientPackagesRekeyed  = self::rekeyArray( $clientPackages, 'id' );
+    foreach ($clientPackages as $clientPackage) {
+        $packageData = [
+            'id'            => $clientPackage['id'],
+            'package_key'   => $clientPackage['package_key'],
+            'package_name'  => ucfirst($packagesRekeyed[$clientPackage['package_key']]['name']),
+            'start_time'    => date('Y-m-d', strtotime($clientPackage['start_time'])),
+            'end_time'      => date('Y-m-d', strtotime($clientPackage['end_time'])),
+            'quantity'      => $clientPackage['quantity'],
+            'assigned'      => array_key_exists($clientPackage['id'], $arrClientPackageAvailability)
+                                ? array_filter($arrClientPackageAvailability[$clientPackage['id']])
+                                : []
+        ];
 
-        //fetch client_xxx.user_packages
-        $userPackages = DB::connection('mysql_'.$clientId)->table('user_packages')->get()->toArray();
-        $arrClientPackageAvailability = $this->getUsersByPackage( $userPackages );
-
-        foreach ($clientPackagesRekeyed as $clientPackage)
-        {
-            $arrClientPackages[$clientPackage['id']]['package_key']     = $clientPackage['package_key'];
-            $arrClientPackages[$clientPackage['id']]['package_name']    = ucfirst($packagesRekeyed[$clientPackage['package_key']]['name']);
-            $arrClientPackages[$clientPackage['id']]['start_time']      = date('Y-m-d', strtotime($clientPackage['start_time']));
-            $arrClientPackages[$clientPackage['id']]['end_time']        = date('Y-m-d', strtotime($clientPackage['end_time']));
-            $arrClientPackages[$clientPackage['id']]['quantity']        = $clientPackage['quantity'];
-
-            if(array_key_exists($clientPackage['id'],$arrClientPackageAvailability)){
-                $arrClientPackages[$clientPackage['id']]['assigned']    = array_filter($arrClientPackageAvailability[$clientPackage['id']]);
-            } else {
-                $arrClientPackages[$clientPackage['id']]['assigned']    = [];
-            }
-        }
-
-        return $this->successResponse("All Available packages", $arrClientPackages );
+        $arrClientPackages[] = $packageData; // push into list instead of using id as key
     }
+
+    return $this->successResponse("All Available packages", $arrClientPackages);
+}
+
+    // public function getClientPackages(Request $request)
+    // {
+    //     $arrClientPackages = [];
+
+    //     //fetch packages
+    //     $packages           = Package::all()->toArray();
+    //     $packagesRekeyed    = self::rekeyArray( $packages, 'key' );
+
+    //     //fetch client_packages
+    //     $clientId = $request->auth->parent_id;
+
+    //     //fetch client_packages
+    //     $clientPackages         = ClientPackage::where('client_id','=', $clientId)->where('end_time', '>=', date('Y-m-d h:i:s'))->get()->toArray();
+    //     $clientPackagesRekeyed  = self::rekeyArray( $clientPackages, 'id' );
+
+    //     //fetch client_xxx.user_packages
+    //     $userPackages = DB::connection('mysql_'.$clientId)->table('user_packages')->get()->toArray();
+    //     $arrClientPackageAvailability = $this->getUsersByPackage( $userPackages );
+
+    //     foreach ($clientPackagesRekeyed as $clientPackage)
+    //     {
+    //         $arrClientPackages[$clientPackage['id']]['package_key']     = $clientPackage['package_key'];
+    //         $arrClientPackages[$clientPackage['id']]['package_name']    = ucfirst($packagesRekeyed[$clientPackage['package_key']]['name']);
+    //         $arrClientPackages[$clientPackage['id']]['start_time']      = date('Y-m-d', strtotime($clientPackage['start_time']));
+    //         $arrClientPackages[$clientPackage['id']]['end_time']        = date('Y-m-d', strtotime($clientPackage['end_time']));
+    //         $arrClientPackages[$clientPackage['id']]['quantity']        = $clientPackage['quantity'];
+
+    //         if(array_key_exists($clientPackage['id'],$arrClientPackageAvailability)){
+    //             $arrClientPackages[$clientPackage['id']]['assigned']    = array_filter($arrClientPackageAvailability[$clientPackage['id']]);
+    //         } else {
+    //             $arrClientPackages[$clientPackage['id']]['assigned']    = [];
+    //         }
+    //     }
+
+    //     return $this->successResponse("All Available packages", $arrClientPackages );
+    // }
 /**
  * @OA\Get(
  *     path="/user-package-urls/{userId}",
