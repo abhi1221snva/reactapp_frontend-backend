@@ -1351,42 +1351,35 @@ function campaignById($request)
     $record_rowLeadTemp = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_lead_temp, $data1);
     $campaign->rowLeadTemp = $record_rowLeadTemp->rowLeadTemp ?? 0;
 
-    // created_date and hopper_count
-    $campaign->created_date = $campaign->created_at;
-    $campaign->hopper_count = 1;
+   // === Fetch dispositions ===
+$dispositions = DB::connection('mysql_' . $request->auth->parent_id)
+    ->table('campaign_disposition')
+    ->where('campaign_id', $campaign->id)
+    ->where('is_deleted', 0)
+    ->pluck('disposition_id')
+    ->toArray();
 
-    // === Fetch dispositions ===
-    $dispositions = DB::connection('mysql_' . $request->auth->parent_id)
-        ->table('campaign_disposition')
-        ->where('campaign_id', $campaign->id)
-        ->where('is_deleted', 0)
-        ->pluck('disposition_id')
-        ->toArray();
+// convert dispositions to string
+$dispositions = array_map('strval', $dispositions);
 
-    $hopper_count = $campaign->rowLeadTemp;
-    $userArray = Campaign::on('mysql_' . $request->auth->parent_id)
-        ->where('id', $request->campaign_id)
-        ->get()
-        ->map(function ($campaign) use ($hopper_count, $dispositions) {
-            $campaign->setAttribute('created_date', $campaign->updated ?: null);
-            $campaign->setAttribute('hopper_count', $hopper_count);
-            $campaign->setAttribute('dispositions', $dispositions);
+// add dispositions & hopper count directly to current $campaign
+$campaign->setAttribute('dispositions', $dispositions);
+$campaign->setAttribute('hopper_count', $campaign->rowLeadTemp);
 
-            // Always ensure keys exist
-            if (!$campaign->getAttribute('voicedrop_no_agent_available_action')) {
-                $campaign->setAttribute('voicedrop_no_agent_available_action', 0);
-            }
-            if (!$campaign->getAttribute('voice_message_amd')) {
-                $campaign->setAttribute('voice_message_amd', 0);
-            }
-            if (!$campaign->getAttribute('audio_message_amd')) {
-                $campaign->setAttribute('audio_message_amd', 0);
-            }
+// Always ensure keys exist
+if (!$campaign->getAttribute('voicedrop_no_agent_available_action')) {
+    $campaign->setAttribute('voicedrop_no_agent_available_action', 0);
+}
+if (!$campaign->getAttribute('voice_message_amd')) {
+    $campaign->setAttribute('voice_message_amd', 0);
+}
+if (!$campaign->getAttribute('audio_message_amd')) {
+    $campaign->setAttribute('audio_message_amd', 0);
+}
 
-            return $campaign;
-        });
+// return as collection for consistency
+return collect([$campaign]);
 
-    return $userArray;
 }
 
     function campaignByIdNew($request)
