@@ -1214,8 +1214,182 @@ public function campaignDetail($request)
             }
         }
     }
+function campaignById($request)
+{
+    $campaignId = $request->campaign_id;
 
-    function campaignById($request)
+    $campaign = Campaign::on('mysql_' . $request->auth->parent_id)
+        ->where('id', $campaignId)
+        ->first();
+
+    Log::info('campaign by id', ['campaign' => $campaign]);
+
+    if (!$campaign) {
+        return [
+            'success' => 'false',
+            'message' => 'Campaign not found.',
+            'data' => []
+        ];
+    }
+
+    // === Always add defaults first ===
+    $campaign->setAttribute('voicedrop_no_agent_available_action', 0);
+    $campaign->setAttribute('voice_message_amd', 0);
+    $campaign->setAttribute('audio_message_amd', 0);
+
+    // === Predictive Dial logic ===
+    if ($campaign->dial_mode == 'predictive_dial') {
+        $campaign->call_ratio = $campaign->call_ratio;
+        $campaign->duration = $campaign->duration;
+
+        if ($campaign->amd == 1) {
+            if ($campaign->amd_drop_action == 2) {
+                $campaign->setAttribute('audio_message_amd', $campaign->voicedrop_option_user_id ?? 0);
+            } elseif ($campaign->amd_drop_action == 3) {
+                $campaign->setAttribute('voice_message_amd', $campaign->voicedrop_option_user_id ?? 0);
+            }
+        } else {
+            $campaign->amd_drop_action = 0;
+            $campaign->voicedrop_option_user_id = 0;
+        }
+
+        if ($campaign->no_agent_available_action == 1) {
+            $campaign->no_agent_dropdown_action = 0;
+        } elseif ($campaign->no_agent_available_action == 2) {
+            $campaign->no_agent_dropdown_action = $campaign->voicedrop_no_agent_available_action ?? 0;
+            $campaign->setAttribute('voicedrop_no_agent_available_action', $campaign->no_agent_dropdown_action);
+        }
+
+        $campaign->redirect_to = 0;
+        $campaign->redirect_to_dropdown = 0;
+
+    // === Outbound AI logic ===
+    } elseif ($campaign->dial_mode == 'outbound_ai') {
+        $campaign->call_ratio = $campaign->call_ratio;
+        $campaign->duration = $campaign->duration;
+
+        if ($campaign->amd == 1) {
+            if ($campaign->amd_drop_action == 2) {
+                $campaign->setAttribute('audio_message_amd', $campaign->voicedrop_option_user_id ?? 0);
+            } elseif ($campaign->amd_drop_action == 3) {
+                $campaign->setAttribute('voice_message_amd', $campaign->voicedrop_option_user_id ?? 0);
+            }
+        } else {
+            $campaign->amd_drop_action = 0;
+            $campaign->voicedrop_option_user_id = 0;
+        }
+
+        $campaign->no_agent_available_action = 0;
+        $campaign->no_agent_dropdown_action = 0;
+
+        $campaign->redirect_to = $campaign->redirect_to;
+        if ($campaign->redirect_to == 1) {
+            $campaign->redirect_to_dropdown = $campaign->outbound_ai_dropdown_audio_message ?? 0;
+        } elseif ($campaign->redirect_to == 2) {
+            $campaign->redirect_to_dropdown = $campaign->outbound_ai_dropdown_voice_message ?? 0;
+        } elseif ($campaign->redirect_to == 3) {
+            $campaign->redirect_to_dropdown = $campaign->outbound_ai_dropdown_extension ?? 0;
+        } elseif ($campaign->redirect_to == 4) {
+            $campaign->redirect_to_dropdown = $campaign->outbound_ai_dropdown_ring_group ?? 0;
+        } elseif ($campaign->redirect_to == 5) {
+            $campaign->redirect_to_dropdown = $campaign->outbound_ai_dropdown_ivr ?? 0;
+        }
+
+    // === Default (other dial modes) ===
+    } else {
+        $campaign->call_ratio = 1;
+        $campaign->duration = 0;
+        $campaign->amd_drop_action = 0;
+        $campaign->voicedrop_option_user_id = 0;
+        $campaign->redirect_to = 0;
+        $campaign->redirect_to_dropdown = 0;
+        $campaign->no_agent_available_action = 0;
+        $campaign->no_agent_dropdown_action = 0;
+    }
+
+    // === Lead report count ===
+    $data1['campaign_id'] = $campaign->id;
+    $sql_count_lead_report = "SELECT count(1) as rowCountLeadReport FROM lead_report WHERE campaign_id = :campaign_id ";
+    $record_count_lead = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_count_lead_report, $data1);
+    $campaign->rowLeadReport = $record_count_lead->rowCountLeadReport ?? 0;
+
+    // === Campaign list ===
+    $searchStr = [];
+    if ($data1['campaign_id'] && is_numeric($data1['campaign_id'])) {
+        $searchStr[] = 'campaign_id = :campaign_id';
+    }
+
+    if ($campaign->crm_title_url === 'hubspot') {
+        $sql = "SELECT * FROM hubspot_campaign_list WHERE " . implode(" AND ", $searchStr) . " AND status=1 AND is_deleted=0";
+    } else {
+        $sql = "SELECT * FROM campaign_list WHERE " . implode(" AND ", $searchStr) . " AND status=1 AND is_deleted=0";
+    }
+
+    $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data1);
+    $list = (array) $record;
+    $count = count($list);
+    $id_list = [];
+
+    foreach ($list as $listItem) {
+        $id_list[] = $listItem->list_id;
+    }
+
+    $campaign->rowList = $count;
+
+    $list_ids = "'" . implode("','", $id_list) . "'";
+    if ($campaign->crm_title_url === 'hubspot') {
+        $sql_count_list = "SELECT sum(size) as rowCountList FROM hubspot_lists WHERE list_id IN ($list_ids)";
+    } else {
+        $sql_count_list = "SELECT count(1) as rowCountList FROM list_data WHERE list_id IN ($list_ids)";
+    }
+
+    $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_count_list);
+    $campaign->rowListData = $record_count_list[0]->rowCountList ?? 0;
+
+    // === Lead temp count ===
+    $sql_lead_temp = "SELECT count(1) as rowLeadTemp FROM lead_temp WHERE campaign_id = :campaign_id ";
+    $record_rowLeadTemp = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_lead_temp, $data1);
+    $campaign->rowLeadTemp = $record_rowLeadTemp->rowLeadTemp ?? 0;
+
+    // created_date and hopper_count
+    $campaign->created_date = $campaign->created_at;
+    $campaign->hopper_count = 1;
+
+    // === Fetch dispositions ===
+    $dispositions = DB::connection('mysql_' . $request->auth->parent_id)
+        ->table('campaign_disposition')
+        ->where('campaign_id', $campaign->id)
+        ->where('is_deleted', 0)
+        ->pluck('disposition_id')
+        ->toArray();
+
+    $hopper_count = $campaign->rowLeadTemp;
+    $userArray = Campaign::on('mysql_' . $request->auth->parent_id)
+        ->where('id', $request->campaign_id)
+        ->get()
+        ->map(function ($campaign) use ($hopper_count, $dispositions) {
+            $campaign->setAttribute('created_date', $campaign->updated ?: null);
+            $campaign->setAttribute('hopper_count', $hopper_count);
+            $campaign->setAttribute('dispositions', $dispositions);
+
+            // Always ensure keys exist
+            if (!$campaign->getAttribute('voicedrop_no_agent_available_action')) {
+                $campaign->setAttribute('voicedrop_no_agent_available_action', 0);
+            }
+            if (!$campaign->getAttribute('voice_message_amd')) {
+                $campaign->setAttribute('voice_message_amd', 0);
+            }
+            if (!$campaign->getAttribute('audio_message_amd')) {
+                $campaign->setAttribute('audio_message_amd', 0);
+            }
+
+            return $campaign;
+        });
+
+    return $userArray;
+}
+
+    function campaignByIdNew($request)
     {
 
         $campaignId = $request->campaign_id;
