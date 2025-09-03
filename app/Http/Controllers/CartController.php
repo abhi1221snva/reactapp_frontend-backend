@@ -32,7 +32,36 @@ class CartController extends Controller
             return $this->failResponse("Failed to load cart items", [], $exception);
         }
     }
+public function getCartItemsNew(Request $request)
+{
+    try {
+        $packages = Package::all()->toArray();
+        $packagesRekeyed = UserPackagesController::rekeyArray($packages, 'key');
 
+        $cartItem = Cart::on("mysql_" . $request->auth->parent_id)
+            ->latest()
+            ->first();
+
+        if (!$cartItem) {
+            return $this->successResponse("No cart items found", []);
+        }
+
+        $arrCartData = [];
+        $arrCartData['id'] = $cartItem->id;
+        $arrCartData['quantity'] = $cartItem->quantity;
+        $arrCartData['product'] = $packagesRekeyed[$cartItem->package_key]['name'];
+        $arrCartData['billing_period'] = Cart::$billingPeriod[$cartItem->billed];
+        $arrCartData['billing'] = Cart::$billingMonths[$cartItem->billed];
+        $arrCartData['base_rate_monthly_billed'] = $packagesRekeyed[$cartItem->package_key]['base_rate_monthly_billed'];
+        $arrCartData['subtotal'] = $cartItem->quantity * $packagesRekeyed[$cartItem->package_key][ClientPackage::$billingMapping[$cartItem->billed]];
+
+        // Return the single item wrapped in an array to be compatible with the foreach loop
+        return $this->successResponse("Last cart item fetched successfully", [$arrCartData]);
+        
+    } catch (\Throwable $exception) {
+        return $this->failResponse("Failed to load last cart item", [], $exception);
+    }
+}
     public function addToCart(Request $request, string $packageName)
     {
         $this->validate($request, [
