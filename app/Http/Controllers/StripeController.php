@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Model\User;
 use DB;
-
+use Stripe\Stripe;
+use Stripe\PaymentMethod;
+use Stripe\Customer;
 class StripeController extends Controller
 {
     /**
@@ -603,6 +605,57 @@ class StripeController extends Controller
             'data' => $paymentMethod
         ]);
     }
+
+public function saveCardNew(Request $request)
+{
+    // Validate that the payment_method token is present.
+
+
+    try {
+        Stripe::setApiKey(env('STRIPE_SECRET'));
+
+        $email = $request->auth->email;
+        $first_name = $request->auth->first_name;
+        $stripe_customer_id = $request->auth->stripe_customer_id;
+
+        // Ensure customer exists in Stripe
+        if (!$stripe_customer_id) {
+            $customer = Customer::create([
+                'email' => $email,
+                'name'  => $first_name,
+            ]);
+            $user->stripe_customer_id = $customer->id;
+            $user->save();
+        }
+
+        // Retrieve the new PaymentMethod.
+        $newPaymentMethod = PaymentMethod::retrieve($request->payment_method);
+
+        // Attach the new PaymentMethod to the Stripe customer.
+        $newPaymentMethod->attach([
+            'customer' => $stripe_customer_id,
+        ]);
+
+        // Optionally, make it the default payment method.
+        Customer::update($stripe_customer_id, [
+            'invoice_settings' => [
+                'default_payment_method' => $request->payment_method,
+            ]
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Payment Method Added',
+            'data'    => $newPaymentMethod,
+        ]);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to add payment method: ' . $e->getMessage(),
+        ], 500);
+    }
+}
 
     /**
      * Edit card

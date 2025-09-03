@@ -809,6 +809,7 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->post('stripe/get-payment-method', 'StripeController@getPaymentMethod');
   $router->post('stripe/save-card', 'StripeController@saveCard');
   $router->post('stripe/update-card', 'StripeController@updateCard');
+  $router->post('stripe/save-card-new', 'StripeController@saveCardNew');
 
   //Subscription checkout/Add balance
   $router->post('checkout', "CheckoutController@processCheckout");

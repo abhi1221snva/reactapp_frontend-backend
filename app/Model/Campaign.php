@@ -1214,6 +1214,7 @@ public function campaignDetail($request)
             }
         }
     }
+
 function campaignById($request)
 {
     $campaignId = $request->campaign_id;
@@ -1233,9 +1234,13 @@ function campaignById($request)
     }
 
     // === Always add defaults first ===
-    $campaign->setAttribute('voicedrop_no_agent_available_action', 0);
-    $campaign->setAttribute('voice_message_amd', 0);
-    $campaign->setAttribute('audio_message_amd', 0);
+    // $campaign->setAttribute('voicedrop_no_agent_available_action', 0);
+    // $campaign->setAttribute('voice_message_amd', 0);
+    // $campaign->setAttribute('audio_message_amd', 0);
+    // $campaign->setAttribute('inbound_ivr_no_agent_available_action', 0);
+    // $campaign->setAttribute('extension_no_agent_available_action', 0);
+    // $campaign->setAttribute('assistant_no_agent_available_action', 0);
+    // $campaign->setAttribute('no_agent_dropdown_action', 0);
 
     // === Predictive Dial logic ===
     if ($campaign->dial_mode == 'predictive_dial') {
@@ -1253,17 +1258,26 @@ function campaignById($request)
             $campaign->voicedrop_option_user_id = 0;
         }
 
+        // --- Corrected no_agent_available_action logic ---
         if ($campaign->no_agent_available_action == 1) {
             $campaign->no_agent_dropdown_action = 0;
         } elseif ($campaign->no_agent_available_action == 2) {
-            $campaign->no_agent_dropdown_action = $campaign->voicedrop_no_agent_available_action ?? 0;
-            $campaign->setAttribute('voicedrop_no_agent_available_action', $campaign->no_agent_dropdown_action);
+            $campaign->no_agent_dropdown_action = $campaign->no_agent_dropdown_action;
+            $campaign->setAttribute('voicedrop_no_agent_available_action', $campaign->no_agent_dropdown_action ?? 0);
+        } elseif ($campaign->no_agent_available_action == 3) {
+            $campaign->no_agent_dropdown_action = $campaign->no_agent_dropdown_action;
+            $campaign->setAttribute('inbound_ivr_no_agent_available_action', $campaign->no_agent_dropdown_action ?? 0);
+        } elseif ($campaign->no_agent_available_action == 4) {
+            $campaign->no_agent_dropdown_action = $campaign->no_agent_dropdown_action;
+            $campaign->setAttribute('extension_no_agent_available_action', $campaign->no_agent_dropdown_action ?? 0);
+        } elseif ($campaign->no_agent_available_action == 5) {
+            $campaign->no_agent_dropdown_action = $campaign->no_agent_dropdown_action;
+            $campaign->setAttribute('assistant_no_agent_available_action', $campaign->no_agent_dropdown_action ?? 0);
         }
+        // --------------------------------------------------
 
         $campaign->redirect_to = 0;
         $campaign->redirect_to_dropdown = 0;
-
-    // === Outbound AI logic ===
     } elseif ($campaign->dial_mode == 'outbound_ai') {
         $campaign->call_ratio = $campaign->call_ratio;
         $campaign->duration = $campaign->duration;
@@ -1294,8 +1308,6 @@ function campaignById($request)
         } elseif ($campaign->redirect_to == 5) {
             $campaign->redirect_to_dropdown = $campaign->outbound_ai_dropdown_ivr ?? 0;
         }
-
-    // === Default (other dial modes) ===
     } else {
         $campaign->call_ratio = 1;
         $campaign->duration = 0;
@@ -1351,37 +1363,44 @@ function campaignById($request)
     $record_rowLeadTemp = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_lead_temp, $data1);
     $campaign->rowLeadTemp = $record_rowLeadTemp->rowLeadTemp ?? 0;
 
-   // === Fetch dispositions ===
-$dispositions = DB::connection('mysql_' . $request->auth->parent_id)
-    ->table('campaign_disposition')
-    ->where('campaign_id', $campaign->id)
-    ->where('is_deleted', 0)
-    ->pluck('disposition_id')
-    ->toArray();
+    // === Fetch dispositions ===
+    $dispositions = DB::connection('mysql_' . $request->auth->parent_id)
+        ->table('campaign_disposition')
+        ->where('campaign_id', $campaign->id)
+        ->where('is_deleted', 0)
+        ->pluck('disposition_id')
+        ->toArray();
 
-// convert dispositions to string
-$dispositions = array_map('strval', $dispositions);
+    // convert dispositions to string
+    $dispositions = array_map('strval', $dispositions);
 
-// add dispositions & hopper count directly to current $campaign
-$campaign->setAttribute('dispositions', $dispositions);
-$campaign->setAttribute('hopper_count', $campaign->rowLeadTemp);
+    // add dispositions & hopper count directly to current $campaign
+    $campaign->setAttribute('dispositions', $dispositions);
+    $campaign->setAttribute('hopper_count', $campaign->rowLeadTemp);
 
-// Always ensure keys exist
-if (!$campaign->getAttribute('voicedrop_no_agent_available_action')) {
-    $campaign->setAttribute('voicedrop_no_agent_available_action', 0);
+    // Always ensure keys exist
+    if (!$campaign->getAttribute('voicedrop_no_agent_available_action')) {
+        $campaign->setAttribute('voicedrop_no_agent_available_action', 0);
+    }
+    if (!$campaign->getAttribute('inbound_ivr_no_agent_available_action')) {
+        $campaign->setAttribute('inbound_ivr_no_agent_available_action', 0);
+    }
+    if (!$campaign->getAttribute('extension_no_agent_available_action')) {
+        $campaign->setAttribute('extension_no_agent_available_action', 0);
+    }
+    if (!$campaign->getAttribute('assistant_no_agent_available_action')) {
+        $campaign->setAttribute('assistant_no_agent_available_action', 0);
+    }
+    if (!$campaign->getAttribute('voice_message_amd')) {
+        $campaign->setAttribute('voice_message_amd', 0);
+    }
+    if (!$campaign->getAttribute('audio_message_amd')) {
+        $campaign->setAttribute('audio_message_amd', 0);
+    }
+
+    // return as collection for consistency
+    return collect([$campaign]);
 }
-if (!$campaign->getAttribute('voice_message_amd')) {
-    $campaign->setAttribute('voice_message_amd', 0);
-}
-if (!$campaign->getAttribute('audio_message_amd')) {
-    $campaign->setAttribute('audio_message_amd', 0);
-}
-
-// return as collection for consistency
-return collect([$campaign]);
-
-}
-
     function campaignByIdNew($request)
     {
 
