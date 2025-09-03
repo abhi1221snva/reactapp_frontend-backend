@@ -771,6 +771,7 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
 
   //cart
   $router->get('cart', 'CartController@getCartItems');
+  $router->get('cart-new', 'CartController@getCartItemsNew');
   $router->post('cart/add/{packageName}', 'CartController@addToCart');
   $router->post('cart/update/{cartId}', 'CartController@updateCart');
   $router->post('cart/delete/{cartId}', 'CartController@deleteCart');
