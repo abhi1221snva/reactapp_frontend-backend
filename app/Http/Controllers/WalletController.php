@@ -21,8 +21,8 @@ class WalletController extends Controller
 
     function getWalletTransactions(Request $request)
     {
-        $walletTransactions = DB::connection('mysql_' . $request->auth->parent_id)->select("SELECT * FROM wallet_transactions");
-
+        $walletTransactions = DB::connection('mysql_' . $request->auth->parent_id)
+        ->select("SELECT * FROM wallet_transactions ORDER BY id DESC");
         if (count($walletTransactions) == 0) {
             return $this->successResponse("No Transactions found.", []);
         } else {
