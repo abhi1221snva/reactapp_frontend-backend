@@ -504,23 +504,38 @@ class UserController extends Controller
      *     )
      * )
      */
-    public function assignableRoles(int $userId)
-    {
-        try {
-            $allowedRoles = RolesService::getRolesForLevel($this->request->auth->level);
+    // public function assignableRoles(int $userId)
+    // {
+    //     try {
+    //         $allowedRoles = RolesService::getRolesForLevel($this->request->auth->level);
 
-            /** @var User $user */
-            $user = User::findOrFail($userId);
-        } catch (ModelNotFoundException $modelNotFoundException) {
-            throw new NotFoundHttpException("Resource with userId $userId not found");
-        }
+    //         /** @var User $user */
+    //         $user = User::findOrFail($userId);
+    //     } catch (ModelNotFoundException $modelNotFoundException) {
+    //         throw new NotFoundHttpException("Resource with userId $userId not found");
+    //     }
 
-        return array(
-            'success' => true,
-            'message' => 'Allowed roles',
-            'data' => $user->assignableRoles($allowedRoles, $this->request->auth->parent_id)
-        );
+    //     return array(
+    //         'success' => true,
+    //         'message' => 'Allowed roles',
+    //         'data' => $user->assignableRoles($allowedRoles, $this->request->auth->parent_id)
+    //     );
+    // }
+    public function assignableRoles( int $userId) 
+{
+    $allowedRoles = RolesService::getRolesForLevel($this->request->auth->level);
+     $user = User::findOrFail($userId);
+    $response = [];
+    foreach ($allowedRoles as $roleId => $roleName) {
+        $response[] = [
+            "roleId"   => $roleId,
+            "roleName" => $roleName,
+            "assigned" => ($roleId == $user["roleId"])
+        ];
     }
+    return $response;
+}
+
 
     /*
      * Fetch user details
