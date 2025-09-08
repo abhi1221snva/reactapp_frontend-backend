@@ -1299,14 +1299,24 @@ function campaignById($request)
         $campaign->redirect_to = $campaign->redirect_to;
         if ($campaign->redirect_to == 1) {
             $campaign->redirect_to_dropdown = $campaign->outbound_ai_dropdown_audio_message ?? 0;
+            $campaign->setAttribute('outbound_ai_dropdown_audio_message', $campaign->outbound_ai_dropdown_audio_message ?? 0);
+
         } elseif ($campaign->redirect_to == 2) {
             $campaign->redirect_to_dropdown = $campaign->outbound_ai_dropdown_voice_message ?? 0;
+            $campaign->setAttribute('outbound_ai_dropdown_voice_message', $campaign->outbound_ai_dropdown_voice_message ?? 0);
+
         } elseif ($campaign->redirect_to == 3) {
             $campaign->redirect_to_dropdown = $campaign->outbound_ai_dropdown_extension ?? 0;
+            $campaign->setAttribute('outbound_ai_dropdown_extension', $campaign->outbound_ai_dropdown_extension ?? 0);
+
         } elseif ($campaign->redirect_to == 4) {
             $campaign->redirect_to_dropdown = $campaign->outbound_ai_dropdown_ring_group ?? 0;
+            $campaign->setAttribute('outbound_ai_dropdown_ring_group', $campaign->outbound_ai_dropdown_ring_group ?? 0);
+
         } elseif ($campaign->redirect_to == 5) {
             $campaign->redirect_to_dropdown = $campaign->outbound_ai_dropdown_ivr ?? 0;
+            $campaign->setAttribute('outbound_ai_dropdown_ivr', $campaign->outbound_ai_dropdown_ivr ?? 0);
+
         }
     } else {
         $campaign->call_ratio = 1;
@@ -1317,6 +1327,11 @@ function campaignById($request)
         $campaign->redirect_to_dropdown = 0;
         $campaign->no_agent_available_action = 0;
         $campaign->no_agent_dropdown_action = 0;
+        $campaign->outbound_ai_dropdown_audio_message =0;
+        $campaign->outbound_ai_dropdown_voice_message =0;
+        $campaign->outbound_ai_dropdown_extension =0;
+        $campaign->outbound_ai_dropdown_ring_group=0;
+        $campaign->outbound_ai_dropdown_ivr=0;
     }
 
     // === Lead report count ===
@@ -1394,10 +1409,20 @@ function campaignById($request)
     if (!$campaign->getAttribute('voice_message_amd')) {
         $campaign->setAttribute('voice_message_amd', 0);
     }
-    if (!$campaign->getAttribute('audio_message_amd')) {
+    if (!$campaign->getAttribute('outbound_ai_dropdown_audio_message')) {
+        $campaign->setAttribute('outbound_ai_dropdown_audio_message', 0);
+    }
+    if (!$campaign->getAttribute('outbound_ai_dropdown_voice_message')) {
+        $campaign->setAttribute('outbound_ai_dropdown_voice_message', 0);
+    }    if (!$campaign->getAttribute('outbound_ai_dropdown_extension')) {
+        $campaign->setAttribute('outbound_ai_dropdown_extension', 0);
+    }    if (!$campaign->getAttribute('outbound_ai_dropdown_ring_group')) {
+        $campaign->setAttribute('outbound_ai_dropdown_ring_group', 0);
+    }    if (!$campaign->getAttribute('outbound_ai_dropdown_ivr')) {
+        $campaign->setAttribute('outbound_ai_dropdown_ivr', 0);
+    }    if (!$campaign->getAttribute('audio_message_amd')) {
         $campaign->setAttribute('audio_message_amd', 0);
     }
-
     // return as collection for consistency
     return collect([$campaign]);
 }
