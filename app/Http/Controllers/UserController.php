@@ -549,7 +549,11 @@ public function assignableRolesNew(Request $request)
             "assigned" => ($roleId == $user->roleId)
         ];
     }
-    return response()->json($response);
+        return response()->json([
+        'success' => true,
+        'message' => 'Allowed roles',
+        'data'    => $response,   // return the roles list
+    ]);
 }
 
 
