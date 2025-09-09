@@ -535,6 +535,22 @@ class UserController extends Controller
     }
     return $response;
 }
+public function assignableRolesNew(Request $request) 
+{
+
+    $allowedRoles = RolesService::getRolesForLevel($this->request->auth->level);
+    $user = User::findOrFail($request->userId);
+
+    $response = [];
+    foreach ($allowedRoles as $roleId => $roleName) {
+        $response[] = [
+            "roleId"   => $roleId,
+            "roleName" => $roleName,
+            "assigned" => ($roleId == $user->roleId)
+        ];
+    }
+    return response()->json($response);
+}
 
 
     /*
