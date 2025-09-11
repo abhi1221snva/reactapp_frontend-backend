@@ -152,7 +152,25 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
 
         return $permission;
     }
+    public function updatePermissionNew(int $clientId, int $role, int $user_id)
+    {
+        $permission = Permission::findOrFail(["user_id" => $user_id, "client_id" => $clientId]);
+        $permission->role = $role;
+        $permission->saveOrFail();
 
+        #If this was default client permission, set new default
+        if ($this->parent_id == $clientId) {
+            $this->role = $role;
+            $roleInfo = RolesService::getById($role);
+            $this->user_level = $roleInfo["level"];
+            $this->saveOrFail();
+        }
+        Cache::forget("user.permissions." . $user_id);
+        Cache::forget("user.components.{$user_id}.{$clientId}");
+        Cache::forget("user.package.{$user_id}.{$clientId}");
+
+        return $permission;
+    }
     public function removePermission(int $clientId)
     {
         try {

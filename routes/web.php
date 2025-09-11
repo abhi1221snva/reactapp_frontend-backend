@@ -91,6 +91,7 @@ $router->group(['middleware' => ['jwt.auth', 'auth.admin']], function () use ($r
   $router->get('user/{userId}/permission', 'UserController@showPermission');
   $router->put('user/{userId}/permission', 'UserController@addPermission');
   $router->post('user/{userId}/permission', 'UserController@updatePermission');
+  $router->post('user/permission', 'UserController@updatePermissionNew');
   $router->delete('user/{userId}/permission', 'UserController@removePermission');
   $router->post('user/{userId}/assignable-roles', 'UserController@assignableRoles');
   $router->post('user/assignable-roles', 'UserController@assignableRolesNew');
