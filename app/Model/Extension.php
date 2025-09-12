@@ -490,21 +490,45 @@ public function extensionDetailList(Request $request, int $extension_id = null)
             $where .= " AND users.parent_id = :parent_id AND users.id = :id";
         }
 
-        // Search filter
+        // --- Generic search filter ---
         if ($request->filled('search')) {
             $search = '%' . $request->input('search') . '%';
-            $where .= " AND (users.extension LIKE :search_ext OR users.first_name LIKE :search_name)";
-            $bindings['search_ext'] = $search;
+            $where .= " 
+                AND (
+                    users.extension LIKE :search_ext 
+                    OR users.first_name LIKE :search_name 
+                    OR users.last_name LIKE :search_last
+                    OR CONCAT(users.first_name, ' ', users.last_name) LIKE :search_full
+                )";
+            $bindings['search_ext']  = $search;
             $bindings['search_name'] = $search;
+            $bindings['search_last'] = $search;
+            $bindings['search_full'] = $search;
+        }
+
+        // --- Individual filters ---
+        if ($request->filled('first_name')) {
+            $where .= " AND users.first_name LIKE :first_name";
+            $bindings['first_name'] = '%' . $request->input('first_name') . '%';
+        }
+
+        if ($request->filled('last_name')) {
+            $where .= " AND users.last_name LIKE :last_name";
+            $bindings['last_name'] = '%' . $request->input('last_name') . '%';
+        }
+
+        if ($request->filled('extension')) {
+            $where .= " AND users.extension LIKE :extension";
+            $bindings['extension'] = '%' . $request->input('extension') . '%';
         }
 
         // --- Safe order by ---
         $allowedOrderBy = [
-            'users.id'        => 'users.id',
-            'users.created_at'=> 'users.created_at',
-            'users.first_name'=> 'users.first_name',
-            'users.last_name' => 'users.last_name',
-            'users.extension' => 'CAST(users.extension AS UNSIGNED)', // numeric sort
+            'users.id'         => 'users.id',
+            'users.created_at' => 'users.created_at',
+            'users.first_name' => 'users.first_name',
+            'users.last_name'  => 'users.last_name',
+            'users.extension'  => 'CAST(users.extension AS UNSIGNED)', // numeric sort
         ];
 
         $orderByKey = $request->get('orderBy', 'users.id');
@@ -532,7 +556,7 @@ public function extensionDetailList(Request $request, int $extension_id = null)
         }
 
         $response = [
-            'data' => $record,
+            'data'  => $record,
             'total' => $total
         ];
     }
@@ -541,16 +565,16 @@ public function extensionDetailList(Request $request, int $extension_id = null)
         return [
             'success' => true,
             'message' => 'Extension detail.',
-            'data'    => $response['data'] ?? $response,
-            'total'   => $response['total'] ?? null
+            'total'   => $response['total'] ?? null,
+            'data'    => $response['data'] ?? $response
         ];
     }
 
     return [
         'success' => false,
         'message' => 'Extension not found',
-        'data' => [],
-        'total' => 0
+        'data'    => [],
+        'total'   => 0
     ];
 }
 
