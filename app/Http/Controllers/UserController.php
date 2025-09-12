@@ -369,6 +369,56 @@ class UserController extends Controller
         $newUser["permissions"] = $user->getPermissions(true);
         return response()->json($newUser);
     }
+     public function updatePermissionNew()
+    {  
+        Log::info('reached update',[$this->request->auth->parent_id]);
+        $this->validate($this->request, [
+            'role' => 'required|exists:master.roles,id',
+            'user_id'=>'required',
+        ]);
+
+        $input = $this->request->all();
+        $permission_delete = Permission::where('user_id', $input['user_id'])->delete();
+
+        if ($input['role'] == 5) //role Id Super admin
+        {
+            $clients = \App\Model\Master\Client::all();
+            foreach ($clients as $client) {
+                $permission = new Permission();
+                $permission->user_id = $input['user_id'];
+                $permission->client_id = $client->id;
+                $permission->role = $input['role'];
+                try {
+                    $permission->saveOrFail();
+                } catch (ModelNotFoundException $modelNotFoundException) {
+                    throw new NotFoundHttpException("Resource with userId $userId not found");
+                }
+            }
+        } else {
+            $permission = new Permission();
+            $permission->user_id = $input['user_id'];
+            $permission->client_id = $this->request->auth->parent_id;
+            $permission->role = $input['role'];
+            try {
+                $permission->saveOrFail();
+            } catch (ModelNotFoundException $modelNotFoundException) {
+                throw new NotFoundHttpException("Resource with userId $userId not found");
+            }
+        }
+
+        try {
+            /** @var User $user */
+            $user = User::findOrFail($input['user_id']);
+            $user->updatePermissionNew($this->request->auth->parent_id, $input['role'],$input['user_id']);
+        } catch (ModelNotFoundException $modelNotFoundException) {
+            throw new NotFoundHttpException("Resource with userId $userId not found");
+        }
+
+        #store new permissions in cache
+        $newUser = $user->toArray();
+        $newUser["permissions"] = $user->getPermissions(true);
+        return response()->json($newUser);
+    }
     /**
      * @OA\Delete(
      *     path="/user/{userId}/permission",
