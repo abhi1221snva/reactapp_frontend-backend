@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Model\User;
+use Illuminate\Support\Facades\Log;
 
 
 
@@ -298,7 +299,53 @@ class GroupController extends Controller
             return $this->failResponse("Failed to update extension group", [$exception->getMessage()], $exception, 404);
         }
     }
+   public function patchNew(Request $request)
+    {
+        $this->validate($request, [
+            'title'     => 'required|sometimes|string|max:255',
+            'status'    => 'required|sometimes|boolean',
+            'group_id'        =>'required'
 
+        ]);
+
+        try {
+            
+           $id = $request->input('group_id');  // ✅ get id from request
+            $extGroup = ExtensionGroup::on("mysql_" . $request->auth->parent_id)->findOrFail($id);
+            if (!$extGroup->is_deleted) {
+                if ($request->has("title")) $extGroup->title = $request->input("title");
+                if ($request->has("status")) $extGroup->status = $request->input("status");
+                $extGroup->saveOrFail();
+
+                $extension = $request->extensions;
+                $data['id'] = $id;
+                $query = "DELETE FROM extension_group_map WHERE group_id = :id";
+                $save = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
+                //return $extension;
+
+                foreach ($extension as $value) {
+
+                    $allTypeExtension = User::where('extension', $value)->first();
+                    $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
+                    $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, array('extension' => $value, 'group_id' => $id));
+
+                    $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
+                    $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, array('extension' => $allTypeExtension->alt_extension, 'group_id' => $id));
+
+                    $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
+                    $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, array('extension' => $allTypeExtension->app_extension, 'group_id' => $id));
+                }
+
+                return $this->successResponse("Extension group updated", $extGroup->toArray());
+            } else {
+                return $this->failResponse("Extension group not found", ["Invalid extension group id $id"], null, 404);
+            }
+        } catch (ModelNotFoundException $exception) {
+            return $this->failResponse("Extension group not found", ["Invalid extension group id $id"], $exception, 404);
+        } catch (\Throwable $exception) {
+            return $this->failResponse("Failed to update extension group", [$exception->getMessage()], $exception, 404);
+        }
+    }
     /**
      * @OA\Delete(
      *      path="/extension-group/{id}",
@@ -350,7 +397,32 @@ class GroupController extends Controller
             return $this->failResponse("Failed to delete extension group", [$exception->getMessage()], $exception, 404);
         }
     }
+    public function deleteNew(Request $request)
+    {
+           $this->validate($request, [
+            'group_id'        =>'required'
 
+        ]);
+                $id= $request->input('group_id');
+
+        //Log::info("delete extension group",['id'=>$id]);
+        //die($id);
+        try {
+            $extGroup = ExtensionGroup::on("mysql_" . $request->auth->parent_id)->findOrFail($id);
+            if (!$extGroup->is_deleted) {
+                $extGroup->title = $extGroup->title . "| Deleted on " . date("Y-m-d H:i:s");
+                $extGroup->is_deleted = 1;
+                $extGroup->saveOrFail();
+                return $this->successResponse("Extension group deleted", $extGroup->toArray());
+            } else {
+                return $this->failResponse("Extension group not found", ["Invalid extension group id $id"], null, 404);
+            }
+        } catch (ModelNotFoundException $exception) {
+            return $this->failResponse("Extension group not found", ["Invalid extension group id $id"], $exception, 404);
+        } catch (\Throwable $exception) {
+            return $this->failResponse("Failed to delete extension group", [$exception->getMessage()], $exception, 404);
+        }
+    }
     /**
      * @OA\Put(
      *     path="/extension-group",

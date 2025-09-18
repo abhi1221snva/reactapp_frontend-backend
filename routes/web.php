@@ -116,7 +116,11 @@ $router->group(['middleware' => ['jwt.auth', 'auth.admin']], function () use ($r
   //Extension-Group Modify Operations
   $router->put('extension-group', 'GroupController@add');
   $router->patch('extension-group/{id}', 'GroupController@patch');
+  $router->patch('extension-group-update', 'GroupController@patchNew');
+
   $router->delete('extension-group/{id}', 'GroupController@delete');
+  $router->delete('extension-group-delete', 'GroupController@deleteNew');
+
   $router->post('status-update-group', 'GroupController@updateGroupStatus');
 
   //subscription packages
