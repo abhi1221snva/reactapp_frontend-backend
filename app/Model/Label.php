@@ -233,48 +233,101 @@ class Label extends Model
         }
     }
 
-    public function liveExtensionDetail($request)
-    {
-        try {
-            $data = array();
-            $searchStr = array();
-            $sql = "SELECT el.extension,el.status,el.channel,el.campaign_id,el.lead_id,campaign.title   FROM extension_live as el LEFT JOIN campaign on campaign.id=el.campaign_id";
-            $record =  DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
-            $data = (array)$record;
-            foreach ($data as $key => $live_extension) {
-                $user_data = User::where('extension', $live_extension->extension)->orWhere('alt_extension', $live_extension->extension)->get()->first();
-                if (!empty($user_data)) {
-                    $data[$key]->full_name = $user_data->first_name . ' ' . $user_data->last_name;
-                    $data[$key]->extension = $user_data->extension;
-                } else {
-                    $data[$key]->full_name = "";
-                    $data[$key]->extension = "";
-                }
+    // public function liveExtensionDetail($request)
+    // {
+    //     try {
+    //         $data = array();
+    //         $searchStr = array();
+    //         $sql = "SELECT el.extension,el.status,el.channel,el.campaign_id,el.lead_id,campaign.title   FROM extension_live as el LEFT JOIN campaign on campaign.id=el.campaign_id";
+    //         $record =  DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
+    //         $data = (array)$record;
+    //         foreach ($data as $key => $live_extension) {
+    //             $user_data = User::where('extension', $live_extension->extension)->orWhere('alt_extension', $live_extension->extension)->get()->first();
+    //             if (!empty($user_data)) {
+    //                 $data[$key]->full_name = $user_data->first_name . ' ' . $user_data->last_name;
+    //                 $data[$key]->extension = $user_data->extension;
+    //             } else {
+    //                 $data[$key]->full_name = "";
+    //                 $data[$key]->extension = "";
+    //             }
+    //         }
+    //         // Apply pagination if present
+    //         if ($request->has(['start', 'limit'])) {
+    //             $start = (int)$request->input('start');
+    //             $limit = (int)$request->input('limit');
+    //             $data = array_slice($data, $start, $limit, true); // paginate array
+    //         }
+    //         if (!empty($data)) {
+    //             return array(
+    //                 'success' => 'true',
+    //                 'message' => 'label detail.',
+    //                 'data'   => $data
+    //             );
+    //         }
+    //         return array(
+    //             'success' => 'false',
+    //             'message' => 'label not created.',
+    //             'data'   => array()
+    //         );
+    //     } catch (Exception $e) {
+    //         Log::log($e->getMessage());
+    //     } catch (InvalidArgumentException $e) {
+    //         Log::log($e->getMessage());
+    //     }
+    // }
+public function liveExtensionDetail($request)
+{
+    try {
+        $sql = "SELECT el.extension, el.status, el.channel, el.campaign_id, el.lead_id, campaign.title
+                FROM extension_live as el 
+                LEFT JOIN campaign on campaign.id = el.campaign_id";
+
+        $data = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
+
+        foreach ($data as $key => $live_extension) {
+            $user_data = User::where('extension', $live_extension->extension)
+                ->orWhere('alt_extension', $live_extension->extension)
+                ->first();
+
+            if ($user_data) {
+                $data[$key]->full_name = $user_data->first_name . ' ' . $user_data->last_name;
+                $data[$key]->extension = $user_data->extension;
+            } else {
+                $data[$key]->full_name = "";
+                $data[$key]->extension = "";
             }
-            // Apply pagination if present
-            if ($request->has(['start', 'limit'])) {
-                $start = (int)$request->input('start');
-                $limit = (int)$request->input('limit');
-                $data = array_slice($data, $start, $limit, true); // paginate array
-            }
-            if (!empty($data)) {
-                return array(
-                    'success' => 'true',
-                    'message' => 'label detail.',
-                    'data'   => $data
-                );
-            }
-            return array(
-                'success' => 'false',
-                'message' => 'label not created.',
-                'data'   => array()
-            );
-        } catch (Exception $e) {
-            Log::log($e->getMessage());
-        } catch (InvalidArgumentException $e) {
-            Log::log($e->getMessage());
         }
+
+        // Apply pagination if present
+        if ($request->has(['start', 'limit'])) {
+            $start = (int) $request->input('start');
+            $limit = (int) $request->input('limit');
+            $data = array_slice($data, $start, $limit, true);
+        }
+
+        if (count($data) > 0) {
+            return [
+                'success' => true,
+                'message' => 'Agent Status detail.',
+                'data'    => $data
+            ];
+        }
+
+        return [
+            'success' => false,
+            'message' => 'Agent not found.',
+            'data'    => []
+        ];
+
+    } catch (\Exception $e) {
+        Log::error($e->getMessage());
+        return [
+            'success' => false,
+            'message' => 'Something went wrong',
+            'data'    => []
+        ];
     }
+}
 
     public function deleteExt($request)
     {
