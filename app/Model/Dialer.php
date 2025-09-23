@@ -2254,7 +2254,7 @@ class Dialer extends Model
     {
         Log::info('reached', $request->all());
         try {
-            $extension = $request->input('sip');
+            $extension = $request->input('extension');
             $dataUser = User::where('extension', $extension)->orWhere('alt_extension', $extension)->get()->first();
 
             if (!empty($dataUser)) {
