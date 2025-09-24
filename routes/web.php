@@ -47,9 +47,6 @@ $router->group(['middleware' => ['jwt.auth', 'auth.superadmin']], function () us
 
   //sms providers
 
-  $router->put('sms-provider/{id}', 'ClientController@createSmsProvider');
-
-  $router->get('sms-provider/{id}', 'ClientController@showSmsProvider');
 
   $router->get('api-logs', 'ApiLogsController@index');
   $router->post('api-logs-data', 'ApiLogsController@getLogs');
@@ -152,6 +149,9 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->get('extension-group/{id}', 'GroupController@show');
   $router->get('extension-group-map', 'ExtensionGroupMapController@index');
 
+  $router->put('sms-provider/{id}', 'ClientController@createSmsProvider');
+
+  $router->get('sms-provider/{id}', 'ClientController@showSmsProvider');
 
   //smtp setting
   $router->get('smtps', 'SmtpController@index');
