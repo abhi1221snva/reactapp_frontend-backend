@@ -66,57 +66,94 @@ class Dids extends Model
      */
 
 
-    public function getList($request)
-    {
-        try {
+public function getList($request)
+{
+    try {
+        $database = 'mysql_' . $request->auth->parent_id;
 
-            $sql = "SELECT * FROM " . $this->table . " where is_deleted='0' ";
-            //$sql = "SELECT * FROM " . $this->table;
+        $sql = "SELECT * FROM " . $this->table . " WHERE is_deleted = '0'";
 
-            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
-            $data = (array)$record;
-            if ($request->has('search')) {
+        // Apply search
+        if ($request->has('search') && !empty($request->input('search'))) {
+            $search = $request->input('search');
+            $sql .= " AND cli = '" . $search . "'";
+        }
 
-                $sql = "SELECT * FROM " . $this->table . " where is_deleted='0' and cli='" . $request->input('search') . "' ";
-                //$sql = "SELECT * FROM " . $this->table;
+        // Apply pagination (start, limit)
+        if ($request->has('start') && $request->has('limit')) {
+            $start = (int) $request->input('start');
+            $limit = (int) $request->input('limit');
+            $sql .= " LIMIT $start, $limit";
+        }
 
-                $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
-                $data = (array)$record;
-            }
-            if ($request->has('start') && $request->has('limit')) {
-                //  $total_row = count($record);
+        $record = DB::connection($database)->select($sql);
+        $data = (array) $record;
+foreach ($data as &$row) {
+    // SMS case
+    if (isset($row->sms) && $row->sms == 1 && !empty($row->sms_email)) {
+        $row->assigned_user = $row->sms_email;
+        unset($row->sms_email);
+    }
 
-                $start = (int) $request->input('start');  // Start index (0-based)
-                $limit = (int) $request->input('limit');
-                //  $data = array_slice($record, $start, $limit, false);
-
-
-                $sql = "SELECT * FROM " . $this->table . " where is_deleted='0' LIMIT $start, $limit ";
-                //$sql = "SELECT * FROM " . $this->table;
-
-                $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
-                $data = (array)$record;
-            }
-
-            if (!empty($data)) {
-                return array(
-                    'success' => 'true',
-                    'message' => 'Lists detail.',
-                    'data' => $data
-                );
-            }
-
-            return array(
-                'success' => 'false',
-                'message' => 'Lists not created.',
-                'data' => array()
-            );
-        } catch (Exception $e) {
-            Log::log($e->getMessage());
-        } catch (InvalidArgumentException $e) {
-            Log::log($e->getMessage());
+    // Destination mapping based on dest_type
+    if (isset($row->dest_type)) {
+        switch ($row->dest_type) {
+            case 1:
+                if (!empty($row->extension)) {
+                    $row->destination = $row->extension;
+                    unset($row->extension);
+                }
+                break;
+            case 2:
+                if (!empty($row->voicemail_id)) {
+                    $row->destination = $row->voicemail_id;
+                    unset($row->voicemail_id);
+                }
+                break;
+            case 4:
+                if (!empty($row->forward_number)) {
+                    $row->destination = $row->forward_number;
+                    unset($row->forward_number);
+                }
+                break;
+            case 5:
+                if (!empty($row->conf_id)) {
+                    $row->destination = $row->conf_id;
+                    unset($row->conf_id);
+                }
+                break;
+            case 8:
+                if (!empty($row->ingroup)) {
+                    $row->destination = $row->ingroup;
+                    unset($row->ingroup);
+                }
+                break;
         }
     }
+}
+        if (!empty($data)) {
+            return [
+                'success' => 'true',
+                'message' => 'Did detail.',
+                'data' => $data
+            ];
+        }
+
+        return [
+            'success' => 'false',
+            'message' => 'DId not found',
+            'data' => []
+        ];
+    } catch (Exception $e) {
+        Log::error('Error in getList: ' . $e->getMessage());
+        return [
+            'success' => 'false',
+            'message' => 'Something went wrong.',
+            'data' => []
+        ];
+    }
+}
+
 
 
     public function getList_old($request)

@@ -1431,21 +1431,26 @@ class DidsController extends Controller
             }
 
 
-            /* foreach ($local as $record) {
-            echo "<pre>";print($record->friendlyName);
-        }
-*/
+foreach ($local as $list) {
+    $temp = [
+        'phoneNumber' => $list->phoneNumber,
+        'region'      => $list->region,
+        'rateCenter'  => $list->rateCenter,
+        'type'        => 'Metered'
+    ];
+    $result[] = $temp;
+}
 
 
-            foreach ($local as $list) {
-                $temp = [
-                    "<input type='checkbox' id='select_all_checkbox_" . $list->phoneNumber . "' value='" . $list->phoneNumber . "' data-ratecenter='" . $list->rateCenter . "' data-referenceid='" . $list->rateCenter . "' data-state='" . $list->region . "' data-didtype='fixed' class='did_checkbox' /><label for='select_all_checkbox_" . $list->phoneNumber . "'></label>",
-                    $list->phoneNumber,
-                    $list->region,
-                    "Metered"
-                ];
-                $result[] = $temp;
-            }
+            // foreach ($local as $list) {
+            //     $temp = [
+            //         "<input type='checkbox' id='select_all_checkbox_" . $list->phoneNumber . "' value='" . $list->phoneNumber . "' data-ratecenter='" . $list->rateCenter . "' data-referenceid='" . $list->rateCenter . "' data-state='" . $list->region . "' data-didtype='fixed' class='did_checkbox' /><label for='select_all_checkbox_" . $list->phoneNumber . "'></label>",
+            //         $list->phoneNumber,
+            //         $list->region,
+            //         "Metered"
+            //     ];
+            //     $result[] = $temp;
+            // }
             Log::info('result reached', ['result' => $result]);
         } catch (\Twilio\Exceptions\RestException $e) {
             Log::error('Twilio REST Exception', ['message' => $e->getMessage()]);
