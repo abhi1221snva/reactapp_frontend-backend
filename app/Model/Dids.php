@@ -1194,4 +1194,34 @@ foreach ($data as &$row) {
 
         return $result;
     }
+       public function getDetailById($request, $id)
+{
+    try {
+        $sql = "SELECT * FROM " . $this->table . " 
+                WHERE is_deleted = '0' AND id = :id";
+
+        $record = DB::connection('mysql_' . $request->auth->parent_id)
+            ->select($sql, ['id' => $id]);
+
+        $data = (array) $record;
+
+        if (!empty($data)) {
+            return [
+                'success' => 'true',
+                'message' => 'Did detail.',
+                'data'    => $data[0] ?? $data, // since you are fetching single record
+            ];
+        }
+
+        return [
+            'success' => 'false',
+            'message' => 'Record not found.',
+            'data'    => [],
+        ];
+    } catch (Exception $e) {
+        Log::error($e->getMessage());
+    } catch (InvalidArgumentException $e) {
+        Log::error($e->getMessage());
+    }
+}
 }

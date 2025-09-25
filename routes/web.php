@@ -521,6 +521,7 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->post('buy-save-selected-did-plivo', 'DidsController@buySaveDidPlivo');
   $router->post('buy-save-selected-did-telnyx', 'DidsController@buySaveDidTelnyx');
   $router->post('buy-save-selected-did-twilio', 'DidsController@buySaveDidTwilio');
+  $router->post('get-did-by-id', 'DidsController@getDetailById');
 
 
   $router->post('upload-did', 'DidsController@uploadDid');
