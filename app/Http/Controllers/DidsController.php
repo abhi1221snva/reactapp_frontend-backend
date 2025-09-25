@@ -1887,6 +1887,13 @@ foreach ($local as $list) {
             }
         }
     }
+ public function getDetailById(Request $request)
+{
+    $id = $request->input('did_id');
+    return $this->model->getDetailById($request, $id);
+}
+
+
 }
 
 //select app_extension,secret,context from users inner join  user_extensions on user_extensions.username=users.app_extension where users.base_parent_id=3
