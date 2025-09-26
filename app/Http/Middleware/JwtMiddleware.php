@@ -42,7 +42,7 @@ class JwtMiddleware
                 'success' => false,
                 'message' => 'An error occurred while decoding token.',
                 'data' => []
-            ], 400);
+            ], 401);
         }
 
         $user = User::find($credentials->sub);
