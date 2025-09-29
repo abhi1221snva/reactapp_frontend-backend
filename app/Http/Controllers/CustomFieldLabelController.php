@@ -73,7 +73,7 @@ public function index(Request $request)
     $custom_field_labels = $query->get()->toArray();
 
     return $this->successResponse("Custom Field Labels List", [
-        'total' => $totalRows,
+        'total rows' => $totalRows,
         'data'  => $custom_field_labels
     ]);
 }
