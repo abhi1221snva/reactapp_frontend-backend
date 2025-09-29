@@ -8,18 +8,49 @@ use Illuminate\Http\Request;
 class CallTimerController extends Controller
 {
     // GET /call-timers
-   public function index(Request $request)
+//    public function index(Request $request)
+// {
+//     $connection = "mysql_" . $request->auth->parent_id;
+
+//     // pagination params
+//     $perPage = (int) $request->get('per_page', 10); // default 10
+//     $page = (int) $request->get('page', 1); // default page 1
+//     $search = $request->get('search');
+
+//     $query = CallTimer::on($connection);
+
+//     // search filter
+//     if (!empty($search)) {
+//         $query->where(function ($q) use ($search) {
+//             $q->where('title', 'LIKE', "%{$search}%")
+//               ->orWhere('description', 'LIKE', "%{$search}%");
+//         });
+//     }
+
+//     // total rows (before pagination)
+//     $totalRows = $query->count();
+
+//     // apply pagination
+//     $timers = $query->orderBy('id', 'desc')
+//                     ->skip(($page - 1) * $perPage)
+//                     ->take($perPage)
+//                     ->get();
+
+//     return $this->successResponse("Call Timers", [
+//         "total_rows" => $totalRows,
+//         "per_page"   => $perPage,
+//         "current_page" => $page,
+//         "data"       => $timers->toArray()
+//     ]);
+// }
+public function index(Request $request)
 {
     $connection = "mysql_" . $request->auth->parent_id;
 
-    // pagination params
-    $perPage = (int) $request->get('per_page', 10); // default 10
-    $page = (int) $request->get('page', 1); // default page 1
-    $search = $request->get('search');
-
     $query = CallTimer::on($connection);
 
-    // search filter
+    // Apply search filter if provided
+    $search = $request->get('search');
     if (!empty($search)) {
         $query->where(function ($q) use ($search) {
             $q->where('title', 'LIKE', "%{$search}%")
@@ -27,20 +58,30 @@ class CallTimerController extends Controller
         });
     }
 
-    // total rows (before pagination)
+    // Total rows before pagination
     $totalRows = $query->count();
 
-    // apply pagination
-    $timers = $query->orderBy('id', 'desc')
-                    ->skip(($page - 1) * $perPage)
-                    ->take($perPage)
-                    ->get();
+    // Apply pagination only if start and limit exist
+    if ($request->has('start') && $request->has('limit')) {
+        $start = (int) $request->get('start');
+        $limit = (int) $request->get('limit');
+
+        $timers = $query->orderBy('id', 'desc')
+                        ->skip($start)
+                        ->take($limit)
+                        ->get();
+    } else {
+        // No pagination, get all
+        $timers = $query->orderBy('id', 'desc')->get();
+        $start = 0;
+        $limit = $totalRows;
+    }
 
     return $this->successResponse("Call Timers", [
-        "total_rows" => $totalRows,
-        "per_page"   => $perPage,
-        "current_page" => $page,
-        "data"       => $timers->toArray()
+        "total_rows"   => $totalRows,
+        "start"        => $start,
+        "limit"        => $limit,
+        "data"         => $timers->toArray()
     ]);
 }
 

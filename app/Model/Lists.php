@@ -136,6 +136,12 @@ class Lists extends Model
                 $data['list_id'] = $list;
                 $sql = "SELECT * FROM list_data WHERE list_id IN(" . $list . ") and " . $request->input('header_column') . "='" . $number . "'";
             }
+                 // Apply pagination if start and limit are provided
+        if ($request->has('start') && $request->has('limit')) {
+            $start = (int) $request->input('start');
+            $limit = (int) $request->input('limit');
+            $sql .= " LIMIT $limit OFFSET $start";
+        }
             $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
             $data = (array) $record;
             if (!empty($data)) {
