@@ -108,6 +108,14 @@ class RecycleRule extends Model
             array_push($searchStr, 'rr.call_time = :call_time');
             $data['call_time'] = $request->input('call_time');
         }
+        if ($request->has('search') && !empty($request->input('search'))) {
+            $search = '%' . $request->input('search') . '%';
+            $searchStr[] = '(c.title LIKE :search_campaign OR l.title LIKE :search_list OR d.title LIKE :search_disposition)';
+            $data['search_campaign'] = $search;
+            $data['search_list'] = $search;
+            $data['search_disposition'] = $search;
+        }
+
         $sql = "SELECT
                       rr.*, c.title as campaign, l.title as list, d.title as disposition
                     FROM recycle_rule  as rr

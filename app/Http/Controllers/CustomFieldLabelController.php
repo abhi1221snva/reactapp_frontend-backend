@@ -43,11 +43,34 @@ class CustomFieldLabelController extends Controller
  */
 
 
-    public function index(Request $request)
-    {
-        $custom_field_labels = CustomFieldLabels::on("mysql_" . $request->auth->parent_id)->get()->all();
-        return $this->successResponse("Custom Field Labels List", $custom_field_labels);
+    // public function index(Request $request)
+    // {
+    //     $custom_field_labels = CustomFieldLabels::on("mysql_" . $request->auth->parent_id)->get()->all();
+    //     return $this->successResponse("Custom Field Labels List", $custom_field_labels);
+    // }
+public function index(Request $request)
+{
+    // Base query on dynamic DB connection
+    $query = CustomFieldLabels::on("mysql_" . $request->auth->parent_id);
+
+    // Apply search if present
+    if ($request->has('search') && !empty($request->search)) {
+        $search = $request->search;
+        $query->where('title', 'like', "%{$search}%"); // adjust column name
     }
+
+    // Apply pagination only if both lower and upper limits are provided
+    if ($request->has('start') && $request->has('limit')) {
+        $lower = (int) $request->input('start');
+        $upper = (int) $request->input('limit');
+        $limit = max($upper - $lower, 0);
+        $query->skip($lower)->take($limit);
+    }
+
+      $custom_field_labels = $query->get()->toArray();
+
+    return $this->successResponse("Custom Field Labels List", $custom_field_labels);
+}
 
     public function create(Request $request)
     {
