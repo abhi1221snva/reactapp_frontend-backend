@@ -360,7 +360,7 @@ class Report extends Model
                     if (empty($request->input('did_numbers'))) {
                         $sql_did = "SELECT cli FROM master.did WHERE parent_id = '" . $parent_id . "'";
 
-                        $extensionDid = DB::connection('mysql_' . $parent_id)->select($sql_did);
+                        $extensionDid = DB::connection('master')->select($sql_did);
 
                         foreach ($extensionDid as $key => $val) {
                             $user_data_did[] = $val->cli;
@@ -369,7 +369,7 @@ class Report extends Model
                         $did_implode = implode(',', $user_data_did);
                         $did_implode1 = implode(',', $user_data_did);
 
-                        $extensionArray = DB::connection('mysql_' . $parent_id)->select($sql_extension);
+                        $extensionArray = DB::connection('master')->select($sql_extension);
 
 
 
@@ -404,7 +404,7 @@ class Report extends Model
                         SELECT extension FROM " . $database . ".extension_group_map WHERE is_deleted =0 and group_id IN (SELECT group_id FROM " . $database . ".extension_group_map WHERE is_deleted =0 and extension = " . $request->auth->extension . ")
                     ) AND user_level <= '" . $request->auth->level . "' ";
 
-                    $extensionArray = DB::connection('mysql_' . $parent_id)->select($sql_extension);
+                    $extensionArray = DB::connection('master')->select($sql_extension);
 
                     $user_data_extension = ["'" . $request->auth->extension . "'"]; // Quote the auth extension
                     foreach ($extensionArray as $val) {
