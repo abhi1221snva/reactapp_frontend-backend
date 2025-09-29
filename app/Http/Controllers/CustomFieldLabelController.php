@@ -59,6 +59,9 @@ public function index(Request $request)
         $query->where('title', 'like', "%{$search}%"); // adjust column name
     }
 
+    // Clone query for counting
+    $totalRows = $query->count();
+
     // Apply pagination only if both lower and upper limits are provided
     if ($request->has('start') && $request->has('limit')) {
         $lower = (int) $request->input('start');
@@ -67,9 +70,12 @@ public function index(Request $request)
         $query->skip($lower)->take($limit);
     }
 
-      $custom_field_labels = $query->get()->toArray();
+    $custom_field_labels = $query->get()->toArray();
 
-    return $this->successResponse("Custom Field Labels List", $custom_field_labels);
+    return $this->successResponse("Custom Field Labels List", [
+        'total' => $totalRows,
+        'data'  => $custom_field_labels
+    ]);
 }
 
     public function create(Request $request)
