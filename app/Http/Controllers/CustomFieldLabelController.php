@@ -48,35 +48,35 @@ class CustomFieldLabelController extends Controller
     //     $custom_field_labels = CustomFieldLabels::on("mysql_" . $request->auth->parent_id)->get()->all();
     //     return $this->successResponse("Custom Field Labels List", $custom_field_labels);
     // }
-public function index(Request $request)
-{
-    // Base query on dynamic DB connection
-    $query = CustomFieldLabels::on("mysql_" . $request->auth->parent_id);
-
-    // Apply search if present
-    if ($request->has('search') && !empty($request->search)) {
-        $search = $request->search;
-        $query->where('title', 'like', "%{$search}%"); // adjust column name
+    public function index(Request $request)
+    {
+        // Base query on dynamic DB connection
+        $query = CustomFieldLabels::on("mysql_" . $request->auth->parent_id);
+    
+        // Apply search if present
+        if ($request->has('search') && !empty($request->search)) {
+            $search = $request->search;
+            $query->where('title', 'like', "%{$search}%"); // adjust column name
+        }
+    
+        // Clone query for counting
+        $totalRows = $query->count();
+    
+        // Apply pagination correctly
+        if ($request->has('start') && $request->has('limit')) {
+            $offset = (int) $request->input('start'); // start = offset
+            $limit  = (int) $request->input('limit'); // limit = per page
+            $query->skip($offset)->take($limit);
+        }
+    
+        $custom_field_labels = $query->get()->toArray();
+    
+        return $this->successResponse("Custom Field Labels List", [
+            'total_rows' => $totalRows,
+            'data'       => $custom_field_labels
+        ]);
     }
-
-    // Clone query for counting
-    $totalRows = $query->count();
-
-    // Apply pagination only if both lower and upper limits are provided
-    if ($request->has('start') && $request->has('limit')) {
-        $lower = (int) $request->input('start');
-        $upper = (int) $request->input('limit');
-        $limit = max($upper - $lower, 0);
-        $query->skip($lower)->take($limit);
-    }
-
-    $custom_field_labels = $query->get()->toArray();
-
-    return $this->successResponse("Custom Field Labels List", [
-        'total_rows' => $totalRows,
-        'data'  => $custom_field_labels
-    ]);
-}
+    
 
     public function create(Request $request)
     {
