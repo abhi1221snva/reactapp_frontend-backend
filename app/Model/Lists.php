@@ -103,65 +103,133 @@ class Lists extends Model
         }
     }
 
+    // public function searchLeads($request)
+    // {
+    //     try {
+    //         $data = array();
+
+    //         if ($request->has('list_data') && is_array($request->input('list_data'))) {
+    //             $data['list_id'] = $request->input('list_data');
+    //         }
+    //         if ($request->has('header_column') && $request->input('header_column')) {
+    //             $data['header_column'] = $request->input('header_column');
+    //         }
+
+    //         if ($request->has('header_value') && $request->input('header_value')) {
+    //             $data['header_value'] = $request->input('header_value');
+    //         }
+
+    //         $number = $request->input('header_value'); //'6473621646';
+
+
+    //         if ($data['list_id'][0] == '0') {
+
+    //             $list = implode(',', $data['list_id']);
+    //             $list = "'" . implode("', '", $data['list_id']) . "'";
+    //             $data['list_id'] = $list;
+
+
+    //             $sql = "SELECT * FROM list_data WHERE list_id NOT IN(" . $list . ") and " . $request->input('header_column') . "='" . $number . "'";
+    //         } else {
+    //             $list = implode(',', $data['list_id']);
+    //             $list = "'" . implode("', '", $data['list_id']) . "'";
+    //             $data['list_id'] = $list;
+    //             $sql = "SELECT * FROM list_data WHERE list_id IN(" . $list . ") and " . $request->input('header_column') . "='" . $number . "'";
+    //         }
+    //              // Apply pagination if start and limit are provided
+    //     if ($request->has('start') && $request->has('limit')) {
+    //         $start = (int) $request->input('start');
+    //         $limit = (int) $request->input('limit');
+    //         $sql .= " LIMIT $limit OFFSET $start";
+    //     }
+    //         $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
+    //         $data = (array) $record;
+    //         if (!empty($data)) {
+    //             return array(
+    //                 'success' => 'true',
+    //                 'message' => 'Lead detail.',
+    //                 'data' => $data
+    //             );
+    //         }
+    //         return array(
+    //             'success' => 'false',
+    //             'message' => 'No Leads Found.',
+    //             'data' => array()
+    //         );
+    //     } catch (Exception $e) {
+    //         Log::log($e->getMessage());
+    //     } catch (InvalidArgumentException $e) {
+    //         Log::log($e->getMessage());
+    //     }
+    // }
     public function searchLeads($request)
-    {
-        try {
-            $data = array();
+{
+    try {
+        $data = array();
 
-            if ($request->has('list_data') && is_array($request->input('list_data'))) {
-                $data['list_id'] = $request->input('list_data');
-            }
-            if ($request->has('header_column') && $request->input('header_column')) {
-                $data['header_column'] = $request->input('header_column');
-            }
+        if ($request->has('list_data') && is_array($request->input('list_data'))) {
+            $data['list_id'] = $request->input('list_data');
+        }
+        if ($request->has('header_column') && $request->input('header_column')) {
+            $data['header_column'] = $request->input('header_column');
+        }
 
-            if ($request->has('header_value') && $request->input('header_value')) {
-                $data['header_value'] = $request->input('header_value');
-            }
+        if ($request->has('header_value') && $request->input('header_value')) {
+            $data['header_value'] = $request->input('header_value');
+        }
 
-            $number = $request->input('header_value'); //'6473621646';
+        $number = $request->input('header_value');
 
+        // Prepare list condition
+        if ($data['list_id'][0] == '0') {
+            $list = "'" . implode("','", $data['list_id']) . "'";
+            $data['list_id'] = $list;
 
-            if ($data['list_id'][0] == '0') {
+            $baseSql = "FROM list_data WHERE list_id NOT IN($list) AND {$request->input('header_column')} = '$number'";
+        } else {
+            $list = "'" . implode("','", $data['list_id']) . "'";
+            $data['list_id'] = $list;
 
-                $list = implode(',', $data['list_id']);
-                $list = "'" . implode("', '", $data['list_id']) . "'";
-                $data['list_id'] = $list;
+            $baseSql = "FROM list_data WHERE list_id IN($list) AND {$request->input('header_column')} = '$number'";
+        }
 
+        // Get total rows (without pagination)
+        $countSql = "SELECT COUNT(*) as total " . $baseSql;
+        $countResult = DB::connection('mysql_' . $request->auth->parent_id)->select($countSql);
+        $totalRows = $countResult[0]->total ?? 0;
 
-                $sql = "SELECT * FROM list_data WHERE list_id NOT IN(" . $list . ") and " . $request->input('header_column') . "='" . $number . "'";
-            } else {
-                $list = implode(',', $data['list_id']);
-                $list = "'" . implode("', '", $data['list_id']) . "'";
-                $data['list_id'] = $list;
-                $sql = "SELECT * FROM list_data WHERE list_id IN(" . $list . ") and " . $request->input('header_column') . "='" . $number . "'";
-            }
-                 // Apply pagination if start and limit are provided
+        // Fetch paginated data
+        $sql = "SELECT * " . $baseSql;
         if ($request->has('start') && $request->has('limit')) {
             $start = (int) $request->input('start');
             $limit = (int) $request->input('limit');
             $sql .= " LIMIT $limit OFFSET $start";
         }
-            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
-            $data = (array) $record;
-            if (!empty($data)) {
-                return array(
-                    'success' => 'true',
-                    'message' => 'Lead detail.',
-                    'data' => $data
-                );
-            }
+
+        $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
+
+        if (!empty($record)) {
             return array(
-                'success' => 'false',
-                'message' => 'No Leads Found.',
-                'data' => array()
+                'success' => 'true',
+                'message' => 'Lead detail.',
+                'total_rows'   => $totalRows, // ✅ Added total count
+                'data'    => $record
             );
-        } catch (Exception $e) {
-            Log::log($e->getMessage());
-        } catch (InvalidArgumentException $e) {
-            Log::log($e->getMessage());
         }
+
+        return array(
+            'success' => 'false',
+            'message' => 'No Leads Found.',
+            'total_rows'   => 0,
+            'data'    => array()
+        );
+    } catch (Exception $e) {
+        Log::error($e->getMessage());
+    } catch (InvalidArgumentException $e) {
+        Log::error($e->getMessage());
     }
+}
+
 
      public function getList($request)
 {
