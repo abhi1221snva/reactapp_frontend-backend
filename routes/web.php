@@ -34,6 +34,15 @@ $router->get('cron-email', 'CronController@cronEmail');
 
 //pusher
 $router->post('check-and-get-user-id-for-pusher', 'PusherController@checkAndGetUserIdForPusher');
+#register code
+
+$router->post('prospect/register', 'RegisterController@saveInitialData');
+$router->post('prospect/resend', 'RegisterController@resendOtp');
+$router->post('prospect/verify', 'RegisterController@verifyOtp');
+$router->post('prospect/sendotp/mobile', 'RegisterController@sendOtpMobile');
+$router->post('prospect/resend/mobile', 'RegisterController@resendOtpMobile');
+$router->post('prospect/verify/mobile', 'RegisterController@verifyOtpMobile');
+
 
 #Routes with super admin rights should be added here
 $router->group(['middleware' => ['jwt.auth', 'auth.superadmin']], function () use ($router) {
