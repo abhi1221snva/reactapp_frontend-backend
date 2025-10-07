@@ -11,10 +11,18 @@ class PhoneVerification extends Model
      * The connection name for the model.
      */
     protected $connection = 'master';
+    protected $table = 'phone_verifications'; // or your table name
+    protected $fillable = [
+        'id',
+        'country_code',
+        'phone_number',
+        'code',
+        'expiry',
+        'status',
+    ];
 
-    protected $keyType = 'string';
-
-    public $incrementing = false;
+    public $incrementing = false; // since you are using UUID
+    protected $keyType = 'string'; // UUID is a string
 
     public $statusCode = [
         1 => "Requested",
