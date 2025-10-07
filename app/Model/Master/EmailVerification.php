@@ -1,6 +1,5 @@
 <?php
 
-
 namespace App\Model\Master;
 
 use Illuminate\Database\Eloquent\Model;
@@ -12,9 +11,19 @@ class EmailVerification extends Model
      */
     protected $connection = 'master';
 
+    // If "id" is auto-increment integer, remove below two lines
+    // Otherwise, keep if you're using UUIDs or custom ids
     protected $keyType = 'string';
-
     public $incrementing = false;
+
+    // Allow mass assignment
+    protected $fillable = [
+        'id',
+        'email',
+        'code',
+        'expiry',
+        'status',
+    ];
 
     public $statusCode = [
         1 => "Requested",
@@ -30,8 +39,9 @@ class EmailVerification extends Model
         return [
             'id' => $this->id,
             'email' => $this->email,
+            'code' => $this->code, // include this so you can debug if needed
             'expiry' => $this->expiry,
-            'status' => $this->statusCode[$this->status],
+            'status' => $this->statusCode[$this->status] ?? $this->status,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at
         ];
