@@ -71,27 +71,51 @@ public function getList($request)
     try {
         $database = 'mysql_' . $request->auth->parent_id;
 
-        $sql = "SELECT * FROM " . $this->table . " WHERE is_deleted = '0'";
+         // Base query
+        $baseSql = "SELECT * FROM " . $this->table . " WHERE is_deleted = '0'";
 
-        // Apply search
+        // Apply search (used for both total and paginated queries)
         if ($request->has('search') && !empty($request->input('search'))) {
             $search = $request->input('search');
-            $sql .= " AND cli = '" . $search . "'";
+            $baseSql .= " AND cli = '" . $search . "'";
         }
 
+     $countSql = str_replace("SELECT *", "SELECT COUNT(*) AS total", $baseSql);
+        $countResult = DB::connection($database)->select($countSql);
+        $totalRows = isset($countResult[0]->total) ? (int)$countResult[0]->total : 0;
+
+        // --- Apply pagination ---
+        $paginatedSql = $baseSql;
         // Apply pagination (start, limit)
         if ($request->has('start') && $request->has('limit')) {
             $start = (int) $request->input('start');
             $limit = (int) $request->input('limit');
-            $sql .= " LIMIT $start, $limit";
+            $paginatedSql .= " LIMIT $start, $limit";
         }
 
-        $record = DB::connection($database)->select($sql);
+        $record = DB::connection($database)->select($paginatedSql);
         $data = (array) $record;
+
+
+
+// 3️⃣ Loop through rows and set assigned_user_id + assigned_user_name
 foreach ($data as &$row) {
-    // SMS case
-    if (isset($row->sms) && $row->sms == 1 && !empty($row->sms_email)) {
-        $row->assigned_user = $row->sms_email;
+ if (isset($row->sms) && $row->sms == 1 && !empty($row->sms_email)) {
+
+        $userId = (int)$row->sms_email;
+
+        // Fetch user info **for this specific ID**
+        $user = DB::table('users')
+            ->where('id', $userId)
+            ->select('first_name', 'last_name')
+            ->first();
+
+        $row->assigned_user_id = $userId;
+        $row->assigned_user_name = $user
+            ? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''))
+            : 'Unknown User';
+
+        // Remove sms_email as before
         unset($row->sms_email);
     }
 
@@ -135,20 +159,23 @@ foreach ($data as &$row) {
             return [
                 'success' => 'true',
                 'message' => 'Did detail.',
-                'data' => $data
+                'total_rows' => $totalRows,
+                'data' => $data,
             ];
         }
 
         return [
             'success' => 'false',
             'message' => 'DId not found',
-            'data' => []
+            'total_rows' => 0,
+            'data' => [],
         ];
     } catch (Exception $e) {
         Log::error('Error in getList: ' . $e->getMessage());
         return [
             'success' => 'false',
             'message' => 'Something went wrong.',
+            'total_rows' => 0,
             'data' => []
         ];
     }
