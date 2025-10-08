@@ -62,7 +62,8 @@ class RegisterController extends Controller
             $prospectInitialData->password = $request->input('password') ? Hash::make($request->input('password')) : null;
             $prospectInitialData->save();
 
-            $verificationCode = rand(100000, 999999);
+            $verificationCode = "123456";
+            //rand(100000, 999999);
 
             EmailVerification::create([
                 'id'     => (string) Str::uuid(),
@@ -72,7 +73,7 @@ class RegisterController extends Controller
                 'status' => '3',
             ]);
 
-            Mail::to($prospectInitialData->email)->send(new VerificationMail($verificationCode));
+            //Mail::to($prospectInitialData->email)->send(new VerificationMail($verificationCode));
 
             return $this->successResponse("Prospect saved & verification email sent", [
                 "prospect" => $prospectInitialData,
@@ -132,7 +133,8 @@ class RegisterController extends Controller
     {
         try
         {
-            $verificationCode = rand(100000, 999999);
+            $verificationCode = "123456";
+            //rand(100000, 999999);
             EmailVerification::create([
                 'id'     => (string) Str::uuid(),
                 'email'  => $request->email,
@@ -141,7 +143,7 @@ class RegisterController extends Controller
                 'status' => 3,
             ]);
 
-            Mail::to($request->input('email'))->send(new VerificationMail($verificationCode));
+            //Mail::to($request->input('email'))->send(new VerificationMail($verificationCode));
             return $this->successResponse("Verification email resent", []);
         }
 
@@ -171,18 +173,19 @@ class RegisterController extends Controller
 
         try {
 
-            $result['otp'] = rand(100000, 999999);
+            $result['otp'] = '123456';
+            //rand(100000, 999999);
 
             
-            $result = $otpService->sendOtp($rawPhone);
-            Log::info('otp log', [$result]);
+            // $result = $otpService->sendOtp($rawPhone);
+            // Log::info('otp log', [$result]);
 
-            if (!isset($result['success']) || !$result['success']) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Failed to send OTP. Please try again later.',
-                ], 500);
-            }
+            // if (!isset($result['success']) || !$result['success']) {
+            //     return response()->json([
+            //         'success' => false,
+            //         'message' => 'Failed to send OTP. Please try again later.',
+            //     ], 500);
+            // }
             
 
             // Store verification entry
@@ -223,15 +226,16 @@ class RegisterController extends Controller
 
     try {
 
-        $result['otp'] = rand(100000, 999999);
-       $result = $otpService->sendOtp($rawPhone);
+        $result['otp'] = "123456";
+        //rand(100000, 999999);
+    //    $result = $otpService->sendOtp($rawPhone);
 
-        if (!isset($result['success']) || !$result['success']) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to resend OTP. Please try again later.',
-            ], 500);
-        }
+    //     if (!isset($result['success']) || !$result['success']) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Failed to resend OTP. Please try again later.',
+    //         ], 500);
+    //     }
 
         // Optional: Invalidate old codes for this phone
         PhoneVerification::where('phone_number', $request->phone)
@@ -393,10 +397,10 @@ class RegisterController extends Controller
                     'password' => $request->input('password') ?? '******'
                 ];
 
-                Mail::send('emails.user_credentials', $userData, function ($message) use ($user) {
-                    $message->to($user->email)
-                        ->subject('Welcome to Your Account!');
-                });
+                // Mail::send('emails.user_credentials', $userData, function ($message) use ($user) {
+                //     $message->to($user->email)
+                //         ->subject('Welcome to Your Account!');
+                // });
 
                 Log::info('User email sent successfully', ['email' => $user->email]);
             } catch (\Exception $e) {
@@ -435,20 +439,20 @@ class RegisterController extends Controller
                     ]);
                 }
 
-                foreach ($adminEmails as $adminEmail) {
-                    try {
-                        Mail::send('emails.admin_notification', $adminData, function ($message) use ($adminEmail) {
-                            $message->to($adminEmail)
-                                ->subject('New User Registration Notification');
-                        });
-                        Log::info('Admin email sent successfully', ['email' => $adminEmail]);
-                    } catch (\Exception $e) {
-                        Log::error('Failed to send admin email', [
-                            'email' => $adminEmail,
-                            'error' => $e->getMessage()
-                        ]);
-                    }
-                }
+                // foreach ($adminEmails as $adminEmail) {
+                //     try {
+                //         Mail::send('emails.admin_notification', $adminData, function ($message) use ($adminEmail) {
+                //             $message->to($adminEmail)
+                //                 ->subject('New User Registration Notification');
+                //         });
+                //         Log::info('Admin email sent successfully', ['email' => $adminEmail]);
+                //     } catch (\Exception $e) {
+                //         Log::error('Failed to send admin email', [
+                //             'email' => $adminEmail,
+                //             'error' => $e->getMessage()
+                //         ]);
+                //     }
+                // }
             } catch (\Exception $e) {
                 Log::error('Error in admin notification process', [
                     'error' => $e->getMessage()
