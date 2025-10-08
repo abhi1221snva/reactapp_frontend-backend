@@ -1221,7 +1221,37 @@ foreach ($data as &$row) {
 
         return $result;
     }
-       public function getDetailById($request, $id)
+//        public function getDetailById($request, $id)
+// {
+//     try {
+//         $sql = "SELECT * FROM " . $this->table . " 
+//                 WHERE is_deleted = '0' AND id = :id";
+
+//         $record = DB::connection('mysql_' . $request->auth->parent_id)
+//             ->select($sql, ['id' => $id]);
+
+//         $data = (array) $record;
+
+//         if (!empty($data)) {
+//             return [
+//                 'success' => 'true',
+//                 'message' => 'Did detail.',
+//                 'data'    => $data[0] ?? $data, // since you are fetching single record
+//             ];
+//         }
+
+//         return [
+//             'success' => 'false',
+//             'message' => 'Record not found.',
+//             'data'    => [],
+//         ];
+//     } catch (Exception $e) {
+//         Log::error($e->getMessage());
+//     } catch (InvalidArgumentException $e) {
+//         Log::error($e->getMessage());
+//     }
+// }
+public function getDetailById($request, $id)
 {
     try {
         $sql = "SELECT * FROM " . $this->table . " 
@@ -1230,25 +1260,94 @@ foreach ($data as &$row) {
         $record = DB::connection('mysql_' . $request->auth->parent_id)
             ->select($sql, ['id' => $id]);
 
-        $data = (array) $record;
-
-        if (!empty($data)) {
+        if (empty($record)) {
             return [
-                'success' => 'true',
-                'message' => 'Did detail.',
-                'data'    => $data[0] ?? $data, // since you are fetching single record
+                'success' => 'false',
+                'message' => 'Record not found.',
+                'data'    => [],
             ];
         }
 
+        // Since DB::select returns array of stdClass objects, get the first record
+        $row = $record[0];
+        // Map sms_type to enable_sms_ai
+        $row->enable_sms_ai = $row->sms_type ?? null;
+        unset($row->sms_type); // remove original column if you want
+
+        // Apply SMS assignment logic
+        if (isset($row->sms) && $row->sms == 1 && !empty($row->sms_email)) {
+            $userId = (int)$row->sms_email;
+
+            $user = DB::table('users')
+                ->where('id', $userId)
+                ->select('first_name', 'last_name')
+                ->first();
+
+            $row->assigned_user_id = $userId;
+            $row->assigned_user_name = $user
+                ? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''))
+                : 'Unknown User';
+
+            unset($row->sms_email);
+        }
+
+        // Destination mapping based on dest_type
+        if (isset($row->dest_type)) {
+            switch ($row->dest_type) {
+                case 1:
+                    if (!empty($row->extension)) {
+                        $row->destination = $row->extension;
+                        unset($row->extension);
+                    }
+                    break;
+                case 2:
+                    if (!empty($row->voicemail_id)) {
+                        $row->destination = $row->voicemail_id;
+                        unset($row->voicemail_id);
+                    }
+                    break;
+                case 4:
+                    if (!empty($row->forward_number)) {
+                        $row->destination = $row->forward_number;
+                        unset($row->forward_number);
+                    }
+                    break;
+                case 5:
+                    if (!empty($row->conf_id)) {
+                        $row->destination = $row->conf_id;
+                        unset($row->conf_id);
+                    }
+                    break;
+                case 8:
+                    if (!empty($row->ingroup)) {
+                        $row->destination = $row->ingroup;
+                        unset($row->ingroup);
+                    }
+                    break;
+            }
+        }
+
         return [
-            'success' => 'false',
-            'message' => 'Record not found.',
-            'data'    => [],
+            'success' => 'true',
+            'message' => 'Did detail.',
+            'data'    => (array)$row,
         ];
+
     } catch (Exception $e) {
         Log::error($e->getMessage());
+        return [
+            'success' => 'false',
+            'message' => 'An error occurred.',
+            'data' => [],
+        ];
     } catch (InvalidArgumentException $e) {
         Log::error($e->getMessage());
+        return [
+            'success' => 'false',
+            'message' => 'An error occurred.',
+            'data' => [],
+        ];
     }
 }
+
 }
