@@ -62,7 +62,7 @@ class RegisterController extends Controller
             $prospectInitialData->password = $request->input('password') ? Hash::make($request->input('password')) : null;
             $prospectInitialData->save();
 
-            $verificationCode = '123456';//rand(100000, 999999);
+            $verificationCode = rand(100000, 999999);
 
             EmailVerification::create([
                 'id'     => (string) Str::uuid(),
@@ -72,7 +72,7 @@ class RegisterController extends Controller
                 'status' => '3',
             ]);
 
-            //Mail::to($prospectInitialData->email)->send(new VerificationMail($verificationCode));
+            Mail::to($prospectInitialData->email)->send(new VerificationMail($verificationCode));
 
             return $this->successResponse("Prospect saved & verification email sent", [
                 "prospect" => $prospectInitialData,
@@ -132,7 +132,7 @@ class RegisterController extends Controller
     {
         try
         {
-            $verificationCode = '123456';//rand(100000, 999999);
+            $verificationCode = rand(100000, 999999);
             EmailVerification::create([
                 'id'     => (string) Str::uuid(),
                 'email'  => $request->email,
@@ -141,7 +141,7 @@ class RegisterController extends Controller
                 'status' => 3,
             ]);
 
-            //Mail::to($request->input('email'))->send(new VerificationMail($verificationCode));
+            Mail::to($request->input('email'))->send(new VerificationMail($verificationCode));
             return $this->successResponse("Verification email resent", []);
         }
 
@@ -171,9 +171,9 @@ class RegisterController extends Controller
 
         try {
 
-            $result['otp'] = '123456';
+            $result['otp'] = rand(100000, 999999);
 
-            /*
+            
             $result = $otpService->sendOtp($rawPhone);
             Log::info('otp log', [$result]);
 
@@ -183,7 +183,7 @@ class RegisterController extends Controller
                     'message' => 'Failed to send OTP. Please try again later.',
                 ], 500);
             }
-            */
+            
 
             // Store verification entry
             PhoneVerification::create([
@@ -223,15 +223,15 @@ class RegisterController extends Controller
 
     try {
 
-        $result['otp'] = '123456';
-    //    $result = $otpService->sendOtp($rawPhone);
+        $result['otp'] = rand(100000, 999999);
+       $result = $otpService->sendOtp($rawPhone);
 
-    //     if (!isset($result['success']) || !$result['success']) {
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'Failed to resend OTP. Please try again later.',
-    //         ], 500);
-    //     }
+        if (!isset($result['success']) || !$result['success']) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to resend OTP. Please try again later.',
+            ], 500);
+        }
 
         // Optional: Invalidate old codes for this phone
         PhoneVerification::where('phone_number', $request->phone)
