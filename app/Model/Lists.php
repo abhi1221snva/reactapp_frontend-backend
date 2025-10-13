@@ -794,7 +794,7 @@ class Lists extends Model
             );
         } else {
             return array(
-                'success' => 'true',
+                'success' => 'false',
                 'message' => 'Campaign List update failed'
             );
         }

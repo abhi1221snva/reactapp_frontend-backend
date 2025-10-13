@@ -76,43 +76,87 @@ class NotificationController extends Controller
      * )
      */
 
+    // public function index(Request $request)
+    // {
+    //     $clientId = $request->auth->parent_id;
+    //     $notifications = SystemNotificationType::all()->sortBy("display_order");
+    //     $types = $notifications->toArray();
+    //     foreach ($types as $key => $type) {
+    //         $subscriptions = SystemNotification::on("mysql_$clientId")->find($type["id"]);
+    //         if ($subscriptions) {
+    //             $types[$key]["active"] = $subscriptions->active;
+    //             $types[$key]["active_sms"] = $subscriptions->active_sms;
+
+    //             $types[$key]["subscribers"] = $subscriptions->subscribers;
+    //         } else {
+    //             $types[$key]["active"] = 0;
+    //             $types[$key]["active_sms"] = 0;
+
+    //             $types[$key]["subscribers"] = [];
+    //         }
+    //     }
+
+    //     if ($request->has('start') && $request->has('limit')) {
+    //         $total_row = count($types);
+
+    //         $start = (int) $request->input('start');  // Start index (0-based)
+    //         $limit = (int) $request->input('limit');  // Number of records to fetch
+
+    //         $types = array_slice($types, $start, $limit, true);
+
+    //         return $this->successResponse("notifications", [
+    //             'start' => $start,
+    //             'limit' => $limit,
+    //             'total' => $total_row,
+    //             'data' => $types
+    //         ]);
+    //     }
+    //     return $this->successResponse("notifications", $types);
+    // }
     public function index(Request $request)
-    {
-        $clientId = $request->auth->parent_id;
-        $notifications = SystemNotificationType::all()->sortBy("display_order");
-        $types = $notifications->toArray();
-        foreach ($types as $key => $type) {
-            $subscriptions = SystemNotification::on("mysql_$clientId")->find($type["id"]);
-            if ($subscriptions) {
-                $types[$key]["active"] = $subscriptions->active;
-                $types[$key]["active_sms"] = $subscriptions->active_sms;
+{
+    $clientId = $request->auth->parent_id;
+    $notifications = SystemNotificationType::all()->sortBy("display_order");
+    $types = $notifications->toArray();
 
-                $types[$key]["subscribers"] = $subscriptions->subscribers;
-            } else {
-                $types[$key]["active"] = 0;
-                $types[$key]["active_sms"] = 0;
+    $result = [];
 
-                $types[$key]["subscribers"] = [];
-            }
-        }
+    foreach ($types as $key => $type) {
+        $subscriptions = SystemNotification::on("mysql_$clientId")->find($type["id"]);
 
-        if ($request->has('start') && $request->has('limit')) {
-            $total_row = count($types);
-
-            $start = (int) $request->input('start');  // Start index (0-based)
-            $limit = (int) $request->input('limit');  // Number of records to fetch
-
-            $types = array_slice($types, $start, $limit, true);
-
-            return $this->successResponse("notifications", [
-                'start' => $start,
-                'limit' => $limit,
-                'total' => $total_row,
-                'data' => $types
-            ]);
-        }
-        return $this->successResponse("notifications", $types);
+        $result[] = [
+            // 'index'        => $key,  // <-- move key inside object
+            'id'           => $type["id"],
+            'name'         => $type["name"],
+            'type'         => $type["type"],
+            'display_order'=> $type["display_order"],
+            'created_at'   => $type["created_at"],
+            'updated_at'   => $type["updated_at"],
+            'type_sms'     => $type["type_sms"],
+            'active'       => $subscriptions ? $subscriptions->active : 0,
+            'active_sms'   => $subscriptions ? $subscriptions->active_sms : 0,
+            'subscribers'  => $subscriptions ? $subscriptions->subscribers : [],
+        ];
     }
+
+    // pagination logic
+    if ($request->has('start') && $request->has('limit')) {
+        $total_row = count($result);
+        $start = (int) $request->input('start');
+        $limit = (int) $request->input('limit');
+        $pagedResult = array_slice($result, $start, $limit);
+
+        return $this->successResponse("notifications", [
+            'start' => $start,
+            'limit' => $limit,
+            'total' => $total_row,
+            'data'  => array_values($pagedResult)
+        ]);
+    }
+
+    return $this->successResponse("notifications", array_values($result));
+}
+
 
     public function index_old_code(Request $request)
     {
