@@ -338,7 +338,7 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
             } else {
                 $response = [
                     "id" => $data["id"],
-                    "client_id" => $data["parent_id"],
+                    "parent_id" => $data["parent_id"],
                     "first_name" => $data["first_name"],
                     "last_name" => $data["last_name"],
                     "mobile" => $data["mobile"],
