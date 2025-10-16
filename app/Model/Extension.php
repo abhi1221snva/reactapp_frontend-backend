@@ -497,12 +497,14 @@ public function extensionDetailList(Request $request, int $extension_id = null)
                 AND (
                     users.extension LIKE :search_ext 
                     OR users.first_name LIKE :search_name 
-                    OR users.last_name LIKE :search_last
+                    OR users.last_name LIKE :search_last 
+                    OR users.email LIKE :search_email
                     OR CONCAT(users.first_name, ' ', users.last_name) LIKE :search_full
                 )";
             $bindings['search_ext']  = $search;
             $bindings['search_name'] = $search;
             $bindings['search_last'] = $search;
+            $bindings['search_email'] = $search;
             $bindings['search_full'] = $search;
         }
 
@@ -520,6 +522,10 @@ public function extensionDetailList(Request $request, int $extension_id = null)
         if ($request->filled('extension')) {
             $where .= " AND users.extension LIKE :extension";
             $bindings['extension'] = '%' . $request->input('extension') . '%';
+        }
+          if ($request->filled('email')) {
+            $where .= " AND users.email LIKE :email";
+            $bindings['email'] = '%' . $request->input('email') . '%';
         }
 
         // --- Safe order by ---
