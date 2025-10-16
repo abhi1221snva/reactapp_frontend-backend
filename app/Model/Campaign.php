@@ -343,7 +343,12 @@ public function campaignDetaillatest($request)
 {
     try {
         $campaigns = self::allowedCampaigns($request->auth->parent_id, $request->auth->level, $request->auth->groups);
-
+     if ($request->has('title') && !empty($request->input('title'))) {
+            $searchTitle = strtolower($request->input('title'));
+            $campaigns = array_filter($campaigns, function ($c) use ($searchTitle) {
+                return strpos(strtolower($c->title), $searchTitle) !== false;
+            });
+        }
         // Pagination
         if ($request->has(['start', 'limit'])) {
             $start = (int)$request->input('start');
@@ -388,7 +393,7 @@ public function campaignDetaillatest($request)
 
             $list_ids_str = implode(',', $id_list);
 
-            $id->rowList = $count;
+            $id->lists_associated = $count;
 
             // 3. rowListData: use lead_count from list table if exists, else fallback to existing logic
             if (!empty($id_list)) {
