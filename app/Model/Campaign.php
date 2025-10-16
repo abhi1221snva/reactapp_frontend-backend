@@ -134,105 +134,7 @@ class Campaign extends Model
             ]);
         }
     }
-//     public function campaignDetail($request)
-// {
-//     try {
-//         $campaigns = self::allowedCampaigns($request->auth->parent_id, $request->auth->level, $request->auth->groups);
 
-//         // ✅ Search by title if provided
-//         if ($request->has('title') && !empty($request->input('title'))) {
-//             $searchTitle = strtolower($request->input('title'));
-//             $campaigns = array_filter($campaigns, function ($campaign) use ($searchTitle) {
-//                 return strpos(strtolower($campaign->title), $searchTitle) !== false;
-//             });
-//         }
-
-//         // ✅ Pagination
-//         if ($request->has(['start', 'limit'])) {
-//             $start = (int) $request->input('start');
-//             $limit = (int) $request->input('limit');
-
-//             $totalRows = count($campaigns);
-//             $campaigns = array_slice($campaigns, $start, $limit, true);
-//         } else {
-//             $totalRows = count($campaigns);
-//         }
-
-//         $data_count = [];
-
-//         foreach ($campaigns as $key => $id) {
-//             $data1['campaign_id'] = $id->id;
-
-//             // 1. lead_report count
-//             $sql_count_lead_report = "SELECT count(1) as rowCountLearReport FROM lead_report WHERE campaign_id = :campaign_id ";
-//             $record_count_lead = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_count_lead_report, $data1);
-//             $id->rowLeadReport = $record_count_lead->rowCountLearReport;
-
-//             $searchStr = [];
-
-//             if ($data1['campaign_id'] && is_numeric($data1['campaign_id'])) {
-//                 $searchStr[] = 'campaign_id = :campaign_id';
-//             }
-
-//             // 2. campaign_list / hubspot_campaign_list
-//             if ($id->crm_title_url == 'hubspot') {
-//                 $sql = "SELECT * FROM hubspot_campaign_list WHERE " . implode(" AND ", $searchStr) . " AND status=1 AND is_deleted=0";
-//             } else {
-//                 $sql = "SELECT * FROM campaign_list WHERE " . implode(" AND ", $searchStr) . " AND status=1 AND is_deleted=0";
-//             }
-
-//             $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data1);
-//             $list = (array) $record;
-//             $count = count($list);
-//             $id_list = [];
-
-//             foreach ($list as $listItem) {
-//                 $id_list[] = $listItem->list_id;
-//             }
-
-//             $list_ids = $id_list ? "'" . implode("','", $id_list) . "'" : "''";
-
-//             $id->rowList = $count;
-
-//             // 3. list_data / hubspot_lists
-//             if ($id->crm_title_url == 'hubspot') {
-//                 $sql_count_list = "SELECT sum(size) as rowCountList FROM hubspot_lists WHERE list_id IN (" . $list_ids . ")";
-//             } else {
-//                 $sql_count_list = "SELECT count(1) as rowCountList FROM list_data WHERE list_id IN (" . $list_ids . ")";
-//             }
-
-//             $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_count_list);
-//             $id->rowListData = $record_count_list[0]->rowCountList ?? 0;
-
-//             // 4. lead_temp count
-//             $sql_lead_temp = "SELECT count(1) as rowLeadTemp FROM lead_temp WHERE campaign_id = :campaign_id ";
-//             $record_rowLeadTemp = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_lead_temp, $data1);
-//             $id->rowLeadTemp = $record_rowLeadTemp->rowLeadTemp ?? 0;
-
-//             $data_count[] = (array) $id;
-//         }
-//         $data_count = array_reverse($data_count);
-
-//         return [
-//             'success' => 'true',
-//             'message' => 'Campaign detail.',
-//             'total_rows' => $totalRows,
-//             'data' => $data_count,
-//         ];
-//     } catch (\Throwable $e) {
-//         Log::error("Campaign.campaignDetail", [
-//             "message" => $e->getMessage(),
-//             "file" => $e->getFile(),
-//             "line" => $e->getLine()
-//         ]);
-
-//         return [
-//             'success' => 'false',
-//             'message' => 'Server error.',
-//             'data' => []
-//         ];
-//     }
-// }
 public function campaignDetail($request)
 {
     try {
@@ -264,58 +166,60 @@ public function campaignDetail($request)
             $campaigns = array_slice($campaigns, $start, $limit); // don't preserve keys
         }
 
-        $data_count = [];
+     $data_count = [];
 
-        foreach ($campaigns as $campaign) {
-            $data1 = ['campaign_id' => $campaign->id];
+foreach ($campaigns as $campaign) {
+    $campaign_id = $campaign->id;
 
-            // 1) lead_report count
-            $sql_count_lead_report = "SELECT count(1) as rowCountLeadReport
-                                      FROM lead_report
-                                      WHERE campaign_id = :campaign_id";
-            $record_count_lead = DB::connection('mysql_' . $request->auth->parent_id)
-                ->selectOne($sql_count_lead_report, $data1);
-            $campaign->rowLeadReport = $record_count_lead->rowCountLeadReport ?? 0;
+    // 1️⃣ dialed leads (lead_report count)
+    $rowLeadReport = DB::connection('mysql_' . $request->auth->parent_id)
+        ->table('lead_report')
+        ->where('campaign_id', $campaign_id)
+        ->count();
 
-            // 2) campaign_list / hubspot_campaign_list
-            $tableList = $campaign->crm_title_url == 'hubspot'
-                ? 'hubspot_campaign_list'
-                : 'campaign_list';
+    // 2️⃣ total leads (rowListData)
+    $list_ids = [];
+    if ($campaign->crm_title_url == 'hubspot') {
+        $lists = DB::connection('mysql_' . $request->auth->parent_id)
+            ->table('hubspot_campaign_list')
+            ->where('campaign_id', $campaign_id)
+            ->where('is_deleted', 0)
+            ->get();
+    } else {
+        $lists = DB::connection('mysql_' . $request->auth->parent_id)
+            ->table('campaign_list')
+            ->where('campaign_id', $campaign_id)
+            ->where('is_deleted', 0)
+            ->get();
+    }
 
-            $sql = "SELECT * FROM {$tableList}
-                    WHERE campaign_id = :campaign_id AND status=1 AND is_deleted=0";
+    foreach ($lists as $list) {
+        $list_ids[] = $list->list_id;
+    }
 
-            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data1);
-            $list = $record; // no cast needed
-            $campaign->rowList = count($list);
+    if (!empty($list_ids)) {
+        $rowListData = DB::connection('mysql_' . $request->auth->parent_id)
+            ->table('list')
+            ->whereIn('id', $list_ids)
+            ->sum('lead_count');
+    } else {
+        $rowListData = 0;
+    }
 
-            $id_list = array_map(fn($x) => $x->list_id, $list);
-            $list_ids = $id_list ? "'" . implode("','", $id_list) . "'" : "''";
+    // 3️⃣ hopper count (lead_temp count)
+    $rowLeadTemp = DB::connection('mysql_' . $request->auth->parent_id)
+        ->table('lead_temp')
+        ->where('campaign_id', $campaign_id)
+        ->count();
 
-            // 3) list_data / hubspot_lists
-            if ($campaign->crm_title_url == 'hubspot') {
-                $sql_count_list = "SELECT sum(size) as rowCountList
-                                   FROM hubspot_lists
-                                   WHERE list_id IN ({$list_ids})";
-            } else {
-                $sql_count_list = "SELECT count(1) as rowCountList
-                                   FROM list_data
-                                   WHERE list_id IN ({$list_ids})";
-            }
-
-            $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_count_list);
-            $campaign->rowListData = $record_count_list[0]->rowCountList ?? 0;
-
-            // 4) lead_temp count
-            $sql_lead_temp = "SELECT count(1) as rowLeadTemp
-                              FROM lead_temp
-                              WHERE campaign_id = :campaign_id";
-            $record_rowLeadTemp = DB::connection('mysql_' . $request->auth->parent_id)
-                ->selectOne($sql_lead_temp, $data1);
-            $campaign->rowLeadTemp = $record_rowLeadTemp->rowLeadTemp ?? 0;
-
-            $data_count[] = (array) $campaign;
-        }
+    $data_count[] = [
+        'campaign_id'    => $campaign_id,
+        'campaign_title' => $campaign->title,
+        'dialed_leads'   => $rowLeadReport,
+        'total_leads'    => $rowListData,
+        'hopper_count'   => $rowLeadTemp
+    ];
+}
 
         // ❌ Do NOT sort or reverse here; it's already sorted before pagination.
 
