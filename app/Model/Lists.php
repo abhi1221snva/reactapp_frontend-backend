@@ -995,7 +995,7 @@ if ($request->has('duplicate_check') && $request->input('duplicate_check') == 1)
                                 $var_data[] = $list_id;
                                 // $list_data['list_id']=$list_id;
                                 $list_data = array("list_id" => $list_id);
-                                if (empty($value[2]) && empty($value[3]) && empty($value[4])) {
+                                if (empty($value[0]) && empty($value[1]) && empty($value[2])) {
                                     continue;
                                 }
                                 $k = 0;
