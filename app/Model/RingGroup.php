@@ -285,7 +285,7 @@ public function ringGroupDetail($request)
             }
 
             $ringGroupsData[$key_ext]->extension_name = implode(',', $array_extension);
-            $ringGroupsData[$key_ext]->extension_ids = $extension_ids; // ✅ add as array of user IDs
+            $ringGroupsData[$key_ext]->extension_id = $extension_ids; // ✅ add as array of user IDs
         }
 
         return [
