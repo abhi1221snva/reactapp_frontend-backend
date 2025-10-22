@@ -849,7 +849,12 @@ $saveRecord &= Lists::on('mysql_' . $request->auth->parent_id)
 
                 $sql_list_data = "SELECT * FROM list_header WHERE list_id = :list_id and is_dialing=1 ";
                         $record_list_data = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_list_data, array('list_id' => $request->input('list_id')));
-
+                if (empty($record_list_header)) {
+                    return [
+                        'success' => 'false',
+                        'message' => 'No records found in list header for this list.'
+                    ];
+                }
                        // echo "<pre>";print_r($record_list_data);die;
 
 $listId = $request->input('list_id');

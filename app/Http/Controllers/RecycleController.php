@@ -200,7 +200,6 @@ class RecycleController extends Controller
             'disposition_id'    => 'numeric',
             'call_time'         => 'numeric',
             'time'              => 'date_format:H:i',
-            'day'               => 'string|max:255',
         ]);
         $response = $this->model->editRecycleRule($this->request);
         return response()->json($response);
