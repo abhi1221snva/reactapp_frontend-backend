@@ -244,7 +244,9 @@ class ListsController extends Controller
             //  'id'             => 'required|numeric'
         ]);
         $response = $this->model->editList($this->request);
-        return response()->json($response);
+        $status = ($response['success'] === 'true') ? 200 : 400; // or 422 if you prefer
+
+return response()->json($response, $status);
     }
 
     /**

@@ -240,7 +240,7 @@ public function ringGroupDetail($request)
             ];
         }
 
-        // Handle pagination only if both start and limit are provided
+        // Handle pagination
         $usePagination = $request->has('start') && $request->has('limit');
 
         if ($usePagination) {
@@ -256,51 +256,49 @@ public function ringGroupDetail($request)
             $limit = $recCount;
         }
 
-        // Fetch data
-        $records = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
-        $ringGroupsData = (array) $records;
+        // ✅ Fetch as array of objects (keep objects intact)
+        $ringGroupsData = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
 
-        // Process extensions
         foreach ($ringGroupsData as $key_ext => $ext) {
             $array_extension = [];
             $extension_ids = [];
 
-            $exten = str_replace('SIP/', '', $ext->extensions ?? '');
-            $replace = str_replace('-', '&', $exten);
-            $extensionList = array_filter(array_unique(explode('&', $replace)));
+            // ✅ Normalize extension string (handle SIP/, &, -, etc.)
+            $extenRaw = trim($ext->extensions ?? '');
+            $extenRaw = str_replace('SIP/', '', $extenRaw);
+            $extenRaw = str_replace(['-', ',', ' '], '&', $extenRaw);
+            $extensionList = array_filter(array_unique(explode('&', $extenRaw)));
 
-foreach ($extensionList as $check) {
-    if (!empty($check) && is_numeric($check)) {
-        $userSql = "
-            SELECT id, first_name, last_name, extension, alt_extension
-            FROM users
-            WHERE extension = :ext1 OR alt_extension = :ext2
-            LIMIT 1
-        ";
-        $userRecord = DB::connection('master')->selectOne($userSql, [
-            'ext1' => $check,
-            'ext2' => $check,
-        ]);
+            foreach ($extensionList as $check) {
+                if (!empty($check) && is_numeric($check)) {
+                    $userSql = "
+                        SELECT id, first_name, last_name, extension, alt_extension
+                        FROM users
+                        WHERE extension = :ext1 OR alt_extension = :ext2
+                        LIMIT 1
+                    ";
+                    $userRecord = DB::connection('master')->selectOne($userSql, [
+                        'ext1' => $check,
+                        'ext2' => $check,
+                    ]);
 
-        if (!empty($userRecord)) {
-            // Determine which extension matched (main or alt)
-            $matchedExt = ($userRecord->extension == $check)
-                ? $userRecord->extension
-                : $userRecord->alt_extension;
+                    if (!empty($userRecord)) {
+                        $matchedExt = ($userRecord->extension == $check)
+                            ? $userRecord->extension
+                            : $userRecord->alt_extension;
 
-            // Avoid duplicates for same user
-            if (!in_array($userRecord->id, $extension_ids)) {
-                $array_extension[] = "{$userRecord->first_name} {$userRecord->last_name}-{$matchedExt}";
-                $extension_ids[] = $userRecord->id;
+                        if (!in_array($userRecord->id, $extension_ids)) {
+                            $array_extension[] = "{$userRecord->first_name} {$userRecord->last_name}-{$matchedExt}";
+                            $extension_ids[] = $userRecord->id;
+                        }
+                    }
+                }
             }
-        }
-    }
-}
 
-
-
+            // ✅ Add results
             $ringGroupsData[$key_ext]->extension_name = implode(',', $array_extension);
-            $ringGroupsData[$key_ext]->extension_id = $extension_ids; // ✅ add as array of user IDs
+            $ringGroupsData[$key_ext]->extension_id = $extension_ids;
+            $ringGroupsData[$key_ext]->extension_count = count($extension_ids); // ✅ Accurate count
         }
 
         return [
@@ -320,6 +318,7 @@ foreach ($extensionList as $check) {
         ];
     }
 }
+
 
     /*
      *Update dnc details
