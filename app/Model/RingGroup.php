@@ -269,20 +269,35 @@ public function ringGroupDetail($request)
             $replace = str_replace('-', '&', $exten);
             $extensionList = array_filter(array_unique(explode('&', $replace)));
 
-            foreach ($extensionList as $check) {
-                if (!empty($check) && is_numeric($check)) {
-                    $userSql = "SELECT id, first_name, last_name FROM users WHERE extension = :ext1 OR alt_extension = :ext2 LIMIT 1";
-                    $userRecord = DB::connection('master')->selectOne($userSql, [
-                        'ext1' => $check,
-                        'ext2' => $check
-                    ]);
+foreach ($extensionList as $check) {
+    if (!empty($check) && is_numeric($check)) {
+        $userSql = "
+            SELECT id, first_name, last_name, extension, alt_extension
+            FROM users
+            WHERE extension = :ext1 OR alt_extension = :ext2
+            LIMIT 1
+        ";
+        $userRecord = DB::connection('master')->selectOne($userSql, [
+            'ext1' => $check,
+            'ext2' => $check,
+        ]);
 
-                    if (!empty($userRecord)) {
-                        $array_extension[] = $userRecord->first_name . ' ' . $userRecord->last_name . '-' . $check;
-                        $extension_ids[] = $userRecord->id; // ✅ add user id
-                    }
-                }
+        if (!empty($userRecord)) {
+            // Determine which extension matched (main or alt)
+            $matchedExt = ($userRecord->extension == $check)
+                ? $userRecord->extension
+                : $userRecord->alt_extension;
+
+            // Avoid duplicates for same user
+            if (!in_array($userRecord->id, $extension_ids)) {
+                $array_extension[] = "{$userRecord->first_name} {$userRecord->last_name}-{$matchedExt}";
+                $extension_ids[] = $userRecord->id;
             }
+        }
+    }
+}
+
+
 
             $ringGroupsData[$key_ext]->extension_name = implode(',', $array_extension);
             $ringGroupsData[$key_ext]->extension_id = $extension_ids; // ✅ add as array of user IDs
