@@ -1242,7 +1242,7 @@ public function loginHistory($request)
             $arr = array_merge($arr, $comments);
             usort($arr, array($this, "sortResultOntimeDesc"));
 
-            return ['leadData' => $leadData, 'updateData' => $arr, 'userData' => $userData];
+            return ['list' => $leadData, 'updateData' => $arr, 'userData' => $userData];
         } catch (Exception $e) {
             Log::log($e->getMessage());
         } catch (InvalidArgumentException $e) {
