@@ -995,7 +995,14 @@ return response()->json($response, $status);
         if ($arrListHeaders->isEmpty()) {
             return $this->failResponse("No headers found for this list", []);
         }
+        // ✅ Case 2: Headers exist, but all have NULL label_id or missing label
+        $allLabelsNull = $arrListHeaders->every(function ($item) {
+            return empty($item->label_id) || is_null($item->title);
+        });
 
+        if ($allLabelsNull) {
+            return $this->failResponse("List headers found but labels are missing or not assigned", []);
+        }
         // Map column_name => label title (use exact column name, no extra 'option_')
         $columnToLabelMap = [];
         foreach ($arrListHeaders as $header) {
