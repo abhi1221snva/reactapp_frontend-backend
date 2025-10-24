@@ -169,7 +169,7 @@ class RecycleRule extends Model
     //         'data'   => array()
     //     );
     // }
-public function getRecycleRule($request)
+public function getRecycleRule1($request)
 {
     $searchStr = ['rr.is_deleted = :is_deleted'];
     $data = ['is_deleted' => 0];
@@ -309,7 +309,7 @@ $grouped = array_values($grouped);
     ];
 }
 
-    public function getRecycleRule_old_code($request)
+    public function getRecycleRule($request)
     {
         $searchStr = array('rr.is_deleted = :is_deleted');
         $data['is_deleted'] = 0;
