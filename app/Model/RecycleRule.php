@@ -237,19 +237,25 @@ $grouped = [];
 foreach ($records as $row) {
     $key = $row->campaign_id . '_' . $row->list_id;
 
-    if (!isset($grouped[$key])) {
-        $grouped[$key] = (object) [
-            'campaign_id' => $row->campaign_id,
-            'campaign' => $row->campaign,
-            'list_id' => $row->list_id,
-            'list' => $row->list,
-            'disposition_ids' => [],
-            'dispositions' => [],
-            'days' => [],
-            'call_times' => []
-        ];
-    }
+  if (!isset($grouped[$key])) {
+    $grouped[$key] = (object) [
+        'campaign_id' => $row->campaign_id,
+        'campaign' => $row->campaign,
+        'list_id' => $row->list_id,
+        'list' => $row->list,
+        'recycle_status' => (int)$row->is_deleted, // ✅ added status (from DB column is_deleted)
+        'recycle_id' => [],
+        'disposition_ids' => [],
+        'dispositions' => [],
+        'days' => [],
+        'call_times' => []
+    ];
+}
 
+// ✅ Add recycle rule id
+if (!in_array($row->id, $grouped[$key]->recycle_id)) {
+    $grouped[$key]->recycle_id[] = $row->id;
+}
     // Add unique disposition_id
     if (!in_array($row->disposition_id, $grouped[$key]->disposition_ids)) {
         $grouped[$key]->disposition_ids[] = $row->disposition_id;
@@ -267,11 +273,15 @@ foreach ($records as $row) {
     }
 }
 
-// Convert disposition_ids and dispositions to comma-separated string
 foreach ($grouped as $key => $item) {
-    $grouped[$key]->disposition_ids = implode(',', $item->disposition_ids);
-    $grouped[$key]->dispositions = implode(',', $item->dispositions); // Optional if you want names
-    // days and call_times remain as arrays
+    // Ensure unique arrays
+    $grouped[$key]->disposition_ids = array_values(array_unique($item->disposition_ids));
+    $grouped[$key]->dispositions = array_values(array_unique($item->dispositions));
+    $grouped[$key]->days = array_values(array_unique($item->days));
+
+    // ✅ Keep only one call_time (e.g., first unique value)
+    $uniqueCallTimes = array_values(array_unique($item->call_times));
+    $grouped[$key]->call_times = !empty($uniqueCallTimes) ? (int)$uniqueCallTimes[0] : null;
 }
 
 $grouped = array_values($grouped);
