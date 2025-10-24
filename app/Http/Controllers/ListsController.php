@@ -968,7 +968,7 @@ return response()->json($response, $status);
 
 
 
-    public function getListContentView1(Request $request)
+    public function getListContentView(Request $request)
 {
     try {
         $intListId = $request->route('id');
@@ -1066,7 +1066,7 @@ return response()->json($response, $status);
     }
 }
 
-    public function getListContentView(Request $request)
+    public function getListContentView_old_copy(Request $request)
     {
         Log::info('reached', $request->all());
 
