@@ -169,12 +169,15 @@ class RecycleRule extends Model
     //         'data'   => array()
     //     );
     // }
-public function getRecycleRule($request)
+
+
+    public function getRecycleRule($request)
 {
     $searchStr = ['rr.is_deleted = :is_deleted'];
     $data = ['is_deleted' => 0];
     $dayArray = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
 
+    // Filters
     if ($request->has('recycle_rule_id') && is_numeric($request->input('recycle_rule_id'))) {
         $searchStr[] = 'rr.id = :id';
         $data['id'] = $request->input('recycle_rule_id');
@@ -228,6 +231,102 @@ public function getRecycleRule($request)
                 $records[$key]->disposition = $master->title;
             }
         }
+
+        // Convert day and call_time to array format
+        $records[$key]->days = !empty($value->day) ? [$value->day] : [];
+       // $records[$key]->call_times = !empty($value->call_time) ? [$value->call_time] : [];
+
+        // Remove original single-value fields
+        unset($records[$key]->day);
+        //unset($records[$key]->call_time);
+    }
+
+    // Pagination
+    $total = count($records);
+    $start = $request->has('start') ? (int)$request->input('start') : 0;
+    $limit = $request->has('limit') ? (int)$request->input('limit') : $total;
+
+    if (!empty($records)) {
+        $records = array_slice($records, $start, $limit, false);
+
+        return [
+            'success' => 'true',
+            'message' => 'RecycleRules detail.',
+            'start' => $start,
+            'limit' => $limit,
+            'total' => $total,
+            'data' => $records
+        ];
+    }
+
+    return [
+        'success' => 'false',
+        'message' => 'RecycleRules not created.',
+        'data' => []
+    ];
+}
+
+public function getRecycleRule_2025_10_24($request)
+{
+    $searchStr = ['rr.is_deleted = :is_deleted'];
+    $data = ['is_deleted' => 0];
+    $dayArray = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+
+    if ($request->has('recycle_rule_id') && is_numeric($request->input('recycle_rule_id'))) {
+        $searchStr[] = 'rr.id = :id';
+        $data['id'] = $request->input('recycle_rule_id');
+    }
+    if ($request->has('campaign_id') && is_numeric($request->input('campaign_id'))) {
+        $searchStr[] = 'rr.campaign_id = :campaign_id';
+        $data['campaign_id'] = $request->input('campaign_id');
+    }
+    if ($request->has('list_id') && is_numeric($request->input('list_id'))) {
+        $searchStr[] = 'rr.list_id = :list_id';
+        $data['list_id'] = $request->input('list_id');
+    }
+    if ($request->has('disposition_id') && is_numeric($request->input('disposition_id'))) {
+        $searchStr[] = 'rr.disposition_id = :disposition_id';
+        $data['disposition_id'] = $request->input('disposition_id');
+    }
+    if ($request->has('day') && in_array($request->input('day'), $dayArray)) {
+        $searchStr[] = 'rr.day = :day';
+        $data['day'] = $request->input('day');
+    }
+    if ($request->has('call_time') && is_numeric($request->input('call_time'))) {
+        $searchStr[] = 'rr.call_time = :call_time';
+        $data['call_time'] = $request->input('call_time');
+    }
+    if ($request->has('search') && !empty($request->input('search'))) {
+        $search = '%' . $request->input('search') . '%';
+        $searchStr[] = '(c.title LIKE :search_campaign OR l.title LIKE :search_list OR d.title LIKE :search_disposition)';
+        $data['search_campaign'] = $search;
+        $data['search_list'] = $search;
+        $data['search_disposition'] = $search;
+    }
+
+    // Fetch records
+    $sql = "SELECT rr.*, c.title as campaign, l.title as list, d.title as disposition
+            FROM recycle_rule as rr
+            LEFT JOIN campaign as c ON c.id = rr.campaign_id
+            LEFT JOIN list as l ON l.id = rr.list_id
+            LEFT JOIN disposition as d ON d.id = rr.disposition_id
+            WHERE " . implode(" AND ", $searchStr);
+
+    $records = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+
+    //echo "<pre>";print_r($records);die;
+
+    // Fill missing dispositions from master DB
+    foreach ($records as $key => $value) {
+        if (empty($value->disposition) && !empty($value->disposition_id) && is_numeric($value->disposition_id)) {
+            $master = DB::connection('master')->selectOne(
+                "SELECT title FROM disposition WHERE id = :id",
+                ['id' => $value->disposition_id]
+            );
+            if ($master) {
+                $records[$key]->disposition = $master->title;
+            }
+        }
     }
 
     // Group by campaign + list
@@ -237,20 +336,18 @@ $grouped = [];
 foreach ($records as $row) {
     $key = $row->campaign_id . '_' . $row->list_id;
 
-  if (!isset($grouped[$key])) {
-    $grouped[$key] = (object) [
-        'campaign_id' => $row->campaign_id,
-        'campaign' => $row->campaign,
-        'list_id' => $row->list_id,
-        'list' => $row->list,
-        'recycle_status' => (int)$row->is_deleted, // ✅ added status (from DB column is_deleted)
-        'recycle_id' => [],
-        'disposition_ids' => [],
-        'dispositions' => [],
-        'days' => [],
-        'call_times' => []
-    ];
-}
+    if (!isset($grouped[$key])) {
+        $grouped[$key] = (object) [
+            'campaign_id' => $row->campaign_id,
+            'campaign' => $row->campaign,
+            'list_id' => $row->list_id,
+            'list' => $row->list,
+            'disposition_ids' => [],
+            'dispositions' => [],
+            'days' => [],
+            'call_times' => []
+        ];
+    }
 
 // ✅ Add recycle rule id
 if (!in_array($row->id, $grouped[$key]->recycle_id)) {
@@ -319,7 +416,7 @@ $grouped = array_values($grouped);
     ];
 }
 
-    public function getRecycleRule_old_code($request)
+    public function getRecycleRuleold($request)
     {
         $searchStr = array('rr.is_deleted = :is_deleted');
         $data['is_deleted'] = 0;
