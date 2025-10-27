@@ -197,7 +197,6 @@ class RecycleController extends Controller
             'recycle_rule_id'   => 'required|numeric',
             'campaign_id'       => 'numeric',
             'list_id'           => 'numeric',
-            'disposition_id'    => 'numeric',
             'call_time'         => 'numeric',
             'time'              => 'date_format:H:i',
         ]);

@@ -126,6 +126,7 @@ $router->group(['middleware' => ['jwt.auth', 'auth.admin']], function () use ($r
 
   $router->delete('extension-group/{id}', 'GroupController@delete');
   $router->delete('extension-group-delete', 'GroupController@deleteNew');
+  $router->post('extension/deleteFromGroup', 'GroupController@deleteExtensionFromGroup');
 
   $router->post('status-update-group', 'GroupController@updateGroupStatus');
 
