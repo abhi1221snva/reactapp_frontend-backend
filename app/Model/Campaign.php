@@ -1517,6 +1517,13 @@ function campaignById($request)
     if (!$campaign->getAttribute('audio_message_amd')) {
         $campaign->setAttribute('audio_message_amd', 0);
     }
+    // === Rename / Map columns for API output ===
+$campaign->setAttribute('total_leads', $campaign->rowLeadReport ?? 0);
+$campaign->setAttribute('dialed_leads', $campaign->rowListData ?? 0);
+$campaign->setAttribute('created_date', $campaign->updated ?? null);
+
+// Optionally remove old keys to clean response
+unset($campaign->rowLeadReport, $campaign->rowListData, $campaign->updated);
     // return as collection for consistency
     return collect([$campaign]);
 }
