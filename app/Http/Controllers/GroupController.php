@@ -619,4 +619,69 @@ class GroupController extends Controller
             ]);
         }
     }
+    public function deleteExtensionFromGroup(Request $request)
+{
+    $this->validate($request, [
+        'group_id'     => 'required|numeric',
+        'extension_id' => 'required|numeric',
+    ]);
+
+    $groupId     = $request->input('group_id');
+    $extensionId = $request->input('extension_id');
+
+    try {
+        // ✅ Use the tenant connection
+        $connection = "mysql_" . $request->auth->parent_id;
+
+        // ✅ Find mapping entry
+        $mapRecord = DB::connection($connection)
+            ->table('extension_group_map')
+            ->where('extension', $extensionId)
+            ->where('group_id', $groupId)
+            ->first();
+
+        if (!$mapRecord) {
+            return $this->failResponse(
+                "Mapping not found",
+                ["No mapping for extension $extensionId under group $groupId"],
+                null,
+                404
+            );
+        }
+
+        // ✅ Check if already deleted
+        if ($mapRecord->is_deleted == 1) {
+            return $this->failResponse(
+                "Extension already deleted from this group",
+                ["Mapping already marked deleted"],
+                null,
+                400
+            );
+        }
+
+        // ✅ Soft delete (update is_deleted flag)
+        DB::connection($connection)
+            ->table('extension_group_map')
+            ->where('extension', $extensionId)
+            ->where('group_id', $groupId)
+            ->update([
+                'is_deleted' => 1
+            ]);
+
+        return $this->successResponse("Extension deleted from group successfully", [
+            'extension' => $extensionId,
+            'group_id'  => $groupId,
+            'is_deleted' => 1
+        ]);
+
+    } catch (\Throwable $exception) {
+        return $this->failResponse(
+            "Failed to delete extension from group",
+            [$exception->getMessage()],
+            $exception,
+            500
+        );
+    }
+}
+
 }

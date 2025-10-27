@@ -1041,8 +1041,19 @@ return response()->json($response, $status);
 
         // Map options to label titles and remove empty/null values
         $arrFinalListData = [];
+        // foreach ($arrListData as $row) {
+        //     $rowData = [];
+        //     foreach ($columnToLabelMap as $column => $labelTitle) {
+        //         if (isset($row->$column) && $row->$column !== null && $row->$column !== '') {
+        //             $rowData[$labelTitle] = $row->$column;
+        //         }
+        //     }
+        //     if (!empty($rowData)) {
+        //         $arrFinalListData[] = $rowData;
+        //     }
+        // }
         foreach ($arrListData as $row) {
-            $rowData = [];
+            $rowData = ['list_id' => $intListId]; // ✅ Add list_id to each record
             foreach ($columnToLabelMap as $column => $labelTitle) {
                 if (isset($row->$column) && $row->$column !== null && $row->$column !== '') {
                     $rowData[$labelTitle] = $row->$column;
@@ -1052,7 +1063,7 @@ return response()->json($response, $status);
                 $arrFinalListData[] = $rowData;
             }
         }
-
+        
         // Prepare list headers for response
         $arrFinalListHeaders = array_values($columnToLabelMap);
 
