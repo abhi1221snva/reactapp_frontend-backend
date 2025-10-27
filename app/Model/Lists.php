@@ -1160,43 +1160,140 @@ if ($request->has('duplicate_check') && $request->input('duplicate_check') == 1)
      * @param type $parent_id
      * @return type
      */
-    function getLeadDataForEditPage($lead_id, $parent_id)
+//     function getLeadDataForEditPage($lead_id, $parent_id)
+// {
+//     try {
+//         $leadDataArr = $inLabelArr = $inLeadArr = $finalLeadArr = $temp = [];
+
+//         // Fetch lead data from main or archive table
+//         $sql = "(SELECT * FROM list_data WHERE id = $lead_id) 
+//                 UNION 
+//                 (SELECT * FROM list_data_archive WHERE id = $lead_id)";
+//         $record = DB::connection('mysql_' . $parent_id)->select($sql);
+//         $listData = (array) $record;
+
+//         if (!empty($listData)) {
+//             $list_id = $listData[0]->list_id;
+//             foreach ($listData[0] as $key => $val) {
+//                 $inLeadArr[$key] = $val;
+//             }
+//         } else { // if no lead found, get a default list_id from list table
+//             $sql = "SELECT id FROM list WHERE type = 2";
+//             $record = DB::connection('mysql_' . $parent_id)->select($sql);
+//             $list = (array) $record;
+//             $list_id = $list[0]->id;
+//         }
+
+//         if ($list_id > 0) {
+//             // Get all labels
+//             $labels = DB::connection('mysql_' . $parent_id)
+//                         ->select("SELECT id, title FROM label ORDER BY id ASC");
+
+//             // Get all list_header columns for the list
+//             $listHeaders = DB::connection('mysql_' . $parent_id)
+//                              ->select("SELECT list_header.is_dialing, list_header.column_name, label.title, label.id
+//                                        FROM list_header
+//                                        INNER JOIN label ON label.id = list_header.label_id
+//                                        WHERE list_header.list_id = $list_id
+//                                        GROUP BY label.title
+//                                        ORDER BY label.id ASC");
+
+//             // Intermediate label array
+//             foreach ($labels as $lab) {
+//                 $inLabelArr[$lab->id] = $lab->title;
+//             }
+
+//             // Create lead array from list headers
+//             foreach ($listHeaders as $header) {
+//                 $temp['id'] = $header->id;
+//                 $temp['title'] = $header->title;
+//                 $temp['is_dialing'] = $header->is_dialing;
+//                 $temp['column_name'] = $header->column_name;
+//                 $temp['value'] = isset($inLeadArr[$header->column_name]) ? $inLeadArr[$header->column_name] : '';
+//                 $leadDataArr[$header->id] = $temp;
+//                 $temp = [];
+//             }
+
+//             // Create final lead array from labels
+//             foreach ($inLabelArr as $key => $val) {
+//                 if (isset($leadDataArr[$key])) {
+//                     $finalLeadArr[$key] = $leadDataArr[$key];
+//                 } else {
+//                     $temp['id'] = $key;
+//                     $temp['title'] = $val;
+//                     $temp['value'] = '';
+//                     $temp['is_dialing'] = 0;
+//                     $finalLeadArr[$key] = $temp;
+//                 }
+//                 $temp = [];
+//             }
+
+//             // Filter only fields with non-empty values
+//             $finalLeadArr = array_filter($finalLeadArr, function($item) {
+//                 return isset($item['value']) && $item['value'] !== '';
+//             });
+//         }
+
+//         return ['leadData' => (array) $finalLeadArr];
+
+//     } catch (Exception $e) {
+//         Log::error($e->getMessage());
+//         return ['leadData' => []];
+//     } catch (InvalidArgumentException $e) {
+//         Log::error($e->getMessage());
+//         return ['leadData' => []];
+//     }
+// }
+
+function getLeadDataForEditPage($lead_id, $parent_id)
 {
     try {
         $leadDataArr = $inLabelArr = $inLeadArr = $finalLeadArr = $temp = [];
 
-        // Fetch lead data from main or archive table
-        $sql = "(SELECT * FROM list_data WHERE id = $lead_id) 
-                UNION 
+        // ✅ Safety check for empty lead_id
+        if (empty($lead_id) || !is_numeric($lead_id)) {
+            return [
+                'success' => false,
+                'message' => 'Invalid lead ID',
+                'leadData' => []
+            ];
+        }
+
+        // ✅ Fetch lead data from main or archive table
+        $sql = "(SELECT * FROM list_data WHERE id = $lead_id)
+                UNION
                 (SELECT * FROM list_data_archive WHERE id = $lead_id)";
         $record = DB::connection('mysql_' . $parent_id)->select($sql);
         $listData = (array) $record;
+
+        $list_id = 0;
 
         if (!empty($listData)) {
             $list_id = $listData[0]->list_id;
             foreach ($listData[0] as $key => $val) {
                 $inLeadArr[$key] = $val;
             }
-        } else { // if no lead found, get a default list_id from list table
-            $sql = "SELECT id FROM list WHERE type = 2";
+        } else {
+            // if no lead found, get a default list_id from list table
+            $sql = "SELECT id FROM list WHERE type = 2 LIMIT 1";
             $record = DB::connection('mysql_' . $parent_id)->select($sql);
             $list = (array) $record;
-            $list_id = $list[0]->id;
+            $list_id = $list[0]->id ?? 0;
         }
 
         if ($list_id > 0) {
-            // Get all labels
+            // ✅ Get all labels
             $labels = DB::connection('mysql_' . $parent_id)
-                        ->select("SELECT id, title FROM label ORDER BY id ASC");
+                ->select("SELECT id, title FROM label WHERE is_deleted = 0 AND status = 1 ORDER BY display_order ASC");
 
-            // Get all list_header columns for the list
+            // ✅ Get all list_header columns for the list
             $listHeaders = DB::connection('mysql_' . $parent_id)
-                             ->select("SELECT list_header.is_dialing, list_header.column_name, label.title, label.id
-                                       FROM list_header
-                                       INNER JOIN label ON label.id = list_header.label_id
-                                       WHERE list_header.list_id = $list_id
-                                       GROUP BY label.title
-                                       ORDER BY label.id ASC");
+                ->select("SELECT list_header.is_dialing, list_header.column_name, label.title, label.id
+                          FROM list_header
+                          INNER JOIN label ON label.id = list_header.label_id
+                          WHERE list_header.list_id = $list_id
+                          GROUP BY label.title
+                          ORDER BY label.id ASC");
 
             // Intermediate label array
             foreach ($labels as $lab) {
@@ -1223,6 +1320,7 @@ if ($request->has('duplicate_check') && $request->input('duplicate_check') == 1)
                     $temp['title'] = $val;
                     $temp['value'] = '';
                     $temp['is_dialing'] = 0;
+                    $temp['column_name'] = '';
                     $finalLeadArr[$key] = $temp;
                 }
                 $temp = [];
@@ -1232,19 +1330,36 @@ if ($request->has('duplicate_check') && $request->input('duplicate_check') == 1)
             $finalLeadArr = array_filter($finalLeadArr, function($item) {
                 return isset($item['value']) && $item['value'] !== '';
             });
+            // ✅ Sort by ID ascending before returning
+usort($finalLeadArr, function ($a, $b) {
+    return $a['id'] <=> $b['id'];
+});
+
         }
 
-        return ['leadData' => (array) $finalLeadArr];
+        // ✅ Final clean return (converted to numeric array)
+        return [
+            'success' => true,
+            'message' => 'Edit Lead Data',
+            'leadData' => array_values($finalLeadArr) // ✅ ensures JSON array, not object
+        ];
 
     } catch (Exception $e) {
         Log::error($e->getMessage());
-        return ['leadData' => []];
+        return [
+            'success' => false,
+            'message' => 'Error fetching lead data: ' . $e->getMessage(),
+            'leadData' => []
+        ];
     } catch (InvalidArgumentException $e) {
         Log::error($e->getMessage());
-        return ['leadData' => []];
+        return [
+            'success' => false,
+            'message' => 'Invalid argument: ' . $e->getMessage(),
+            'leadData' => []
+        ];
     }
 }
-
 
 
     function getLeadDataForEditPage_copy($lead_id, $parent_id)
