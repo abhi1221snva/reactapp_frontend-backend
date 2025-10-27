@@ -1053,7 +1053,7 @@ return response()->json($response, $status);
         //     }
         // }
         foreach ($arrListData as $row) {
-            $rowData = ['list_id' => $intListId]; // ✅ Add list_id to each record
+            $rowData = ['lead_id' => $intListId]; // ✅ Add list_id to each record
             foreach ($columnToLabelMap as $column => $labelTitle) {
                 if (isset($row->$column) && $row->$column !== null && $row->$column !== '') {
                     $rowData[$labelTitle] = $row->$column;
