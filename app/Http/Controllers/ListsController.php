@@ -966,123 +966,232 @@ return response()->json($response, $status);
 
 
 
+     public function getListContentView(Request $request)
+     {
+         try {
+             $intListId = $request->route('id');
+             $excel = $request->input('excel');
+             $search = $request->input('search');
+     
+             $arrList = Lists::on("mysql_" . $request->auth->parent_id)->find($intListId)?->toArray();
+     
+             if (empty($arrList)) {
+                 return $this->failResponse("List data does not exist", []);
+             }
+     
+             // Fetch list headers with label titles
+             $arrListHeaders = DB::connection('mysql_' . $request->auth->parent_id)
+                 ->table('list_header as l')
+                 ->leftJoin('label as lb', 'l.label_id', '=', 'lb.id')
+                 ->where('l.list_id', $intListId)
+                 ->where('l.is_deleted', 0)
+                 ->where('lb.is_deleted', 0)
+                 ->orderByRaw('l.column_name + 0 ASC')
+                 ->select('l.column_name', 'lb.title', 'l.label_id')
+                 ->get();
+     
+             if ($arrListHeaders->isEmpty()) {
+                 return $this->failResponse("No headers found for this list", []);
+             }
+     
+             $allLabelsNull = $arrListHeaders->every(function ($item) {
+                 return empty($item->label_id) || is_null($item->title);
+             });
+     
+             if ($allLabelsNull) {
+                 return $this->failResponse("List headers found but labels are missing or not assigned", []);
+             }
+     
+             // Map column_name => label title
+             $columnToLabelMap = [];
+             foreach ($arrListHeaders as $header) {
+                 $columnToLabelMap[$header->column_name] = $header->title;
+             }
+     
+             $optionColumns = array_keys($columnToLabelMap);
+     
+             // Add id column so we can use it as lead_id
+             if (!in_array('id', $optionColumns)) {
+                 $optionColumns[] = 'id';
+             }
+     
+             // Build query
+             $listDataQuery = DB::connection('mysql_' . $request->auth->parent_id)
+                 ->table('list_data')
+                 ->where('list_id', $intListId)
+                 ->select($optionColumns);
+     
+             // Apply search if exists
+             if (!empty($search)) {
+                 $listDataQuery->where(function($q) use ($search, $optionColumns) {
+                     foreach ($optionColumns as $column) {
+                         $q->orWhere($column, 'LIKE', "%$search%");
+                     }
+                 });
+             }
+     
+             $totalRecords = (clone $listDataQuery)->count();
+     
+             // Pagination
+             if (!$excel) {
+                 $start = (int)$request->input('start', 0);
+                 $limit = (int)$request->input('limit', 10);
+                 $listDataQuery->offset($start)->limit($limit);
+             }
+     
+             $arrListData = $listDataQuery->get();
+     
+             // Prepare list data
+             $arrFinalListData = [];
+             foreach ($arrListData as $row) {
+                 $rowData = ['lead_id' => $row->id]; // ✅ Add lead_id instead of list_id
+                 foreach ($columnToLabelMap as $column => $labelTitle) {
+                     if (isset($row->$column) && $row->$column !== null && $row->$column !== '') {
+                         $rowData[$labelTitle] = $row->$column;
+                     }
+                 }
+                 if (!empty($rowData)) {
+                     $arrFinalListData[] = $rowData;
+                 }
+             }
+     
+             $arrFinalListHeaders = array_values($columnToLabelMap);
+     
+             // ✅ Add list_id in top-level response
+             return $this->successResponse($excel ? "All list data for download" : "Paginated list data", [
+                 "list_name" => $arrList["title"],
+                 "list_id" => $intListId, // ✅ Added here
+                 "list_header" => $arrFinalListHeaders,
+                 "list_data" => $arrFinalListData,
+                 "list_data_count" => count($arrFinalListData),
+                 "total_records" => $totalRecords,
+                 "search_term" => $search,
+                 "start" => $start ?? 0,
+                 "limit" => $limit ?? 0,
+             ]);
+     
+         } catch (Exception $e) {
+             Log::error($e->getMessage());
+             return $this->failResponse("Error occurred", []);
+         }
+     }
+     
 
+//     public function getListContentView(Request $request)
+// {
+//     try {
+//         $intListId = $request->route('id');
+//         $excel = $request->input('excel');
+//         $search = $request->input('search');
 
-    public function getListContentView(Request $request)
-{
-    try {
-        $intListId = $request->route('id');
-        $excel = $request->input('excel');
-        $search = $request->input('search');
+//         $arrList = Lists::on("mysql_" . $request->auth->parent_id)->find($intListId)?->toArray();
 
-        $arrList = Lists::on("mysql_" . $request->auth->parent_id)->find($intListId)?->toArray();
+//         if (empty($arrList)) {
+//             return $this->failResponse("List data does not exist", []);
+//         }
 
-        if (empty($arrList)) {
-            return $this->failResponse("List data does not exist", []);
-        }
+//         // Fetch list headers with label titles
+//         $arrListHeaders = DB::connection('mysql_' . $request->auth->parent_id)
+//             ->table('list_header as l')
+//             ->leftJoin('label as lb', 'l.label_id', '=', 'lb.id')
+//             ->where('l.list_id', $intListId)
+//             ->where('l.is_deleted', 0)
+//             ->where('lb.is_deleted', 0)
+//             ->orderByRaw('l.column_name + 0 ASC')
+//             ->select('l.column_name', 'lb.title', 'l.label_id')
+//             ->get();
 
-        // Fetch list headers with label titles
-        $arrListHeaders = DB::connection('mysql_' . $request->auth->parent_id)
-            ->table('list_header as l')
-            ->leftJoin('label as lb', 'l.label_id', '=', 'lb.id')
-            ->where('l.list_id', $intListId)
-            ->where('l.is_deleted', 0)
-            ->where('lb.is_deleted', 0)
-            ->orderByRaw('l.column_name + 0 ASC')
-            ->select('l.column_name', 'lb.title', 'l.label_id')
-            ->get();
+//         if ($arrListHeaders->isEmpty()) {
+//             return $this->failResponse("No headers found for this list", []);
+//         }
+//         // ✅ Case 2: Headers exist, but all have NULL label_id or missing label
+//         $allLabelsNull = $arrListHeaders->every(function ($item) {
+//             return empty($item->label_id) || is_null($item->title);
+//         });
 
-        if ($arrListHeaders->isEmpty()) {
-            return $this->failResponse("No headers found for this list", []);
-        }
-        // ✅ Case 2: Headers exist, but all have NULL label_id or missing label
-        $allLabelsNull = $arrListHeaders->every(function ($item) {
-            return empty($item->label_id) || is_null($item->title);
-        });
+//         if ($allLabelsNull) {
+//             return $this->failResponse("List headers found but labels are missing or not assigned", []);
+//         }
+//         // Map column_name => label title (use exact column name, no extra 'option_')
+//         $columnToLabelMap = [];
+//         foreach ($arrListHeaders as $header) {
+//             $columnToLabelMap[$header->column_name] = $header->title;
+//         }
 
-        if ($allLabelsNull) {
-            return $this->failResponse("List headers found but labels are missing or not assigned", []);
-        }
-        // Map column_name => label title (use exact column name, no extra 'option_')
-        $columnToLabelMap = [];
-        foreach ($arrListHeaders as $header) {
-            $columnToLabelMap[$header->column_name] = $header->title;
-        }
+//         $optionColumns = array_keys($columnToLabelMap);
 
-        $optionColumns = array_keys($columnToLabelMap);
+//         // Initialize query builder
+//         $listDataQuery = DB::connection('mysql_' . $request->auth->parent_id)
+//             ->table('list_data')
+//             ->where('list_id', $intListId)
+//             ->select($optionColumns);
 
-        // Initialize query builder
-        $listDataQuery = DB::connection('mysql_' . $request->auth->parent_id)
-            ->table('list_data')
-            ->where('list_id', $intListId)
-            ->select($optionColumns);
+//         // Apply search if exists
+//         if (!empty($search)) {
+//             $listDataQuery->where(function($q) use ($search, $optionColumns) {
+//                 foreach ($optionColumns as $column) {
+//                     $q->orWhere($column, 'LIKE', "%$search%");
+//                 }
+//             });
+//         }
 
-        // Apply search if exists
-        if (!empty($search)) {
-            $listDataQuery->where(function($q) use ($search, $optionColumns) {
-                foreach ($optionColumns as $column) {
-                    $q->orWhere($column, 'LIKE', "%$search%");
-                }
-            });
-        }
+//         // Clone query for total records
+//         $totalRecords = (clone $listDataQuery)->count();
 
-        // Clone query for total records
-        $totalRecords = (clone $listDataQuery)->count();
+//         // Pagination
+//         if (!$excel) {
+//             $start = (int)$request->input('start', 0);
+//             $limit = (int)$request->input('limit', 10);
+//             $listDataQuery->offset($start)->limit($limit);
+//         }
 
-        // Pagination
-        if (!$excel) {
-            $start = (int)$request->input('start', 0);
-            $limit = (int)$request->input('limit', 10);
-            $listDataQuery->offset($start)->limit($limit);
-        }
+//         // Fetch list data
+//         $arrListData = $listDataQuery->get();
 
-        // Fetch list data
-        $arrListData = $listDataQuery->get();
-
-        // Map options to label titles and remove empty/null values
-        $arrFinalListData = [];
-        // foreach ($arrListData as $row) {
-        //     $rowData = [];
-        //     foreach ($columnToLabelMap as $column => $labelTitle) {
-        //         if (isset($row->$column) && $row->$column !== null && $row->$column !== '') {
-        //             $rowData[$labelTitle] = $row->$column;
-        //         }
-        //     }
-        //     if (!empty($rowData)) {
-        //         $arrFinalListData[] = $rowData;
-        //     }
-        // }
-        foreach ($arrListData as $row) {
-            $rowData = ['lead_id' => $intListId]; // ✅ Add list_id to each record
-            foreach ($columnToLabelMap as $column => $labelTitle) {
-                if (isset($row->$column) && $row->$column !== null && $row->$column !== '') {
-                    $rowData[$labelTitle] = $row->$column;
-                }
-            }
-            if (!empty($rowData)) {
-                $arrFinalListData[] = $rowData;
-            }
-        }
+//         // Map options to label titles and remove empty/null values
+//         $arrFinalListData = [];
+//         // foreach ($arrListData as $row) {
+//         //     $rowData = [];
+//         //     foreach ($columnToLabelMap as $column => $labelTitle) {
+//         //         if (isset($row->$column) && $row->$column !== null && $row->$column !== '') {
+//         //             $rowData[$labelTitle] = $row->$column;
+//         //         }
+//         //     }
+//         //     if (!empty($rowData)) {
+//         //         $arrFinalListData[] = $rowData;
+//         //     }
+//         // }
+//         foreach ($arrListData as $row) {
+//             $rowData = ['list_id' => $intListId]; // ✅ Add list_id to each record
+//             foreach ($columnToLabelMap as $column => $labelTitle) {
+//                 if (isset($row->$column) && $row->$column !== null && $row->$column !== '') {
+//                     $rowData[$labelTitle] = $row->$column;
+//                 }
+//             }
+//             if (!empty($rowData)) {
+//                 $arrFinalListData[] = $rowData;
+//             }
+//         }
         
-        // Prepare list headers for response
-        $arrFinalListHeaders = array_values($columnToLabelMap);
+//         // Prepare list headers for response
+//         $arrFinalListHeaders = array_values($columnToLabelMap);
 
-        return $this->successResponse($excel ? "All list data for download" : "Paginated list data", [
-            "list_name" => $arrList["title"],
-            "list_header" => $arrFinalListHeaders,
-            "list_data" => $arrFinalListData,
-            "list_data_count" => count($arrFinalListData),
-            "total_records" => $totalRecords,
-            "search_term" => $search,
-            "start" => $start ?? 0,
-            "limit" => $limit ?? 0,
-        ]);
+//         return $this->successResponse($excel ? "All list data for download" : "Paginated list data", [
+//             "list_name" => $arrList["title"],
+//             "list_header" => $arrFinalListHeaders,
+//             "list_data" => $arrFinalListData,
+//             "list_data_count" => count($arrFinalListData),
+//             "total_records" => $totalRecords,
+//             "search_term" => $search,
+//             "start" => $start ?? 0,
+//             "limit" => $limit ?? 0,
+//         ]);
 
-    } catch (Exception $e) {
-        Log::error($e->getMessage());
-        return $this->failResponse("Error occurred", []);
-    }
-}
+//     } catch (Exception $e) {
+//         Log::error($e->getMessage());
+//         return $this->failResponse("Error occurred", []);
+//     }
+// }
 
     public function getListContentView_old_copy(Request $request)
     {
