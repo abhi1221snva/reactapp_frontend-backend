@@ -885,55 +885,135 @@ public function loginHistory($request)
         }
     }
 
+    // public function getLiveCall($request)
+    // {
+    //     $serach = '';
+    //     if ($request->auth->level < 7) {
+
+
+    //         $extensionGroup = ExtensionGroupMap::on('mysql_' . $request->auth->parent_id)->select('group_id')->where([["extension", "=", $request->auth->extension], ["is_deleted", "=", 0]])->get()->toArray();
+    //         if (count($extensionGroup) > 0) {
+
+    //             foreach ($extensionGroup as $key => $val) {
+    //                 $group[] = $val['group_id'];
+    //             }
+    //             /*
+    //             $campaignArray = Campaign::on('mysql_' . $request->auth->parent_id)->select('id')->whereIn('group_id', [$group])->get()->toArray();
+    //             */
+
+    //             $extensionArray = ExtensionGroupMap::on('mysql_' . $request->auth->parent_id)->select('extension')->where([["is_deleted", "=", 0]])->whereIn('group_id', [$group])->get()->toArray();
+
+    //             // $campaignObj = new Campaign;
+    //             //$campaignArray = $campaignObj->campaignDetail($request);
+
+    //             if (count($extensionArray) > 0) {
+    //                 foreach ($extensionArray as $key => $val) {
+
+    //                     $ext_array[] = $val['extension'];
+    //                 }
+    //                 $ext_data = implode(',', $ext_array);
+    //                 $serach = " where extension IN (" . $ext_data . ") ";
+    //             }
+    //         }
+    //     }
+    //     //echo "SELECT *,TIMEDIFF(start_time, now()) as duration from line_detail" . $serach;
+    //     //replace now() to UTC_TIMESTAMP()
+    //     $record = DB::connection('mysql_' . $request->auth->parent_id)->select("SELECT *,TIMEDIFF(start_time, UTC_TIMESTAMP()) as duration from line_detail" . $serach);
+    //     $data = (array) $record;
+    //     if (count($data) > 0) {
+    //         return array(
+    //             'success' => 'true',
+    //             'message' => 'Live Calls.',
+    //             'data' => $data
+    //         );
+    //     } else {
+    //         return array(
+    //             'success' => 'true',
+    //             'message' => 'No Live Calls found.',
+    //             'data' => array()
+    //         );
+    //     }
+    // }
     public function getLiveCall($request)
-    {
-        $serach = '';
+{
+    try {
+        $search = '';
+        $limitString = '';
+
+        // 🔹 Handle user-level filtering
         if ($request->auth->level < 7) {
 
+            $extensionGroup = ExtensionGroupMap::on('mysql_' . $request->auth->parent_id)
+                ->select('group_id')
+                ->where([
+                    ["extension", "=", $request->auth->extension],
+                    ["is_deleted", "=", 0]
+                ])
+                ->get()
+                ->toArray();
 
-            $extensionGroup = ExtensionGroupMap::on('mysql_' . $request->auth->parent_id)->select('group_id')->where([["extension", "=", $request->auth->extension], ["is_deleted", "=", 0]])->get()->toArray();
             if (count($extensionGroup) > 0) {
+                $group = array_column($extensionGroup, 'group_id');
 
-                foreach ($extensionGroup as $key => $val) {
-                    $group[] = $val['group_id'];
-                }
-                /*
-                $campaignArray = Campaign::on('mysql_' . $request->auth->parent_id)->select('id')->whereIn('group_id', [$group])->get()->toArray();
-                */
-
-                $extensionArray = ExtensionGroupMap::on('mysql_' . $request->auth->parent_id)->select('extension')->where([["is_deleted", "=", 0]])->whereIn('group_id', [$group])->get()->toArray();
-
-                // $campaignObj = new Campaign;
-                //$campaignArray = $campaignObj->campaignDetail($request);
+                $extensionArray = ExtensionGroupMap::on('mysql_' . $request->auth->parent_id)
+                    ->select('extension')
+                    ->where([["is_deleted", "=", 0]])
+                    ->whereIn('group_id', $group)
+                    ->get()
+                    ->toArray();
 
                 if (count($extensionArray) > 0) {
-                    foreach ($extensionArray as $key => $val) {
-
-                        $ext_array[] = $val['extension'];
-                    }
+                    $ext_array = array_column($extensionArray, 'extension');
                     $ext_data = implode(',', $ext_array);
-                    $serach = " where extension IN (" . $ext_data . ") ";
+                    $search = " WHERE extension IN (" . $ext_data . ") ";
                 }
             }
         }
-        //echo "SELECT *,TIMEDIFF(start_time, now()) as duration from line_detail" . $serach;
-        //replace now() to UTC_TIMESTAMP()
-        $record = DB::connection('mysql_' . $request->auth->parent_id)->select("SELECT *,TIMEDIFF(start_time, UTC_TIMESTAMP()) as duration from line_detail" . $serach);
+
+        // 🔹 Apply start & limit (pagination)
+        if (
+            $request->has('start') &&
+            $request->has('limit') &&
+            is_numeric($request->input('start')) &&
+            is_numeric($request->input('limit'))
+        ) {
+            $limitString = " LIMIT " . intval($request->input('start')) . ", " . intval($request->input('limit'));
+        }
+
+        // 🔹 Build final query
+        $sql = "SELECT *,
+                       TIMEDIFF(start_time, UTC_TIMESTAMP()) AS duration
+                FROM line_detail
+                " . $search . "
+                ORDER BY start_time DESC
+                " . $limitString;
+
+        // 🔹 Execute query
+        $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
         $data = (array) $record;
+
         if (count($data) > 0) {
-            return array(
+            return [
                 'success' => 'true',
                 'message' => 'Live Calls.',
                 'data' => $data
-            );
+            ];
         } else {
-            return array(
+            return [
                 'success' => 'true',
                 'message' => 'No Live Calls found.',
-                'data' => array()
-            );
+                'data' => []
+            ];
         }
+    } catch (Exception $e) {
+        Log::error('Live Call Error: ' . $e->getMessage());
+        return [
+            'success' => 'false',
+            'message' => 'An error occurred while fetching live calls.'
+        ];
     }
+}
+
 
     /*
      * Fetch Call transfer Detail
