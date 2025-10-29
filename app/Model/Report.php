@@ -941,11 +941,11 @@ public function loginHistory($request)
      * @return array
      */
 
-    public function getTransferReport($request)
+    public function getTransferReportold($request)
     {
         try {
-            $id = $request->input('id');
-            if (!empty($id) && is_numeric($id)) {
+            //$id = $request->input('id');
+            //if (!empty($id) && is_numeric($id)) {
                 $search = array();
                 $searchString = array();
                 $limitString = '';
@@ -964,9 +964,9 @@ public function loginHistory($request)
                     $search['campaign_id'] = $request->input('campaign');
                     array_push($searchString, 'campaign_id = :campaign_id');
                 }
-                if ($request->has('transfer_status') && !empty($request->input('transfer_status'))) {
+                if ($request->has('transfer_status_id') && !empty($request->input('transfer_status_id'))) {
                     $search['transfer_status_id'] = $request->input('transfer_status_id');
-                    array_push($searchString, 'transfer_status = :transfer_status');
+                    array_push($searchString, 'transfer_status_id = :transfer_status_id');
                 }
                 if ($request->has('start_date') && $request->has('end_date') && !empty($request->input('start_date')) && !empty($request->input('end_date'))) {
                     $start = date('Y-m-d', strtotime($request->input('start_date'))) . " 00:00:00";
@@ -1008,7 +1008,7 @@ public function loginHistory($request)
                         'data' => array()
                     );
                 }
-            }
+            //}
             return array(
                 'success' => 'false',
                 'message' => 'Transfer Report doesn\'t exist.'
@@ -1019,6 +1019,110 @@ public function loginHistory($request)
             Log::log($e->getMessage());
         }
     }
+public function getTransferReport($request)
+{
+    try {
+        $search = [];
+        $searchString = [];
+        $limitString = '';
+
+        // Extension filter
+        // if ($request->auth->role == 2) {
+        //     $search['extension'] = $request->auth->extension;
+        //     $searchString[] = 't.extension = :extension';
+        // }
+        //  else
+            if ($request->has('extension') && !empty($request->input('extension'))) {
+            $search['extension'] = $request->input('extension');
+            $searchString[] = 't.extension = :extension';
+        }
+
+        // Number filter
+        if ($request->has('number') && !empty($request->input('number'))) {
+            $search['number'] = $request->input('number');
+            $searchString[] = 't.number = :number';
+        }
+
+        // Campaign filter
+        if ($request->has('campaign') && !empty($request->input('campaign'))) {
+            $search['campaign_id'] = $request->input('campaign');
+            $searchString[] = 't.campaign_id = :campaign_id';
+        }
+
+        // Transfer status filter (corrected)
+        if ($request->has('transfer_status_id') && !empty($request->input('transfer_status_id'))) {
+            $search['transfer_status_id'] = $request->input('transfer_status_id');
+            $searchString[] = 't.transfer_status_id = :transfer_status_id';
+        }
+
+        // Date range filter
+        if ($request->has('start_date') && $request->has('end_date') &&
+            !empty($request->input('start_date')) && !empty($request->input('end_date'))) {
+            $start = date('Y-m-d', strtotime($request->input('start_date'))) . " 00:00:00";
+            $end = date('Y-m-d', strtotime($request->input('end_date'))) . " 23:59:59";
+            $search['start_time'] = $start;
+            $search['end_time'] = $end;
+            $searchString[] = 't.start_time BETWEEN :start_time AND :end_time';
+        }
+
+        // Pagination (fixed LIMIT)
+        if ($request->has('lower_limit') && $request->has('upper_limit') &&
+            is_numeric($request->input('lower_limit')) && is_numeric($request->input('upper_limit'))) {
+            $lower = (int) $request->input('lower_limit');
+            $upper = (int) $request->input('upper_limit');
+            $limitString = "LIMIT $lower, $upper";
+        }
+
+        // Build WHERE clause
+        $filter = !empty($searchString) ? ' WHERE ' . implode(' AND ', $searchString) : '';
+
+        $sql = "SELECT
+                    SQL_CALC_FOUND_ROWS
+                    t.id,
+                    t.extension,
+                    t.number,
+                    t.start_time,
+                    t.transfer_extension,
+                    t.call_recording,
+                    t.call_recording_transfer,
+                    c.title AS campaign,
+                    ts.title AS status
+                FROM transfer_log AS t
+                LEFT JOIN campaign AS c ON t.campaign_id = c.id
+                LEFT JOIN transfer_status AS ts ON t.transfer_status_id = ts.id
+                $filter
+                ORDER BY t.start_time DESC
+                $limitString";
+Log::info('Transfer Report SQL:', [
+    'sql' => $sql,
+    'params' => $search
+]);
+
+        $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $search);
+        $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() AS count");
+        $recordCount = (array) $recordCount;
+
+        if (!empty($record)) {
+            return [
+                'success' => 'true',
+                'message' => 'Transfer Report.',
+                'record_count' => $recordCount['count'],
+                'data' => $record
+            ];
+        }
+
+        return [
+            'success' => 'true',
+            'message' => 'No record found.',
+            'record_count' => 0,
+            'data' => []
+        ];
+
+    } catch (Exception $e) {
+        Log::error($e->getMessage());
+        return ['success' => 'false', 'message' => 'Error: ' . $e->getMessage()];
+    }
+}
 
     public function getExtensionByGroup($request)
     {
