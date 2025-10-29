@@ -885,56 +885,8 @@ public function loginHistory($request)
         }
     }
 
-    // public function getLiveCall($request)
-    // {
-    //     $serach = '';
-    //     if ($request->auth->level < 7) {
-
-
-    //         $extensionGroup = ExtensionGroupMap::on('mysql_' . $request->auth->parent_id)->select('group_id')->where([["extension", "=", $request->auth->extension], ["is_deleted", "=", 0]])->get()->toArray();
-    //         if (count($extensionGroup) > 0) {
-
-    //             foreach ($extensionGroup as $key => $val) {
-    //                 $group[] = $val['group_id'];
-    //             }
-    //             /*
-    //             $campaignArray = Campaign::on('mysql_' . $request->auth->parent_id)->select('id')->whereIn('group_id', [$group])->get()->toArray();
-    //             */
-
-    //             $extensionArray = ExtensionGroupMap::on('mysql_' . $request->auth->parent_id)->select('extension')->where([["is_deleted", "=", 0]])->whereIn('group_id', [$group])->get()->toArray();
-
-    //             // $campaignObj = new Campaign;
-    //             //$campaignArray = $campaignObj->campaignDetail($request);
-
-    //             if (count($extensionArray) > 0) {
-    //                 foreach ($extensionArray as $key => $val) {
-
-    //                     $ext_array[] = $val['extension'];
-    //                 }
-    //                 $ext_data = implode(',', $ext_array);
-    //                 $serach = " where extension IN (" . $ext_data . ") ";
-    //             }
-    //         }
-    //     }
-    //     //echo "SELECT *,TIMEDIFF(start_time, now()) as duration from line_detail" . $serach;
-    //     //replace now() to UTC_TIMESTAMP()
-    //     $record = DB::connection('mysql_' . $request->auth->parent_id)->select("SELECT *,TIMEDIFF(start_time, UTC_TIMESTAMP()) as duration from line_detail" . $serach);
-    //     $data = (array) $record;
-    //     if (count($data) > 0) {
-    //         return array(
-    //             'success' => 'true',
-    //             'message' => 'Live Calls.',
-    //             'data' => $data
-    //         );
-    //     } else {
-    //         return array(
-    //             'success' => 'true',
-    //             'message' => 'No Live Calls found.',
-    //             'data' => array()
-    //         );
-    //     }
-    // }
-    public function getLiveCall($request)
+  
+public function getLiveCall($request)
 {
     try {
         $search = '';
@@ -942,7 +894,6 @@ public function loginHistory($request)
 
         // 🔹 Handle user-level filtering
         if ($request->auth->level < 7) {
-
             $extensionGroup = ExtensionGroupMap::on('mysql_' . $request->auth->parent_id)
                 ->select('group_id')
                 ->where([
@@ -970,7 +921,7 @@ public function loginHistory($request)
             }
         }
 
-        // 🔹 Apply start & limit (pagination)
+        // 🔹 Apply pagination
         if (
             $request->has('start') &&
             $request->has('limit') &&
@@ -980,28 +931,36 @@ public function loginHistory($request)
             $limitString = " LIMIT " . intval($request->input('start')) . ", " . intval($request->input('limit'));
         }
 
-        // 🔹 Build final query
-        $sql = "SELECT *,
+        // 🔹 Main SQL with total count
+        $sql = "SELECT SQL_CALC_FOUND_ROWS *,
                        TIMEDIFF(start_time, UTC_TIMESTAMP()) AS duration
                 FROM line_detail
                 " . $search . "
                 ORDER BY start_time DESC
                 " . $limitString;
 
-        // 🔹 Execute query
-        $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
-        $data = (array) $record;
+        $connection = DB::connection('mysql_' . $request->auth->parent_id);
 
-        if (count($data) > 0) {
+        // 🔹 Fetch paginated data
+        $records = $connection->select($sql);
+
+        // 🔹 Fetch total rows (ignores LIMIT)
+        $totalRows = $connection->select("SELECT FOUND_ROWS() AS total_count");
+        $totalCount = $totalRows[0]->total_count ?? 0;
+
+        // 🔹 Prepare response
+        if (count($records) > 0) {
             return [
                 'success' => 'true',
                 'message' => 'Live Calls.',
-                'data' => $data
+                'total_rows' => $totalCount,
+                'data' => $records
             ];
         } else {
             return [
                 'success' => 'true',
                 'message' => 'No Live Calls found.',
+                'total_rows' => 0,
                 'data' => []
             ];
         }
@@ -1013,6 +972,7 @@ public function loginHistory($request)
         ];
     }
 }
+
 
 
     /*
