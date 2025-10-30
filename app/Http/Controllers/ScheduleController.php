@@ -68,7 +68,7 @@ class ScheduleController extends Controller
 
     public function index(Request $request)
     {
-        $client_id = $request->get('client_id');
+        $client_id = $request->auth->parent_id;
         // Log::info('reached',['client_id'=>$client_id]);
         $schedules = Schedule::on("mysql_$client_id")->get();
         $sched_res = [];
@@ -179,7 +179,7 @@ class ScheduleController extends Controller
 
     public function store(Request $request)
     {
-        $client_id = $request->get('client_id');
+        $client_id = $request->auth->parent_id;
         $user = User::where('id', $request->get('user_id'))->first();
         $timezone = $user->timezone;
         //Log::info('reached',['user'=>$user]);
@@ -301,7 +301,7 @@ class ScheduleController extends Controller
 
     public function deleteSchedule(Request $request)
     {
-        $client_id = $request->get('client_id');
+        $client_id = $request->auth->parent_id;
         $id = $request->event_id;
         $events = Schedule::on("mysql_$client_id")->findOrFail($id);
         $events->delete();
