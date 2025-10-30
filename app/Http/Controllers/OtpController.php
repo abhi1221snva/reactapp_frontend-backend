@@ -19,8 +19,8 @@ use App\Model\Client\SystemNotification;
 
 
 use App\Services\MailService;
-
-
+use Twilio\Rest\Client;
+use DB;
 
 
 
@@ -293,4 +293,78 @@ class OtpController extends Controller
         $tariff_label->saveOrFail();
         return $this->successResponse("Tariff Label created", $tariff_label->toArray());
     }
+    public function OtpMobile(Request $request)
+    {
+         $this->validate($request,[
+            'phone' => 'required|string'
+        ]);
+
+        try {
+            $accountSid = env('TWILIO_SID');
+            $authToken  = env('TWILIO_AUTH_TOKEN');
+            $serviceSid = env('TWILIO_VERIFY_SID');
+
+            $twilio = new Client($accountSid, $authToken);
+
+            $verification = $twilio->verify->v2->services($serviceSid)
+                ->verifications
+                ->create($request->phone, 'sms');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'OTP sent successfully!',
+                'to' => $verification->to,
+                'status' => $verification->status
+            ]);
+        } catch (\Exception $e) {
+            \Log::error("Twilio OTP error: " . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send OTP: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+ public function VerifyOtpMobile(Request $request)
+{
+    // $request->validate([
+    //     'phone' => 'required|string',
+    //     'code' => 'required|string'
+    // ]);
+
+    try {
+        $accountSid = env('TWILIO_SID');
+        $authToken  = env('TWILIO_AUTH_TOKEN');
+        $serviceSid = env('TWILIO_VERIFY_SID');
+
+        $twilio = new Client($accountSid, $authToken);
+
+        $verificationCheck = $twilio->verify->v2->services($serviceSid)
+            ->verificationChecks
+            ->create([
+                'to' => $request->phone,
+                'code' => $request->code
+            ]);
+
+        if ($verificationCheck->status === 'approved') {
+            return response()->json([
+                'success' => true,
+                'message' => 'OTP verified successfully!'
+            ]);
+        } else {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid or expired OTP.'
+            ]);
+        }
+
+    } catch (\Exception $e) {
+        \Log::error("Twilio Verify error: " . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Verification failed: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
 }
