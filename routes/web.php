@@ -1306,6 +1306,10 @@ $router->group(['middleware' => ['websiteclient']], function () use ($router) {
   $router->get('otp/phone', 'OtpController@requestPhoneOtp');
   $router->post('otp/verify', 'OtpController@verifyOtp');
 });
+$router->post('otp/mobile/send', 'OtpController@OtpMobile');
+$router->post('otp/mobile/verify', 'OtpController@VerifyOtpMobile');
+
+
 $router->get('validate/email', 'OtpController@validateEmail');
 $router->get('validate/phone', 'OtpController@validatePhone');
 $router->get('validate/company', 'OtpController@validateCompany');
