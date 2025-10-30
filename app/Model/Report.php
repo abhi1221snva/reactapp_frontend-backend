@@ -780,6 +780,11 @@ public function loginHistory($request)
             $search['extension'] = $request->input('extension');
             $searchString[] = 'users.extension = :extension';
         }
+              // ✅ Filter by User ID
+        if ($request->has('user_id') && !empty($request->input('user_id'))) {
+            $search['user_id'] = $request->input('user_id');
+            $searchString[] = 'login_logs.user_id = :user_id';
+        }
 
         // Filter by Date Range
         if ($request->has('start_date') && $request->has('end_date') &&
