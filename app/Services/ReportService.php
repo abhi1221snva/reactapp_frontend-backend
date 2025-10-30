@@ -1558,62 +1558,193 @@ $cdr_outbound_manually = $outbound_manually[0]->totalOutBoundCallsByManually;
     }
 
     
-    public function stateWiseSummary($request, string $startTime, string $endTime)
-    {
-        if(!empty($request->userId))
-        {
-            //$explode = "'" . implode ( "', '", $request->userId ) . "'";
-            $user = User::whereIn("id", $request->userId)->get()->all();
-            $extensionArray = array();
-            foreach($user as $key=> $value)
-            {
-                array_push($extensionArray,$value->extension);
-                array_push($extensionArray,$value->alt_extension);
-            }
-            $srch_input_1 = "'" . implode ( "', '", $extensionArray ) . "'";
-            $sql = "SELECT count(*) as rowCount,area_code from ((SELECT area_code FROM cdr_archive WHERE extension IN(".$srch_input_1.") and start_time >= '$startTime' AND start_time <= '$endTime') UNION ALL (SELECT area_code FROM cdr WHERE extension IN(".$srch_input_1.") and start_time >= '$startTime' AND start_time <= '$endTime') ) as t group by area_code order by rowCount desc";
-        }
+    // public function stateWiseSummary($request, string $startTime, string $endTime)
+    // {
+    //     if(!empty($request->userId))
+    //     {
+    //         //$explode = "'" . implode ( "', '", $request->userId ) . "'";
+    //         $user = User::whereIn("id", $request->userId)->get()->all();
+    //         $extensionArray = array();
+    //         foreach($user as $key=> $value)
+    //         {
+    //             array_push($extensionArray,$value->extension);
+    //             array_push($extensionArray,$value->alt_extension);
+    //         }
+    //         $srch_input_1 = "'" . implode ( "', '", $extensionArray ) . "'";
+    //         $sql = "SELECT count(*) as rowCount,area_code from ((SELECT area_code FROM cdr_archive WHERE extension IN(".$srch_input_1.") and start_time >= '$startTime' AND start_time <= '$endTime') UNION ALL (SELECT area_code FROM cdr WHERE extension IN(".$srch_input_1.") and start_time >= '$startTime' AND start_time <= '$endTime') ) as t group by area_code order by rowCount desc";
+    //     }
 
-        /*if(!empty($request->userId))
-        {
-            $user = User::where("id", "=", $request->userId)->first();
-            $extension = $user->extension;
-            $alt_extension = $user->alt_extension;
-            $sql = "SELECT count(*) as rowCount,area_code from ((SELECT area_code FROM cdr_archive WHERE extension IN(".$srch_input_1.") and start_time >= '$startTime' AND start_time <= '$endTime') UNION ALL (SELECT area_code FROM cdr WHERE extension IN(".$srch_input_1.") and start_time >= '$startTime' AND start_time <= '$endTime') ) as t group by area_code order by rowCount desc";
-        }*/
-        else
-        if($request->auth->level == 1) //show dashboard related to agent 
-        {
-            $extension = $request->auth->extension;
-            $alt_extension = $request->auth->alt_extension;
-            $sql = "SELECT count(*) as rowCount,area_code from ((SELECT area_code FROM cdr_archive WHERE (extension = '".$extension."' || extension='".$alt_extension."') and start_time >= '$startTime' AND start_time <= '$endTime') UNION ALL (SELECT area_code FROM cdr WHERE (extension = '".$extension."' || extension='".$alt_extension."') and start_time >= '$startTime' AND start_time <= '$endTime') ) as t group by area_code order by rowCount desc";
-        }
-        else
-        {
-             $sql = "SELECT count(*) as rowCount,area_code from ((SELECT area_code FROM cdr_archive WHERE start_time >= '$startTime' AND start_time <= '$endTime') UNION ALL (SELECT area_code FROM cdr WHERE start_time >= '$startTime' AND start_time <= '$endTime') ) as t group by area_code order by rowCount desc";
-        }
+    //     /*if(!empty($request->userId))
+    //     {
+    //         $user = User::where("id", "=", $request->userId)->first();
+    //         $extension = $user->extension;
+    //         $alt_extension = $user->alt_extension;
+    //         $sql = "SELECT count(*) as rowCount,area_code from ((SELECT area_code FROM cdr_archive WHERE extension IN(".$srch_input_1.") and start_time >= '$startTime' AND start_time <= '$endTime') UNION ALL (SELECT area_code FROM cdr WHERE extension IN(".$srch_input_1.") and start_time >= '$startTime' AND start_time <= '$endTime') ) as t group by area_code order by rowCount desc";
+    //     }*/
+    //     else
+    //     if($request->auth->level == 1) //show dashboard related to agent 
+    //     {
+    //         $extension = $request->auth->extension;
+    //         $alt_extension = $request->auth->alt_extension;
+    //         $sql = "SELECT count(*) as rowCount,area_code from ((SELECT area_code FROM cdr_archive WHERE (extension = '".$extension."' || extension='".$alt_extension."') and start_time >= '$startTime' AND start_time <= '$endTime') UNION ALL (SELECT area_code FROM cdr WHERE (extension = '".$extension."' || extension='".$alt_extension."') and start_time >= '$startTime' AND start_time <= '$endTime') ) as t group by area_code order by rowCount desc";
+    //     }
+    //     else
+    //     {
+    //          $sql = "SELECT count(*) as rowCount,area_code from ((SELECT area_code FROM cdr_archive WHERE start_time >= '$startTime' AND start_time <= '$endTime') UNION ALL (SELECT area_code FROM cdr WHERE start_time >= '$startTime' AND start_time <= '$endTime') ) as t group by area_code order by rowCount desc";
+    //     }
 
-        Log::info("ReportService.stateWiseSummary", ["startTime" => $startTime,"endTime" => $endTime,"sql" => $sql]);
-        $record = DB::connection("mysql_{$this->clientId}")->select($sql);
-        if(!empty($record))
-        {
-            foreach($record as $key=>$cdr_list)
-            {
-                $sql_areacode = "select * from areacode_city where areacode='".$cdr_list->area_code."'";
-                $areacode_list = DB::connection("master")->select($sql_areacode);
-                if(!empty($areacode_list))
-                {
-                    if($cdr_list->area_code == $areacode_list[0]->areacode)
-                    {
-                        $record[$key]->state_code = $areacode_list[0]->state_code;
-                        $record[$key]->country_code = $areacode_list[0]->country_code;
-                    }
+    //     Log::info("ReportService.stateWiseSummary", ["startTime" => $startTime,"endTime" => $endTime,"sql" => $sql]);
+    //     $record = DB::connection("mysql_{$this->clientId}")->select($sql);
+    //     if(!empty($record))
+    //     {
+    //         foreach($record as $key=>$cdr_list)
+    //         {
+    //             $sql_areacode = "select * from areacode_city where areacode='".$cdr_list->area_code."'";
+    //             $areacode_list = DB::connection("master")->select($sql_areacode);
+    //             if(!empty($areacode_list))
+    //             {
+    //                 if($cdr_list->area_code == $areacode_list[0]->areacode)
+    //                 {
+    //                     $record[$key]->state_code = $areacode_list[0]->state_code;
+    //                     $record[$key]->country_code = $areacode_list[0]->country_code;
+    //                 }
+    //             }
+    //         }
+    //     }
+
+    //     return (array)$record;
+    // }
+public function stateWiseSummary($request, string $startTime, string $endTime)
+{
+    try {
+        $bindings = [$startTime, $endTime, $startTime, $endTime];
+        $sql = '';
+
+        // 🧩 Case 1: Specific user IDs
+        if (!empty($request->userId)) {
+            $user = User::whereIn("id", $request->userId)->get();
+            $extensionArray = [];
+
+            foreach ($user as $value) {
+                if (!empty($value->extension)) {
+                    $extensionArray[] = $value->extension;
+                }
+                if (!empty($value->alt_extension)) {
+                    $extensionArray[] = $value->alt_extension;
                 }
             }
+
+            if (empty($extensionArray)) {
+                return [];
+            }
+
+            $srch_input_1 = "'" . implode("','", $extensionArray) . "'";
+
+            $sql = "
+                SELECT COUNT(*) AS rowCount, area_code
+                FROM (
+                    (SELECT area_code FROM cdr_archive
+                     WHERE extension IN($srch_input_1)
+                     AND start_time >= ? AND start_time <= ?)
+                    UNION ALL
+                    (SELECT area_code FROM cdr
+                     WHERE extension IN($srch_input_1)
+                     AND start_time >= ? AND start_time <= ?)
+                ) AS t
+                GROUP BY area_code
+                ORDER BY rowCount DESC
+            ";
+        }
+        // 🧩 Case 2: Agent-level view
+        elseif ($request->auth->level == 1) {
+            $extension = $request->auth->extension;
+            $alt_extension = $request->auth->alt_extension;
+
+            $sql = "
+                SELECT COUNT(*) AS rowCount, area_code
+                FROM (
+                    (SELECT area_code FROM cdr_archive
+                     WHERE (extension = ? OR extension = ?)
+                     AND start_time >= ? AND start_time <= ?)
+                    UNION ALL
+                    (SELECT area_code FROM cdr
+                     WHERE (extension = ? OR extension = ?)
+                     AND start_time >= ? AND start_time <= ?)
+                ) AS t
+                GROUP BY area_code
+                ORDER BY rowCount DESC
+            ";
+
+            $bindings = [
+                $extension, $alt_extension,
+                $startTime, $endTime,
+                $extension, $alt_extension,
+                $startTime, $endTime
+            ];
+        }
+        // 🧩 Case 3: Admin view
+        else {
+            $sql = "
+                SELECT COUNT(*) AS rowCount, area_code
+                FROM (
+                    (SELECT area_code FROM cdr_archive
+                     WHERE start_time >= ? AND start_time <= ?)
+                    UNION ALL
+                    (SELECT area_code FROM cdr
+                     WHERE start_time >= ? AND start_time <= ?)
+                ) AS t
+                GROUP BY area_code
+                ORDER BY rowCount DESC
+            ";
+        }
+
+        Log::info("ReportService.stateWiseSummary", [
+            "startTime" => $startTime,
+            "endTime" => $endTime,
+            "sql" => $sql
+        ]);
+
+        // Fetch main data
+        $record = DB::connection("mysql_{$this->clientId}")->select($sql, $bindings);
+
+        // Enrich with areacode details
+        if (!empty($record)) {
+            foreach ($record as $key => $cdr_list) {
+                $sql_areacode = "SELECT * FROM areacode_city WHERE areacode = ?";
+                $areacode_list = DB::connection("master")->select($sql_areacode, [$cdr_list->area_code]);
+
+                if (!empty($areacode_list)) {
+                    $record[$key]->state_code = $areacode_list[0]->state_code;
+                    $record[$key]->country_code = $areacode_list[0]->country_code;
+                }
+            }
+
+            // ✅ Apply filters after enrichment
+            $record = array_filter($record, function ($r) use ($request) {
+                if (!empty($request->country_code) && (!isset($r->country_code) || $r->country_code != $request->country_code)) {
+                    return false;
+                }
+                if (!empty($request->state_code) && (!isset($r->state_code) || $r->state_code != $request->state_code)) {
+                    return false;
+                }
+                if (!empty($request->area_code) && (!isset($r->area_code) || $r->area_code != $request->area_code)) {
+                    return false;
+                }
+                return true;
+            });
+
+            $record = array_values($record); // Reindex
         }
 
         return (array)$record;
+
+    } catch (\Exception $e) {
+        \Log::error("Error in stateWiseSummary: " . $e->getMessage());
+        return [];
     }
+}
+
+
 
     public function cdrCallCount($request, string $route, string $type, string $startTime, string $endTime)
     {
