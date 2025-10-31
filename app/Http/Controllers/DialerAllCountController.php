@@ -84,7 +84,7 @@ class DialerAllCountController extends Controller
     {
         //return $request->all();
 
-        $parentId = $request->parentId;
+        $parentId = $request->auth->parent_id;
         $reportService = new ReportService($parentId);
 
         //$email = 'abhi2112mca@gmail.com';

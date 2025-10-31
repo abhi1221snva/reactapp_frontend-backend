@@ -209,53 +209,117 @@ class CliReportController extends Controller
      *     )
      * )
      */
+    // public function callManually(Request $request)
+    // {
+    //     /*$did = Did::where('cli',$request->number)->get()->first();
+
+    //     if($did) {
+
+    //     }*/
+    //         $cli = $request->number;
+    //     $CnamCliReport = new CnamCliReport();
+    //                 $CnamCliReport->setConnection("master");
+    //                 $CnamCliReport->cli = $cli;
+    //                 /*$CnamCliReport->cnam = $cnam;
+    //                 $CnamCliReport->created_date = $created_date;*/
+    //                 $CnamCliReport->parent_id = $request->auth->parent_id;
+    //                 $CnamCliReport->saveOrFail();
+
+
+    //         $content = "Channel: SIP/Airespring1/#135196219859805718\nCallerId: $cli\nContext: callfile-detect\nExtension: s\nPriority: 1\n";
+    //         $file_name = $cli;
+    //         $file = fopen($file_name.".call", 'w');
+    //         fwrite($file, $content);
+    //         $rootPath = '/var/www/html/branch/backend/public/';
+    //         $convertedFilename = $rootPath . $file_name . ".call";
+
+    //         //new
+    //         $AsteriskServer = AsteriskServer::list();
+    //         if($AsteriskServer)
+    //         {
+    //             foreach($AsteriskServer as $server)
+    //             {
+    //                 $strAsteriskPath = "root@" . $server['domain'] .":/var/spool/asterisk/outgoing/";
+    //                 shell_exec("scp -P 10347 $convertedFilename $strAsteriskPath");
+    //             }
+    //         }
+
+    //         $path=$rootPath.$file_name . ".call";
+    //         if(unlink($path)){
+    //         } 
+    //         //close
+
+
+    //         /*$strAsteriskPath = "root@sip1.domain.com:/var/spool/asterisk/outgoing/";
+    //         shell_exec("scp -P 10347 $convertedFilename $strAsteriskPath");*/
+
+    //         return $this->successResponse("Manully Call created", []);
+        
+    // }
     public function callManually(Request $request)
-    {
-        /*$did = Did::where('cli',$request->number)->get()->first();
+{
+    try {
+        $cli = $request->number;
 
-        if($did) {
-
-        }*/
-            $cli = $request->number;
+        // ✅ Step 1: Save CNAM CLI record
         $CnamCliReport = new CnamCliReport();
-                    $CnamCliReport->setConnection("master");
-                    $CnamCliReport->cli = $cli;
-                    /*$CnamCliReport->cnam = $cnam;
-                    $CnamCliReport->created_date = $created_date;*/
-                    $CnamCliReport->parent_id = $request->auth->parent_id;
-                    $CnamCliReport->saveOrFail();
+        $CnamCliReport->setConnection("master");
+        $CnamCliReport->cli = $cli;
+        $CnamCliReport->parent_id = $request->auth->parent_id;
+        $CnamCliReport->saveOrFail();
 
+        // ✅ Step 2: Create call file content
+        $content = "Channel: SIP/Airespring1/#135196219859805718\n";
+        $content .= "CallerId: $cli\n";
+        $content .= "Context: callfile-detect\n";
+        $content .= "Extension: s\n";
+        $content .= "Priority: 1\n";
+        $rootPath = base_path('public') . '/';
 
-            $content = "Channel: SIP/Airespring1/#135196219859805718\nCallerId: $cli\nContext: callfile-detect\nExtension: s\nPriority: 1\n";
-            $file_name = $cli;
-            $file = fopen($file_name.".call", 'w');
-            fwrite($file, $content);
-            $rootPath = '/var/www/html/branch/backend/public/';
-            $convertedFilename = $rootPath . $file_name . ".call";
+        // ✅ Step 3: File paths
+         //$rootPath = '/var/www/html/branch/backend/public/';
+        //$rootPath = "C:\\xampp\\htdocs\\dialer\\backend\\public\\";
+        $fileName = $cli . ".call";
+        $localFile = $rootPath . $fileName;
 
-            //new
-            $AsteriskServer = AsteriskServer::list();
-            if($AsteriskServer)
-            {
-                foreach($AsteriskServer as $server)
-                {
-                    $strAsteriskPath = "root@" . $server['domain'] .":/var/spool/asterisk/outgoing/";
-                    shell_exec("scp -P 10347 $convertedFilename $strAsteriskPath");
+        // ✅ Step 4: Create and close file properly
+        $file = fopen($localFile, 'w');
+        fwrite($file, $content);
+        fclose($file);
+
+        // ✅ Step 5: Send file to each Asterisk server
+        $AsteriskServer = AsteriskServer::list();
+        if ($AsteriskServer) {
+            foreach ($AsteriskServer as $server) {
+                $domain = $server['domain'] ?? null;
+                if ($domain) {
+                    $strAsteriskPath = "root@" . $domain . ":/var/spool/asterisk/outgoing/";
+                    $cmd = "scp -P 10347 $localFile $strAsteriskPath";
+                    shell_exec($cmd);
                 }
             }
+        }
 
-            $path=$rootPath.$file_name . ".call";
-            if(unlink($path)){
-            } 
-            //close
+        // ✅ Step 6: Delete the local file safely
+        if (file_exists($localFile)) {
+            unlink($localFile);
+        } else {
+            \Log::warning("Call file not found for deletion: " . $localFile);
+        }
 
-
-            /*$strAsteriskPath = "root@sip1.domain.com:/var/spool/asterisk/outgoing/";
-            shell_exec("scp -P 10347 $convertedFilename $strAsteriskPath");*/
-
-            return $this->successResponse("Manully Call created", []);
-        
+        return $this->successResponse("Manual call created successfully.", []);
     }
+    catch (\Exception $e) {
+    \Log::error("Manual call failed: " . $e->getMessage());
+    return response()->json([
+        'status' => false,
+        'message' => 'Failed to create manual call.',
+        'error' => $e->getMessage()  // 👈 this will show the actual PHP error in response
+    ], 500);
+}
+
+}
+
  /**
      * @OA\Post(
      *     path="/run-manually-call-for-did",
