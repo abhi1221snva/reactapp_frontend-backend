@@ -301,21 +301,441 @@ class ReportService
         
             return $result_arr;
     }
+//     public function dialerAllCount(Request $request)
+// {
+//     try {
+//         $client_id = $request->auth->parent_id;
+//         $connection = "mysql_" . $client_id;
 
-    public function dialerAllCount(Request $request)
+//         $start_date = $request->start_date;
+//         $end_date = $request->end_date;
+//         $extensions = $request->extensions;
+
+//         if (!is_array($extensions)) {
+//             $extensions = [$extensions];
+//         }
+
+//         // 🧩 Log incoming request
+//         \Log::info('Dialer Count Debug', [
+//             'client_id' => $client_id,
+//             'start_date' => $start_date,
+//             'end_date' => $end_date,
+//             'extensions' => $extensions
+//         ]);
+
+//         $extString = implode(',', $extensions);
+
+//         // ✅ Outbound Calls (cdr + cdr_archive)
+//         $outbound_res = DB::connection($connection)->select("
+//             SELECT COUNT(*) AS totalOutBoundCalls FROM cdr 
+//             WHERE route = 'OUT'
+//             AND start_time BETWEEN '$start_date' AND '$end_date'
+//             AND extension IN ($extString)
+//             UNION ALL
+//             SELECT COUNT(*) AS totalOutBoundCalls FROM cdr_archive 
+//             WHERE route = 'OUT'
+//             AND start_time BETWEEN '$start_date' AND '$end_date'
+//             AND extension IN ($extString)
+//         ");
+//         $totalOutBoundCalls = ($outbound_res[0]->totalOutBoundCalls ?? 0)
+//                             + ($outbound_res[1]->totalOutBoundCalls ?? 0);
+
+//         // ✅ Inbound Calls (cdr + cdr_archive)
+//         $inbound_res = DB::connection($connection)->select("
+//             SELECT COUNT(*) AS totalInBoundCalls FROM cdr 
+//             WHERE route = 'IN'
+//             AND start_time BETWEEN '$start_date' AND '$end_date'
+//             AND extension IN ($extString)
+//             UNION ALL
+//             SELECT COUNT(*) AS totalInBoundCalls FROM cdr_archive 
+//             WHERE route = 'IN'
+//             AND start_time BETWEEN '$start_date' AND '$end_date'
+//             AND extension IN ($extString)
+//         ");
+//         $totalInBoundCalls = ($inbound_res[0]->totalInBoundCalls ?? 0)
+//                            + ($inbound_res[1]->totalInBoundCalls ?? 0);
+
+//         // ✅ Manual Calls (cdr + cdr_archive)
+//         $manual_res = DB::connection($connection)->select("
+//             SELECT COUNT(*) AS totalManualCalls FROM cdr 
+//             WHERE type = 'manual'
+//             AND start_time BETWEEN '$start_date' AND '$end_date'
+//             AND extension IN ($extString)
+//             UNION ALL
+//             SELECT COUNT(*) AS totalManualCalls FROM cdr_archive 
+//             WHERE type = 'manual'
+//             AND start_time BETWEEN '$start_date' AND '$end_date'
+//             AND extension IN ($extString)
+//         ");
+//         $totalManualCalls = ($manual_res[0]->totalManualCalls ?? 0)
+//                           + ($manual_res[1]->totalManualCalls ?? 0);
+
+//         // ✅ Dialer Calls (cdr + cdr_archive)
+//         $dialer_res = DB::connection($connection)->select("
+//             SELECT COUNT(*) AS totalDialerCalls FROM cdr 
+//             WHERE type = 'outbound_ai'
+//             AND start_time BETWEEN '$start_date' AND '$end_date'
+//             AND extension IN ($extString)
+//             UNION ALL
+//             SELECT COUNT(*) AS totalDialerCalls FROM cdr_archive 
+//             WHERE type = 'outbound_ai'
+//             AND start_time BETWEEN '$start_date' AND '$end_date'
+//             AND extension IN ($extString)
+//         ");
+//         $totalDialerCalls = ($dialer_res[0]->totalDialerCalls ?? 0)
+//                           + ($dialer_res[1]->totalDialerCalls ?? 0);
+
+//         // ✅ SMS (using sms table, not sms_logs)
+//         $sms_send = DB::connection($connection)->select("
+//             SELECT COUNT(*) AS totalSMSSend 
+//             FROM sms 
+//             WHERE type = 'outgoing' 
+//             AND date BETWEEN '$start_date' AND '$end_date'
+//         ");
+//         $total_sms_send = $sms_send[0]->totalSMSSend ?? 0;
+
+//         $sms_receive = DB::connection($connection)->select("
+//             SELECT COUNT(*) AS totalSMSReceive 
+//             FROM sms 
+//             WHERE type = 'incoming' 
+//             AND date BETWEEN '$start_date' AND '$end_date'
+//         ");
+//         $total_sms_receive = $sms_receive[0]->totalSMSReceive ?? 0;
+
+//         // ✅ Combine all
+//         $data = [
+//             'totalOutBoundCalls' => $totalOutBoundCalls,
+//             'totalInBoundCalls' => $totalInBoundCalls,
+//             'totalManualCalls' => $totalManualCalls,
+//             'totalDialerCalls' => $totalDialerCalls,
+//             'total_sms_send' => $total_sms_send,
+//             'total_sms_receive' => $total_sms_receive,
+//         ];
+
+//         \Log::info('Dialer Count Result', $data);
+
+//         return response()->json([
+//             'success' => true,
+//             'message' => 'Dialer Count List',
+//             'data' => $data
+//         ]);
+
+//     } catch (\Exception $e) {
+//         \Log::error('DialerAllCount Error', ['error' => $e->getMessage()]);
+//         return response()->json([
+//             'success' => false,
+//             'message' => 'Something went wrong',
+//             'error' => $e->getMessage()
+//         ], 500);
+//     }
+// }
+
+
+
+public function dialerAllCount(Request $request)
+{
+    try {
+        $client_id = $request->auth->parent_id;
+        $connection = "mysql_" . $client_id;
+
+        $start_date = $request->start_date . ' 00:00:00';
+        $end_date = $request->end_date . ' 23:59:59';
+        $extensions = $request->extensions ?? [];
+
+        if (!is_array($extensions)) {
+            $extensions = [$extensions];
+        }
+
+        \Log::info('Dialer Count Debug', [
+            'client_id' => $client_id,
+            'start_date' => $start_date,
+            'end_date' => $end_date,
+            'extensions' => $extensions
+        ]);
+
+        $extString = implode(',', $extensions);
+
+        /** -------------------------------------------------
+         *  TOTAL CALL COUNTS
+         * ------------------------------------------------- */
+
+        // ✅ Outbound
+        $outbound_res = DB::connection($connection)->select("
+            SELECT COUNT(*) AS totalOutBoundCalls FROM cdr 
+            WHERE route = 'OUT' 
+            AND start_time BETWEEN '$start_date' AND '$end_date'
+            AND extension IN ($extString)
+            UNION ALL
+            SELECT COUNT(*) AS totalOutBoundCalls FROM cdr_archive 
+            WHERE route = 'OUT'
+            AND start_time BETWEEN '$start_date' AND '$end_date'
+            AND extension IN ($extString)
+        ");
+        $totalOutBoundCalls = ($outbound_res[0]->totalOutBoundCalls ?? 0)
+                            + ($outbound_res[1]->totalOutBoundCalls ?? 0);
+
+        // ✅ Inbound
+        $inbound_res = DB::connection($connection)->select("
+            SELECT COUNT(*) AS totalInBoundCalls FROM cdr 
+            WHERE route = 'IN'
+            AND start_time BETWEEN '$start_date' AND '$end_date'
+            AND extension IN ($extString)
+            UNION ALL
+            SELECT COUNT(*) AS totalInBoundCalls FROM cdr_archive 
+            WHERE route = 'IN'
+            AND start_time BETWEEN '$start_date' AND '$end_date'
+            AND extension IN ($extString)
+        ");
+        $totalInBoundCalls = ($inbound_res[0]->totalInBoundCalls ?? 0)
+                           + ($inbound_res[1]->totalInBoundCalls ?? 0);
+
+        // ✅ Manual
+        $manual_res = DB::connection($connection)->select("
+            SELECT COUNT(*) AS totalManualCalls FROM cdr 
+            WHERE type = 'manual'
+            AND start_time BETWEEN '$start_date' AND '$end_date'
+            AND extension IN ($extString)
+            UNION ALL
+            SELECT COUNT(*) AS totalManualCalls FROM cdr_archive 
+            WHERE type = 'manual'
+            AND start_time BETWEEN '$start_date' AND '$end_date'
+            AND extension IN ($extString)
+        ");
+        $totalManualCalls = ($manual_res[0]->totalManualCalls ?? 0)
+                          + ($manual_res[1]->totalManualCalls ?? 0);
+
+        // ✅ Dialer
+        $dialer_res = DB::connection($connection)->select("
+            SELECT COUNT(*) AS totalDialerCalls FROM cdr 
+            WHERE type = 'outbound_ai'
+            AND start_time BETWEEN '$start_date' AND '$end_date'
+            AND extension IN ($extString)
+            UNION ALL
+            SELECT COUNT(*) AS totalDialerCalls FROM cdr_archive 
+            WHERE type = 'outbound_ai'
+            AND start_time BETWEEN '$start_date' AND '$end_date'
+            AND extension IN ($extString)
+        ");
+        $totalDialerCalls = ($dialer_res[0]->totalDialerCalls ?? 0)
+                          + ($dialer_res[1]->totalDialerCalls ?? 0);
+
+        // ✅ SMS Counts
+        $sms_send = DB::connection($connection)->select("
+            SELECT COUNT(*) AS totalSMSSend 
+            FROM sms 
+            WHERE type = 'outgoing' 
+            AND date BETWEEN '$start_date' AND '$end_date'
+        ");
+        $total_sms_send = $sms_send[0]->totalSMSSend ?? 0;
+
+        $sms_receive = DB::connection($connection)->select("
+            SELECT COUNT(*) AS totalSMSReceive 
+            FROM sms 
+            WHERE type = 'incoming' 
+            AND date BETWEEN '$start_date' AND '$end_date'
+        ");
+        $total_sms_receive = $sms_receive[0]->totalSMSReceive ?? 0;
+
+
+        /** -------------------------------------------------
+         *  AGENT-WISE CALL DATA
+         * ------------------------------------------------- */
+        $result_arr = [];
+        $agent_list = DB::connection('master')->select("
+            SELECT * FROM users 
+            WHERE parent_id = $client_id AND is_deleted = 0 
+            ORDER BY first_name
+        ");
+
+        $j = 0;
+        foreach ($agent_list as $agent) {
+            $agent_arr = (array) $agent;
+            $extension = $agent_arr['extension'];
+            $alt_extension = $agent_arr['alt_extension'];
+            $result_arr['agent'][$j]['agentName'] = trim($agent_arr['first_name'] . ' ' . $agent_arr['last_name']);
+            $result_arr['agent'][$j]['extension'] = $extension;
+            $result_arr['agent'][$j]['alt_extension'] = $alt_extension;
+
+            $totalCall = 0;
+
+            // Outbound (cdr + archive)
+            foreach (['cdr', 'cdr_archive'] as $table) {
+                $out = DB::connection($connection)->select("
+                    SELECT COUNT(*) AS total FROM $table 
+                    WHERE extension IN('$extension', '$alt_extension') 
+                    AND route='OUT' AND (type='dialer' OR type='manual')
+                    AND start_time BETWEEN '$start_date' AND '$end_date'
+                ");
+                $totalCall += ($out[0]->total ?? 0);
+                $result_arr['agent'][$j]['outbound'] = ($result_arr['agent'][$j]['outbound'] ?? 0) + ($out[0]->total ?? 0);
+
+                $c2c = DB::connection($connection)->select("
+                    SELECT COUNT(*) AS total FROM $table 
+                    WHERE extension IN('$extension', '$alt_extension') 
+                    AND route='OUT' AND type='c2c'
+                    AND start_time BETWEEN '$start_date' AND '$end_date'
+                ");
+                $totalCall += ($c2c[0]->total ?? 0);
+                $result_arr['agent'][$j]['c2c'] = ($result_arr['agent'][$j]['c2c'] ?? 0) + ($c2c[0]->total ?? 0);
+
+                $in = DB::connection($connection)->select("
+                    SELECT COUNT(*) AS total FROM $table 
+                    WHERE extension IN('$extension', '$alt_extension') 
+                    AND route='IN'
+                    AND start_time BETWEEN '$start_date' AND '$end_date'
+                ");
+                $totalCall += ($in[0]->total ?? 0);
+                $result_arr['agent'][$j]['inbound'] = ($result_arr['agent'][$j]['inbound'] ?? 0) + ($in[0]->total ?? 0);
+
+                $duration = DB::connection($connection)->select("
+                    SELECT SUM(duration) AS total FROM $table 
+                    WHERE extension IN('$extension', '$alt_extension')
+                    AND start_time BETWEEN '$start_date' AND '$end_date'
+                ");
+                $result_arr['agent'][$j]['duration'] = ($result_arr['agent'][$j]['duration'] ?? 0) + ($duration[0]->total ?? 0);
+            }
+
+            // SMS for this agent
+            $sms = DB::connection($connection)->select("
+                SELECT SUM(type='outgoing') AS outgoing, SUM(type='incoming') AS incoming 
+                FROM sms 
+                WHERE date BETWEEN '$start_date' AND '$end_date'
+                AND extension='" . $agent_arr['id'] . "'
+            ");
+
+            $result_arr['agent'][$j]['incoming_sms'] = $sms[0]->incoming ?? 0;
+            $result_arr['agent'][$j]['outgoing_sms'] = $sms[0]->outgoing ?? 0;
+            $result_arr['agent'][$j]['totalcalls'] = $totalCall;
+            $result_arr['agent'][$j]['aht'] = $totalCall ? ($result_arr['agent'][$j]['duration'] / $totalCall) : 0;
+
+            $j++;
+        }
+
+        /** -------------------------------------------------
+         *  CITY-WISE CALL DATA
+         * ------------------------------------------------- */
+        $city_wise = [];
+        $cdr_city = DB::connection($connection)->select("
+            SELECT COUNT(*) AS total, area_code FROM cdr 
+            WHERE start_time BETWEEN '$start_date' AND '$end_date' 
+            GROUP BY area_code ORDER BY total DESC
+        ");
+        $cdr_arch_city = DB::connection($connection)->select("
+            SELECT COUNT(*) AS total, area_code FROM cdr_archive 
+            WHERE start_time BETWEEN '$start_date' AND '$end_date' 
+            GROUP BY area_code ORDER BY total DESC
+        ");
+
+        $areacode_list = array_merge($cdr_city, $cdr_arch_city);
+        $k = 0;
+        foreach ($areacode_list as $code) {
+            $ac = (array) $code;
+            $did_data = DB::connection($connection)->selectOne("SELECT * FROM did WHERE area_code='" . $ac['area_code'] . "'");
+            $cname = $did_data->cli ?? '';
+            $cnam = DB::connection($connection)->selectOne("SELECT cnam FROM cli_report WHERE cli='$cname' ORDER BY id DESC LIMIT 1");
+            $city_data = DB::connection('master')->selectOne("SELECT * FROM areacode_city WHERE areacode='" . $ac['area_code'] . "'");
+
+            $city_wise[$k] = [
+                'total' => $ac['total'],
+                'area_code' => $ac['area_code'],
+                'city' => $city_data->city_name ?? '-',
+                'state' => $city_data->state_name ?? '-',
+                'did' => $cname ?: '-',
+                'cnam' => $cnam->cnam ?? '-',
+            ];
+            $k++;
+        }
+
+        /** -------------------------------------------------
+         *  DID CALL DATA
+         * ------------------------------------------------- */
+        $did_result = [];
+        $did_list = DB::connection('master')->select("SELECT * FROM did WHERE parent_id = $client_id");
+        $d = 0;
+
+        foreach ($did_list as $did) {
+            $did_number = $did->cli;
+            $totalCall = 0;
+
+            foreach (['cdr', 'cdr_archive'] as $table) {
+                $in_calls = DB::connection($connection)->select("
+                    SELECT COUNT(*) AS total FROM $table 
+                    WHERE cli='$did_number' AND route='IN'
+                    AND start_time BETWEEN '$start_date' AND '$end_date'
+                ");
+                if (!empty($in_calls) && $in_calls[0]->total != 0) {
+                    $totalCall += $in_calls[0]->total;
+
+                    $cnam = DB::connection($connection)->selectOne("
+                        SELECT cnam FROM cli_report WHERE cli='$did_number' ORDER BY id DESC LIMIT 1
+                    ");
+                    $dur = DB::connection($connection)->select("
+                        SELECT SUM(duration) AS total FROM $table 
+                        WHERE cli='$did_number' AND route='IN'
+                        AND start_time BETWEEN '$start_date' AND '$end_date'
+                    ");
+                    $sms = DB::connection($connection)->select("
+                        SELECT SUM(type='outgoing') AS outgoing, SUM(type='incoming') AS incoming 
+                        FROM sms 
+                        WHERE date BETWEEN '$start_date' AND '$end_date' 
+                        AND did='$did_number'
+                    ");
+
+                    $did_result[$d] = [
+                        'cli' => $did_number,
+                        'inbound' => $in_calls[0]->total,
+                        'duration' => $dur[0]->total ?? 0,
+                        'totalcalls' => $totalCall,
+                        'aht' => $totalCall ? (($dur[0]->total ?? 0) / $totalCall) : 0,
+                        'cnam' => $cnam->cnam ?? '-',
+                        'incoming' => $sms[0]->incoming ?? 0,
+                        'outgoing' => $sms[0]->outgoing ?? 0,
+                    ];
+                    $d++;
+                }
+            }
+        }
+
+        /** -------------------------------------------------
+         *  FINAL RESPONSE
+         * ------------------------------------------------- */
+        $data = [
+            'totalOutBoundCalls' => $totalOutBoundCalls,
+            'totalInBoundCalls' => $totalInBoundCalls,
+            'totalManualCalls' => $totalManualCalls,
+            'totalDialerCalls' => $totalDialerCalls,
+            'total_sms_send' => $total_sms_send,
+            'total_sms_receive' => $total_sms_receive,
+            'agent' => $result_arr['agent'] ?? [],
+            'city_wise' => $city_wise,
+            'did' => $did_result,
+        ];
+
+        \Log::info('Dialer Count Result', $data);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Dialer Count List',
+            'data' => $data
+        ]);
+    } catch (\Exception $e) {
+        \Log::error('DialerAllCount Error', ['error' => $e->getMessage()]);
+        return response()->json([
+            'success' => false,
+            'message' => 'Something went wrong',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
+
+
+    public function dialerAllCountold(Request $request)
     {
-        //return $request->all();
-
-      //  $connection = 'mysql_'.$request->parentId;
-
         $connection = 'mysql_'.$request->client_id;
         $result_arr = array();
 
         $result_arr['connection'] = $connection;
-
-        //$previous_day = date("Y-m-d", strtotime(" -1 day")) . ' 22:00:00';
-        //$current_day = date("Y-m-d") . ' 22:00:00';
-
         $previous_day = $request->start_date. ' 00:00:00';
         $current_day  = $request->end_date. ' 23:59:59';
 
@@ -326,45 +746,27 @@ class ReportService
 
         $result_arr['logo'] = env('PORTAL_NAME').'logo/' . $client->logo;
         $result_arr['company_name'] = $client->company_name;
-        
-        //return $result_arr;
-        /*$user = User::where("email", "=", $request->auth->email)->first();
-
-
-
-        $groups = ExtensionGroupService::getExtensionGroupsDialer($user->parent_id, $user->extension);
-
-        if ($user->user_level >= 7) {
-            $extCondition = "";
-        } elseif ($user->user_level >= 5) {
-            $extensions = ExtensionGroupService::getExtensionsByGroups($user->parent_id, $groups);
-            if (empty($extensions)) $extensions = [$user->extension];
-            $extCondition = " AND extension IN (".implode(",", $extensions).")";
-        } else {
-            $extCondition = " AND extension = ".$user->extension;
-        }*/
-
-
-
         $extensions = DB::select("select extension,alt_extension from users where base_parent_id=".$request->client_id);
 
-        foreach($extensions as $list)
-        {
+   $extensionsList = [];
+
+foreach($extensions as $list)
+{
+    if (!empty($list->extension)) {
         $extensionsList[] = $list->extension;
-        $extensionsList[] = $list->alt_extension; 
+    }
+    if (!empty($list->alt_extension)) {
+        $extensionsList[] = $list->alt_extension;
+    }
+}
 
-        }
-
-            $extCondition = " AND extension IN (".implode(",", $extensionsList).")";
-
-            $cliCondition = " AND cli IN (".implode(",", $extensionsList).")";
-
-
-
-
-
-       
-
+if (!empty($extensionsList)) {
+    $extCondition = " AND extension IN (" . implode(",", $extensionsList) . ")";
+    $cliCondition = " AND cli IN (" . implode(",", $extensionsList) . ")";
+} else {
+    $extCondition = "";
+    $cliCondition = "";
+}
         $outbound_res = DB::connection($connection)->select("select count(*) as totalOutBoundCalls from cdr WHERE route  = 'OUT'  and start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "' $extCondition union select count(*) as totalOutBoundCalls from cdr_archive  WHERE route  = 'OUT' and start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "' $extCondition");
 
         $cdr_outbound = $outbound_res[0]->totalOutBoundCalls;
@@ -379,14 +781,6 @@ class ReportService
         }
 
         $result_arr['total_outbound_Calls'] = $cdr_outbound + $cdr_archive_outbound;
-
-
-        
-
-
-
-
-
 $outbound_manually = DB::connection($connection)->select("select count(*) as totalOutBoundCallsByManually from cdr WHERE route= 'OUT' and type= 'manual' and start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "' $extCondition union select count(*) as totalOutBoundCallsByManually from cdr_archive  WHERE route= 'OUT' and type= 'manual' and start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "' $extCondition");
 
       
@@ -402,15 +796,8 @@ $cdr_outbound_manually = $outbound_manually[0]->totalOutBoundCallsByManually;
             $cdr_archive_outbound_manually =0;
         }
 
-        $result_arr['total_outbound_Calls_manually'] = $cdr_outbound_manually + $cdr_archive_outbound_manually;
-        
-
-
-
+        $result_arr['total_outbound_Calls_manually'] = $cdr_outbound_manually + $cdr_archive_outbound_manually;        
         $outbound_dialer = DB::connection($connection)->select("select count(*) as totalOutBoundCallsByDialer from cdr WHERE route= 'OUT' and type= 'dialer' and start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "' $extCondition union select count(*) as totalOutBoundCallsByDialer from cdr_archive WHERE route= 'OUT' and type= 'dialer' and start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "' $extCondition");
-
-
-
         $cdr_outbound_dialer = $outbound_dialer[0]->totalOutBoundCallsByDialer;
 
         if(!empty($outbound_dialer[1]->totalOutBoundCallsByDialer))
@@ -441,15 +828,6 @@ $cdr_outbound_manually = $outbound_manually[0]->totalOutBoundCallsByManually;
         }
 
         $result_arr['total_outbound_Calls_c2c'] = $cdr_outbound_dialer + $cdr_archive_outbound_dialer;
-
-
-       // return $result_arr;
-
-
-      
-
-
-
 
         $sql = "select campaign_id, count(*) as calls, title from cdr as cdr left join campaign on cdr.campaign_id=campaign.id WHERE start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "' and cdr.campaign_id is not null and route='OUT' $extCondition group by campaign_id";
         $outbound_campaign = DB::connection($connection)->select($sql);
@@ -492,10 +870,6 @@ $cdr_outbound_manually = $outbound_manually[0]->totalOutBoundCallsByManually;
             $sql_extension = "select extension, count(*) as extension_total from cdr_archive as cdr WHERE campaign_id='".$campaign_calls->campaign_id."' and  start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "' group by extension";
 
          $user_id = DB::connection($connection)->select($sql_extension);
-
-
-           // $result_arr['campaign'][$key]['exddt'] = $user_id;
-
             $a=0;
 
             foreach($user_id as  $user)
@@ -517,11 +891,6 @@ $cdr_outbound_manually = $outbound_manually[0]->totalOutBoundCallsByManually;
 
 
             }
-
-
-
-
-
         $sql_disposition = "select count(*) as disposition,disposition_id,title from cdr_archive as cdr left join disposition on cdr.disposition_id=disposition.id WHERE campaign_id='".$campaign_calls->campaign_id."' and  start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "' group by disposition_id";
          $disposition_id = DB::connection($connection)->select($sql_disposition);
 
@@ -533,22 +902,9 @@ $cdr_outbound_manually = $outbound_manually[0]->totalOutBoundCallsByManually;
 
             $i++;
                 }
-
-
-
             
         }
 
-
-
-
-    //    return $result_arr;
-        
-
-
-
-
-        
 
 
 
@@ -564,10 +920,6 @@ $cdr_outbound_manually = $outbound_manually[0]->totalOutBoundCallsByManually;
         {
             $cdr_archive_inbound_res =0;
         }
-
-      //  $result_arr['total_inbound_Calls'] = $cdr_inbound_res + $cdr_archive_inbound_res;
-
-
         $inbound_res = DB::connection($connection)->select("select count(*) as totalInBoundCalls from cdr WHERE route  = 'IN' and type = 'manual' and start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "' $cliCondition union select count(*) as totalInBoundCalls from cdr_archive WHERE route  = 'IN' and type = 'manual' and start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "' $cliCondition");
 
        
@@ -670,11 +1022,6 @@ $cdr_outbound_manually = $outbound_manually[0]->totalOutBoundCallsByManually;
 
             }
         }
-
-       // return $result_arr;
-
-
-         //city wise send daily report
             $areacode_list =array();
             $sql_areacode = "select count(*) as total,area_code from cdr WHERE  start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "' group by area_code order by total desc";
 
@@ -687,9 +1034,6 @@ $cdr_outbound_manually = $outbound_manually[0]->totalOutBoundCallsByManually;
 
 
             $areacode_list = array_merge($areacode_list_cdr,$areacode_list_cdr_archive);
-
-
-
             $k = 0;
             if(!empty($areacode_list))
             {
@@ -722,10 +1066,6 @@ $cdr_outbound_manually = $outbound_manually[0]->totalOutBoundCallsByManually;
                         $cname ='';
                         $result_arr['city_wise'][$k]['cnam'] = '-';
                     }
-
-          
-
-
                     $find_city_state = "SELECT * from areacode_city where areacode = '".$areacode_calls['area_code']."'";
 
                     $record_city =  DB::connection("master")->selectOne($find_city_state);
@@ -758,10 +1098,6 @@ $cdr_outbound_manually = $outbound_manually[0]->totalOutBoundCallsByManually;
                         $k++;
                 }
             }
-
-           // return $result_arr;
-
-            //did wise calls
 
             $did_list =array();
             $sql_did = "select * from did WHERE parent_id=".$request->client_id."";
@@ -859,11 +1195,7 @@ $cdr_outbound_manually = $outbound_manually[0]->totalOutBoundCallsByManually;
                         }
                     }
                 }
-            }
-
-        //echo "<pre>";print_r($outbound_res);die;
-
-        
+            }       
             return $result_arr;
     }
 

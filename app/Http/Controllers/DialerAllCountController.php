@@ -90,8 +90,11 @@ class DialerAllCountController extends Controller
         //$email = 'abhi2112mca@gmail.com';
 
         $data = $reportService->dialerAllCount($request);
+if ($data instanceof \Illuminate\Http\JsonResponse) {
+    $data = $data->getData(true); // convert JSON to array
+}
 
-        return $this->successResponse("Dialer Count List", $data);
+return $this->successResponse("Dialer Count List", $data);
 
 
         //  echo "<pre>";print_r($data);die;
