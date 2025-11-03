@@ -66,36 +66,8 @@ class ExtensionGroupMapController extends Controller
      * )
      */
 
-    // public function index(Request $request)
-    // {
-    //     $extensionGroupMap = "SELECT egm.*,
-    //                           up.extension as ext,
-    //                           up.first_name,
-    //                           up.last_name,
-    //                           up.id as user_id
-    //                           FROM master.users as up
-    //                           JOIN client_{$request->auth->parent_id}.extension_group_map as egm 
-    //                           ON ( egm.extension = up.extension )";
-    //     $groupMap    = DB::select($extensionGroupMap, array());
 
-    //     if ($request->has('start') && $request->has('limit')) {
-    //         $total_row = count($groupMap);
-
-    //         $start = (int) $request->input('start');  // Start index (0-based)
-    //         $limit = (int) $request->input('limit');  // Number of records to fetch
-
-    //         $groupMap = array_slice($groupMap, $start, $limit, false);
-
-    //         return $this->successResponse("Extension Group Map List", [
-    //             'start' => $start,
-    //             'limit' => $limit,
-    //             'total' => $total_row,
-    //             'data' =>  $groupMap
-    //         ]);
-    //     }
-    //     return $this->successResponse("Extension Group Map List", $groupMap);
-    // }
-    public function index(Request $request)
+    public function indexold(Request $request)
 {
     try {
         // Build base query
@@ -122,6 +94,66 @@ class ExtensionGroupMapController extends Controller
 
         // Execute query
         $groupMap = DB::select($extensionGroupMap, $params);
+
+        // Pagination logic
+        if ($request->has('start') && $request->has('limit')) {
+            $total_row = count($groupMap);
+
+            $start = (int) $request->input('start', 0);  // default 0
+            $limit = (int) $request->input('limit', 10); // default 10
+
+            $groupMap = array_slice($groupMap, $start, $limit, false);
+
+            return $this->successResponse("Extension Group Map List", [
+                'start' => $start,
+                'limit' => $limit,
+                'total' => $total_row,
+                'data' => $groupMap
+            ]);
+        }
+
+        // Return without pagination
+        return $this->successResponse("Extension Group Map List", $groupMap);
+
+    } catch (\Exception $e) {
+        return $this->errorResponse("Failed to fetch Extension Group Map", $e->getMessage());
+    }
+}
+public function index(Request $request)
+{
+    try {
+        // Build base query
+        $extensionGroupMap = "
+            SELECT 
+                egm.group_id,
+                egm.extension,
+                up.extension AS ext,
+                up.first_name,
+                up.last_name,
+                up.id AS user_id
+            FROM master.users AS up
+            JOIN client_{$request->auth->parent_id}.extension_group_map AS egm 
+                ON egm.extension = up.extension
+            WHERE 1=1
+        ";
+
+        $params = [];
+
+        // Optional filter by group_id
+        if ($request->filled('group_id')) {
+            $extensionGroupMap .= " AND egm.group_id = :group_id";
+            $params['group_id'] = $request->group_id;
+        }
+
+        // Execute query
+        $groupMap = DB::select($extensionGroupMap, $params);
+
+        // ✅ Remove "is_deleted" if it somehow exists in the record
+        foreach ($groupMap as &$row) {
+            if (isset($row->is_deleted)) {
+                unset($row->is_deleted);
+            }
+        }
 
         // Pagination logic
         if ($request->has('start') && $request->has('limit')) {
