@@ -428,12 +428,53 @@ class Report extends Model
             $filter = (!empty($searchString)) ? " WHERE " . implode(" AND ", $searchString) : '';
             $filter1 = (!empty($searchString1)) ? " WHERE " . implode(" AND ", $searchString1) : '';
 
-            $query_string = "SELECT SQL_CALC_FOUND_ROWS c.id,c.area_code, c.extension,c.cli, c.number, c.start_time, c.end_time, c.duration, c.route, c.call_recording,c.campaign_id, c.lead_id,c.type, c.disposition_id FROM
-                            (
-                                (SELECT id, extension,cli,area_code,number, start_time, end_time, duration, route, call_recording, campaign_id, lead_id, type, disposition_id FROM cdr $filter )
-                                UNION
-                                (SELECT id, extension,cli,area_code,number, start_time, end_time, duration, route, call_recording, campaign_id, lead_id, type, disposition_id FROM cdr_archive $filter1 )
-                            ) as c ORDER BY start_time DESC ";
+            // $query_string = "SELECT SQL_CALC_FOUND_ROWS c.id,c.area_code, c.extension,c.cli, c.number, c.start_time, c.end_time, c.duration, c.route, c.call_recording,c.campaign_id, c.lead_id,c.type, c.disposition_id FROM
+            //                 (
+            //                     (SELECT id, extension,cli,area_code,number, start_time, end_time, duration, route, call_recording, campaign_id, lead_id, type, disposition_id FROM cdr $filter )
+            //                     UNION
+            //                     (SELECT id, extension,cli,area_code,number, start_time, end_time, duration, route, call_recording, campaign_id, lead_id, type, disposition_id FROM cdr_archive $filter1 )
+            //                 ) as c ORDER BY start_time DESC ";
+
+$query_string = "
+    SELECT 
+        SQL_CALC_FOUND_ROWS 
+        c.id,
+        c.extension,
+        c.cli,
+        c.number,
+        c.area_code,
+        acc.city_name,
+        acc.state_name,
+        c.start_time,
+        c.end_time,
+        c.duration,
+        c.route,
+        c.call_recording,
+        c.campaign_id,
+        camp.title As campaign_name,
+        c.lead_id,
+        c.type,
+        c.disposition_id,
+        disp.title AS dispostion_name
+    FROM (
+        (SELECT 
+            id, extension, cli, area_code, number, start_time, end_time, duration, 
+            route, call_recording, campaign_id, lead_id, type, disposition_id 
+         FROM cdr $filter)
+        UNION
+        (SELECT 
+            id, extension, cli, area_code, number, start_time, end_time, duration, 
+            route, call_recording, campaign_id, lead_id, type, disposition_id 
+         FROM cdr_archive $filter1)
+    ) AS c
+    LEFT JOIN master.areacode_city AS acc 
+        ON acc.areacode = c.area_code
+    LEFT JOIN client_{$parent_id}.campaign AS camp 
+        ON camp.id = c.campaign_id
+    LEFT JOIN client_{$parent_id}.disposition AS disp 
+        ON disp.id = c.disposition_id
+    ORDER BY c.start_time DESC
+";
 
 
             $sql = $query_string . $limitString;
