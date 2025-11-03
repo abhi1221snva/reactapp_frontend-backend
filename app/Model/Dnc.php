@@ -199,7 +199,7 @@ class Dnc extends Model
                 $data['comment'] = ($request->has('comment') && !empty($request->input('comment'))) ? $request->input('comment') : "";
 
                 $sql = "SELECT * FROM " . $this->table . " WHERE number = '" . $data['number'] . "'";
-                $record =  DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+                $record =  DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
 
                 if (!empty($record)) {
                     return array(
