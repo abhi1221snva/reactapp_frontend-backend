@@ -179,8 +179,8 @@ class Press1CampaignReportController extends Controller
             'type' => 'string',
             'start_date' => 'date',
             'end_date' => 'date',
-            'lower_limit' => 'numeric',
-            'upper_limit' => 'numeric'
+            'start' => 'numeric',
+            'limit' => 'numeric'
         ]);
         $response = $this->model->getReportPress1Campaign($this->request);
         return response()->json($response);
@@ -193,30 +193,52 @@ class Press1CampaignReportController extends Controller
     }
 
 
-    public function allDtmf(Request $request)
-    {
-        $clientId = $request->auth->parent_id;
-        try {
-            $campaign = Campaign::on("mysql_$clientId")->findOrFail($request->campaign_id);
-            /*$Lender->status =$request->status;
-            $Lender->saveOrFail();*/
+  public function allDtmf(Request $request)
+{
+    $clientId = $request->auth->parent_id;
+    $dtmf_list = []; // ensure it's always defined
 
-            //$ivr_id = $campaign->redirect_to;
+    try {
+        $campaign = Campaign::on("mysql_$clientId")->findOrFail($request->campaign_id);
 
-            if ($campaign['redirect_to'] == 5) {
-                $ivr_id = $campaign['redirect_to_dropdown'];
+        if ($campaign->redirect_to == 5 && !empty($campaign->redirect_to_dropdown)) {
 
-                $dtmf_list = IvrMenu::on("mysql_$clientId")->where('ivr_table_id', $ivr_id)->get()->all();
-            }
-            return $this->successResponse("Campaign Data", $dtmf_list);
-        } catch (ModelNotFoundException $exception) {
-            return $this->failResponse("Lender Not Found", [
-                "Invalid Lender id $id"
-            ], $exception, 404);
-        } catch (\Throwable $exception) {
-            return $this->failResponse("Failed to update Lender", [
-                $exception->getMessage()
-            ], $exception, 404);
+            $ivr_id = $campaign->redirect_to_dropdown;
+
+            $dtmf_list = IvrMenu::on("mysql_$clientId")
+                ->where('ivr_table_id', $ivr_id)
+                ->get()
+                ->toArray();
+
+            return $this->successResponse("DTMF List", $dtmf_list);
         }
+
+        // ✅ case when not IVR
+        return response()->json([
+            'success' => false,
+            'message' => 'This campaign is not redirected to IVR',
+            'errors' => [
+                'redirect_to' => $campaign->redirect_to,
+                'dtmf_list' => []
+            ]
+        ], 400);
+
+    } catch (ModelNotFoundException $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Campaign Not Found',
+            'errors' => [
+                'campaign_id' => $request->campaign_id
+            ]
+        ], 404);
+
+    } catch (\Throwable $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to find Dtmf',
+            'errors' => [$e->getMessage()]
+        ], 500);
     }
+}
+
 }

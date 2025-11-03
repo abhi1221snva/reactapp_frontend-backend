@@ -1633,9 +1633,139 @@ Log::info('Transfer Report SQL:', [
         return ($bd - $ad);
     }
 
+public function getReportPress1Campaign($request)
+{
+    try {
+        $parentConn = 'mysql_' . $request->auth->parent_id;
+        $searchString = [];
+
+        // 🔍 Individual Filters
+        if ($request->filled('number')) {
+            $number = trim($request->input('number'));
+            $searchString[] = "ivl.number LIKE '%$number%'";
+        }
+
+        if ($request->filled('dtmf')) {
+            $dtmf = trim($request->input('dtmf'));
+            $searchString[] = "ivl.dtmf = '$dtmf'";
+        }
+
+        if ($request->filled('campaign')) {
+            $campaignId = (int) $request->input('campaign');
+            $searchString[] = "ivl.campaign_id = $campaignId";
+        }
+
+        if ($request->filled('route')) {
+            $route = trim($request->input('route'));
+            $searchString[] = "ivl.route = '$route'";
+        }
+
+        if ($request->filled('type')) {
+            $type = trim($request->input('type'));
+            $searchString[] = "ivl.type = '$type'";
+        }
+
+        // 🕒 Date filter
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $start = date('Y-m-d 00:00:00', strtotime($request->input('start_date')));
+            $end = date('Y-m-d 23:59:59', strtotime($request->input('end_date')));
+
+            if (!empty($request->auth->timezone)) {
+                $timeZoneService = new TimezoneService();
+                $timezoneValue = $timeZoneService->findTimezoneValue($request->auth->timezone);
+                $searchString[] = "CONVERT_TZ(ivl.created_at,'+00:00','$timezoneValue') BETWEEN '$start' AND '$end'";
+            } else {
+                $searchString[] = "ivl.created_at BETWEEN '$start' AND '$end'";
+            }
+        }
+
+        // 🔎 Apply global search (if any)
+        if ($request->filled('search')) {
+            $keyword = trim($request->input('search'));
+            $keyword = addslashes($keyword); // prevent SQL error
+
+            $globalSearch = [];
+            $globalSearch[] = "ivl.number LIKE '%$keyword%'";
+            $globalSearch[] = "ivl.cli LIKE '%$keyword%'";
+            $globalSearch[] = "c.title LIKE '%$keyword%'";
+            $globalSearch[] = "ivl.dtmf LIKE '%$keyword%'";
+            $globalSearch[] = "ivl.route LIKE '%$keyword%'";
+
+            $searchString[] = '(' . implode(' OR ', $globalSearch) . ')';
+        }
+
+        // 🧮 Pagination (default 0–10)
+        $limit = $request->input('limit', 10);
+        $offset = $request->input('start', 0);
+        $limitString = "LIMIT $offset, $limit";
+
+        // 🧩 Combine all filters
+        $filter = (!empty($searchString)) ? 'WHERE ' . implode(' AND ', $searchString) : '';
+
+        // ⚙️ Main query
+        $sql = "
+            SELECT SQL_CALC_FOUND_ROWS 
+                MAX(ivl.id) as id,
+                ivl.lead_id,
+                ivl.number,
+                ivl.cli,
+                ivl.route,
+                ivl.campaign_id,
+                ivl.created_at,
+                ivl.dtmf,
+                c.title as campaign_name
+            FROM ivr_log ivl
+            LEFT JOIN campaign c ON ivl.campaign_id = c.id
+            $filter
+            GROUP BY ivl.lead_id
+            ORDER BY id DESC
+            $limitString
+        ";
+
+        $records = DB::connection($parentConn)->select($sql);
+
+        // 🧮 Total count
+        $recordCountObj = DB::connection($parentConn)->selectOne("SELECT FOUND_ROWS() AS count");
+        $recordCount = $recordCountObj->count ?? 0;
+
+        // 🧠 Resolve DTMF titles
+        foreach ($records as &$r) {
+            if (!empty($r->dtmf)) {
+                $query = "SELECT dtmf_title FROM ivr_menu 
+                          WHERE ivr_table_id = (SELECT ivr_id FROM ivr_log WHERE id = $r->id LIMIT 1)
+                          AND dtmf = '$r->dtmf' LIMIT 1";
+
+                $dtmfMenu = DB::connection($parentConn)->selectOne($query);
+                $r->dtmf = $dtmfMenu->dtmf_title ?? '';
+            } else {
+                $r->dtmf = '';
+            }
+        }
+
+        return [
+            'success' => 'true',
+            'message' => 'Call Data Report.',
+            'total_rows' => $recordCount,
+            'data' => $records
+        ];
+
+    } catch (Exception $e) {
+        Log::error($e->getMessage());
+        return [
+            'success' => 'false',
+            'message' => 'Error fetching Call Data Report.'
+        ];
+    } catch (InvalidArgumentException $e) {
+        Log::error($e->getMessage());
+        return [
+            'success' => 'false',
+            'message' => 'Invalid argument passed.'
+        ];
+    }
+}
 
 
-    public function getReportPress1Campaign($request)
+    public function getReportPress1Campaignold($request)
     {
 
         // return $request->all();
@@ -1759,6 +1889,14 @@ Log::info('Transfer Report SQL:', [
                 $data[$key]['lead_id'] = $record111->lead_id;
                 $data[$key]['route'] = $record111->route;
                 $data[$key]['campaign_id'] = $record111->campaign_id;
+
+                // ✅ Fetch campaign name
+                $campaignQuery = "SELECT title FROM campaign WHERE id = " . $record111->campaign_id . " LIMIT 1";
+                $campaignRecord = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($campaignQuery);
+
+                $data[$key]['campaign_name'] = !empty($campaignRecord->title) ? $campaignRecord->title : '';
+
+
                 $data[$key]['created_at'] = $record111->created_at;
 
                 //  $data[$key]['dtmf'] = $record111->dtmf;
