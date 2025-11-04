@@ -366,54 +366,62 @@ public function getList($request)
     /** ------------------- FETCH DESTINATION NAME ------------------- **/
     $row->destination_name = 'Unknown Destination';
 
-    if (!empty($row->destination)) {
-        switch ((int)$row->dest_type) {
-            case 1: // Extension → user id
-                $user = DB::connection('master')
-                    ->table('users')
-                    ->where('id', $row->destination)
-                    ->select('first_name', 'last_name')
-                    ->first();
-                $row->destination_name = $user
-                    ? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''))
-                    : 'Unknown Extension';
-                break;
+  if (!empty($row->destination)) {
+    switch ((int)$row->dest_type) {
+        case 1: // Extension → user id
+            $user = DB::connection('master')
+                ->table('users')
+                ->where('id', $row->destination)
+                ->select('first_name', 'last_name')
+                ->first();
 
-            case 2: // Voicemail
-           
-                 $vm = DB::connection('master')
-                    ->table('users')
-                    ->where('id', $row->destination)
-                    ->select('first_name', 'last_name')
-                    ->first();
-                $row->destination_name = $vm
-                    ? trim(($$vm->name ->first_name ?? '') . ' ' . ($vm->last_name ?? ''))
-                    : 'Unknown Voicemail';
-                break;
+            $row->destination_name = $user
+                ? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''))
+                : 'Unknown Extension';
+            break;
 
-            case 4: // Forward Number
-                $row->destination_name = $row->destination;
-                break;
+        case 2: // Voicemail → also user id (same users table)
+            $vm = DB::connection('master')
+                ->table('users')
+                ->where('id', $row->destination)
+                ->select('first_name', 'last_name')
+                ->first();
 
-            case 5: // Conference
-                $conf = DB::connection('master')
-                    ->table('conferencing')
-                    ->where('id', $row->destination)
-                    ->select('title')
-                    ->first();
-                $row->destination_name = $conf->conf_name ?? 'Unknown Conference';
-                break;
+            $row->destination_name = $vm
+                ? trim(($vm->first_name ?? '') . ' ' . ($vm->last_name ?? ''))
+                : 'Unknown Voicemail';
+            break;
 
-            case 8: // Ring Group / Ingroup
-                $group = DB::connection($database)
-                    ->table('ring_group')
-                    ->where('id', $row->destination)
-                    ->select('title')
-                    ->first();
-                $row->destination_name = $group->group_name ?? 'Unknown Ring Group';
-                break;
-        }
+        case 4: // Forward Number
+            $row->destination_name = (string) $row->destination;
+            break;
+
+        case 5: // Conference
+            $conf = DB::connection('master')
+                ->table('conferencing')
+                ->where('id', $row->destination)
+                ->select('title')
+                ->first();
+
+            $row->destination_name = $conf && isset($conf->title)
+                ? $conf->title
+                : 'Unknown Conference';
+            break;
+
+        case 8: // Ring Group / Ingroup
+            $group = DB::connection($database)
+                ->table('ring_group')
+                ->where('id', $row->destination)
+                ->select('title')
+                ->first();
+
+            $row->destination_name = $group && isset($group->title)
+                ? $group->title
+                : 'Unknown Ring Group';
+            break;
     }
+}
+
 }
 
 
