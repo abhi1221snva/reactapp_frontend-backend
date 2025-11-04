@@ -66,45 +66,277 @@ class Dids extends Model
      */
 
 
-public function getList($request)
+// public function getList($request)
+// {
+//     try {
+//         $database = 'mysql_' . $request->auth->parent_id;
+
+//          // Base query
+//         $baseSql = "SELECT * FROM " . $this->table . " WHERE is_deleted = '0'";
+
+//         // Apply search (used for both total and paginated queries)
+//         if ($request->has('search') && !empty($request->input('search'))) {
+//             $search = $request->input('search');
+//             $baseSql .= " AND cli = '" . $search . "'";
+//         }
+
+//         $countSql = str_replace("SELECT *", "SELECT COUNT(*) AS total", $baseSql);
+//         $countResult = DB::connection($database)->select($countSql);
+//         $totalRows = isset($countResult[0]->total) ? (int)$countResult[0]->total : 0;
+
+//         // --- Apply pagination ---
+//         $paginatedSql = $baseSql;
+//         // Apply pagination (start, limit)
+//         if ($request->has('start') && $request->has('limit')) {
+//             $start = (int) $request->input('start');
+//             $limit = (int) $request->input('limit');
+//             $paginatedSql .= " LIMIT $start, $limit";
+//         }
+
+//         $record = DB::connection($database)->select($paginatedSql);
+//         $data = (array) $record;
+
+
+
+// // 3️⃣ Loop through rows and set assigned_user_id + assigned_user_name
+// foreach ($data as &$row) {
+//  if (isset($row->sms) && $row->sms == 1 && !empty($row->sms_email)) {
+
+//         $userId = (int)$row->sms_email;
+
+//         // Fetch user info **for this specific ID**
+//         $user = DB::table('users')
+//             ->where('id', $userId)
+//             ->select('first_name', 'last_name')
+//             ->first();
+
+//         $row->assigned_user_id = $userId;
+//         $row->assigned_user_name = $user
+//             ? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''))
+//             : 'Unknown User';
+
+//         // Remove sms_email as before
+//         unset($row->sms_email);
+//     }
+
+//     // Destination mapping based on dest_type
+//     if (isset($row->dest_type)) {
+//         switch ($row->dest_type) {
+//             case 1:
+//                 if (!empty($row->extension)) {
+//                     $row->destination = $row->extension;
+//                     unset($row->extension);
+//                 }
+//                 break;
+//             case 2:
+//                 if (!empty($row->voicemail_id)) {
+//                     $row->destination = $row->voicemail_id;
+//                     unset($row->voicemail_id);
+//                 }
+//                 break;
+//             case 4:
+//                 if (!empty($row->forward_number)) {
+//                     $row->destination = $row->forward_number;
+//                     unset($row->forward_number);
+//                 }
+//                 break;
+//             case 5:
+//                 if (!empty($row->conf_id)) {
+//                     $row->destination = $row->conf_id;
+//                     unset($row->conf_id);
+//                 }
+//                 break;
+//             case 8:
+//                 if (!empty($row->ingroup)) {
+//                     $row->destination = $row->ingroup;
+//                     unset($row->ingroup);
+//                 }
+//                 break;
+//         }
+//     }
+// }
+//         if (!empty($data)) {
+//             return [
+//                 'success' => 'true',
+//                 'message' => 'Did detail.',
+//                 'total_rows' => $totalRows,
+//                 'data' => $data,
+//             ];
+//         }
+
+//         return [
+//             'success' => 'false',
+//             'message' => 'DId not found',
+//             'total_rows' => 0,
+//             'data' => [],
+//         ];
+//     } catch (Exception $e) {
+//         Log::error('Error in getList: ' . $e->getMessage());
+//         return [
+//             'success' => 'false',
+//             'message' => 'Something went wrong.',
+//             'total_rows' => 0,
+//             'data' => []
+//         ];
+//     }
+// }
+
+public function getListnew($request)
 {
     try {
         $database = 'mysql_' . $request->auth->parent_id;
 
-         // Base query
+        // Base query
         $baseSql = "SELECT * FROM " . $this->table . " WHERE is_deleted = '0'";
 
-        // Apply search (used for both total and paginated queries)
+        // Apply search
         if ($request->has('search') && !empty($request->input('search'))) {
             $search = $request->input('search');
             $baseSql .= " AND cli = '" . $search . "'";
         }
 
-     $countSql = str_replace("SELECT *", "SELECT COUNT(*) AS total", $baseSql);
+        // Count query
+        $countSql = str_replace("SELECT *", "SELECT COUNT(*) AS total", $baseSql);
         $countResult = DB::connection($database)->select($countSql);
         $totalRows = isset($countResult[0]->total) ? (int)$countResult[0]->total : 0;
 
-        // --- Apply pagination ---
+        // Pagination
         $paginatedSql = $baseSql;
-        // Apply pagination (start, limit)
+        if ($request->has('start') && $request->has('limit')) {
+            $start = (int)$request->input('start');
+            $limit = (int)$request->input('limit');
+            $paginatedSql .= " LIMIT $start, $limit";
+        }
+
+        $records = DB::connection($database)->select($paginatedSql);
+        $data = $records;
+
+        // Fetch dest_type_list from main DB (or same connection if applicable)
+        $destTypeList = DB::table('dest_type_list')
+            ->select('dest_id', 'dest_type')
+            ->get()
+            ->keyBy('dest_id'); // make it easy to access by dest_id
+
+        // Loop through records and enrich data
+        foreach ($data as &$row) {
+
+            // --- Map assigned_user_id / name ---
+            if (isset($row->sms) && $row->sms == 1 && !empty($row->sms_email)) {
+                $userId = (int)$row->sms_email;
+                $user = DB::table('users')
+                    ->where('id', $userId)
+                    ->select('first_name', 'last_name')
+                    ->first();
+
+                $row->assigned_user_id = $userId;
+                $row->assigned_user_name = $user
+                    ? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''))
+                    : 'Unknown User';
+
+                unset($row->sms_email);
+            }
+
+            // --- Destination mapping ---
+            if (isset($row->dest_type)) {
+                switch ($row->dest_type) {
+                    case 1:
+                        if (!empty($row->extension)) {
+                            $row->destination = $row->extension;
+                            unset($row->extension);
+                        }
+                        break;
+                    case 2:
+                        if (!empty($row->voicemail_id)) {
+                            $row->destination = $row->voicemail_id;
+                            unset($row->voicemail_id);
+                        }
+                        break;
+                    case 4:
+                        if (!empty($row->forward_number)) {
+                            $row->destination = $row->forward_number;
+                            unset($row->forward_number);
+                        }
+                        break;
+                    case 5:
+                        if (!empty($row->conf_id)) {
+                            $row->destination = $row->conf_id;
+                            unset($row->conf_id);
+                        }
+                        break;
+                    case 8:
+                        if (!empty($row->ingroup)) {
+                            $row->destination = $row->ingroup;
+                            unset($row->ingroup);
+                        }
+                        break;
+                }
+
+                // ✅ Add dest_type_name from dest_type_list
+                $row->dest_type_name = isset($destTypeList[$row->dest_type])
+                    ? $destTypeList[$row->dest_type]->dest_type
+                    : 'Unknown Type';
+            }
+        }
+
+        return [
+            'success' => !empty($data) ? 'true' : 'false',
+            'message' => !empty($data) ? 'Did detail.' : 'DId not found',
+            'total_rows' => $totalRows,
+            'data' => $data,
+        ];
+
+    } catch (Exception $e) {
+        Log::error('Error in getList: ' . $e->getMessage());
+        return [
+            'success' => 'false',
+            'message' => 'Something went wrong.',
+            'total_rows' => 0,
+            'data' => []
+        ];
+    }
+}
+
+public function getList($request)
+{
+    try {
+        $database = 'mysql_' . $request->auth->parent_id;
+
+        // Base query
+        $baseSql = "SELECT * FROM " . $this->table . " WHERE is_deleted = '0'";
+
+        // Apply search
+        if ($request->has('search') && !empty($request->input('search'))) {
+            $search = $request->input('search');
+            $baseSql .= " AND cli = '" . $search . "'";
+        }
+
+        // Count query
+        $countSql = str_replace("SELECT *", "SELECT COUNT(*) AS total", $baseSql);
+        $countResult = DB::connection($database)->select($countSql);
+        $totalRows = isset($countResult[0]->total) ? (int) $countResult[0]->total : 0;
+
+        // Pagination
+        $paginatedSql = $baseSql;
         if ($request->has('start') && $request->has('limit')) {
             $start = (int) $request->input('start');
             $limit = (int) $request->input('limit');
             $paginatedSql .= " LIMIT $start, $limit";
         }
 
-        $record = DB::connection($database)->select($paginatedSql);
-        $data = (array) $record;
+        $records = DB::connection($database)->select($paginatedSql);
+        $data = $records;
 
+        // Fetch dest_type_list (mapping)
+        $destTypeList = DB::table('dest_type_list')
+            ->select('dest_id', 'dest_type')
+            ->get()
+            ->keyBy('dest_id');
 
+    foreach ($data as &$row) {
 
-// 3️⃣ Loop through rows and set assigned_user_id + assigned_user_name
-foreach ($data as &$row) {
- if (isset($row->sms) && $row->sms == 1 && !empty($row->sms_email)) {
-
+    /** ------------------- SMS User Mapping ------------------- **/
+    if (isset($row->sms) && $row->sms == 1 && !empty($row->sms_email)) {
         $userId = (int)$row->sms_email;
-
-        // Fetch user info **for this specific ID**
         $user = DB::table('users')
             ->where('id', $userId)
             ->select('first_name', 'last_name')
@@ -114,62 +346,84 @@ foreach ($data as &$row) {
         $row->assigned_user_name = $user
             ? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''))
             : 'Unknown User';
-
-        // Remove sms_email as before
-        unset($row->sms_email);
     }
 
-    // Destination mapping based on dest_type
-    if (isset($row->dest_type)) {
-        switch ($row->dest_type) {
-            case 1:
-                if (!empty($row->extension)) {
-                    $row->destination = $row->extension;
-                    unset($row->extension);
-                }
+    /** ------------------- DEST TYPE NAME ------------------- **/
+    $row->dest_type_name = isset($destTypeList[$row->dest_type])
+        ? $destTypeList[$row->dest_type]->dest_type
+        : 'Unknown Type';
+
+    /** ------------------- MAP destination FIELD ------------------- **/
+    $row->destination = null; // unify all cases
+    switch ((int)$row->dest_type) {
+        case 1: $row->destination = $row->extension ?? null; break;
+        case 2: $row->destination = $row->voicemail_id ?? null; break;
+        case 4: $row->destination = $row->forward_number ?? null; break;
+        case 5: $row->destination = $row->conf_id ?? null; break;
+        case 8: $row->destination = $row->ingroup ?? null; break;
+    }
+
+    /** ------------------- FETCH DESTINATION NAME ------------------- **/
+    $row->destination_name = 'Unknown Destination';
+
+    if (!empty($row->destination)) {
+        switch ((int)$row->dest_type) {
+            case 1: // Extension → user id
+                $user = DB::connection('master')
+                    ->table('users')
+                    ->where('id', $row->destination)
+                    ->select('first_name', 'last_name')
+                    ->first();
+                $row->destination_name = $user
+                    ? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''))
+                    : 'Unknown Extension';
                 break;
-            case 2:
-                if (!empty($row->voicemail_id)) {
-                    $row->destination = $row->voicemail_id;
-                    unset($row->voicemail_id);
-                }
+
+            case 2: // Voicemail
+           
+                 $vm = DB::connection('master')
+                    ->table('users')
+                    ->where('id', $row->destination)
+                    ->select('first_name', 'last_name')
+                    ->first();
+                $row->destination_name = $vm
+                    ? trim(($$vm->name ->first_name ?? '') . ' ' . ($vm->last_name ?? ''))
+                    : 'Unknown Voicemail';
                 break;
-            case 4:
-                if (!empty($row->forward_number)) {
-                    $row->destination = $row->forward_number;
-                    unset($row->forward_number);
-                }
+
+            case 4: // Forward Number
+                $row->destination_name = $row->destination;
                 break;
-            case 5:
-                if (!empty($row->conf_id)) {
-                    $row->destination = $row->conf_id;
-                    unset($row->conf_id);
-                }
+
+            case 5: // Conference
+                $conf = DB::connection('master')
+                    ->table('conferencing')
+                    ->where('id', $row->destination)
+                    ->select('title')
+                    ->first();
+                $row->destination_name = $conf->conf_name ?? 'Unknown Conference';
                 break;
-            case 8:
-                if (!empty($row->ingroup)) {
-                    $row->destination = $row->ingroup;
-                    unset($row->ingroup);
-                }
+
+            case 8: // Ring Group / Ingroup
+                $group = DB::connection($database)
+                    ->table('ring_group')
+                    ->where('id', $row->destination)
+                    ->select('title')
+                    ->first();
+                $row->destination_name = $group->group_name ?? 'Unknown Ring Group';
                 break;
         }
     }
 }
-        if (!empty($data)) {
-            return [
-                'success' => 'true',
-                'message' => 'Did detail.',
-                'total_rows' => $totalRows,
-                'data' => $data,
-            ];
-        }
+
 
         return [
-            'success' => 'false',
-            'message' => 'DId not found',
-            'total_rows' => 0,
-            'data' => [],
+            'success' => !empty($data) ? 'true' : 'false',
+            'message' => !empty($data) ? 'DID detail.' : 'DID not found.',
+            'total_rows' => $totalRows,
+            'data' => $data,
         ];
+
     } catch (Exception $e) {
         Log::error('Error in getList: ' . $e->getMessage());
         return [
