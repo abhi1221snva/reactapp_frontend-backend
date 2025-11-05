@@ -593,10 +593,9 @@ class LenderController extends Controller
     {
         $clientId = $request->auth->parent_id;
         try {
-            $User = User::on("master")->findOrFail($id);
-            $User->is_deleted = 1;
-            $User->save();
-            return $this->successResponse("User Deleted Successfully", [$User]);
+            $User = Lender::on("mysql_$clientId")->findOrFail($id);
+            $User->delete();
+            return $this->successResponse("Lender Deleted Successfully", [$User]);
         } catch (ModelNotFoundException $exception) {
             throw new NotFoundHttpException("No User Name with id $id");
         } catch (\Throwable $exception) {

@@ -71,8 +71,6 @@ class CrmNotificationController extends Controller
 
             //dispatch(new SendCrmNotificationEmail($request->auth->parent_id, $notificationData, 'notification'))->onConnection("database");
 
-            $notificationController = new NotificationController();
-            $notificationController->sendCrmNotification($request->auth->parent_id, $notificationData, 'notification');
 
 
            // $this->sendEmailNotification($request);
