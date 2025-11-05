@@ -94,6 +94,9 @@ if ($data instanceof \Illuminate\Http\JsonResponse) {
     $data = $data->getData(true); // convert JSON to array
 }
 
+return $data;
+
+
 return $this->successResponse("Dialer Count List", $data);
 
 
