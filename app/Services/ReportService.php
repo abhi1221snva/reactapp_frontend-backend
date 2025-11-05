@@ -445,7 +445,12 @@ public function dialerAllCount(Request $request)
         if (!is_array($extensions)) {
             $extensions = [$extensions];
         }
-
+    // ✅ Build extension condition dynamically
+        $extCondition = "";
+        if (!empty($extensions)) {
+            $safeExt = array_map('intval', $extensions);
+            $extCondition = "AND extension IN (" . implode(',', $safeExt) . ")";
+        }
         \Log::info('Dialer Count Debug', [
             'client_id' => $client_id,
             'start_date' => $start_date,
@@ -460,16 +465,16 @@ public function dialerAllCount(Request $request)
          * ------------------------------------------------- */
 
         // ✅ Outbound
-        $outbound_res = DB::connection($connection)->select("
+            $outbound_res = DB::connection($connection)->select("
             SELECT COUNT(*) AS totalOutBoundCalls FROM cdr 
             WHERE route = 'OUT' 
             AND start_time BETWEEN '$start_date' AND '$end_date'
-            AND extension IN ($extString)
+            $extCondition
             UNION ALL
             SELECT COUNT(*) AS totalOutBoundCalls FROM cdr_archive 
             WHERE route = 'OUT'
             AND start_time BETWEEN '$start_date' AND '$end_date'
-            AND extension IN ($extString)
+            $extCondition
         ");
         $totalOutBoundCalls = ($outbound_res[0]->totalOutBoundCalls ?? 0)
                             + ($outbound_res[1]->totalOutBoundCalls ?? 0);
@@ -479,12 +484,14 @@ public function dialerAllCount(Request $request)
             SELECT COUNT(*) AS totalInBoundCalls FROM cdr 
             WHERE route = 'IN'
             AND start_time BETWEEN '$start_date' AND '$end_date'
-            AND extension IN ($extString)
+                        $extCondition
+
             UNION ALL
             SELECT COUNT(*) AS totalInBoundCalls FROM cdr_archive 
             WHERE route = 'IN'
             AND start_time BETWEEN '$start_date' AND '$end_date'
-            AND extension IN ($extString)
+                        $extCondition
+
         ");
         $totalInBoundCalls = ($inbound_res[0]->totalInBoundCalls ?? 0)
                            + ($inbound_res[1]->totalInBoundCalls ?? 0);
@@ -494,12 +501,12 @@ public function dialerAllCount(Request $request)
             SELECT COUNT(*) AS totalManualCalls FROM cdr 
             WHERE type = 'manual'
             AND start_time BETWEEN '$start_date' AND '$end_date'
-            AND extension IN ($extString)
+            $extCondition
             UNION ALL
             SELECT COUNT(*) AS totalManualCalls FROM cdr_archive 
             WHERE type = 'manual'
             AND start_time BETWEEN '$start_date' AND '$end_date'
-            AND extension IN ($extString)
+            $extCondition
         ");
         $totalManualCalls = ($manual_res[0]->totalManualCalls ?? 0)
                           + ($manual_res[1]->totalManualCalls ?? 0);
@@ -509,12 +516,12 @@ public function dialerAllCount(Request $request)
             SELECT COUNT(*) AS totalDialerCalls FROM cdr 
             WHERE type = 'outbound_ai'
             AND start_time BETWEEN '$start_date' AND '$end_date'
-            AND extension IN ($extString)
+            $extCondition
             UNION ALL
             SELECT COUNT(*) AS totalDialerCalls FROM cdr_archive 
             WHERE type = 'outbound_ai'
             AND start_time BETWEEN '$start_date' AND '$end_date'
-            AND extension IN ($extString)
+            $extCondition
         ");
         $totalDialerCalls = ($dialer_res[0]->totalDialerCalls ?? 0)
                           + ($dialer_res[1]->totalDialerCalls ?? 0);
