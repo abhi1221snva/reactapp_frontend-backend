@@ -1289,7 +1289,7 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->post('update-pdf-reader', 'PdfReaderController@update');
   $router->post('upload-pdf-reader', 'PdfReaderController@upload');
   //schedule
-  $router->get('schedule', 'ScheduleController@index');
+  $router->post('schedule', 'ScheduleController@index');
   $router->post('save-schedule', 'ScheduleController@store');
   $router->post('schedule/delete-schedule', 'ScheduleController@deleteSchedule');
 });
