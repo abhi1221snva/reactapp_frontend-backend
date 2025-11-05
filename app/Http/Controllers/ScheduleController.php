@@ -103,8 +103,8 @@ class ScheduleController extends Controller
     public function index(Request $request)
 {
     $client_id = $request->auth->parent_id;
-    $start_date = $request->get('start_date'); // Optional filter start date
-    $end_date = $request->get('end_date');     // Optional filter end date
+    $start_date = $request->input('start_date'); // Optional filter start date
+    $end_date = $request->input('end_date');     // Optional filter end date
 
     // Base query
     $query = Schedule::on("mysql_$client_id");
