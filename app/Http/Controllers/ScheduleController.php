@@ -66,40 +66,92 @@ class ScheduleController extends Controller
      * )
      */
 
+    // public function index(Request $request)
+    // {
+    //     $client_id = $request->auth->parent_id;
+    //     // Log::info('reached',['client_id'=>$client_id]);
+    //     $schedules = Schedule::on("mysql_$client_id")->get();
+    //     $sched_res = [];
+
+    //     foreach ($schedules as $schedule) {
+    //         $event['id'] = $schedule->id;
+    //         $event['title'] = $schedule->title;
+    //         $event['description'] = $schedule->description;
+    //         $event['start'] = date("Y-m-d\TH:i:s", strtotime($schedule->start_datetime));
+    //         $event['end'] = date("Y-m-d\TH:i:s", strtotime($schedule->end_datetime));
+    //         $event['timezone'] = $schedule->timezone;
+
+    //         $sched_res[] = $event;
+    //     }
+    //     if ($request->has('start') && $request->has('limit')) {
+    //         $total_row = count($sched_res);
+
+    //         $start = (int) $request->input('start');  // Start index (0-based)
+    //         $limit = (int) $request->input('limit');  // Number of records to fetch
+
+    //         $sched_res = array_slice($sched_res, $start, $limit, false);
+
+    //         return $this->successResponse("schedules", [
+    //             'start' => $start,
+    //             'limit' => $limit,
+    //             'total' => $total_row,
+    //             'data' => $sched_res
+    //         ]);
+    //     }
+    //     return response()->json($sched_res);
+    // }
     public function index(Request $request)
-    {
-        $client_id = $request->auth->parent_id;
-        // Log::info('reached',['client_id'=>$client_id]);
-        $schedules = Schedule::on("mysql_$client_id")->get();
-        $sched_res = [];
+{
+    $client_id = $request->auth->parent_id;
+    $start_date = $request->get('start_date'); // Optional filter start date
+    $end_date = $request->get('end_date');     // Optional filter end date
 
-        foreach ($schedules as $schedule) {
-            $event['id'] = $schedule->id;
-            $event['title'] = $schedule->title;
-            $event['description'] = $schedule->description;
-            $event['start'] = date("Y-m-d\TH:i:s", strtotime($schedule->start_datetime));
-            $event['end'] = date("Y-m-d\TH:i:s", strtotime($schedule->end_datetime));
-            $event['timezone'] = $schedule->timezone;
+    // Base query
+    $query = Schedule::on("mysql_$client_id");
 
-            $sched_res[] = $event;
-        }
-        if ($request->has('start') && $request->has('limit')) {
-            $total_row = count($sched_res);
-
-            $start = (int) $request->input('start');  // Start index (0-based)
-            $limit = (int) $request->input('limit');  // Number of records to fetch
-
-            $sched_res = array_slice($sched_res, $start, $limit, false);
-
-            return $this->successResponse("schedules", [
-                'start' => $start,
-                'limit' => $limit,
-                'total' => $total_row,
-                'data' => $sched_res
-            ]);
-        }
-        return response()->json($sched_res);
+    // Apply date filters if provided
+    if (!empty($start_date) && !empty($end_date)) {
+        $query->whereBetween('start_datetime', [$start_date, $end_date]);
+    } elseif (!empty($start_date)) {
+        $query->where('start_datetime', '>=', $start_date);
+    } elseif (!empty($end_date)) {
+        $query->where('end_datetime', '<=', $end_date);
     }
+
+    $schedules = $query->get();
+    $sched_res = [];
+
+    foreach ($schedules as $schedule) {
+        $sched_res[] = [
+            'id' => $schedule->id,
+            'title' => $schedule->title,
+            'description' => $schedule->description,
+            'start' => date("Y-m-d\TH:i:s", strtotime($schedule->start_datetime)),
+            'end' => date("Y-m-d\TH:i:s", strtotime($schedule->end_datetime)),
+            'timezone' => $schedule->timezone,
+        ];
+    }
+
+    // Pagination logic (start & limit)
+    if ($request->has('start') && $request->has('limit')) {
+        $total_row = count($sched_res);
+
+        $start = (int) $request->input('start');  // Start index (0-based)
+        $limit = (int) $request->input('limit');  // Number of records to fetch
+
+        $paged_data = array_slice($sched_res, $start, $limit, false);
+
+        return $this->successResponse("schedules", [
+            'start' => $start,
+            'limit' => $limit,
+            'total' => $total_row,
+            'data' => $paged_data
+        ]);
+    }
+
+    return response()->json($sched_res);
+}
+
 
     public function index_old_code(Request $request)
     {
