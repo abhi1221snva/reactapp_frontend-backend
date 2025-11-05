@@ -188,7 +188,7 @@ class ExcludeNumber extends Model
                     } else {
                         return array(
                             'success' => 'false',
-                            'message' => 'Exclude Number are not updated successfully.'
+                            'message' => 'Exclude Number are updated.'
                         );
                     }
                 }
