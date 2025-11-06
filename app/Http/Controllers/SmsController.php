@@ -300,7 +300,10 @@ class SmsController extends Controller
         // ]);
         try {
             $response = $this->model->smsDidList($this->request);
-            return response()->json($response);
+            //return response()->json($response);
+
+            return $this->successResponse("Cli Numbers", $response);
+
         } catch (\Throwable $exception) {
             return $this->failResponse("Failed to fetch SMS DID", [$exception->getMessage()], $exception, $exception->getCode());
         }
