@@ -847,12 +847,20 @@ $response_id = $response_twilio->sid;
         );
     }
 
-    function smsDidList(Request $request){
-        $clientId = $request->auth->parent_id;
-        $id = $request->auth->id;
-        $response = Dids::on('mysql_' . $clientId)->where([["sms_email",'=',$id],["sms",'=',1]])->get()->pluck("cli")->all();;
-        return $response;
-    }
+    function smsDidList(Request $request)
+{
+    $clientId = $request->auth->parent_id;
+    $id = $request->auth->id;
+
+    $response = Dids::on('mysql_' . $clientId)
+        ->where([
+            ['sms_email', '=', $id],
+            ['sms', '=', 1],
+        ])
+        ->get(['cli', 'voip_provider']); // ✅ fetch both columns
+
+    return $response;
+}
 
     function smsDidListCRM(Request $request){
         $clientId = $request->auth->parent_id;
