@@ -291,23 +291,25 @@ class SmsController extends Controller
         return response()->json($response);
     }
 
-    public function smsDidList()
-    {
-        // $this->validate($this->request, [
-        //     'to' => 'required',
-        //     'from' => 'required',
-        //     'message' => 'required'
-        // ]);
-        try {
-            $response = $this->model->smsDidList($this->request);
-            //return response()->json($response);
+   public function smsDidList()
+{
+    try {
+        $response = $this->model->smsDidList($this->request);
 
-            return $this->successResponse("Cli Numbers", $response);
+        // Ensure data is returned as array of objects
+        $data = $response->map(function ($item) {
+            return [
+                'cli' => $item->cli,
+                'voip_provider' => $item->voip_provider
+            ];
+        })->values();
 
-        } catch (\Throwable $exception) {
-            return $this->failResponse("Failed to fetch SMS DID", [$exception->getMessage()], $exception, $exception->getCode());
-        }
+        return $this->successResponse("Cli Numbers", $data);
+
+    } catch (\Throwable $exception) {
+        return $this->failResponse("Failed to fetch SMS DID", [$exception->getMessage()], $exception, $exception->getCode());
     }
+}
 
     public function smsDidListCRM()
     {
