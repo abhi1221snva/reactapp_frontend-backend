@@ -32,39 +32,84 @@ class Sms extends Model {
      * @param integer $id
      * @return array
      */
-    public function smsDetails(Request $request): array
-    {
-        $data_row = array();
-        $clientId = $request->auth->parent_id;
-        $id = $request->auth->id;
-        $data['sms_email'] = $id;
-        $sql = "SELECT * FROM did  WHERE sms_email = :sms_email";
-        $record = DB::connection("mysql_$clientId")->select($sql, $data);
-        $response = (array) $record;
+public function smsDetails(Request $request): array
+{
+    $data_row = [];
+    $clientId = $request->auth->parent_id;
+    $id = $request->auth->id;
 
-        if (!empty($response)) {
-            foreach ($response as $res) {
+    // Pagination params
+    $start = (int) $request->get('start', 0);   // offset
+    $limit = (int) $request->get('limit', 20);  // number of records
 
-                $did = $res->cli;
-                $str = "  WHERE did='" . $did . "'";
-                $sql = "SELECT max(id) as id  FROM " . $this->table . $str . " group by number ";
+    // Search filters
+    $searchNumber = $request->get('number');    // optional number filter
+    $searchDid = $request->get('did');          // optional did filter
 
-                $sql1 = " Select * from sms where id IN (" . $sql . ") order by date DESC";
-                $record = DB::connection("mysql_$clientId")->select($sql1, $data);
+    // Get DID records
+    $sql = "SELECT * FROM did WHERE sms_email = :sms_email";
+    $record = DB::connection("mysql_$clientId")->select($sql, ['sms_email' => $id]);
+    $response = (array) $record;
 
-                if (!empty($record)) {
-					foreach($record as $k=>$k_val){
-						if($k_val->type=='outgoing')
-						$record[$k]->message = $record[$k]->message;
-					}
-                    $data_row[] = $record;
+    if (!empty($response)) {
+        foreach ($response as $res) {
+            $did = $res->cli;
+
+            // If a specific DID is provided and doesn't match this one, skip it
+            if (!empty($searchDid) && $searchDid != $did) {
+                continue;
+            }
+
+            // Subquery for latest message per number
+            $sql = "SELECT max(id) as id FROM sms WHERE did = ?";
+
+            // Add number filter if provided
+            $params = [$did];
+            if (!empty($searchNumber)) {
+                $sql .= " AND number = ?";
+                $params[] = $searchNumber;
+            }
+
+            $sql .= " GROUP BY number";
+
+            // Main query
+            $sql1 = "SELECT * FROM sms WHERE id IN ($sql) ORDER BY date DESC";
+            $record = DB::connection("mysql_$clientId")->select($sql1, $params);
+
+            if (!empty($record)) {
+                foreach ($record as $k => $k_val) {
+                    if ($k_val->type == 'outgoing') {
+                        $record[$k]->message = $k_val->message;
+                    }
                 }
+                $data_row[] = $record;
             }
         }
-        $array_result = array_reduce($data_row, 'array_merge', array());
-
-        return $this->array_sort($array_result, 'date', SORT_DESC);
     }
+
+    // Flatten and sort
+    $array_result = array_reduce($data_row, 'array_merge', []);
+    $sorted = $this->array_sort($array_result, 'date', SORT_DESC);
+
+    // Total count
+    $total = count($sorted);
+
+    // Apply offset + limit
+    $pagedData = array_slice($sorted, $start, $limit);
+
+    // Return response
+    return [
+        'success' => true,
+        'message' => 'SMS fetched successfully',
+        'start' => $start,
+        'limit' => $limit,
+        'total' => $total,
+        'data' => array_values($pagedData),
+    ];
+}
+
+
+
 
 
     function array_sort($array, $on, $order=SORT_ASC)

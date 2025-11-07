@@ -2732,6 +2732,9 @@ public function assignableRolesNew(Request $request)
         $user->dialer_mode = $request->dialer_mode;
         $user->saveOrFail();
 
+        return $this->successResponse('Dialer Mode updated successfully', []);
+
+
         return response()->json(['message' => 'Dialer Mode updated successfully']);
     }
     public function userPermission(int $userId)
