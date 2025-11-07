@@ -349,6 +349,7 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
                     "extension" => $data["extension"],
                     "alt_extension" => $data["alt_extension"],
                     "app_extension" => $data["app_extension"],
+                    "dialer_mode" => $data["dialer_mode"],
                     "token" => $data["token"],
                     "expires_at" => $data["expires_at"],
                     "server" => $data["server"],
