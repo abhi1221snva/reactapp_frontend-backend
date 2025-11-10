@@ -735,6 +735,7 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->post('email-template-crm', 'EmailTempleteController@showCRM');
 
   $router->get('label-data/{id}/{list_id}/{lead_id}', 'EmailTempleteController@labelValue');
+  $router->post('sender-data', 'EmailTempleteController@SenderValue');
 
   #Email
   $router->post('send-email/generic', 'MailController@sendGenericEmail');
