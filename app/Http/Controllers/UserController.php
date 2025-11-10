@@ -97,6 +97,24 @@ class UserController extends Controller
      *     )
      * )
      */
+        public function getSelectedUsers(Request $request)
+    {
+        $user = new User();
+
+        // Step 1: get allowed columns from the model
+        $columns = $user->getTableColumns();
+
+        // Step 2: fetch only these columns from DB
+        $users = User::select($columns)->get();
+
+        // Step 3: return API response
+        return response()->json([
+            'status' => true,
+            'message' => 'Users fetched successfully',
+            'columns' => $columns,
+            'data' => $users
+        ]);
+    }
     public function showPermission(int $userId)
     {
         try {

@@ -206,7 +206,21 @@ public function smsDetails(Request $request): array
             $data_array['to'] = $request->to;
             $data_array['from'] =  $request->from;
             $data_array['text'] = $request->message;
-            $data_array['mms_url'] = $request->mms_url;
+           // $data_array['mms_url'] = $request->mms_url;
+// Handle image file upload if exists
+// Handle image file upload if exists
+$mms_url = null;
+if ($request->hasFile('mms_file')) {
+    $file = $request->file('mms_file');
+    $fileName = time() . '_' . $file->getClientOriginalName();
+    $filePath = 'uploads/mms/' . $fileName;
+    $file->move(\public_path('uploads/mms'), $fileName);
+    $mms_url = url($filePath); // Full public URL
+}
+
+
+
+$data_array['mms_url'] = $mms_url ?? $request->mms_url;
 
             $get_provider = Dids::on("mysql_$clientId")->where("cli",$request->from)->get()->first();
 
