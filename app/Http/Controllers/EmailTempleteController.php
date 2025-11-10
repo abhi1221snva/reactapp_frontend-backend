@@ -271,6 +271,37 @@ class EmailTempleteController extends Controller
             ], $exception, 500);
         }
     }
+   public function SenderValue(Request $request)
+{
+    try {
+        $userId = $request->input('user_id');        // e.g. 10
+        $fieldPlaceholder = $request->input('field'); // e.g. [[first_name]]
+
+        $fieldName = str_replace(['[[', ']]'], '', $fieldPlaceholder);
+
+        $user = User::findOrFail($userId);
+
+        if (!isset($user[$fieldName])) {
+            return $this->failResponse("Invalid Field", [
+                "Field '$fieldName' not found on User model"
+            ], null, 400);
+        }
+
+        return response()->json([
+            "success" => true,
+            "value" => $user[$fieldName]
+        ]);
+
+    } catch (ModelNotFoundException $exception) {
+        return $this->failResponse("User Not Found", [
+            "Invalid user id"
+        ], $exception, 404);
+    } catch (\Exception $exception) {
+        return $this->failResponse("Failed to fetch the user", [
+            $exception->getMessage()
+        ], $exception, 500);
+    }
+}
 
     /**
      * @OA\Get(
