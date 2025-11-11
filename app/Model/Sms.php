@@ -11,11 +11,12 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Database\Eloquent\Model;
 use App\Model\Client\SmsSetting;
 use App\Model\Client\SmsProviders;
+use App\Model\Client\Did;
 
 
 use Plivo\RestClient;
 use Twilio\Rest\Client;
-
+use Illuminate\Support\Facades\Storage;
 class Sms extends Model {
 
     /**
@@ -208,20 +209,23 @@ public function smsDetails(Request $request): array
             $data_array['text'] = $request->message;
            // $data_array['mms_url'] = $request->mms_url;
 // Handle image file upload if exists
-// Handle image file upload if exists
-$mms_url = null;
-if ($request->hasFile('mms_file')) {
-    $file = $request->file('mms_file');
-    $fileName = time() . '_' . $file->getClientOriginalName();
-    $filePath = 'uploads/mms/' . $fileName;
-    $file->move(\public_path('uploads/mms'), $fileName);
-    $mms_url = url($filePath); // Full public URL
-}
+ $mms_url = null;
 
+    if ($request->hasFile('mms_file')) {
+        $file = $request->file('mms_file');
+        $fileName = time() . '_' . $file->getClientOriginalName();
+
+        // Store file
+        $file->move(base_path('public/uploads/mms'), $fileName);
+
+        // Build URL manually
+        $mms_url = config('app.url') . '/uploads/mms/' . $fileName;
+    }
 
 
 $data_array['mms_url'] = $mms_url ?? $request->mms_url;
 
+Log::info('reached backend from',['from'=>$request->from]);
             $get_provider = Dids::on("mysql_$clientId")->where("cli",$request->from)->get()->first();
 
             $voip_provider = $get_provider->voip_provider;
@@ -547,17 +551,17 @@ Log::info('result reached',['result'=>$result]);
             if($voip_provider == 'twilio')
             {
 
-                if (app()->environment() == "local") 
-                {
+                // if (app()->environment() == "local") 
+                // {
 
                    
 
-                    $response_id = true;
+                //     $response_id = true;
 
-                }
+                // }
 
-                else
-                {
+                // else
+                // {
 
 
               
@@ -593,7 +597,7 @@ $response_twilio = $client->messages->create(
 
 $response_id = $response_twilio->sid;
 
-            }
+           // }
 
            /// return $request->mms_url.'-'.$response_twilio->sid;
 
