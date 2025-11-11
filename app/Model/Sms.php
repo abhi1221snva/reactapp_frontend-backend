@@ -227,6 +227,17 @@ $data_array['mms_url'] = $mms_url ?? $request->mms_url;
 
 Log::info('reached backend from',['from'=>$request->from]);
             $get_provider = Dids::on("mysql_$clientId")->where("cli",$request->from)->get()->first();
+            if (!$get_provider) {
+       return array(
+                            'success' => 'false',
+ 'message' => "From number not found in DID table. Please add the number first."                        );
+}
+if (empty($get_provider->voip_provider)) {
+    return array(
+                            'success' => 'false',
+                            'message' => "Please add voip provider in DID table."
+                        );
+}
 
             $voip_provider = $get_provider->voip_provider;
 

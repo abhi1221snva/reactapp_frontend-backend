@@ -194,7 +194,10 @@ class CrmLabelController extends Controller
             $Label->number_length = $request->number_length;
             $Label->icons = $request->icons;
             $Label->heading_type = $request->heading_type;
-            $Label->values = $request->values;
+            // $Label->values = $request->values;
+$Label->values = is_array($request->values)
+    ? json_encode($request->values)
+    : $request->values;
 
             $Label->saveOrFail();
             $lastId = $Label->id;
