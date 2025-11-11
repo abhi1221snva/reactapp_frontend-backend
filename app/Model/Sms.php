@@ -157,43 +157,108 @@ public function smsDetails(Request $request): array
         return $new_array;
     }
 
-    public function smsDetailsByDid($request) {
-        $data = array();
-        $searchStr = array();
-        if ($request->has('number') && is_numeric($request->input('number'))) {
-            array_push($searchStr, 'number = :number');
-            $data['number'] = $request->input('number');
-            $data['number1'] = $request->input('number');
-        }
+    // public function smsDetailsByDid($request) {
+    //     $data = array();
+    //     $searchStr = array();
+    //     if ($request->has('number') && is_numeric($request->input('number'))) {
+    //         array_push($searchStr, 'number = :number');
+    //         $data['number'] = $request->input('number');
+    //         $data['number1'] = $request->input('number');
+    //     }
 
-        if ($request->has('did') && is_numeric($request->input('did'))) {
-            array_push($searchStr, 'did = :did');
-            $data['did'] = $request->input('did');
-            $data['did1'] = $request->input('did');
-        }
+    //     if ($request->has('did') && is_numeric($request->input('did'))) {
+    //         array_push($searchStr, 'did = :did');
+    //         $data['did'] = $request->input('did');
+    //         $data['did1'] = $request->input('did');
+    //     }
 
 
-        $str = !empty($searchStr) ? "  WHERE " . implode(" AND ", $searchStr) : '';
-		$query = "UPDATE " . $this->table . " set status=1 where  (did = :did and number= :number ) or (number = :did1 and did= :number1 )";
-        $save_update = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
+    //     $str = !empty($searchStr) ? "  WHERE " . implode(" AND ", $searchStr) : '';
+	// 	$query = "UPDATE " . $this->table . " set status=1 where  (did = :did and number= :number ) or (number = :did1 and did= :number1 )";
+    //     $save_update = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
 
-        $sql = "SELECT * FROM " . $this->table . " where  (did = :did and number= :number ) or (number = :did1 and did= :number1 )  order by id "; //." group by did";
-        $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
-        $data = (array) $record;
+    //     $sql = "SELECT * FROM " . $this->table . " where  (did = :did and number= :number ) or (number = :did1 and did= :number1 )  order by id "; //." group by did";
+    //     $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+    //     $data = (array) $record;
 
-		if($data){
-			foreach($data as $key=>$val){
-				//if($val->type=='outgoing')
-				$data[$key]->message = $val->message;
-			}
-		}
-		//echo '<pre>'.count($data); print_R($data); exit;
-        return array(
-            'success' => 'true',
-            'message' => 'SMS detail.',
-            'data' => $data
-        );
+	// 	if($data){
+	// 		foreach($data as $key=>$val){
+	// 			//if($val->type=='outgoing')
+	// 			$data[$key]->message = $val->message;
+	// 		}
+	// 	}
+	// 	//echo '<pre>'.count($data); print_R($data); exit;
+    //     return array(
+    //         'success' => 'true',
+    //         'message' => 'SMS detail.',
+    //         'data' => $data
+    //     );
+    // }
+public function smsDetailsByDid($request)
+{
+    $data = [];
+    $searchStr = [];
+
+    if ($request->has('number') && is_numeric($request->input('number'))) {
+        $searchStr[] = 'number = :number';
+        $data['number'] = $request->input('number');
+        $data['number1'] = $request->input('number');
     }
+
+    if ($request->has('did') && is_numeric($request->input('did'))) {
+        $searchStr[] = 'did = :did';
+        $data['did'] = $request->input('did');
+        $data['did1'] = $request->input('did');
+    }
+
+    $str = !empty($searchStr) ? " WHERE " . implode(" AND ", $searchStr) : '';
+
+    $clientId = $request->auth->parent_id;
+    $table = $this->table;
+
+    // ✅ Update records
+    $updateQuery = "UPDATE $table SET status = 1 
+                    WHERE (did = :did AND number = :number) 
+                       OR (number = :did1 AND did = :number1)";
+    DB::connection("mysql_$clientId")->update($updateQuery, $data);
+
+    // ✅ Count total rows for pagination
+    $countQuery = "SELECT COUNT(*) as total_rows FROM $table 
+                   WHERE (did = :did AND number = :number) 
+                      OR (number = :did1 AND did = :number1)";
+    $countResult = DB::connection("mysql_$clientId")->select($countQuery, $data);
+    $total_rows = $countResult[0]->total_rows ?? 0;
+
+    // ✅ Apply pagination if provided
+    $start = $request->has('start') ? (int) $request->input('start') : 0;
+    $limit = $request->has('limit') ? (int) $request->input('limit') : 10; // default limit 10
+
+    $sql = "SELECT * FROM $table 
+            WHERE (did = :did AND number = :number) 
+               OR (number = :did1 AND did = :number1) 
+            ORDER BY id 
+            LIMIT $start, $limit";
+
+    $records = DB::connection("mysql_$clientId")->select($sql, $data);
+    $records = (array) $records;
+
+    if (!empty($records)) {
+        foreach ($records as $key => $val) {
+            $records[$key]->message = $val->message;
+        }
+    }
+
+    return [
+        'success' => true,
+        'message' => 'SMS detail.',
+        'data' => $records,
+        'pagination' => [
+            'start' => $start,
+            'limit' => $limit,
+            'total_rows' => $total_rows
+        ]
+    ];
+}
 
     public function sendSms(Request $request) {
         Log::info('reached backend sms data',[$request->all()]);
@@ -228,16 +293,16 @@ $data_array['mms_url'] = $mms_url ?? $request->mms_url;
 Log::info('reached backend from',['from'=>$request->from]);
             $get_provider = Dids::on("mysql_$clientId")->where("cli",$request->from)->get()->first();
             if (!$get_provider) {
-       return array(
+                        return array(
                             'success' => 'false',
- 'message' => "From number not found in DID table. Please add the number first."                        );
-}
-if (empty($get_provider->voip_provider)) {
-    return array(
+                            'message' => "From number not found in DID table. Please add the number first."                        );
+                            }
+                    if (empty($get_provider->voip_provider)) {
+                        return array(
                             'success' => 'false',
                             'message' => "Please add voip provider in DID table."
                         );
-}
+                    } 
 
             $voip_provider = $get_provider->voip_provider;
 
