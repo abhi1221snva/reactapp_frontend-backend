@@ -224,7 +224,10 @@ class DocumentTypeController extends Controller
             $DocumentTypes->setConnection("mysql_$clientId");
             $DocumentTypes->title = $request->title;
             $DocumentTypes->type_title_url = $type_title_url;
-            $DocumentTypes->values = $request->values;
+            // $DocumentTypes->values = $request->values;
+            $DocumentTypes->values = is_array($request->values)
+    ? json_encode($request->values)
+    : $request->values;
             $DocumentTypes->saveOrFail();
 
             return $this->successResponse("Document Type Added Successfully", $DocumentTypes->toArray());
