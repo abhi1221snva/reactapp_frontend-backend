@@ -251,12 +251,12 @@ public function smsDetailsByDid($request)
     return [
         'success' => true,
         'message' => 'SMS detail.',
-        'data' => $records,
-        'pagination' => [
+            'pagination' => [
             'start' => $start,
             'limit' => $limit,
             'total_rows' => $total_rows
-        ]
+            ],
+        'data' => $records,    
     ];
 }
 
