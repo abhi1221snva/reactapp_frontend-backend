@@ -56,7 +56,16 @@ class Extension extends Model
      */
 public function extensionDetail(Request $request, int $extension_id = null)
 {
+            $parentId = $request->auth->parent_id;
+
     $data['parent_id'] = $request->auth->parent_id;
+    // ✅ Fetch DID list for this client (cli and voip_provider)
+    $didList = Dids::on('mysql_' . $parentId)
+        ->where([
+            ['sms_email', '=', $extension_id],
+            ['sms', '=', 1],
+        ])
+        ->get(['cli', 'voip_provider']);
 
     if ($extension_id) {
         // ----------------- SINGLE EXTENSION DETAIL -----------------
@@ -85,6 +94,7 @@ public function extensionDetail(Request $request, int $extension_id = null)
             'parent_id' => $request->auth->parent_id
         ]);
         $response['serverList'] = $serverList;
+        $response['didList'] = $didList;
 
         return [
             'success' => true,
