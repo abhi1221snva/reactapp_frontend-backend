@@ -44,8 +44,10 @@ public function smsDetails(Request $request): array
     $limit = (int) $request->get('limit', 20);  // number of records
 
     // Search filters
-    $searchNumber = $request->get('number');    // optional number filter
-    $searchDid = $request->get('did');          // optional did filter
+    // $searchNumber = $request->get('number');    // optional number filter
+    // $searchDid = $request->get('did');          // optional did filter
+    $search = $request->get('search'); // unified search for number or did
+
 
     // Get DID records
     $sql = "SELECT * FROM did WHERE sms_email = :sms_email";
@@ -57,21 +59,33 @@ public function smsDetails(Request $request): array
             $did = $res->cli;
 
             // If a specific DID is provided and doesn't match this one, skip it
-            if (!empty($searchDid) && $searchDid != $did) {
-                continue;
-            }
+            // if (!empty($searchDid) && $searchDid != $did) {
+            //     continue;
+            // }
 
             // Subquery for latest message per number
-            $sql = "SELECT max(id) as id FROM sms WHERE did = ?";
+            // $sql = "SELECT max(id) as id FROM sms WHERE did = ?";
 
-            // Add number filter if provided
+            // // Add number filter if provided
+            // $params = [$did];
+            // if (!empty($searchNumber)) {
+            //     $sql .= " AND number = ?";
+            //     $params[] = $searchNumber;
+            // }
+
+            // $sql .= " GROUP BY number";
+            $sql = "SELECT max(id) as id FROM sms WHERE did = ?";
             $params = [$did];
-            if (!empty($searchNumber)) {
-                $sql .= " AND number = ?";
-                $params[] = $searchNumber;
+
+            // Add search filter (matches both number and did)
+            if (!empty($search)) {
+                $sql .= " AND (number LIKE ? OR did LIKE ?)";
+                $params[] = "%$search%";
+                $params[] = "%$search%";
             }
 
             $sql .= " GROUP BY number";
+
 
             // Main query
             $sql1 = "SELECT * FROM sms WHERE id IN ($sql) ORDER BY date DESC";
@@ -251,12 +265,12 @@ public function smsDetailsByDid($request)
     return [
         'success' => true,
         'message' => 'SMS detail.',
-        'data' => $records,
-        'pagination' => [
+            'pagination' => [
             'start' => $start,
             'limit' => $limit,
             'total_rows' => $total_rows
-        ]
+            ],
+        'data' => $records,    
     ];
 }
 
