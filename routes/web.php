@@ -10,7 +10,21 @@
   | and give it the Closure to call when that URI is requested.
   |
  */
+$router->get('/list-all-cache', function () {
+    $allCache = externalRedisCacheList();  // No args = all caches, no filter
 
+    return response()->json([
+        'success' => true,
+        'message' => 'All cached entries retrieved',
+        'count' => count($allCache),
+        'data' => $allCache  // e.g., ['123_456' => 'Some description', '789_101' => 'Another one']
+    ]);
+});
+
+$router->get('/redis-test', function () {
+    externalRedisCacheSet(123, 'test-prompt', ['data' => 'value from Redis!']);
+    return externalRedisCacheGet(123, 'test-prompt', 'Not found');
+});
 $router->get('/', function () use ($router) {
   return $router->app->version();
 });
@@ -89,7 +103,7 @@ $router->group(['middleware' => ['jwt.auth', 'auth.superadmin']], function () us
 
 
 #Routes with admin rights should be added here
-$router->group(['middleware' => ['jwt.auth', 'auth.admin']], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth']], function () use ($router) {
   #create user
   $router->put('user', 'ExtensionController@saveNewExtension');
 
@@ -104,6 +118,7 @@ $router->group(['middleware' => ['jwt.auth', 'auth.admin']], function () use ($r
 
   $router->post('user/{userId}/super-admin-permission', 'UserController@updatePermissionSuperAdmin');
   $router->get('user/{userId}/user-permission', 'UserController@userPermission');
+  $router->get('user/selected', 'UserController@getSelectedUsers');
 
 
   //email tempaltes
@@ -1293,6 +1308,13 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->post('schedule', 'ScheduleController@index');
   $router->post('save-schedule', 'ScheduleController@store');
   $router->post('schedule/delete-schedule', 'ScheduleController@deleteSchedule');
+    $router->get('prompts', 'PromptController@index');
+    $router->post('prompts', 'PromptController@store');
+    $router->get('prompts/{id}', 'PromptController@show');
+    $router->post('prompts/update/{id}', 'PromptController@update');
+    $router->post('prompts/delete/{id}', 'PromptController@destroy');
+
+    $router->post('prompts/{id}/functions', 'PromptController@saveFunctions');
 });
 
 

@@ -162,10 +162,6 @@ class SmsTempleteController extends Controller
      */
     public function getSmsTemplete()
     {
-        $this->validate($this->request, [
-            'templete_name' => 'string',
-            'id'          => 'required|numeric'
-        ]);
         $response = $this->model->smsTempleteDetail($this->request);
         return response()->json($response);
     }

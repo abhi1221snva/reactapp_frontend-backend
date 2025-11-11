@@ -59,13 +59,13 @@ class SmsTemplete  extends Model
             if (!empty($data)) {
                 return array(
                     'success' => 'true',
-                    'message' => 'Dnc detail.',
+                    'message' => 'Sms detail.',
                     'data'   => $data
                 );
             }
             return array(
                 'success' => 'false',
-                'message' => 'Dnc not created.',
+                'message' => 'Sms not found.',
                 'data'   => array()
             );
         } catch (Exception $e) {
