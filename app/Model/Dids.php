@@ -1586,6 +1586,12 @@ public function getDetailById($request, $id)
                         unset($row->ingroup);
                     }
                     break;
+                     case 12:
+                    if (!empty($row->voice_ai)) {
+                        $row->destination = $row->voice_ai;
+                        unset($row->voice_ai);
+                    }
+                    break;
             }
         }
 
