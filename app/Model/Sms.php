@@ -170,6 +170,72 @@ public function smsDetails(Request $request): array
         }
         return $new_array;
     }
+public function smsDetailsByDid($request)
+{
+    $data = [];
+
+    if ($request->has('number') && is_numeric($request->input('number'))) {
+        $data['number'] = $request->input('number');
+        $data['number1'] = $request->input('number');
+    }
+
+    if ($request->has('did') && is_numeric($request->input('did'))) {
+        $data['did'] = $request->input('did');
+        $data['did1'] = $request->input('did');
+    }
+
+    $clientId = $request->auth->parent_id;
+    $table = $this->table;
+
+    // ✅ Update records (mark as read)
+    $updateQuery = "UPDATE $table 
+                    SET status = 1 
+                    WHERE (did = :did AND number = :number) 
+                       OR (number = :did1 AND did = :number1)";
+    DB::connection("mysql_$clientId")->update($updateQuery, $data);
+
+    // ✅ Count total rows for pagination
+    $countQuery = "SELECT COUNT(*) as total_rows 
+                   FROM $table 
+                   WHERE (did = :did AND number = :number) 
+                      OR (number = :did1 AND did = :number1)";
+    $countResult = DB::connection("mysql_$clientId")->select($countQuery, $data);
+    $total_rows = $countResult[0]->total_rows ?? 0;
+
+    // ✅ Apply pagination
+    $start = $request->input('start', 0);
+    $limit = $request->input('limit', 10);
+
+    // ✅ Fetch records with voip_provider join
+    $sql = "SELECT s.*, d.voip_provider
+            FROM $table s
+            LEFT JOIN did d ON d.cli = s.did
+            WHERE (s.did = :did AND s.number = :number) 
+               OR (s.number = :did1 AND s.did = :number1)
+            ORDER BY s.id DESC
+            LIMIT $start, $limit";
+
+    $records = DB::connection("mysql_$clientId")->select($sql, $data);
+
+    // ✅ Ensure message & voip_provider are always included
+    $records = collect($records)->map(function ($r) {
+        $r->message = $r->message ?? '';
+        $r->voip_provider = $r->voip_provider ?? '';
+        return $r;
+    })->toArray();
+
+    // ✅ Return final response
+    return [
+        'success' => true,
+        'message' => 'SMS detail.',
+        'pagination' => [
+            'start' => (int) $start,
+            'limit' => (int) $limit,
+            'total_rows' => $total_rows,
+        ],
+        'data' => $records,
+    ];
+}
 
     // public function smsDetailsByDid($request) {
     //     $data = array();
@@ -208,7 +274,7 @@ public function smsDetails(Request $request): array
     //         'data' => $data
     //     );
     // }
-public function smsDetailsByDid($request)
+public function smsDetailsByDidold($request)
 {
     $data = [];
     $searchStr = [];
@@ -225,6 +291,8 @@ public function smsDetailsByDid($request)
         $data['did1'] = $request->input('did');
     }
 
+    $str = !empty($searchStr) ? " WHERE " . implode(" AND ", $searchStr) : '';
+
     $clientId = $request->auth->parent_id;
     $table = $this->table;
 
@@ -234,47 +302,43 @@ public function smsDetailsByDid($request)
                        OR (number = :did1 AND did = :number1)";
     DB::connection("mysql_$clientId")->update($updateQuery, $data);
 
-    // ✅ Count total rows
+    // ✅ Count total rows for pagination
     $countQuery = "SELECT COUNT(*) as total_rows FROM $table 
                    WHERE (did = :did AND number = :number) 
                       OR (number = :did1 AND did = :number1)";
     $countResult = DB::connection("mysql_$clientId")->select($countQuery, $data);
     $total_rows = $countResult[0]->total_rows ?? 0;
 
-    // ✅ Pagination
-    $start = $request->input('start', 0);
-    $limit = $request->input('limit', 10);
+    // ✅ Apply pagination if provided
+    $start = $request->has('start') ? (int) $request->input('start') : 0;
+    $limit = $request->has('limit') ? (int) $request->input('limit') : 10; // default limit 10
 
-    // ✅ Main query with JOIN to include CNAM as voip_provider
-    $sql = "SELECT s.*, d.cnam AS voip_provider
-            FROM $table s
-            LEFT JOIN did d ON d.cli = s.did
-            WHERE (s.did = :did AND s.number = :number) 
-               OR (s.number = :did1 AND s.did = :number1)
-            ORDER BY s.id DESC
+    $sql = "SELECT * FROM $table 
+            WHERE (did = :did AND number = :number) 
+               OR (number = :did1 AND did = :number1) 
+            ORDER BY id Desc
             LIMIT $start, $limit";
 
     $records = DB::connection("mysql_$clientId")->select($sql, $data);
+    $records = (array) $records;
 
-    // ✅ Ensure response always includes voip_provider
-    $records = collect($records)->map(function ($r) {
-        $r->message = $r->message ?? '';
-        $r->voip_provider = $r->voip_provider ?? '';
-        return $r;
-    })->toArray();
+    if (!empty($records)) {
+        foreach ($records as $key => $val) {
+            $records[$key]->message = $val->message;
+        }
+    }
 
     return [
         'success' => true,
         'message' => 'SMS detail.',
-        'pagination' => [
-            'start' => (int) $start,
-            'limit' => (int) $limit,
-            'total_rows' => $total_rows,
-        ],
-        'data' => $records,
+            'pagination' => [
+            'start' => $start,
+            'limit' => $limit,
+            'total_rows' => $total_rows
+            ],
+        'data' => $records,    
     ];
 }
-
 
     public function sendSms(Request $request) {
         Log::info('reached backend sms data',[$request->all()]);
