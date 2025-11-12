@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Model\Master\GoogleLanguage;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Http\Request;
 
 class GoogleLanguageController extends Controller
 {
@@ -61,4 +62,28 @@ class GoogleLanguageController extends Controller
             return $this->failResponse("Failed to list Languages", [$exception->getMessage()], $exception, $exception->getCode());
         }
     }
+public function getVoiceNameOnLanugage(Request $request)
+{
+    $arrLang = [];
+    $arrGoogleLang = GoogleLanguage::on("master")->where('status', '1')->get();
+
+    foreach ($arrGoogleLang as $lang) {
+        $temp = [
+            'id' => $lang->id,
+            'language' => $lang->language,
+            'language_code' => $lang->language_code,
+            'voice_name' => $lang->voice_name,
+            'ssml_gender' => $lang->ssml_gender,
+        ];
+
+        // ✅ Match plain-text language (no base64)
+        if (strcasecmp($request->language, $lang->language) === 0) {
+            $arrLang[] = $temp;
+        }
+    }
+
+    return response()->json($arrLang);
+}
+
+
 }

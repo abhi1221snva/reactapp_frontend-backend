@@ -818,6 +818,7 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
 
   //google languages
   $router->post('get-google-languages', "GoogleLanguageController@getlanguages");
+  $router->post('get-voice-name-on-google-languages', "GoogleLanguageController@getVoiceNameOnLanugage");
 
   //Coupons
   $router->get('coupons-list', "CouponController@getCouponsList");
