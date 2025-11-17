@@ -11,6 +11,7 @@ use App\Model\Client\SmsProviders;
 use Illuminate\Support\Facades\Log;
 use Plivo\RestClient;
 use Plivo\Exceptions\PlivoRestException;
+use Illuminate\Support\Facades\File;
 
 class Dids extends Model
 {
@@ -639,47 +640,81 @@ public function getList($request)
         if ($request->has('did_id')) {
             $did_id = $request->input("did_id");
             $cli = $request->input("cli");
-            $checkDid = Dids::on('mysql_' . $request->auth->parent_id)->where('id', '<>', $request->did_id)->where('cli', $request->cli)->get()->toarray();
+            $checkDid = Dids::on('mysql_' . $request->auth->parent_id)->where('id', '<>', $request->input('did_id'))->where('cli', $request->input('cli'))->get()->toarray();
 
             //$query = 'SELECT count(1) AS row_count FROM did WHERE id !="' . $did_id . '" AND cli ="' . $cli . '"   ';
             //$countObj = collect(DB::connection('mysql_' . $request->auth->parent_id)->select($query))->first();
+// === AUDIO FILE UPLOAD SUPPORT (form-data compatible) ===
+$audioFilePath = null;
+
+if ($request->hasFile('audio_file')) {
+
+    $file = $request->file('audio_file');
+
+    $allowedExt = ['mp3', 'wav', 'ogg'];
+    $ext = $file->getClientOriginalExtension();
+
+    if (!in_array(strtolower($ext), $allowedExt)) {
+        return [
+            'success' => 'false',
+            'message' => 'Invalid audio format. Allowed: mp3, wav, ogg'
+        ];
+    }
+
+    $filename = time() . '_' . $file->getClientOriginalName();
+    $path = 'uploads/dids/audio/';
+    
+    $publicPath = base_path('public/' . $path);
+
+    if (!File::exists($publicPath)) {
+        File::makeDirectory($publicPath, 0777, true, true);
+    }
+
+    $file->move($publicPath, $filename);
+
+    $audioFilePath = $path . $filename;
+}
+
 
             if (!$checkDid) {
-                $didObj = Dids::on('mysql_' . $request->auth->parent_id)->find($request->did_id);
-                $didObj->cli                =  $request->cli;
-                $didObj->cnam               =  $request->cnam;
-                $didObj->area_code          =  $request->area_code;
-                $didObj->dest_type          =  $request->dest_type;
-                $didObj->ivr_id             =  $request->dest_type == 0 ? $request->ivr_id : '';
-                $didObj->extension          =  $request->dest_type == 1 ? $request->extension : '';
-                $didObj->voicemail_id       =  $request->dest_type == 2 ? $request->voicemail_id : '';
-                $didObj->forward_number     =  $request->dest_type == 4 ? $request->forward_number : '';
-                $didObj->country_code       =  $request->dest_type == 4 ? $request->country_code : '';
-                $didObj->conf_id            =  $request->dest_type == 5 ? $request->conf_id : '';
-                $didObj->ingroup            =  $request->dest_type == 8 ? $request->ingroup : '';
-                $didObj->operator           =  $request->operator_check != '' ? $request->operator : '';
-                $didObj->default_did        =  $request->default_did;
-                $didObj->voice              =  $request->option_1 != '' ? '1' : '';
-                $didObj->fax                =  $request->option_1 == '' ? '1' : '';
-                $didObj->sms                =  $request->sms != '' ? 1 : 0;
-                $didObj->sms_phone          =  $request->sms != '' ? $request->sms_phone : '';
-                $request_fax                = $didObj->fax;
-                $didObj->sms_email          =   $request->sms != '' ? $request->sms_email : '';
-                //$didObj->fax_did            =   $request->fax_did;
-                $didObj->set_exclusive_for_user = $request->set_exclusive_for_user;
+                $didObj = Dids::on('mysql_' . $request->auth->parent_id)->find($request->input('did_id'));
+                $didObj->cli                =  $request->input('cli');
+                $didObj->cnam               =  $request->input('cnam');
+                $didObj->area_code          =  $request->input('area_code');
+                $didObj->dest_type          =  $request->input('dest_type');
+              $didObj->ivr_id         = ($request->dest_type == 0) ? $request->ivr_id : '';
+$didObj->extension      = ($request->dest_type == 1) ? $request->extension : '';
+$didObj->voicemail_id   = ($request->dest_type == 2) ? $request->voicemail_id : '';
+$didObj->forward_number = ($request->dest_type == 4) ? $request->forward_number : '';
+$didObj->country_code   = ($request->dest_type == 4) ? $request->country_code : '';
+$didObj->conf_id        = ($request->dest_type == 5) ? $request->conf_id : '';
+$didObj->ingroup        = ($request->dest_type == 8) ? $request->ingroup : '';
+
+$didObj->operator       = (!empty($request->operator_check)) ? $request->operator : '';
+$didObj->default_did    = $request->default_did ?? 0;
+
+$didObj->voice          = (!empty($request->option_1)) ? 1 : 0;
+$didObj->fax            = (empty($request->option_1)) ? 1 : 0;
+
+$didObj->sms            = (!empty($request->sms)) ? 1 : 0;
+$didObj->sms_phone      = (!empty($request->sms)) ? $request->sms_phone : '';
+$didObj->sms_email      = (!empty($request->sms)) ? $request->sms_email : '';
+
+                //$didObj->fax_did            =   $request->input('fax_did;
+                $didObj->set_exclusive_for_user = $request->input('set_exclusive_for_user');
 
                 //call screening audio file
-                $didObj->call_screening_status = $request->call_screening_status;
-                $didObj->call_screening_ivr_id = $request->call_screening_ivr_id;
-                //$didObj->ann_id = $request->ann_id;
-                $didObj->language = $request->language;
-                $didObj->voice_name = $request->voice_name;
-                $didObj->ivr_audio_option = $request->ivr_audio_option;
-                $didObj->speech_text = $request->speech_text;
-                $didObj->prompt_option = $request->prompt_option;
-                $didObj->redirect_last_agent = $request->redirect_last_agent;
-                $didObj->sms_type = $request->sms_type;
-                $didObj->voip_provider = $request->voip_provider;
+                $didObj->call_screening_status = $request->input('call_screening_status');
+                $didObj->call_screening_ivr_id = $request->input('call_screening_ivr_id');
+                //$didObj->ann_id = $request->input('ann_id;
+                $didObj->language = $request->input('language');
+                $didObj->voice_name = $request->input('voice_name');
+                $didObj->ivr_audio_option = $request->input('ivr_audio_option');
+                $didObj->speech_text = $request->input('speech_text');
+                $didObj->prompt_option = $request->input('prompt_option');
+                $didObj->redirect_last_agent = $request->input('redirect_last_agent');
+                $didObj->sms_type = $request->input('sms_type');
+                $didObj->voip_provider = $request->input('voip_provider');
 
 
 
@@ -700,9 +735,9 @@ public function getList($request)
                 }
 
                 //Out of Hours data
-                $didObj->call_time_department_id    =  $request->call_time_department_id;
-                $didObj->call_time_holiday          =  $request->call_time_holiday;
-                $didObj->dest_type_ooh          =  $request->dest_type_ooh;
+                $didObj->call_time_department_id    =  $request->input('call_time_department_id');
+                $didObj->call_time_holiday          =  $request->input('call_time_holiday');
+                $didObj->dest_type_ooh          =  $request->input('dest_type_ooh');
                 $didObj->ivr_id_ooh             =  $request->dest_type_ooh == 0 ? $request->ivr_id_ooh : '';
                 $didObj->extension_ooh          =  $request->dest_type_ooh == 1 ? $request->extension_ooh : '';
                 $didObj->voicemail_id_ooh       =  $request->dest_type_ooh == 2 ? $request->voicemail_id_ooh : '';

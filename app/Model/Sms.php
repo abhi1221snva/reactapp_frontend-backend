@@ -904,8 +904,16 @@ $response_id = $response_twilio->sid;
             //}
         } catch (Exception $e) {
             Log::log($e->getMessage());
+              return response()->json([
+        'success' => false,
+        'message' => $e->getMessage()
+    ], 500);
         } catch (InvalidArgumentException $e) {
             Log::log($e->getMessage());
+              return response()->json([
+        'success' => false,
+        'message' => $e->getMessage()
+    ], 500);
         }
     }
 
