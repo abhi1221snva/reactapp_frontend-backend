@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Log;
 use Plivo\RestClient;
 use Plivo\Exceptions\PlivoRestException;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Validator;
 
 class Dids extends Model
 {
@@ -637,6 +638,18 @@ public function getList($request)
 
     function saveEdit($request)
     {
+        $validator = Validator::make($request->all(), [
+            'did_id' => 'required|integer',
+            'cli'    => 'required',
+        ]);
+        
+        if ($validator->fails()) {
+            return [
+                'success' => 'false',
+                'message' => $validator->errors()->first(), // proper message
+            ];
+        }
+        
         if ($request->has('did_id')) {
             $did_id = $request->input("did_id");
             $cli = $request->input("cli");
@@ -833,7 +846,7 @@ $didObj->sms_email      = (!empty($request->sms)) ? $request->sms_email : '';
             } else {
                 return array(
                     'success' => 'false',
-                    'message' => 'Phone Number already in list'
+                    'message' => 'Did id is required'
                 );
             }
         } else {
@@ -1629,7 +1642,46 @@ public function getDetailById($request, $id)
                     break;
             }
         }
-
+        if (isset($row->dest_type_ooh)) {
+            switch ($row->dest_type_ooh) {
+                case 1:
+                    if (!empty($row->extension_ooh)) {
+                        $row->destination_ooh = $row->extension_ooh;
+                        unset($row->extension_ooh);
+                    }
+                    break;
+                case 2:
+                    if (!empty($row->voicemail_id)) {
+                        $row->destination_ooh = $row->voicemail_id_ooh;
+                        unset($row->voicemail_id_ooh);
+                    }
+                    break;
+                case 4:
+                    if (!empty($row->forward_number)) {
+                        $row->destination_ooh = $row->forward_number_ooh;
+                        unset($row->forward_number_ooh);
+                    }
+                    break;
+                case 5:
+                    if (!empty($row->conf_id)) {
+                        $row->destination_ooh = $row->conf_id_ooh;
+                        unset($row->conf_id_ooh);
+                    }
+                    break;
+                case 8:
+                    if (!empty($row->ingroup)) {
+                        $row->destination_ooh = $row->ingroup_ooh;
+                        unset($row->ingroup_ooh);
+                    }
+                    break;
+                     case 12:
+                    if (!empty($row->voice_ai)) {
+                        $row->destination_ooh = $row->voice_ai_ooh;
+                        unset($row->voice_ai_ooh);
+                    }
+                    break;
+            }
+        }
         return [
             'success' => 'true',
             'message' => 'Did detail.',
