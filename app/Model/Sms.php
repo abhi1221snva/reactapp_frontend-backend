@@ -674,7 +674,7 @@ Log::info('result reached',['result'=>$result]);
 
                 if($request->has('mms_url'))
                 {
-                    $data = array('from' => '+'.$request->from, 'to' => '+'.$request->to, 'subject' => 'Picture' , 'text' => $request->message, 'media_urls' => [$request->mms_url]);
+                    $data = array('from' => '+'.$request->from, 'to' => '+'.$request->to, 'subject' => 'Picture' , 'text' => $request->message, 'media_urls' => [$data_array['mms_url']]);
                 }
                 else
                 {
@@ -800,9 +800,10 @@ Log::info('result reached',['result'=>$result]);
                 $auth_token = $api_key;
                 $account_sid = $auth_id;
 
-                if($request->has('mms_url'))
+                if($mms_url)
                 {
-                    $data = array('from' => '+'.$request->from, 'to' => '+'.$request->to, 'body' => $request->message, 'mediaUrl' => [$request->mms_url]);
+                   // $test_image_url = 'https://demo.twilio.com/owl.png';
+                    $data = array('from' => '+'.$request->from, 'to' => '+'.$request->to, 'body' => $request->message, 'mediaUrl' => $mms_url);
                 }
                 else
                 {
@@ -823,7 +824,7 @@ $response_twilio = $client->messages->create(
 
 $response_id = $response_twilio->sid;
 
-           // }
+            }
 
            /// return $request->mms_url.'-'.$response_twilio->sid;
 
@@ -869,12 +870,14 @@ $response_id = $response_twilio->sid;
                 $smsObj->number     = $request->to;
                 $smsObj->did        = $request->from;
                 $smsObj->message    = $request->message;
-                $smsObj->operator   = $voip_provider;
                 $smsObj->type       = 'outgoing';
-                if($request->has('mms_url'))
+                $smsObj->operator   = $voip_provider;
+                $mms_full_url= $data_array['mms_url'];
+                       
+                if($mms_full_url)
                 {
                     $smsObj->sms_type       = 1;
-                    $smsObj->mms_url       = $request->mms_url;
+                    $smsObj->mms_url       = $mms_full_url;
 
                 }
 
@@ -897,7 +900,7 @@ $response_id = $response_twilio->sid;
                     }
                 }
 
-            }
+            //}
 
 
            
