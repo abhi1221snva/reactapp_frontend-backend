@@ -17,6 +17,8 @@ use App\Model\Client\Did;
 use Plivo\RestClient;
 use Twilio\Rest\Client;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
+
 class Sms extends Model {
 
     /**
@@ -426,16 +428,13 @@ public function smsDetailsByDidold($request)
 // Handle image file upload if exists
  $mms_url = null;
 
-    if ($request->hasFile('mms_file')) {
-        $file = $request->file('mms_file');
-        $fileName = time() . '_' . $file->getClientOriginalName();
 
-        // Store file
-        $file->move(base_path('public/uploads/mms'), $fileName);
+if ($request->hasFile('mms_file')) {
+    $file = $request->file('mms_file');
+    $filePath = $file->store('mms', 'public');   // saves to storage/app/public/mms
+    $mms_url = url('storage/' . $filePath);    // generates public URL
+}
 
-        // Build URL manually
-        $mms_url = config('app.url') . '/uploads/mms/' . $fileName;
-    }
 
 
 $data_array['mms_url'] = $mms_url ?? $request->mms_url;
