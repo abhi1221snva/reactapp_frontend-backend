@@ -718,7 +718,7 @@ $didObj->sms_email      = (!empty($request->sms)) ? $request->sms_email : '';
 
                 //call screening audio file
                 $didObj->call_screening_status = $request->input('call_screening_status');
-                $didObj->call_screening_ivr_id = $request->input('call_screening_ivr_id');
+                $didObj->call_screening_ivr_id = $audioFilePath;
                 //$didObj->ann_id = $request->input('ann_id;
                 $didObj->language = $request->input('language');
                 $didObj->voice_name = $request->input('voice_name');
@@ -835,7 +835,16 @@ $didObj->sms_email      = (!empty($request->sms)) ? $request->sms_email : '';
                 }
 
                 if ($editRecord == true) {
-                    $lastInsertId = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT * FROM " . $this->table . " where id='" . $request->did_id . "' ");
+                    $lastInsertObj = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT * FROM " . $this->table . " where id='" . $request->did_id . "' ");
+   // Convert to array safely
+    $lastInsertId = (array) $lastInsertObj;
+
+    // Add new response key
+    $lastInsertId['file'] = $lastInsertId['call_screening_ivr_id'] ?? null;
+
+    // Remove old key
+    unset($lastInsertId['call_screening_ivr_id']);
+
                     //$didInsertedId =  $lastInsertId->id;
                     return array(
                         'success' => 'true',
