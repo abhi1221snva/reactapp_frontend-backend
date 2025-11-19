@@ -431,17 +431,27 @@ public function smsDetailsByDidold($request)
 
 if ($request->hasFile('mms_file')) {
     $file = $request->file('mms_file');
-    $fileName = time() . '_' . $file->getClientOriginalName();
+
+    // CLEAN the original name
+    $original = $file->getClientOriginalName();
+
+    // Remove spaces & unsafe characters
+    $cleanName = preg_replace('/[^A-Za-z0-9_\-\.]/', '_', $original);
+
+    // Final stored filename
+    $fileName = time() . '_' . $cleanName;
 
     // Save to public folder
     $uploadPath = base_path('public/uploads/mms');
     $file->move($uploadPath, $fileName);
 
-    // Build correct public URL for Twilio
+    // Build URL for Twilio
     $mms_url = env('APP_URL') . '/uploads/mms/' . $fileName;
+    //    $mms_url="https://api.phonify.app/uploads/mms/1763546502_image%20 (5).png";
 }
 
 
+Log::info('mms url',['mms_url'=>$mms_url]);
 
 $data_array['mms_url'] = $mms_url ?? $request->mms_url;
 
