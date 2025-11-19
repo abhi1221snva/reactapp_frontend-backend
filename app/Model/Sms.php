@@ -431,8 +431,14 @@ public function smsDetailsByDidold($request)
 
 if ($request->hasFile('mms_file')) {
     $file = $request->file('mms_file');
-    $filePath = $file->store('mms', 'public');   // saves to storage/app/public/mms
-    $mms_url = url('storage/' . $filePath);    // generates public URL
+    $fileName = time() . '_' . $file->getClientOriginalName();
+
+    // Save to public folder
+    $uploadPath = base_path('public/uploads/mms');
+    $file->move($uploadPath, $fileName);
+
+    // Build correct public URL for Twilio
+    $mms_url = env('APP_URL') . '/uploads/mms/' . $fileName;
 }
 
 
