@@ -789,6 +789,12 @@ public function getList($request)
 
                         $sql_list_header = "SELECT count(1) as rowCountListHeader FROM list_header WHERE list_id = :list_id ";
                         $record_list_header = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_list_header, array('list_id' => $request->input('list_id')));
+                            if (empty($record_list_header)) {
+                    return [
+                        'success' => 'false',
+                        'message' => 'No records found in list header for this list.'
+                    ];
+                }
                         if ($record_list_header->rowCountListHeader > 0) {
                             $query = "DELETE FROM list_header WHERE list_id = :list_id";
                             $save_5 = DB::connection('mysql_' . $request->auth->parent_id)->delete($query, array('list_id' => $request->input('list_id')));
@@ -848,13 +854,9 @@ $saveRecord &= Lists::on('mysql_' . $request->auth->parent_id)
                 }
 
                 $sql_list_data = "SELECT * FROM list_header WHERE list_id = :list_id and is_dialing=1 ";
-                        $record_list_data = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_list_data, array('list_id' => $request->input('list_id')));
-                if (empty($record_list_header)) {
-                    return [
-                        'success' => 'false',
-                        'message' => 'No records found in list header for this list.'
-                    ];
-                }
+                $record_list_data = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_list_data, array('list_id' => $request->input('list_id')));
+                Log::info('reached sql list data',['record_list_data'=>$record_list_data]);
+            
                        // echo "<pre>";print_r($record_list_data);die;
 
 $listId = $request->input('list_id');
