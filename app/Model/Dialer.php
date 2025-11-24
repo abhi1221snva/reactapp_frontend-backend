@@ -1174,7 +1174,7 @@ class Dialer extends Model
     //         'data' => $data
     //     ];
     // }
-    public function getLead(int $parentId, int $extension)
+public function getLead(int $parentId, int $extension)
 {
     $data = [];
     $number = null;
@@ -1248,7 +1248,6 @@ class Dialer extends Model
         'data' => []
     ];
 }
-
 
     /*
      * save disposition

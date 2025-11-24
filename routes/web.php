@@ -101,7 +101,6 @@ $router->group(['middleware' => ['jwt.auth', 'auth.superadmin']], function () us
 });
 
 
-
 #Routes with admin rights should be added here
 $router->group(['middleware' => ['jwt.auth']], function () use ($router) {
   #create user
@@ -120,6 +119,7 @@ $router->group(['middleware' => ['jwt.auth']], function () use ($router) {
   $router->get('user/{userId}/user-permission', 'UserController@userPermission');
   $router->get('user/selected', 'UserController@getSelectedUsers');
 
+  $router->get('/prompt-voices', 'VoiceController@getVoices');
 
   //email tempaltes
   $router->put('email-template', 'EmailTempleteController@create');
