@@ -66,7 +66,7 @@ public function index(Request $request)
         'message'         => $prompts->count() ? 'Prompts retrieved successfully' : 'No prompts found',
         // 'total'           => $totalRows,
         // 'filtered'        => $filteredRows,
-        'count'           => $prompts->count(),
+        'total_rows'           => $prompts->count(),
         'data'            => $prompts
     ]);
 }
