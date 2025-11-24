@@ -11,20 +11,66 @@ use Illuminate\Support\Facades\Validator;
 class PromptController extends Controller
 {
     // ✅ Get all prompts for logged-in user
-    public function index(Request $request)
-    {
-        $userId = $request->user()->id ?? $request->header('user-id');
-        $clientId = User::where('id', $userId)->value('parent_id');
-        $prompts = Prompt::on("mysql_$clientId")->with('functions')
-            ->latest()
-            ->get();
+    // public function index(Request $request)
+    // {
+    //     $userId = $request->user()->id ?? $request->header('user-id');
+    //     $clientId = User::where('id', $userId)->value('parent_id');
+    //     $prompts = Prompt::on("mysql_$clientId")->with('functions')
+    //         ->latest()
+    //         ->get();
 
-        return response()->json([
-            'success' => true,
-            'message' => count($prompts) ? 'Prompts retrieved successfully' : 'No prompts found',
-            'data' => $prompts
-        ]);
+    //     return response()->json([
+    //         'success' => true,
+    //         'message' => count($prompts) ? 'Prompts retrieved successfully' : 'No prompts found',
+    //         'data' => $prompts
+    //     ]);
+    // }
+public function index(Request $request)
+{
+    $userId = $request->user()->id ?? $request->header('user-id');
+    $clientId = User::where('id', $userId)->value('parent_id');
+
+    $start     = $request->input('start');
+    $limit     = $request->input('limit');
+    $search    = $request->input('search');
+
+    // Base query
+    $query = Prompt::on("mysql_$clientId")->with('functions')->latest();
+
+    // Total rows before search
+    $totalRows = $query->count();
+
+    // Apply search
+    if (!empty($search)) {
+        $query->where(function ($q) use ($search) {
+            $q->where('title', 'like', "%{$search}%")
+              ->orWhere('initial_greeting', 'like', "%{$search}%")
+              ->orWhere('description', 'like', "%{$search}%")
+            ->orWhere('voice_name', 'like', "%{$search}%");
+
+        });
     }
+
+    // Total after search
+    $filteredRows = $query->count();
+
+    // Apply pagination
+    if ($start !== null && $limit !== null) {
+        $query->skip($start)->take($limit);
+    }
+
+    $prompts = $query->get();
+
+    return response()->json([
+        'success'         => true,
+        'message'         => $prompts->count() ? 'Prompts retrieved successfully' : 'No prompts found',
+        // 'total'           => $totalRows,
+        // 'filtered'        => $filteredRows,
+        'count'           => $prompts->count(),
+        'data'            => $prompts
+    ]);
+}
+
 
     // ✅ Store new prompt
     public function store(Request $request)
