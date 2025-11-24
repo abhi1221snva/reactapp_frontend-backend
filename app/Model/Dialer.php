@@ -1114,66 +1114,141 @@ class Dialer extends Model
         );
     }
 
+    // public function getLead(int $parentId, int $extension)
+    // {
+    //     $data = array();
+    //     $number = null;
+    //     $connection = "mysql_$parentId";
+
+    //     //Fetch current lead
+    //     $sql = "SELECT * FROM extension_live  WHERE extension = :extension";
+    //     $extensionLive = DB::connection($connection)->selectOne($sql, array('extension' => $extension));
+    //     $extensionLive = (array)$extensionLive;
+    //     if (!empty($extensionLive) && !empty($extensionLive['lead_id'])) {
+    //         $lead = $extensionLive['lead_id'];
+    //         $sql = "SELECT * FROM list_data  WHERE id = :id";
+    //         $listData = DB::connection($connection)->selectOne($sql, array('id' => $lead));
+    //         $listData = (array)$listData;
+    //         $listId = $listData['list_id'];
+
+    //         $listHeaders = ListHeader::on($connection)->where([
+    //             ["is_visible", "=", 1],
+    //             ["is_deleted", "=", 0],
+    //             ["list_id", "=", $listId]
+    //         ])->get()->all();
+
+    //         foreach ($listHeaders as $header) {
+    //             if ($header->is_dialing == 1) $number = $listData[$header->column_name];
+    //             $title = null;
+    //             if (!empty($header->label_id)) {
+    //                 $label = \App\Model\Client\Label::on($connection)->find($header->label_id);
+    //                 if ($label) $title = $label->title;
+    //             }
+    //             $data[$header->column_name] = [
+    //                 "label" => $title,
+    //                 "value" => $listData[$header->column_name],
+    //                 "is_dialing" => $header->is_dialing,
+    //                 "is_visible" => $header->is_visible,
+    //                 "is_editable" => $header->is_editable,
+    //                 "alternate_phone" => $header->alternate_phone
+    //             ];
+    //         }
+
+    //         $number = preg_replace('/[^0-9]/', '', $number);
+
+    //         return [
+    //             'success' => true,
+    //             'message' => 'lead detail.',
+    //             'number' => $number,
+    //             'lead_id' => $lead,
+    //             'list_id' => $listId,
+    //             'data' => $data
+    //         ];
+    //     }
+
+    //     return [
+    //         'success' => false,
+    //         'message' => "Not on a call",
+    //         'number' => null,
+    //         'lead_id' => null,
+    //         'data' => $data
+    //     ];
+    // }
     public function getLead(int $parentId, int $extension)
-    {
-        $data = array();
-        $number = null;
-        $connection = "mysql_$parentId";
+{
+    $data = [];
+    $number = null;
+    $connection = "mysql_$parentId";
 
-        //Fetch current lead
-        $sql = "SELECT * FROM extension_live  WHERE extension = :extension";
-        $extensionLive = DB::connection($connection)->selectOne($sql, array('extension' => $extension));
-        $extensionLive = (array)$extensionLive;
-        if (!empty($extensionLive) && !empty($extensionLive['lead_id'])) {
-            $lead = $extensionLive['lead_id'];
-            $sql = "SELECT * FROM list_data  WHERE id = :id";
-            $listData = DB::connection($connection)->selectOne($sql, array('id' => $lead));
-            $listData = (array)$listData;
-            $listId = $listData['list_id'];
+    // Fetch current lead
+    $sql = "SELECT * FROM extension_live WHERE extension = :extension";
+    $extensionLive = DB::connection($connection)->selectOne($sql, ['extension' => $extension]);
 
-            $listHeaders = ListHeader::on($connection)->where([
-                ["is_visible", "=", 1],
-                ["is_deleted", "=", 0],
-                ["list_id", "=", $listId]
-            ])->get()->all();
+    if ($extensionLive && !empty($extensionLive->lead_id)) {
 
-            foreach ($listHeaders as $header) {
-                if ($header->is_dialing == 1) $number = $listData[$header->column_name];
-                $title = null;
-                if (!empty($header->label_id)) {
-                    $label = \App\Model\Client\Label::on($connection)->find($header->label_id);
-                    if ($label) $title = $label->title;
-                }
-                $data[$header->column_name] = [
-                    "label" => $title,
-                    "value" => $listData[$header->column_name],
-                    "is_dialing" => $header->is_dialing,
-                    "is_visible" => $header->is_visible,
-                    "is_editable" => $header->is_editable,
-                    "alternate_phone" => $header->alternate_phone
-                ];
+        $lead = $extensionLive->lead_id;
+
+        // Get list data
+        $sql = "SELECT * FROM list_data WHERE id = :id";
+        $listData = DB::connection($connection)->selectOne($sql, ['id' => $lead]);
+        $listData = (array) $listData;
+
+        $listId = $listData['list_id'];
+
+        // Get visible headers
+        $listHeaders = ListHeader::on($connection)
+            ->where('is_visible', 1)
+            ->where('is_deleted', 0)
+            ->where('list_id', $listId)
+            ->get();
+
+        foreach ($listHeaders as $header) {
+
+            // Detect dialing number
+            if ($header->is_dialing == 1) {
+                $number = $listData[$header->column_name] ?? null;
             }
 
-            $number = preg_replace('/[^0-9]/', '', $number);
+            // Get label title
+            $title = null;
+            if (!empty($header->label_id)) {
+                $label = \App\Model\Client\Label::on($connection)->find($header->label_id);
+                $title = $label ? $label->title : null;
+            }
 
-            return [
-                'success' => true,
-                'message' => 'lead detail.',
-                'number' => $number,
-                'lead_id' => $lead,
-                'list_id' => $listId,
-                'data' => $data
+            // Push instead of associative index
+            $data[] = [
+                "label" => $title,
+                "value" => $listData[$header->column_name] ?? null,
+                "is_dialing" => $header->is_dialing,
+                "is_visible" => $header->is_visible,
+                "is_editable" => $header->is_editable,
+                "alternate_phone" => $header->alternate_phone
             ];
         }
 
+        // Clean number
+        $number = preg_replace('/[^0-9]/', '', $number);
+
         return [
-            'success' => false,
-            'message' => "Not on a call",
-            'number' => null,
-            'lead_id' => null,
+            'success' => true,
+            'message' => 'lead detail.',
+            'number' => $number,
+            'lead_id' => $lead,
+            'list_id' => $listId,
             'data' => $data
         ];
     }
+
+    return [
+        'success' => false,
+        'message' => "Not on a call",
+        'number' => null,
+        'lead_id' => null,
+        'data' => []
+    ];
+}
+
 
     /*
      * save disposition
