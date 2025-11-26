@@ -731,6 +731,24 @@ public function getList($request)
     {
         $saveRecord = true;
         try {
+            // 🔍 Check if campaign_list entry exists
+$checkCampaignList = DB::connection('mysql_' . $request->auth->parent_id)
+    ->selectOne(
+        "SELECT COUNT(1) AS total FROM campaign_list 
+         WHERE list_id = :list_id AND campaign_id = :campaign_id",
+        [
+            'list_id' => $request->input('list_id'),
+            'campaign_id' => $request->input('campaign_id')
+        ]
+    );
+
+if ($checkCampaignList->total == 0) {
+    return [
+        'success' => 'false',
+        'message' => 'The provided list_id is not assigned to this campaign_id.'
+    ];
+}
+
             if ($request->has('list_id') && is_numeric($request->input('list_id')) && $request->has('campaign_id') && is_numeric($request->input('campaign_id'))) {
                 $save_1 = '';
                 $save_2 = '';
@@ -802,7 +820,23 @@ public function getList($request)
 
                         #$query = "DELETE FROM list WHERE id = :id";
                         #$delete_1 = DB::connection('mysql_' . $request->auth->parent_id)->delete($query, array('id' => $request->input('list_id')));
-                        $listModel = Lists::on('mysql_' . $request->auth->parent_id)->findOrFail($request->input('list_id'));
+                        // $listModel = Lists::on('mysql_' . $request->auth->parent_id)->findOrFail($request->input('list_id'));
+                        $listModel = Lists::on('mysql_' . $request->auth->parent_id)->find($request->input('list_id'));
+
+                        if (!$listModel) {
+                            return [
+                                'success' => 'false',
+                                'message' => 'List not found in lists table.'
+                            ];
+                        }
+                        if ($listModel && $listModel->is_active == 0) {
+                            return [
+                                'success' => 'false',
+                                'message' => 'This List is not active in lists table.'
+                            ];
+                        }
+
+
                         $notificationData = [
                             "action" => "List deleted",
                             "listId" => $request->input('list_id'),
@@ -841,17 +875,17 @@ public function getList($request)
                         }
                     }
          
-$updateData = ['is_active' => 1];
+                $updateData = ['is_active' => 1];
 
-// ✅ If request has dialing column, include it in update
-if ($request->has('is_dialing')) {
-    $updateData['is_dialing'] = $request->input('is_dialing');
-}
-
-$saveRecord &= Lists::on('mysql_' . $request->auth->parent_id)
-    ->where('id', $request->input('list_id'))
-    ->update($updateData);
+                // ✅ If request has dialing column, include it in update
+                if ($request->has('is_dialing')) {
+                    $updateData['is_dialing'] = $request->input('is_dialing');
                 }
+
+                $saveRecord &= Lists::on('mysql_' . $request->auth->parent_id)
+                    ->where('id', $request->input('list_id'))
+                    ->update($updateData);
+                                }
 
                 $sql_list_data = "SELECT * FROM list_header WHERE list_id = :list_id and is_dialing=1 ";
                 $record_list_data = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_list_data, array('list_id' => $request->input('list_id')));
