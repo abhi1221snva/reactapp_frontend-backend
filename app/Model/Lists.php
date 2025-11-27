@@ -1291,7 +1291,6 @@ public function addList($request, $filePath)
                     'list_id' => $list_id,
                     'column_name' => $colName,
                     'header' => $headerValue,
-                     'is_visible' => 0   // 👈 added here
                 ];
 
                 // detect date keyword
