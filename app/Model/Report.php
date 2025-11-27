@@ -1256,98 +1256,98 @@ Log::info('Transfer Report SQL:', [
      * @return type
      */
 
-    function getCDR_copy($request)
-    {
-        try {
+    // function getCDR_copy($request)
+    // {
+    //     try {
 
 
 
-            $deleted = DB::connection("master")->statement("DELETE FROM inbound_call_popup WHERE inbound_number='" . $request->input('phone_number') . "' and (extension='" . $request->extension . "' OR extension = '" . $request->alt_extension . "')");
+    //         $deleted = DB::connection("master")->statement("DELETE FROM inbound_call_popup WHERE inbound_number='" . $request->input('phone_number') . "' and (extension='" . $request->extension . "' OR extension = '" . $request->alt_extension . "')");
 
-            //DB::connection('master')->statement("UPDATE inbound_call_popup SET status='0' WHERE inbound_number='".$request->input('phone_number')."' and (extension='".$request->extension."' OR extension = '".$request->alt_extension."')"); 
-            // for status change for inbound calls
-            $lead_id = 0;
-            $dataCDR = $dataCDRA = $uniqueExt = $uniqueUid = $userData = $smsData = $faxData = array();
-            $numLen = strlen($request->input('phone_number'));
-            $number1 = $request->input('phone_number');
-            if ($numLen > 10) {
-                $number2 = substr($request->input('phone_number'), ($numLen - 10));
-            } else {
-                $number2 = "1" . $request->input('phone_number');
-            }
+    //         //DB::connection('master')->statement("UPDATE inbound_call_popup SET status='0' WHERE inbound_number='".$request->input('phone_number')."' and (extension='".$request->extension."' OR extension = '".$request->alt_extension."')"); 
+    //         // for status change for inbound calls
+    //         $lead_id = 0;
+    //         $dataCDR = $dataCDRA = $uniqueExt = $uniqueUid = $userData = $smsData = $faxData = array();
+    //         $numLen = strlen($request->input('phone_number'));
+    //         $number1 = $request->input('phone_number');
+    //         if ($numLen > 10) {
+    //             $number2 = substr($request->input('phone_number'), ($numLen - 10));
+    //         } else {
+    //             $number2 = "1" . $request->input('phone_number');
+    //         }
 
-            $sql = "(SELECT *, SEC_TO_TIME(duration) AS duration_in_time_format, 'cdr' AS platform FROM cdr WHERE (number = " . $number1 . " || number = " . $number2 . ") ORDER BY start_time DESC) ";
-            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
-            $dataCDR = (array) $record;
-            if (!empty($record)) {
-                foreach ($dataCDR as $d) {
-                    if (!in_array($d->extension, $uniqueExt)) //get extension
+    //         $sql = "(SELECT *, SEC_TO_TIME(duration) AS duration_in_time_format, 'cdr' AS platform FROM cdr WHERE (number = " . $number1 . " || number = " . $number2 . ") ORDER BY start_time DESC) ";
+    //         $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
+    //         $dataCDR = (array) $record;
+    //         if (!empty($record)) {
+    //             foreach ($dataCDR as $d) {
+    //                 if (!in_array($d->extension, $uniqueExt)) //get extension
 
-                        if (!empty($d->extension))
-                            $uniqueExt[] = $d->extension;
+    //                     if (!empty($d->extension))
+    //                         $uniqueExt[] = $d->extension;
 
-                    if ($d->lead_id != null && $lead_id == 0) { //get Lead Id
-                        $lead_id = $d->lead_id;
-                    }
-                }
-            }
-
-
-            $sql = "(SELECT *, SEC_TO_TIME(duration) AS duration_in_time_format, 'cdr' AS platform FROM cdr_archive WHERE (number = " . $number1 . " || number = " . $number2 . ") ORDER BY start_time DESC) ";
-            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
-            $dataCDRA = (array) $record;
-
-            foreach ($dataCDRA as $d) {
-                if (!in_array($d->extension, $uniqueExt)) //get extension
-                    if (!empty($d->extension))
-                        $uniqueExt[] = $d->extension;
-
-                if ($d->lead_id != null && $lead_id == 0) { //get Lead Id
-                    $lead_id = $d->lead_id;
-                }
-            }
+    //                 if ($d->lead_id != null && $lead_id == 0) { //get Lead Id
+    //                     $lead_id = $d->lead_id;
+    //                 }
+    //             }
+    //         }
 
 
-            //$leadData = $this->getLeadData($lead_id, $request->auth->parent_id);
-            $leadData = $this->getLeadData_copy($lead_id, $request->auth->parent_id);
+    //         $sql = "(SELECT *, SEC_TO_TIME(duration) AS duration_in_time_format, 'cdr' AS platform FROM cdr_archive WHERE (number = " . $number1 . " || number = " . $number2 . ") ORDER BY start_time DESC) ";
+    //         $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
+    //         $dataCDRA = (array) $record;
 
-            if (count($uniqueExt) > 0) { //get fax, sms and user info on extension
-                $userData = $this->getUserInfoOnExt($uniqueExt);
-                foreach ($userData as $u) {
-                    if (!in_array($u->id, $uniqueUid))
-                        $uniqueUid[] = $u->id;
-                }
+    //         foreach ($dataCDRA as $d) {
+    //             if (!in_array($d->extension, $uniqueExt)) //get extension
+    //                 if (!empty($d->extension))
+    //                     $uniqueExt[] = $d->extension;
 
-                $userData = $this->getUserInfoOnAltExt($uniqueExt);
-                foreach ($userData as $u) {
-                    if (!in_array($u->id, $uniqueUid))
-                        $uniqueUid[] = $u->id;
-                }
+    //             if ($d->lead_id != null && $lead_id == 0) { //get Lead Id
+    //                 $lead_id = $d->lead_id;
+    //             }
+    //         }
 
-                //return $uniqueUid;
-                $smsData = $this->getSmsLogOnExt($uniqueUid, $number1, $number2, $request->auth->parent_id);
-                $faxData = $this->getFaxLogOnExt($uniqueExt, $number1, $number2, $request->auth->parent_id);
-            }
-            $comments = $this->getCommentsLogOnExt($uniqueExt, $lead_id, $request->auth->parent_id);
 
-            //sort(on date time) and merge cdr, cdr archive, fax ,sms array
-            $arr = array_merge($dataCDR, $dataCDRA);
-            usort($arr, array($this, "sortResultOntimeDesc"));
-            $arr = array_merge($arr, $faxData);
-            usort($arr, array($this, "sortResultOntimeDesc"));
-            $arr = array_merge($arr, $smsData);
-            usort($arr, array($this, "sortResultOntimeDesc"));
+    //         //$leadData = $this->getLeadData($lead_id, $request->auth->parent_id);
+    //         $leadData = $this->getLeadData_copy($lead_id, $request->auth->parent_id);
 
-            $arr = array_merge($arr, $comments);
-            usort($arr, array($this, "sortResultOntimeDesc"));
+    //         if (count($uniqueExt) > 0) { //get fax, sms and user info on extension
+    //             $userData = $this->getUserInfoOnExt($uniqueExt);
+    //             foreach ($userData as $u) {
+    //                 if (!in_array($u->id, $uniqueUid))
+    //                     $uniqueUid[] = $u->id;
+    //             }
 
-            return ['leadData' => $leadData, 'updateData' => $arr, 'userData' => $userData];
-        } catch (Exception $e) {
-            Log::log($e->getMessage());
-        } catch (InvalidArgumentException $e) {
-            Log::log($e->getMessage());
-        }
-    }
+    //             $userData = $this->getUserInfoOnAltExt($uniqueExt);
+    //             foreach ($userData as $u) {
+    //                 if (!in_array($u->id, $uniqueUid))
+    //                     $uniqueUid[] = $u->id;
+    //             }
+
+    //             //return $uniqueUid;
+    //             $smsData = $this->getSmsLogOnExt($uniqueUid, $number1, $number2, $request->auth->parent_id);
+    //             $faxData = $this->getFaxLogOnExt($uniqueExt, $number1, $number2, $request->auth->parent_id);
+    //         }
+    //         $comments = $this->getCommentsLogOnExt($uniqueExt, $lead_id, $request->auth->parent_id);
+
+    //         //sort(on date time) and merge cdr, cdr archive, fax ,sms array
+    //         $arr = array_merge($dataCDR, $dataCDRA);
+    //         usort($arr, array($this, "sortResultOntimeDesc"));
+    //         $arr = array_merge($arr, $faxData);
+    //         usort($arr, array($this, "sortResultOntimeDesc"));
+    //         $arr = array_merge($arr, $smsData);
+    //         usort($arr, array($this, "sortResultOntimeDesc"));
+
+    //         $arr = array_merge($arr, $comments);
+    //         usort($arr, array($this, "sortResultOntimeDesc"));
+
+    //         return ['leadData' => $leadData, 'updateData' => $arr, 'userData' => $userData];
+    //     } catch (Exception $e) {
+    //         Log::log($e->getMessage());
+    //     } catch (InvalidArgumentException $e) {
+    //         Log::log($e->getMessage());
+    //     }
+    // }
 
     function getCDR($request)
     {
@@ -1444,6 +1444,131 @@ Log::info('Transfer Report SQL:', [
             Log::log($e->getMessage());
         }
     }
+function getCDR_copy($request)
+{
+    try {
+
+        $phone = $request->input('phone_number');
+        $ext = $request->extension;
+        $altExt = $request->alt_extension;
+
+        // Delete popup rows
+        DB::connection("master")->statement(
+            "DELETE FROM inbound_call_popup 
+             WHERE inbound_number = ? 
+               AND (extension = ? OR extension = ?)",
+            [$phone, $ext, $altExt]
+        );
+
+        $lead_id = 0;
+        $uniqueExt = [];
+        $uniqueUid = [];
+
+        // Normalize number
+        $numLen = strlen($phone);
+        $number1 = $phone;
+        $number2 = ($numLen > 10) ? substr($phone, ($numLen - 10)) : "1" . $phone;
+
+        $parent = $request->auth->parent_id;
+        $db = DB::connection('mysql_' . $parent);
+
+        // --- CDR LIVE ---
+        $sql = "SELECT *, SEC_TO_TIME(duration) AS duration_in_time_format,
+                       'cdr' AS platform
+                FROM cdr 
+                WHERE number = ? OR number = ?
+                ORDER BY start_time DESC";
+
+        $dataCDR = $db->select($sql, [$number1, $number2]);
+
+
+        foreach ($dataCDR as $d) {
+            if (!empty($d->extension) && !in_array($d->extension, $uniqueExt)) {
+                $uniqueExt[] = $d->extension;
+            }
+
+            if (!empty($d->lead_id) && $lead_id == 0) {
+                $lead_id = $d->lead_id;
+            }
+        }
+
+
+        // --- CDR ARCHIVE ---
+        $sql = "SELECT *, SEC_TO_TIME(duration) AS duration_in_time_format,
+                       'cdr' AS platform
+                FROM cdr_archive 
+                WHERE number = ? OR number = ?
+                ORDER BY start_time DESC";
+
+        $dataCDRA = $db->select($sql, [$number1, $number2]);
+
+        foreach ($dataCDRA as $d) {
+            if (!empty($d->extension) && !in_array($d->extension, $uniqueExt)) {
+                $uniqueExt[] = $d->extension;
+            }
+
+            if (!empty($d->lead_id) && $lead_id == 0) {
+                $lead_id = $d->lead_id;
+            }
+        }
+
+        // --- LEAD DATA ---
+        $leadData = [];
+        if ($lead_id > 0) {
+            $leadData = $this->getLeadData_copy($lead_id, $parent);
+        }
+
+        // --- USER / SMS / FAX / COMMENTS ---
+        $smsData = $faxData = $userData = [];
+
+        if (count($uniqueExt) > 0) {
+
+            $userData = $this->getUserInfoOnExt($uniqueExt);
+
+            foreach ($userData as $u) {
+                if (!in_array($u->id, $uniqueUid)) {
+                    $uniqueUid[] = $u->id;
+                }
+            }
+
+            // ALT EXT USER INFO
+            $userDataAlt = $this->getUserInfoOnAltExt($uniqueExt);
+            foreach ($userDataAlt as $u) {
+                if (!in_array($u->id, $uniqueUid)) {
+                    $uniqueUid[] = $u->id;
+                }
+            }
+
+            // SMS, Fax
+            $smsData = $this->getSmsLogOnExt($uniqueUid, $number1, $number2, $parent);
+            $faxData = $this->getFaxLogOnExt($uniqueExt, $number1, $number2, $parent);
+        }
+
+        $comments = $this->getCommentsLogOnExt($uniqueExt, $lead_id, $parent);
+
+        // --- MERGE ALL DATA ---
+        $arr = array_merge($dataCDR, $dataCDRA);
+        usort($arr, array($this, "sortResultOntimeDesc"));
+
+        $arr = array_merge($arr, $faxData);
+        usort($arr, array($this, "sortResultOntimeDesc"));
+
+        $arr = array_merge($arr, $smsData);
+        usort($arr, array($this, "sortResultOntimeDesc"));
+
+        $arr = array_merge($arr, $comments);
+        usort($arr, array($this, "sortResultOntimeDesc"));
+
+        return [
+            'leadData' => array_values($leadData),
+            'updateData' => $arr,
+            'userData' => $userData
+        ];
+
+    } catch (Exception $e) {
+        Log::error("CDR ERROR: " . $e->getMessage());
+    }
+}
 
     /**
      * Get Lead data and header 
@@ -1552,6 +1677,7 @@ Log::info('Transfer Report SQL:', [
         $sql = "(SELECT $listDataSelect FROM list_data WHERE id = $lead_id) UNION (SELECT $archiveSelect FROM list_data_archive WHERE id = $lead_id)";
         $record = DB::connection('mysql_' . $parent_id)->select($sql);
         $listData = (array) $record;
+                Log::info("listData",['listData'=>$listData]);
 
         if (!empty($listData)) {
             $list_id = $listData[0]->list_id;
@@ -1569,15 +1695,37 @@ Log::info('Transfer Report SQL:', [
 
         if ($list_id > 0) {
             //$sql = "SELECT id, title FROM label ORDER BY label.id ASC"; //get all labels
-            $sql = "SELECT id, title FROM label where is_deleted='0' and status='1' ORDER BY label.display_order ASC"; //get all labels
+            // $sql = "SELECT id, title FROM label where is_deleted='0' and status='1' ORDER BY label.display_order ASC"; //get all labels
 
-            $labels = DB::connection('mysql_' . $parent_id)->select($sql);
+            // $labels = DB::connection('mysql_' . $parent_id)->select($sql);
+            $sql = "SELECT label.id, label.title 
+        FROM list_header
+        INNER JOIN label ON label.id = list_header.label_id
+        WHERE list_header.list_id = $list_id
+        AND list_header.is_visible = 1
+        AND label.is_deleted = 0
+        AND label.status = 1
+        ORDER BY label.display_order ASC";
+
+$labels = DB::connection('mysql_' . $parent_id)->select($sql);
+
+                Log::info("labels",['labels'=>$labels]);
 
             //get all list_header columun (option_1,option_2)
-            $sql = $sql = "SELECT list_header.is_dialing, list_header.column_name, label.title, label.id "
-                . "FROM list_header inner join label on label.id = list_header.label_id  "
-                . "WHERE list_header.list_id IN(" . $list_id . ") group by label.title ORDER BY label.id ASC";
+            // $sql = $sql = "SELECT list_header.is_dialing, list_header.column_name, label.title, label.id "
+            //     . "FROM list_header inner join label on label.id = list_header.label_id  "
+            //     . "WHERE list_header.list_id IN(" . $list_id . ") group by label.title ORDER BY label.id ASC";
+            $sql = "SELECT list_header.is_dialing, list_header.column_name, 
+               label.title, label.id
+        FROM list_header 
+        INNER JOIN label ON label.id = list_header.label_id
+        WHERE list_header.list_id = $list_id
+        AND list_header.is_visible = 1
+        ORDER BY label.display_order ASC";
             $listHeaders = DB::connection('mysql_' . $parent_id)->select($sql);
+                Log::info("listHeaders",['listHeaders'=>$listHeaders]);
+
+
 
             //intermidiate label array
             foreach ($labels as $lab) {
@@ -1592,6 +1740,8 @@ Log::info('Transfer Report SQL:', [
                 $leadDataArr[$header->id] = $temp;
                 $temp = [];
             }
+                            Log::info("list array",['temp'=>$temp]);
+
             //Create final lead array from  Lead array
             foreach ($inLabelArr as $key => $val) {
                 if (isset($leadDataArr[$key])) {
