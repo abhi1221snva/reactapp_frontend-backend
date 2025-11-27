@@ -402,10 +402,8 @@ return response()->json($response, $status);
         {
             $this->validate($this->request, [
                 'title'    => 'required|string|max:255',
-                //'file'     => 'required|file|mimes:xls,xlsx', // Accept actual file
                 'file'     => 'required|file', // |mimes:xls,xlsxAccept actual file
                 'campaign' => 'required|numeric',
-                // 'id'       => 'required|numeric'
             ]);
 
 
