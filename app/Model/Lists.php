@@ -1254,10 +1254,10 @@ public function addList($request, $filePath)
     $query = "INSERT INTO list (title, is_active, duplicate_check) 
           VALUES (:title, 1, :duplicate_check)";
 
-    $add = DB::connection($dataBase)->insert($query, [
-        'title' => $request->input('title'),
-        'duplicate_check' => $request->input('duplicate_check') ?? 0
-    ]);
+$add = DB::connection($dataBase)->insert($query, [
+    'title' => $request->input('title'),
+    'duplicate_check' => $request->input('duplicate_check') ?? 0
+]);
 
 
     if ($add != 1) {
@@ -1552,7 +1552,8 @@ function getLeadDataForEditPage($lead_id, $parent_id)
         $sql = "(SELECT * FROM list_data WHERE id = $lead_id)
                 UNION
                 (SELECT * FROM list_data_archive WHERE id = $lead_id)";
-        $record = DB::connection('mysql_' . $parent_id)->select($sql);
+                $record = DB::connection('mysql_' . $parent_id)->select($sql);
+                Log::info("sql logged",['sql'=>$record]);
         $listData = (array) $record;
 
         $list_id = 0;
@@ -1574,8 +1575,9 @@ function getLeadDataForEditPage($lead_id, $parent_id)
             // ✅ Get all labels
             $labels = DB::connection('mysql_' . $parent_id)
                 ->select("SELECT id, title FROM label WHERE is_deleted = 0 AND status = 1 ORDER BY display_order ASC");
+                Log::info("sql logged",['labels'=>$labels]);
 
-            // ✅ Get all list_header columns for the list
+            // // ✅ Get all list_header columns for the list
             // $listHeaders = DB::connection('mysql_' . $parent_id)
             //     ->select("SELECT list_header.is_dialing, list_header.column_name, label.title, label.id
             //               FROM list_header
@@ -1583,15 +1585,49 @@ function getLeadDataForEditPage($lead_id, $parent_id)
             //               WHERE list_header.list_id = $list_id
             //               GROUP BY label.title
             //               ORDER BY label.id ASC");
+            //     Log::info("sql logged",['listHeaders'=>$listHeaders]);
+            Log::info("DEBUG list_id", ['list_id' => $list_id]);
+
+$rawHeaders = DB::connection('mysql_' . $parent_id)
+    ->table('list_header')
+    ->where('list_id', $list_id)
+    ->get();
+
+Log::info("DEBUG raw list_header rows", ['rows' => $rawHeaders]);
+
+$rawLabels = DB::connection('mysql_' . $parent_id)
+    ->table('label')
+    ->get();
+
+Log::info("DEBUG all labels", ['labels' => $rawLabels]);
+
+// Now your original query
+// $listHeaders = DB::connection('mysql_' . $parent_id)
+//     ->select("SELECT list_header.is_dialing, list_header.column_name, label.title, label.id
+//               FROM list_header
+//               INNER JOIN label ON label.id = list_header.label_id
+//               WHERE list_header.list_id = $list_id
+//               GROUP BY label.title
+//               ORDER BY label.id ASC");
 $listHeaders = DB::connection('mysql_' . $parent_id)
-    ->select("SELECT list_header.is_dialing, list_header.column_name, list_header.is_editable, 
-                     label.title, label.id
-              FROM list_header
-              INNER JOIN label ON label.id = list_header.label_id
-              WHERE list_header.list_id = $list_id
-              AND list_header.is_editable = 1
-              GROUP BY label.title
-              ORDER BY label.id ASC");
+    ->select("
+        SELECT 
+            list_header.is_dialing, 
+            list_header.column_name, 
+            label.title, 
+            label.id
+        FROM list_header
+        INNER JOIN label 
+            ON label.id = list_header.label_id
+        WHERE list_header.list_id = $list_id
+          AND list_header.is_editable = 1
+        GROUP BY label.title
+        ORDER BY label.id ASC
+    ");
+
+
+Log::info("DEBUG joined listHeaders", ['listHeaders' => $listHeaders]);
+
 
             // Intermediate label array
             foreach ($labels as $lab) {
