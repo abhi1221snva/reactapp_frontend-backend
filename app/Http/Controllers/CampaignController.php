@@ -964,6 +964,14 @@ public function assignLists(Request $request)
             'invalid_list_ids' => $invalidLists
         ], 404);
     }
+        // 4. Deactivate all existing assigned lists (DO NOT DELETE)
+    DB::connection('mysql_' . $request->auth->parent_id)
+        ->table('campaign_list')
+        ->where('campaign_id', $campaignId)
+        ->update([
+            'status'     => '0',
+            'updated_at' => Carbon::now()
+        ]);
 
     // 4. Insert/update mapping
     foreach ($leadListIds as $listId) {
