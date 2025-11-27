@@ -1193,7 +1193,7 @@ public function editList($request)
     //         'message' => 'Lists are not added. Unable to add data in list table'
     //     );
     // }
-public function addList($request, $filePath)
+    public function addList($request, $filePath)
 {
     ini_set('max_execution_time', 1800);
     ini_set('memory_limit', '-1');
@@ -1212,27 +1212,222 @@ public function addList($request, $filePath)
         ];
     }
 
-    // -------------------------------------------
-    // ✔ REMOVE DUPLICATES IF USER SELECTED OPTION
-    // -------------------------------------------
+    if (empty($excelData)) {
+        return [
+            'success' => 'false',
+            'message' => 'Failed list upload process, File is empty',
+            'list_id' => '',
+            'campaign_id' => $campaignId
+        ];
+    }
+
+    // ---------------------------------------------------
+    // ALWAYS Extract Header First (Fix for your problem)
+    // ---------------------------------------------------
+    $header = array_shift($excelData);  // A,B,C keys OR numeric keys
+
+    // Rest of rows (raw)
+    $cleanData = $excelData;
+
+    // ---------------------------------------------------
+    // REMOVE DUPLICATES ONLY IF duplicate_check = 1
+    // ---------------------------------------------------
     if ($request->input('duplicate_check') == 1) {
 
-        $uniqueRows = [];
         $seen = [];
+        $uniqueRows = [];
 
-        $header = array_shift($excelData);   // first row always header
-        $uniqueRows[] = array_values($header);
+        foreach ($cleanData as $row) {
 
-        foreach ($excelData as $row) {
-            $rowKey = md5(json_encode($row));
+            // hash only values, not A,B,C keys
+            $rowKey = md5(json_encode(array_values($row)));
+
             if (!isset($seen[$rowKey])) {
                 $seen[$rowKey] = true;
-                $uniqueRows[] = array_values($row);
+                $uniqueRows[] = $row;
             }
         }
 
-        $excelData = $uniqueRows; // Replace original Excel input with filtered input
+        $cleanData = $uniqueRows;
     }
+
+    // ---------------------------------------------------
+    // Rebuild excelData = header + cleaned data rows
+    // ---------------------------------------------------
+    $excelData = [];
+    $excelData[] = $header;
+    foreach ($cleanData as $r) {
+        $excelData[] = $r;
+    }
+
+    // ---------------------------------------------------
+    // INSERT LIST
+    // ---------------------------------------------------
+    $query = "INSERT INTO list (title, is_active, duplicate_check) 
+              VALUES (:title, 1, :duplicate_check)";
+
+    $add = DB::connection($dataBase)->insert($query, [
+        'title' => $request->input('title'),
+        'duplicate_check' => $request->input('duplicate_check') ?? 0
+    ]);
+
+    if ($add != 1) {
+        return ['success' => 'false', 'message' => 'Unable to create list'];
+    }
+
+    $record = DB::connection($dataBase)
+        ->selectOne("SELECT id FROM list ORDER BY id DESC LIMIT 1");
+
+    $list_id = $record->id;
+    $listId = $list_id;
+
+    // LINK LIST TO CAMPAIGN
+    DB::connection($dataBase)->insert(
+        "INSERT INTO campaign_list (campaign_id, list_id) VALUE (:campaign_id, :list_id)",
+        ['campaign_id' => $campaignId, 'list_id' => $list_id]
+    );
+
+    $date_array = [];
+    $header_list = [];
+    $query_1 = [];
+
+    // ---------------------------------------------------
+    // PROCESS HEADER + DATA ROWS
+    // ---------------------------------------------------
+    foreach ($excelData as $rowIndex => $row) {
+
+        // HEADER ROW
+        if ($rowIndex === 0) {
+            $colIndex = 0;
+            foreach ($row as $headerValue) {
+                $colIndex++;
+                if ($colIndex > 30) continue;
+
+                $header_list[] = [
+                    'list_id' => $list_id,
+                    'column_name' => 'option_' . $colIndex,
+                    'header' => $headerValue
+                ];
+
+                if (strpos(strtolower($headerValue), 'date') !== false) {
+                    $date_array[$colIndex] = true;
+                }
+            }
+            continue;
+        }
+
+        // SKIP BLANK ROWS
+        if (
+            ((trim(implode("", array_values($row))) === "")) ||
+            (empty($row['A']) && empty($row['B']) && empty($row['C']))
+        ) {
+            continue;
+        }
+
+        $rowData = ['list_id' => $list_id];
+        $colIndex = 0;
+
+        foreach ($row as $cell) {
+            $colIndex++;
+            if ($colIndex > 30) continue;
+
+            // Date conversion
+            if (isset($date_array[$colIndex]) && is_numeric($cell)) {
+                $cell = date("Y-m-d", (($cell - 25569) * 86400));
+                $cell = date('Y-m-d', strtotime('+1 day', strtotime($cell)));
+            }
+
+            $rowData['option_' . $colIndex] = $cell;
+        }
+
+        $query_1[] = $rowData;
+    }
+
+    // ---------------------------------------------------
+    // SAVE TO DATABASE
+    // ---------------------------------------------------
+    foreach (array_chunk($header_list, 2000) as $chunk) {
+        DB::connection($dataBase)->table('list_header')->insert($chunk);
+    }
+
+    foreach (array_chunk($query_1, 2000) as $chunk2) {
+        DB::connection($dataBase)->table('list_data')->insert($chunk2);
+    }
+
+    DB::connection($dataBase)->table('list_data')->where('option_1', '=', '')->delete();
+
+    // SEND NOTIFICATION
+    $data = [
+        "action" => "List added",
+        "listId" => $listId,
+        "listName" => $request->input('title'),
+        "records" => count($query_1),
+        "columns" => $header_list
+    ];
+
+    dispatch(new ListAddedNotificationJob($request->auth->parent_id, $campaignId, $data))
+        ->onConnection("database");
+
+    return [
+        'success' => 'true',
+        'message' => 'List added successfully.',
+        'list_id' => $listId,
+        'campaign_id' => $campaignId
+    ];
+}
+
+public function addListn($request, $filePath)
+{
+    ini_set('max_execution_time', 1800);
+    ini_set('memory_limit', '-1');
+
+    $dataBase = 'mysql_' . $request->auth->parent_id;
+    $campaignId = $request->input('campaign');
+
+    try {
+        // ---- LOAD EXCEL USING PhpSpreadsheet ----
+        $spreadsheet = IOFactory::load($filePath);
+        $excelData = $spreadsheet->getActiveSheet()->toArray(null, true, true, true);
+    } catch (\Exception $e) {
+        return [
+            'success' => 'false',
+            'message' => 'Unable to read excel.'
+        ];
+    }
+    $header = array_shift($excelData);  // A,B,C keys OR numeric keys
+
+    // Rest of rows (raw)
+    $cleanData = $excelData;
+
+   if ($request->input('duplicate_check') == 1) {
+
+        $seen = [];
+        $uniqueRows = [];
+
+        foreach ($cleanData as $row) {
+
+            // hash only values, not A,B,C keys
+            $rowKey = md5(json_encode(array_values($row)));
+
+            if (!isset($seen[$rowKey])) {
+                $seen[$rowKey] = true;
+                $uniqueRows[] = $row;
+            }
+        }
+
+        $cleanData = $uniqueRows;
+    }
+
+    // ---------------------------------------------------
+    // Rebuild excelData = header + cleaned data rows
+    // ---------------------------------------------------
+    $excelData = [];
+    $excelData[] = $header;
+    foreach ($cleanData as $r) {
+        $excelData[] = $r;
+    }
+
+
 
     // -------------------------------------------
     // ✔ NOW USE $excelData INSTEAD OF $reader
