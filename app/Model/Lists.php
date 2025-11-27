@@ -1251,8 +1251,14 @@ public function addList($request, $filePath)
     // INSERT INTO list TABLE
     // -------------------------------------------
 
-    $query = "INSERT INTO list (title) VALUE (:title)";
-    $add = DB::connection($dataBase)->insert($query, ['title' => $request->input('title')]);
+    $query = "INSERT INTO list (title, is_active, duplicate_check) 
+          VALUES (:title, 1, :duplicate_check)";
+
+    $add = DB::connection($dataBase)->insert($query, [
+        'title' => $request->input('title'),
+        'duplicate_check' => $request->input('duplicate_check') ?? 0
+    ]);
+
 
     if ($add != 1) {
         return ['success' => 'false', 'message' => 'Unable to create list'];
@@ -1570,13 +1576,22 @@ function getLeadDataForEditPage($lead_id, $parent_id)
                 ->select("SELECT id, title FROM label WHERE is_deleted = 0 AND status = 1 ORDER BY display_order ASC");
 
             // ✅ Get all list_header columns for the list
-            $listHeaders = DB::connection('mysql_' . $parent_id)
-                ->select("SELECT list_header.is_dialing, list_header.column_name, label.title, label.id
-                          FROM list_header
-                          INNER JOIN label ON label.id = list_header.label_id
-                          WHERE list_header.list_id = $list_id
-                          GROUP BY label.title
-                          ORDER BY label.id ASC");
+            // $listHeaders = DB::connection('mysql_' . $parent_id)
+            //     ->select("SELECT list_header.is_dialing, list_header.column_name, label.title, label.id
+            //               FROM list_header
+            //               INNER JOIN label ON label.id = list_header.label_id
+            //               WHERE list_header.list_id = $list_id
+            //               GROUP BY label.title
+            //               ORDER BY label.id ASC");
+$listHeaders = DB::connection('mysql_' . $parent_id)
+    ->select("SELECT list_header.is_dialing, list_header.column_name, list_header.is_editable, 
+                     label.title, label.id
+              FROM list_header
+              INNER JOIN label ON label.id = list_header.label_id
+              WHERE list_header.list_id = $list_id
+              AND list_header.is_editable = 1
+              GROUP BY label.title
+              ORDER BY label.id ASC");
 
             // Intermediate label array
             foreach ($labels as $lab) {
