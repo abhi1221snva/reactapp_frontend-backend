@@ -792,7 +792,7 @@ public function editRecycleRuleold($request)
 }
 
 
-public function editRecycleRule($request)
+public function editRecycleRulen($request)
 {
     try {
         $parentConn = 'mysql_' . $request->auth->parent_id;
@@ -936,6 +936,162 @@ public function editRecycleRule($request)
     }
 }
 
+public function editRecycleRule($request)
+{
+    try {
+        $parentConn = 'mysql_' . $request->auth->parent_id;
+
+        // ---------------------------------------------------------
+        // MARK AS DELETED
+        // ---------------------------------------------------------
+        if ($request->input('is_deleted') == 1) {
+
+            if ($request->has('recycle_rule_id')) {
+                DB::connection($parentConn)
+                    ->table('recycle_rule')
+                    ->where('id', $request->input('recycle_rule_id'))
+                    ->update([
+                        'is_deleted' => 1,
+                        'updated_at' => \Carbon\Carbon::now(),
+                    ]);
+
+                return ['success' => 'true', 'message' => 'Recycle rule deleted'];
+            }
+
+            return ['success' => 'false', 'message' => 'Missing recycle_rule_id'];
+        }
+
+        // ---------------------------------------------------------
+        // EDIT MODE
+        // ---------------------------------------------------------
+        if (!$request->has('campaign_id') || !$request->has('list_id')) {
+            return ['success' => 'false', 'message' => 'Missing campaign_id or list_id'];
+        }
+
+
+        $campaign_id = $request->input('campaign_id');
+        $list_id     = $request->input('list_id');
+        $call_time   = $request->input('call_time');
+        $time        = $request->input('time');
+
+
+        // --- Days ---
+        $validDays = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+        $days = is_array($request->day) ? $request->day : [$request->day];
+        $days = array_intersect($days, $validDays);
+
+        if (empty($days)) {
+            return ['success' => 'false', 'message' => 'No valid day provided'];
+        }
+
+        // --- Dispositions ---
+        $dispositions = is_array($request->disposition_id) 
+                        ? $request->disposition_id 
+                        : [$request->disposition_id];
+
+        // ---------------------------------------------------------
+        // FETCH EXISTING ROWS AS disposition list
+        // ---------------------------------------------------------
+        $existingRows = DB::connection($parentConn)
+            ->table('recycle_rule')
+            ->where('campaign_id', $campaign_id)
+            ->where('list_id', $list_id)
+            ->whereIn('day', $days)
+            ->pluck('disposition_id')
+            ->toArray();
+
+        $existing = array_map('intval', $existingRows);    // existing ids
+        $incoming = array_map('intval', $dispositions);    // new ids
+
+        // Find which to insert, update, delete
+        $toInsert = array_diff($incoming, $existing);
+        $toDelete = array_diff($existing, $incoming);
+        $toUpdate = array_intersect($incoming, $existing);
+
+        $insertData = [];
+        $updatedCount = 0;
+        $deletedCount = 0;
+
+        // ---------------------------------------------------------
+        // 1️⃣ INSERT rows for NEW dispositions
+        // ---------------------------------------------------------
+        foreach ($days as $day) {
+            foreach ($toInsert as $dispId) {
+                $insertData[] = [
+                    'campaign_id'    => $campaign_id,
+                    'list_id'        => $list_id,
+                    'disposition_id' => $dispId,
+                    'day'            => $day,
+                    'call_time'      => $call_time,
+                    'time'           => $time,
+                    'is_deleted'     => 0,
+                    'updated_at'     => \Carbon\Carbon::now(),
+                ];
+            }
+        }
+
+        if (!empty($insertData)) {
+            DB::connection($parentConn)
+                ->table('recycle_rule')
+                ->insert($insertData);
+        }
+
+
+        // ---------------------------------------------------------
+        // 2️⃣ UPDATE existing dispositions
+        // ---------------------------------------------------------
+        foreach ($days as $day) {
+            foreach ($toUpdate as $dispId) {
+                $affected = DB::connection($parentConn)
+                    ->table('recycle_rule')
+                    ->where('campaign_id', $campaign_id)
+                    ->where('list_id', $list_id)
+                    ->where('day', $day)
+                    ->where('disposition_id', $dispId)
+                    ->update([
+                        'call_time'  => $call_time,
+                        'time'       => $time,
+                        'updated_at' => \Carbon\Carbon::now(),
+                    ]);
+
+                $updatedCount += $affected;
+            }
+        }
+
+
+        // ---------------------------------------------------------
+        // 3️⃣ DELETE OLD DISPOSITIONS that user removed
+        // ---------------------------------------------------------
+        if (!empty($toDelete)) {
+            $deletedCount = DB::connection($parentConn)
+                ->table('recycle_rule')
+                ->where('campaign_id', $campaign_id)
+                ->where('list_id', $list_id)
+                ->whereIn('day', $days)
+                ->whereIn('disposition_id', $toDelete)
+                ->delete();
+        }
+
+
+        // ---------------------------------------------------------
+        // RETURN RESPOSNE
+        // ---------------------------------------------------------
+        return [
+            'success' => 'true',
+            'message' => 'Recycle rules updated successfully.',
+            'inserted' => count($toInsert),
+            'updated'  => $updatedCount,
+            'deleted'  => $deletedCount
+        ];
+
+
+    } catch (\Throwable $e) {
+        return [
+            'success' => 'false',
+            'message' => 'Error: ' . $e->getMessage(),
+        ];
+    }
+}
 
     public function deleteLeadRule($request)
     {
