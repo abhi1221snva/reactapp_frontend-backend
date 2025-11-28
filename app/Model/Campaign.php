@@ -978,7 +978,8 @@ public function campaignDetaillatest($request)
             INNER JOIN list ON campaign_list.list_id = list.id
             INNER JOIN campaign ON campaign_list.campaign_id = campaign.id
             WHERE campaign_list.campaign_id = :campaign_id
-            AND campaign_list.is_deleted = :is_deleted
+            AND campaign_list.is_deleted = :is_deleted AND campaign_list.status = 1
+
         ";
 
             $bindings = [
