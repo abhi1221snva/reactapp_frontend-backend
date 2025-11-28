@@ -1351,6 +1351,8 @@ Log::info('Transfer Report SQL:', [
 
     function getCDR($request)
     {
+                    Log::info('cdr Reached funtion',[$request->lead_id]);
+
         try {
 
 
@@ -1372,6 +1374,7 @@ Log::info('Transfer Report SQL:', [
             $sql = "(SELECT *, SEC_TO_TIME(duration) AS duration_in_time_format, 'cdr' AS platform FROM cdr WHERE (number = " . $number1 . " || number = " . $number2 . ") ORDER BY start_time DESC) ";
             $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
             $dataCDR = (array) $record;
+            Log::info('cdr Reached',['dataCDR'=>$dataCDR]);
             if (!empty($record)) {
                 foreach ($dataCDR as $d) {
                     if (!in_array($d->extension, $uniqueExt)) //get extension
@@ -1384,7 +1387,18 @@ Log::info('Transfer Report SQL:', [
                     }
                 }
             }
+if ($lead_id == 0 && empty($dataCDR)) {
 
+    // lead_id provided directly in request
+    if ($request->input('lead_id')) {
+        $lead_id = $request->input('lead_id');
+    }
+
+    // list_id also provided directly in request (optional but useful)
+    if ($request->input('list_id')) {
+        $list_id = $request->input('list_id');
+    }
+}
 
             $sql = "(SELECT *, SEC_TO_TIME(duration) AS duration_in_time_format, 'cdr' AS platform FROM cdr_archive WHERE (number = " . $number1 . " || number = " . $number2 . ") ORDER BY start_time DESC) ";
             $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
@@ -1447,6 +1461,7 @@ Log::info('Transfer Report SQL:', [
 function getCDR_copy($request)
 {
     try {
+            Log::info('cdr Reached',['lead_id'=>$request->input('lead_id')]);
 
         $phone = $request->input('phone_number');
         $ext = $request->extension;
@@ -1480,6 +1495,7 @@ function getCDR_copy($request)
                 ORDER BY start_time DESC";
 
         $dataCDR = $db->select($sql, [$number1, $number2]);
+            Log::info('cdr Reached',['dataCDR'=>$dataCDR]);
 
 
         foreach ($dataCDR as $d) {
@@ -1511,7 +1527,18 @@ function getCDR_copy($request)
                 $lead_id = $d->lead_id;
             }
         }
+if ($lead_id == 0 && empty($dataCDR)) {
 
+    // lead_id provided directly in request
+    if ($request->lead_id) {
+        $lead_id = $request->lead_id;
+    }
+
+    // If extension passed in request
+    if ($request->extension) {
+        $uniqueExt = [$request->extension];
+    }
+}
         // --- LEAD DATA ---
         $leadData = [];
         if ($lead_id > 0) {
@@ -1677,7 +1704,7 @@ function getCDR_copy($request)
         $sql = "(SELECT $listDataSelect FROM list_data WHERE id = $lead_id) UNION (SELECT $archiveSelect FROM list_data_archive WHERE id = $lead_id)";
         $record = DB::connection('mysql_' . $parent_id)->select($sql);
         $listData = (array) $record;
-                Log::info("listData",['listData'=>$listData]);
+                Log::info("reached listData",['listData'=>$listData]);
 
         if (!empty($listData)) {
             $list_id = $listData[0]->list_id;
@@ -1692,6 +1719,7 @@ function getCDR_copy($request)
                 $list_id = $list[0]->id;
             }
         }
+                Log::info("reached listis",['list_id'=>$list_id]);
 
         if ($list_id > 0) {
             //$sql = "SELECT id, title FROM label ORDER BY label.id ASC"; //get all labels
@@ -1706,6 +1734,7 @@ function getCDR_copy($request)
         AND label.is_deleted = 0
         AND label.status = 1
         ORDER BY label.display_order ASC";
+                Log::info("reached sql",['list_id'=>$list_id]);
 
 $labels = DB::connection('mysql_' . $parent_id)->select($sql);
 

@@ -1325,9 +1325,9 @@ public function cdrCallsByRangeNew(Request $request)
 
     public function getCDR_copy()
     {
-        $this->validate($this->request, [
-            'phone_number'    => 'required|numeric',
-        ]);
+        // $this->validate($this->request, [
+        //     'phone_number'    => 'required|numeric',
+        // ]);
         $response = $this->model->getCDR_copy($this->request);
         return $this->successResponse("Lead Activity", $response);
     }
