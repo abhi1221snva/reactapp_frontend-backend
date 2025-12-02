@@ -1527,7 +1527,7 @@ function getCDR_copy($request)
                 $lead_id = $d->lead_id;
             }
         }
-if ($lead_id == 0 && empty($dataCDR)) {
+if (empty($dataCDR)) {
 
     // lead_id provided directly in request
     if ($request->lead_id) {
@@ -1736,14 +1736,9 @@ if ($lead_id == 0 && empty($dataCDR)) {
         ORDER BY label.display_order ASC";
                 Log::info("reached sql",['list_id'=>$list_id]);
 
-$labels = DB::connection('mysql_' . $parent_id)->select($sql);
+        $labels = DB::connection('mysql_' . $parent_id)->select($sql);
 
                 Log::info("labels",['labels'=>$labels]);
-
-            //get all list_header columun (option_1,option_2)
-            // $sql = $sql = "SELECT list_header.is_dialing, list_header.column_name, label.title, label.id "
-            //     . "FROM list_header inner join label on label.id = list_header.label_id  "
-            //     . "WHERE list_header.list_id IN(" . $list_id . ") group by label.title ORDER BY label.id ASC";
             $sql = "SELECT list_header.is_dialing, list_header.column_name, 
                label.title, label.id
         FROM list_header 
@@ -1846,12 +1841,30 @@ $labels = DB::connection('mysql_' . $parent_id)->select($sql);
      * @param type $b
      * @return type
      */
-    function sortResultOntimeDesc($a, $b)
-    {
-        $ad = strtotime($a->start_time);
-        $bd = strtotime($b->start_time);
-        return ($bd - $ad);
-    }
+    // function sortResultOntimeDesc($a, $b)
+    // {
+    //     $ad = strtotime($a->start_time);
+    //     $bd = strtotime($b->start_time);
+    //     return ($bd - $ad);
+    // }
+public function sortResultOntimeDesc($a, $b)
+{
+    $timeA =
+        $a->start_time ??
+        $a->created_at ??
+        $a->sms_time ??
+        $a->fax_time ??
+        null;
+
+    $timeB =
+        $b->start_time ??
+        $b->created_at ??
+        $b->sms_time ??
+        $b->fax_time ??
+        null;
+
+    return strtotime($timeB) <=> strtotime($timeA);
+}
 
 public function getReportPress1Campaign($request)
 {
