@@ -1815,7 +1815,6 @@ $listHeaders = DB::connection('mysql_' . $parent_id)
         INNER JOIN label 
             ON label.id = list_header.label_id
         WHERE list_header.list_id = $list_id
-          AND list_header.is_editable = 1
         GROUP BY label.title
         ORDER BY label.id ASC
     ");

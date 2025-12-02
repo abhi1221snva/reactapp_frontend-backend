@@ -137,66 +137,154 @@ class Disposition extends Model
      *@param object $request
      *@return array
      */
+    // public function dispositionUpdate($request)
+    // {
+    //     try
+    //     {
+    //         if($request->has('disposition_id') && is_numeric($request->input('disposition_id')))
+    //         {
+    //             $updateString = array();
+    //             if($request->has('title') && !empty($request->input('title'))) {
+    //                 array_push($updateString, 'title = :title');
+    //                 $data['title'] = $request->input('title');
+    //             }
+
+    //             if($request->has('d_type') && !empty($request->input('d_type'))) {
+    //                 array_push($updateString, 'd_type = :d_type');
+    //                 $data['d_type'] = $request->input('d_type');
+    //             }
+    //             if($request->has('enable_sms') && is_numeric($request->input('enable_sms'))) {
+    //                 array_push($updateString, 'enable_sms = :enable_sms');
+    //                 $data['enable_sms'] = $request->input('enable_sms');
+    //             }
+    //              if($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
+    //                  array_push($updateString, 'is_deleted = :is_deleted');
+    //                  $data['is_deleted'] = $request->input('is_deleted');
+    //              }
+    //             if(!empty($updateString) && !empty($data))
+    //             {
+    //                 $data['id'] = $request->input('disposition_id');
+    //                 $query = "UPDATE disposition set ".implode(" , ", $updateString)." WHERE id = :id";
+    //                 $save =  DB::connection('mysql_'.$request->auth->parent_id)->update($query, $data);
+    //                 if($save == 1)
+    //                 {
+    //                     return array(
+    //                         'success'=> 'true',
+    //                         'message'=> 'Dispositions updated successfully.'
+    //                     );
+    //                 }
+    //                 else
+    //                 {
+    //                     return array(
+    //                         'success'=> 'false',
+    //                         'message'=> 'Dispositions are not updated successfully.'
+    //                     );
+    //                 }
+    //             }
+
+    //         }
+    //         return array(
+    //             'success'=> 'false',
+    //             'message'=> 'Dispositions doesn\'t exist.'
+    //         );
+    //     }
+    //     catch (Exception $e)
+    //     {
+    //         Log::log($e->getMessage());
+    //     }
+    //     catch (InvalidArgumentException $e)
+    //     {
+    //         Log::log($e->getMessage());
+    //     }
+    // }
     public function dispositionUpdate($request)
-    {
-        try
-        {
-            if($request->has('disposition_id') && is_numeric($request->input('disposition_id')))
-            {
-                $updateString = array();
-                if($request->has('title') && !empty($request->input('title'))) {
-                    array_push($updateString, 'title = :title');
-                    $data['title'] = $request->input('title');
-                }
+{
+    try {
 
-                if($request->has('d_type') && !empty($request->input('d_type'))) {
-                    array_push($updateString, 'd_type = :d_type');
-                    $data['d_type'] = $request->input('d_type');
-                }
-                if($request->has('enable_sms') && is_numeric($request->input('enable_sms'))) {
-                    array_push($updateString, 'enable_sms = :enable_sms');
-                    $data['enable_sms'] = $request->input('enable_sms');
-                }
-                 if($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
-                     array_push($updateString, 'is_deleted = :is_deleted');
-                     $data['is_deleted'] = $request->input('is_deleted');
-                 }
-                if(!empty($updateString) && !empty($data))
-                {
-                    $data['id'] = $request->input('disposition_id');
-                    $query = "UPDATE disposition set ".implode(" , ", $updateString)." WHERE id = :id";
-                    $save =  DB::connection('mysql_'.$request->auth->parent_id)->update($query, $data);
-                    if($save == 1)
-                    {
-                        return array(
-                            'success'=> 'true',
-                            'message'=> 'Dispositions updated successfully.'
-                        );
-                    }
-                    else
-                    {
-                        return array(
-                            'success'=> 'false',
-                            'message'=> 'Dispositions are not updated successfully.'
-                        );
-                    }
-                }
+        if (!$request->has('disposition_id') || !is_numeric($request->input('disposition_id'))) {
+            return [
+                'success' => 'false',
+                'message' => "Disposition doesn't exist."
+            ];
+        }
 
+        $dispositionId = $request->input('disposition_id');
+        $clientDb = 'mysql_' . $request->auth->parent_id;
+
+        $updateString = [];
+        $data = [];
+
+        // Title
+        if ($request->has('title') && !empty($request->input('title'))) {
+            $updateString[] = 'title = :title';
+            $data['title'] = $request->input('title');
+        }
+
+        // Type
+        if ($request->has('d_type') && !empty($request->input('d_type'))) {
+            $updateString[] = 'd_type = :d_type';
+            $data['d_type'] = $request->input('d_type');
+        }
+
+        // Enable SMS
+        if ($request->has('enable_sms') && is_numeric($request->input('enable_sms'))) {
+            $updateString[] = 'enable_sms = :enable_sms';
+            $data['enable_sms'] = $request->input('enable_sms');
+        }
+
+        // Is Deleted (Soft Delete)
+        $isDeleting = false;
+        if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
+            $updateString[] = 'is_deleted = :is_deleted';
+            $data['is_deleted'] = $request->input('is_deleted');
+
+            if ($request->input('is_deleted') == 1) {
+                $isDeleting = true;   // mark for campaign_disposition deletion also
             }
-            return array(
-                'success'=> 'false',
-                'message'=> 'Dispositions doesn\'t exist.'
+        }
+
+        if (empty($updateString)) {
+            return [
+                'success' => 'false',
+                'message' => 'Nothing to update.'
+            ];
+        }
+
+        // Final update
+        $data['id'] = $dispositionId;
+        $query = "UPDATE disposition SET " . implode(", ", $updateString) . " WHERE id = :id";
+
+        $save = DB::connection($clientDb)->update($query, $data);
+
+        // ❗ If deleted → update campaign_disposition also
+        if ($isDeleting) {
+            DB::connection($clientDb)->update(
+                "UPDATE campaign_disposition SET is_deleted = 1 WHERE disposition_id = ?",
+                [$dispositionId]
             );
         }
-        catch (Exception $e)
-        {
-            Log::log($e->getMessage());
+
+        if ($save == 1) {
+            return [
+                'success' => 'true',
+                'message' => 'Disposition updated successfully.'
+            ];
         }
-        catch (InvalidArgumentException $e)
-        {
-            Log::log($e->getMessage());
-        }
+
+        return [
+            'success' => 'false',
+            'message' => 'Disposition was not updated.'
+        ];
+
+    } catch (\Exception $e) {
+
+        return [
+            'success' => 'false',
+            'message' => 'Error: ' . $e->getMessage()
+        ];
     }
+}
+
     /*
      *Add disposition details
      *@param object $request
