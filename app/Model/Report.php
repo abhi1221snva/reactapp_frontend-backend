@@ -1574,17 +1574,33 @@ if (empty($dataCDR)) {
         $comments = $this->getCommentsLogOnExt($uniqueExt, $lead_id, $parent);
 
         // --- MERGE ALL DATA ---
-        $arr = array_merge($dataCDR, $dataCDRA);
+        // $arr = array_merge($dataCDR, $dataCDRA);
+        // usort($arr, array($this, "sortResultOntimeDesc"));
+
+        // $arr = array_merge($arr, $faxData);
+        // usort($arr, array($this, "sortResultOntimeDesc"));
+
+        // $arr = array_merge($arr, $smsData);
+        // usort($arr, array($this, "sortResultOntimeDesc"));
+
+        // $arr = array_merge($arr, $comments);
+        // usort($arr, array($this, "sortResultOntimeDesc"));
+        // --- MERGE ALL DATA ---
+        $arr = array_map(fn($d) => (object)$d, array_merge($dataCDR, $dataCDRA));
         usort($arr, array($this, "sortResultOntimeDesc"));
 
+        $faxData = array_map(fn($d) => (object)$d, $faxData);
         $arr = array_merge($arr, $faxData);
         usort($arr, array($this, "sortResultOntimeDesc"));
 
+        $smsData = array_map(fn($d) => (object)$d, $smsData);
         $arr = array_merge($arr, $smsData);
         usort($arr, array($this, "sortResultOntimeDesc"));
 
+        $comments = array_map(fn($d) => (object)$d, $comments);
         $arr = array_merge($arr, $comments);
         usort($arr, array($this, "sortResultOntimeDesc"));
+
 
         return [
             'leadData' => array_values($leadData),
@@ -1841,30 +1857,12 @@ if (empty($dataCDR)) {
      * @param type $b
      * @return type
      */
-    // function sortResultOntimeDesc($a, $b)
-    // {
-    //     $ad = strtotime($a->start_time);
-    //     $bd = strtotime($b->start_time);
-    //     return ($bd - $ad);
-    // }
-public function sortResultOntimeDesc($a, $b)
-{
-    $timeA =
-        $a->start_time ??
-        $a->created_at ??
-        $a->sms_time ??
-        $a->fax_time ??
-        null;
-
-    $timeB =
-        $b->start_time ??
-        $b->created_at ??
-        $b->sms_time ??
-        $b->fax_time ??
-        null;
-
-    return strtotime($timeB) <=> strtotime($timeA);
-}
+    function sortResultOntimeDesc($a, $b)
+    {
+        $ad = strtotime($a->start_time);
+        $bd = strtotime($b->start_time);
+        return ($bd - $ad);
+    }
 
 public function getReportPress1Campaign($request)
 {
