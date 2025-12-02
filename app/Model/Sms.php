@@ -832,13 +832,48 @@ $twilio_number = '+'.$request->from;
 $to_number = '+'.$request->to;
 
 $client = new \Twilio\Rest\Client($account_sid, $auth_token);
-$response_twilio = $client->messages->create(
-    $to_number,$data
-);
+try {
 
+    $response_twilio = $client->messages->create($to_number, $data);
+    $response_id = $response_twilio->sid;
 
-$response_id = $response_twilio->sid;
+} catch (\Twilio\Exceptions\RestException $e) {
 
+    // TWILIO ERROR MESSAGE
+    $twilioMessage = $e->getMessage();
+    $status = $e->getStatusCode();   
+    $errorCode = $e->getCode();     // Twilio-specific error code (ex: 20003)
+
+    // Authentication errors → 401 or code 20003
+    if ($status == 401 || $errorCode == 20003) {
+        return [
+            'success' => false,
+            'message' => "Authentication failed for Twilio! Please verify your Account SID and Auth Token."
+        ];
+    }
+
+    // Invalid number
+    if ($errorCode == 21608) {
+        return [
+            'success' => false,
+            'message' => "The destination number is not verified in your Twilio account."
+        ];
+    }
+
+    // Phone number formatting error
+    if ($errorCode == 21211) {
+        return [
+            'success' => false,
+            'message' => "Invalid phone number format. Please check the number and try again."
+        ];
+    }
+
+    // Fallback for all other Twilio errors
+    return [
+        'success' => false,
+        'message' => "Twilio Error: " . $twilioMessage
+    ];
+}
             }
 
            /// return $request->mms_url.'-'.$response_twilio->sid;
