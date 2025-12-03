@@ -1796,26 +1796,20 @@ $rawLabels = DB::connection('mysql_' . $parent_id)
 
 Log::info("DEBUG all labels", ['labels' => $rawLabels]);
 
-// Now your original query
-// $listHeaders = DB::connection('mysql_' . $parent_id)
-//     ->select("SELECT list_header.is_dialing, list_header.column_name, label.title, label.id
-//               FROM list_header
-//               INNER JOIN label ON label.id = list_header.label_id
-//               WHERE list_header.list_id = $list_id
-//               GROUP BY label.title
-//               ORDER BY label.id ASC");
 $listHeaders = DB::connection('mysql_' . $parent_id)
     ->select("
         SELECT 
             list_header.is_dialing, 
-            list_header.column_name, 
+            list_header.column_name,
+            list_header.is_visible, 
+            list_header.is_editable, 
             label.title, 
             label.id
         FROM list_header
         INNER JOIN label 
             ON label.id = list_header.label_id
         WHERE list_header.list_id = $list_id
-        GROUP BY label.title
+        AND is_visible= 1
         ORDER BY label.id ASC
     ");
 
@@ -1833,6 +1827,8 @@ Log::info("DEBUG joined listHeaders", ['listHeaders' => $listHeaders]);
                 $temp['id'] = $header->id;
                 $temp['title'] = $header->title;
                 $temp['is_dialing'] = $header->is_dialing;
+                $temp['is_visible'] = $header->is_visible;
+                $temp['is_editable'] = $header->is_editable;
                 $temp['column_name'] = $header->column_name;
                 $temp['value'] = isset($inLeadArr[$header->column_name]) ? $inLeadArr[$header->column_name] : '';
                 $leadDataArr[$header->id] = $temp;
