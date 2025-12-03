@@ -1807,7 +1807,7 @@ $listHeaders = DB::connection('mysql_' . $parent_id)
             label.id
         FROM list_header
         INNER JOIN label 
-            ON label.id = list_header.label_id
+        ON label.id = list_header.label_id
         WHERE list_header.list_id = $list_id
         AND is_visible= 1
         ORDER BY label.id ASC
