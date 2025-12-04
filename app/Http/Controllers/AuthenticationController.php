@@ -24,6 +24,8 @@ use App\Mail\SystemNotificationMail;
 use App\Model\Master\Client;
 
 use Plivo\RestClient;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 
 
 
@@ -406,9 +408,100 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
     }
 
     public function createUser(Request $request)
-    {
-        echo "done";
+{
+    // Step 1: Validate required fields
+    $this->validate($request, [
+        'email'      => 'required|email',
+        'password'   => 'required|min:6'
+    ]);
+
+    // Step 2: Check if email already exists
+    if (User::where('email', $request->email)->exists()) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Email already exists in the system.'
+        ], 409);
     }
+
+    // Step 3: Find reserved voiptella client
+    $availableClient = Client::where('reserved', 1)
+        ->where('client_type', 'voiptella')
+        ->first();
+
+    if (!$availableClient) {
+        return response()->json([
+            'success' => false,
+            'message' => 'No available client found. All voiptella clients are reserved.'
+        ], 404);
+    }
+
+    // Step 4: Find user assigned to this client
+    $existingUser = User::where('base_parent_id', $availableClient->id)->first();
+
+    if (!$existingUser) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Client found but no associated user exists.'
+        ], 404);
+    }
+
+
+    $phone = substr($request->phone, -10);
+
+    $countryCode = substr($request->phone, 0, strlen($request->phone) - 10);
+
+    // Step 5: Update user details
+    $existingUser->email      = $request->email;
+    //$existingUser->first_name = $request->first_name;
+    //$existingUser->last_name  = $request->last_name;
+    $existingUser->mobile  = $phone;
+    $existingUser->country_code  = $countryCode;
+
+
+    $existingUser->password   = Hash::make($request->password);
+    $existingUser->save();
+
+    // Step 6: Update SIP passwords in user_extensions
+    $extensionsToUpdate = [
+        $existingUser->extension,
+        $existingUser->alt_extension,
+        $existingUser->app_extension
+    ];
+
+    UserExtension::whereIn('username', $extensionsToUpdate)
+        ->update(['secret' => $request->password]);
+
+    // Step 7: Mark client as reserved = 0 (now consumed)
+    $availableClient->reserved = 0;
+    $availableClient->save();
+
+   $authResponse = Http::post(env('APP_URL') . '/authentication', [
+    'email'    => $existingUser->email,
+    'password' => $request->password,
+    'device'   => 'desktop_app'
+]);
+
+return  $authData = $authResponse->json();
+
+    // Step 9: Return success response with authentication details
+    return response()->json([
+        'success' => true,
+        'message' => 'User created and authenticated successfully.',
+        'client_id'    => $availableClient->id,
+        'company_name' => $availableClient->company_name,
+        'user' => [
+            'id'         => $existingUser->id,
+            'email'      => $existingUser->email,
+            'first_name' => $existingUser->first_name,
+            'last_name'  => $existingUser->last_name
+        ],
+        'auth' => $authResponse   // token + login response
+    ]);
+}
+
+
+
+
 
 
 
