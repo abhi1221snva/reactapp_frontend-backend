@@ -1532,7 +1532,13 @@ $campaign->setAttribute('created_date', $campaign->updated ?? null);
 // Optionally remove old keys to clean response
 unset($campaign->rowLeadReport, $campaign->rowListData, $campaign->updated);
     // return as collection for consistency
-    return collect([$campaign]);
+    return collect($campaign);
+//     return [
+//     'success' => true,
+//     'message' => 'Campaign fetched successfully.',
+//     'data' => $campaign
+// ];
+
 }
     function campaignByIdNew($request)
     {
