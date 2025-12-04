@@ -646,9 +646,15 @@ public function campaignDetaillatest($request)
    public function addCampaign($request)
     {
         try {
+if (!$request->has('voicedrop_option_user_id') || empty($request->voicedrop_option_user_id)) {
+    $request->merge(['voicedrop_option_user_id' => 0]);
+}
+if (!$request->has('no_agent_dropdown_action') || empty($request->no_agent_dropdown_action)) {
+    $request->merge(['no_agent_dropdown_action' => 0]);
+}
 
             if (!$request->has('api_id') || empty($request->api_id)) {
-    $request->merge(['api_id' => 1]);
+            $request->merge(['api_id' => 1]);
 }
             if ($request->has('title') && !empty($request->input('title'))) {
                 $validate = $this->validateCampaign($request);
