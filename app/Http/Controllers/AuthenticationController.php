@@ -392,4 +392,19 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
         }
     }
 
+
+
+    public function checkEmail(Request $request)
+    {
+        $this->validate($request, [
+            'email' => 'required|email'
+        ]);
+
+        $exists = User::where('email', $request->email)->exists();
+
+        return response()->json(['exists'  => $exists,'message' => $exists ? 'Email already exists' : 'Email is available' ]);
+    }
+
+
+
 }
