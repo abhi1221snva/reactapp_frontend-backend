@@ -405,6 +405,11 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
         return response()->json(['exists'  => $exists,'message' => $exists ? 'Email already exists' : 'Email is available' ]);
     }
 
+    public function createUser(Request $request)
+    {
+        echo "done";
+    }
+
 
 
 }
