@@ -100,7 +100,7 @@ class ScheduleController extends Controller
     //     }
     //     return response()->json($sched_res);
     // }
-    public function index(Request $request)
+    public function indexold(Request $request)
 {
     $client_id = $request->auth->parent_id;
     $start_date = $request->input('start_date'); // Optional filter start date
@@ -151,6 +151,66 @@ class ScheduleController extends Controller
 
     return response()->json($sched_res);
 }
+public function index(Request $request)
+{
+    $client_id = $request->auth->parent_id;
+    $start_date = $request->input('start_date');
+    $end_date = $request->input('end_date');
+
+    // Base query
+    $query = Schedule::on("mysql_$client_id");
+
+    // Apply date filters
+    if (!empty($start_date) && !empty($end_date)) {
+        $query->whereBetween('start_datetime', [$start_date, $end_date]);
+    } elseif (!empty($start_date)) {
+        $query->where('start_datetime', '>=', $start_date);
+    } elseif (!empty($end_date)) {
+        $query->where('end_datetime', '<=', $end_date);
+    }
+
+    $schedules = $query->get();
+    $sched_res = [];
+
+    foreach ($schedules as $schedule) {
+        $sched_res[] = [
+            'id' => $schedule->id,
+            'title' => $schedule->title,
+            'description' => $schedule->description,
+            'start' => date("Y-m-d\TH:i:s", strtotime($schedule->start_datetime)),
+            'end' => date("Y-m-d\TH:i:s", strtotime($schedule->end_datetime)),
+            'timezone' => $schedule->timezone,
+        ];
+    }
+
+    $total_rows = count($sched_res);
+
+    // ---- CHECK IF PAGINATION IS REQUIRED ----
+    $hasPagination = $request->has('start') && $request->has('limit');
+
+    if ($hasPagination) {
+
+        $start = (int) $request->input('start');
+        $limit = (int) $request->input('limit');
+
+        $paged_data = array_slice($sched_res, $start, $limit);
+
+        // Return PAGINATED STRUCTURE
+        return $this->successResponse("All schedules", [
+            'start' => $start,
+            'limit' => $limit,
+            'total_rows' => $total_rows,
+            'data' => $paged_data
+        ]);
+    }
+
+    // ---- RETURN NON-PAGINATED STRUCTURE ----
+    return $this->successResponse("All schedules", [
+        'total_rows' => $total_rows,
+        'data' => $sched_res
+    ]);
+}
+
 
 
     public function index_old_code(Request $request)
