@@ -184,7 +184,19 @@ public function smsDetails(Request $request): array
     // ✅ Pagination
     $total = count($sorted);
     $pagedData = array_slice($sorted, $start, $limit);
+$userIds = array_unique(array_column($pagedData, 'user_id'));
 
+$users = DB::connection("master")
+    ->table('users')
+    ->selectRaw("id, CONCAT(first_name, ' ', last_name) AS full_name")
+    ->whereIn('id', $userIds)
+    ->pluck('full_name', 'id');   // [id => full_name]
+
+
+// --- Attach user_name to each SMS record ---
+foreach ($pagedData as &$row) {
+    $row->user_name = $users[$row->user_id] ?? null;
+}
     // ✅ Return response
     return [
         'success' => true,
