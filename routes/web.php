@@ -1508,5 +1508,5 @@ $router->get('ai-coach-api', 'AiCoachController@index');
 
 #new apis for phonify
 
-$router->post('/api/auth/check-email', 'ExtensionController@checkEmail');
+$router->post('/api/auth/check-email', 'AuthenticationController@checkEmail');
 
