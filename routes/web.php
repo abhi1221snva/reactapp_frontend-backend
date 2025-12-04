@@ -1504,3 +1504,9 @@ $router->get('document-value-merchant/{type}/{client_id}', 'DocumentTypeControll
 $router->get('transcription-conversion-api', 'TranscriptionController@index');
 
 $router->get('ai-coach-api', 'AiCoachController@index');
+
+
+#new apis for phonify
+
+$router->post('/api/auth/check-email', 'ExtensionController@checkEmail');
+
