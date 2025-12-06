@@ -151,7 +151,7 @@ class ExcludeNumber extends Model
      *@param object $request
      *@return array
      */
-    public function excludeNumberUpdate($request)
+    public function excludeNumberUpdate1($request)
     {
         try {
             if ($request->has('number') && is_numeric($request->input('number')) && $request->has('campaign_id') && is_numeric($request->input('campaign_id')))
@@ -188,7 +188,7 @@ class ExcludeNumber extends Model
                     } else {
                         return array(
                             'success' => 'false',
-                            'message' => 'Exclude Number are updated.'
+                            'message' => 'Exclude Number not updated.'
                         );
                     }
                 }
@@ -208,6 +208,98 @@ class ExcludeNumber extends Model
             Log::log($e->getMessage());
         }
     }
+    public function excludeNumberUpdate($request)
+{
+    try {
+        // Validate required fields
+        if (
+            !$request->has('number') ||
+            !is_numeric($request->input('number')) ||
+            !$request->has('campaign_id') ||
+            !is_numeric($request->input('campaign_id'))
+        ) {
+            return [
+                'success' => 'false',
+                'message' => 'Invalid number or campaign_id.'
+            ];
+        }
+
+        $updateString = [];
+        $data = [];
+
+        // OLD values for WHERE condition
+        $data['old_number'] = $request->input('number');
+        $data['campaign_id'] = $request->input('campaign_id');
+
+        // ▌1 — Update Number (NEW)
+        if ($request->has('new_number') && is_numeric($request->input('new_number'))) {
+            $updateString[] = 'number = :new_number';
+            $data['new_number'] = $request->input('new_number');
+        }
+
+        // ▌2 — Update Campaign ID
+        if ($request->has('new_campaign_id') && is_numeric($request->input('new_campaign_id'))) {
+            $updateString[] = 'campaign_id = :new_campaign_id';
+            $data['new_campaign_id'] = $request->input('new_campaign_id');
+        }
+
+        // ▌3 — Update First Name
+        if ($request->has('first_name') && !empty($request->input('first_name'))) {
+            $updateString[] = 'first_name = :first_name';
+            $data['first_name'] = $request->input('first_name');
+        }
+
+        // ▌4 — Update Last Name
+        if ($request->has('last_name') && !empty($request->input('last_name'))) {
+            $updateString[] = 'last_name = :last_name';
+            $data['last_name'] = $request->input('last_name');
+        }
+
+        // ▌5 — Update Company Name
+        if ($request->has('company_name') && !empty($request->input('company_name'))) {
+            $updateString[] = 'company_name = :company_name';
+            $data['company_name'] = $request->input('company_name');
+        }
+
+        // If no valid field to update
+        if (empty($updateString)) {
+            return [
+                'success' => 'false',
+                'message' => 'No valid fields to update.'
+            ];
+        }
+
+        // Build Update Query
+        $query = "UPDATE " . $this->table . "
+                  SET " . implode(" , ", $updateString) . "
+                  WHERE number = :old_number
+                  AND campaign_id = :campaign_id";
+
+        // Execute update
+        $save = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
+
+        if ($save >= 1) {
+            return [
+                'success' => 'true',
+                'message' => 'Exclude Number updated successfully.'
+            ];
+        } else {
+            return [
+                'success' => 'false',
+                'message' => 'No changes were made.'
+            ];
+        }
+    }
+    catch (Exception $e)
+    {
+        Log::error($e->getMessage());
+        return [
+            'success' => 'false',
+            'message' => 'Something went wrong.'
+        ];
+    }
+}
+
     /*
      *Add Exclude Number details
      *@param object $request
