@@ -813,10 +813,16 @@ if (!$request->has('no_agent_dropdown_action') || empty($request->no_agent_dropd
             $data['automated_duration'] = $request->input('automated_duration');
         }
 
-        if ($request->has('amd')) {
-            array_push($string, 'amd = :amd');
-            $data['amd'] = $request->input('amd');
-        }
+        // if ($request->has('amd')) {
+        //     array_push($string, 'amd = :amd');
+        //     $data['amd'] = $request->input('amd');
+        // }
+       if ($request->has('amd')) {
+    array_push($string, 'amd = :amd');
+    $data['amd'] = (string) $request->input('amd') === '1' ? '1' : '0';
+}
+
+
         if ($request->has('amd_drop_action')) {
             array_push($string, 'amd_drop_action = :amd_drop_action');
             $data['amd_drop_action'] = $request->input('amd_drop_action');
