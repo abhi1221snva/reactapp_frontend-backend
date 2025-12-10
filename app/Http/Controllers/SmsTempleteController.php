@@ -79,8 +79,12 @@ class SmsTempleteController extends Controller
     public function index(Request $request)
 {
     // Base query
-    $query = SmsTemplete::on("mysql_" . $request->auth->parent_id)
-                        ->where('is_deleted', "0");
+   $query = SmsTemplete::on("mysql_" . $request->auth->parent_id)
+    ->where(function ($q) {
+        $q->where('is_deleted', '0')
+          ->orWhere('is_deleted', '');
+    });
+
 
     // Apply search if present
     if ($request->has('search') && !empty($request->input('search'))) {
