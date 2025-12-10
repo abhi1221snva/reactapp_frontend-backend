@@ -126,7 +126,43 @@ public function index(Request $request)
     }
 
     // PUT /call-timers/{id}
-    public function update(Request $request, $id)
+//     public function update(Request $request, $id)
+// {
+//     $connection = "mysql_" . $request->auth->parent_id;
+
+//     $timer = CallTimer::on($connection)->find($id);
+
+//     if (!$timer) {
+//         return response()->json(['message' => 'Timer not found'], 404);
+//     }
+
+//     // Validate inputs
+//     $this->validate($request, [
+//         'title' => 'sometimes|string',
+//         'description' => 'sometimes|string',
+//         'week_plan' => 'sometimes|array',
+//     ]);
+
+//     // If week_plan is sent, update (merge with existing if needed)
+//     if ($request->has('week_plan')) {
+//         $existingPlan = $timer->week_plan ?? [];
+//         $newPlan = array_merge($existingPlan, $request->week_plan);
+//         $timer->week_plan = $newPlan;
+//     }
+
+//     if ($request->has('title')) {
+//         $timer->title = $request->title;
+//     }
+
+//     if ($request->has('description')) {
+//         $timer->description = $request->description;
+//     }
+
+//     $timer->save();
+
+//     return $this->successResponse("Updated Call Times", $timer->toArray());
+// }
+public function update(Request $request, $id)
 {
     $connection = "mysql_" . $request->auth->parent_id;
 
@@ -136,18 +172,15 @@ public function index(Request $request)
         return response()->json(['message' => 'Timer not found'], 404);
     }
 
-    // Validate inputs
     $this->validate($request, [
         'title' => 'sometimes|string',
         'description' => 'sometimes|string',
         'week_plan' => 'sometimes|array',
     ]);
 
-    // If week_plan is sent, update (merge with existing if needed)
+    // Replace week_plan completely
     if ($request->has('week_plan')) {
-        $existingPlan = $timer->week_plan ?? [];
-        $newPlan = array_merge($existingPlan, $request->week_plan);
-        $timer->week_plan = $newPlan;
+        $timer->week_plan = $request->week_plan;
     }
 
     if ($request->has('title')) {
