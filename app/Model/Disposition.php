@@ -60,7 +60,77 @@ class Disposition extends Model
     //         'data'   => array()
     //     );
     // }
-   public function dispositionDetail($request)
+//    public function dispositionDetail($request)
+// {
+//     try {
+//         $searchStr = ['is_deleted = :is_deleted'];
+//         $data['is_deleted'] = 0;
+
+//         // Filter by disposition ID
+//         if ($request->has('disposition_id') && is_numeric($request->input('disposition_id'))) {
+//             $searchStr[] = 'id = :id';
+//             $data['id'] = $request->input('disposition_id');
+//         }
+
+//         // Filter by search keyword (title)
+//         if ($request->has('title') && !empty($request->input('title'))) {
+//             $searchKeyword = '%' . $request->input('title') . '%';
+//             $searchStr[] = '(title LIKE :search)';
+//             $data['search'] = $searchKeyword;
+//         }
+
+//         $whereClause = implode(" AND ", $searchStr);
+
+//         // Fetch from master DB
+//         $sqlMaster = "SELECT * FROM disposition WHERE $whereClause";
+//         $masterRecords = DB::connection('master')->select($sqlMaster, $data);
+
+//         // Fetch from client DB
+//         $sqlClient = "SELECT * FROM disposition WHERE $whereClause";
+//         $clientRecords = DB::connection('mysql_' . $request->auth->parent_id)->select($sqlClient, $data);
+
+//         // Merge both
+//         $mergedData = array_merge((array)$masterRecords, (array)$clientRecords);
+
+//         // Sort by title
+//         usort($mergedData, fn($a, $b) => strcmp($a->title, $b->title));
+
+//         // Total before pagination
+//         $total = count($mergedData);
+
+//         // Apply pagination if present
+//         if ($request->has('start') && $request->has('limit')) {
+//             $start = (int)$request->input('start');
+//             $limit = (int)$request->input('limit');
+//             $mergedData = array_slice($mergedData, $start, $limit);
+//         }
+
+//         if (!empty($mergedData)) {
+//             return [
+//                 'success' => 'true',
+//                 'message' => 'Dispositions detail.',
+//                 'total_rows'   => $total,
+//                 'data'    => $mergedData,
+//             ];
+//         }
+
+//         return [
+//             'success' => 'false',
+//             'message' => 'No dispositions found.',
+//             'data'    => [],
+//             'total'   => 0,
+//         ];
+//     } catch (\Exception $e) {
+//         return [
+//             'success' => 'false',
+//             'message' => 'Something went wrong: ' . $e->getMessage(),
+//             'data'    => [],
+//             'total'   => 0,
+//         ];
+//     }
+// }
+
+public function dispositionDetail($request)
 {
     try {
         $searchStr = ['is_deleted = :is_deleted'];
@@ -72,64 +142,56 @@ class Disposition extends Model
             $data['id'] = $request->input('disposition_id');
         }
 
-        // Filter by search keyword (title)
+        // Filter by title search
         if ($request->has('title') && !empty($request->input('title'))) {
-            $searchKeyword = '%' . $request->input('title') . '%';
+            $data['search'] = '%' . $request->input('title') . '%';
             $searchStr[] = '(title LIKE :search)';
-            $data['search'] = $searchKeyword;
         }
 
         $whereClause = implode(" AND ", $searchStr);
 
-        // Fetch from master DB
-        $sqlMaster = "SELECT * FROM disposition WHERE $whereClause";
-        $masterRecords = DB::connection('master')->select($sqlMaster, $data);
+        // Fetch ONLY from client DB
+        $sql = "SELECT * FROM disposition WHERE $whereClause";
+        $records = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
 
-        // Fetch from client DB
-        $sqlClient = "SELECT * FROM disposition WHERE $whereClause";
-        $clientRecords = DB::connection('mysql_' . $request->auth->parent_id)->select($sqlClient, $data);
+        // Sort alphabetically
+        usort($records, fn($a, $b) => strcmp($a->title, $b->title));
 
-        // Merge both
-        $mergedData = array_merge((array)$masterRecords, (array)$clientRecords);
+        $total = count($records);
 
-        // Sort by title
-        usort($mergedData, fn($a, $b) => strcmp($a->title, $b->title));
-
-        // Total before pagination
-        $total = count($mergedData);
-
-        // Apply pagination if present
+        // Pagination
         if ($request->has('start') && $request->has('limit')) {
             $start = (int)$request->input('start');
             $limit = (int)$request->input('limit');
-            $mergedData = array_slice($mergedData, $start, $limit);
+
+            $records = array_slice($records, $start, $limit);
         }
 
-        if (!empty($mergedData)) {
+        if (!empty($records)) {
             return [
                 'success' => 'true',
                 'message' => 'Dispositions detail.',
-                'total_rows'   => $total,
-                'data'    => $mergedData,
+                'total_rows' => $total,
+                'data' => $records,
             ];
         }
 
         return [
             'success' => 'false',
             'message' => 'No dispositions found.',
-            'data'    => [],
-            'total'   => 0,
+            'total_rows' => 0,
+            'data' => [],
         ];
+
     } catch (\Exception $e) {
         return [
             'success' => 'false',
             'message' => 'Something went wrong: ' . $e->getMessage(),
-            'data'    => [],
-            'total'   => 0,
+            'total_rows' => 0,
+            'data' => [],
         ];
     }
 }
-
 
 
     /*
