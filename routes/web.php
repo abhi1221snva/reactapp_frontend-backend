@@ -360,6 +360,7 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->post('get-sms-email-list', 'SmsTempleteController@getEmailSmsList');
   $router->post('sms-preview', 'SmsTempleteController@getSmsPreview');
   $router->post('sms-preview-crm', 'SmsTempleteController@getSmsPreviewCRM');
+  $router->post('update-sms-templete-status', 'SmsTempleteController@updateStatus');
 
   $router->delete('sms-template/{id}', 'SmsTempleteController@delete');
 

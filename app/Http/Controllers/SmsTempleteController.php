@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Model\SmsTemplete;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class SmsTempleteController extends Controller
 {
@@ -76,26 +77,65 @@ class SmsTempleteController extends Controller
      * )
      */
     public function index(Request $request)
-    {
-        $templates = SmsTemplete::on("mysql_" . $request->auth->parent_id)->get()->all();
+{
+    // Base query
+    $query = SmsTemplete::on("mysql_" . $request->auth->parent_id)
+                        ->where('is_deleted', "0");
 
-        if ($request->has('start') && $request->has('limit')) {
-            $total_row = count($templates);
-
-            $start = (int) $request->input('start');  // Start index (0-based)
-            $limit = (int) $request->input('limit');  // Number of records to fetch
-
-            $templates = array_slice($templates, $start, $limit, false);
-
-            return $this->successResponse("SMS Template List", [
-                'start' => $start,
-                'limit' => $limit,
-                'total' => $total_row,
-                'data' => $templates
-            ]);
-        }
-        return $this->successResponse("SMS Template List", $templates);
+    // Apply search if present
+    if ($request->has('search') && !empty($request->input('search'))) {
+        $search = $request->input('search');
+        $query->where(function($q) use ($search) {
+            $q->where('templete_name', 'like', "%$search%")
+              ->orWhere('templete_desc', 'like', "%$search%");
+            // Add more columns here if needed
+        });
     }
+
+    // Get all results as array
+    $templates = $query->get()->all();
+
+    // Apply pagination if start & limit provided
+    if ($request->has('start') && $request->has('limit')) {
+        $total_row = count($templates);
+
+        $start = (int) $request->input('start');  // Start index (0-based)
+        $limit = (int) $request->input('limit');  // Number of records to fetch
+
+        $templates = array_slice($templates, $start, $limit, false);
+
+        return $this->successResponse("SMS Template List", [
+            'start' => $start,
+            'limit' => $limit,
+            'total' => $total_row,
+            'data' => $templates
+        ]);
+    }
+
+    return $this->successResponse("SMS Template List", $templates);
+}
+
+    // public function index(Request $request)
+    // {
+    //     $templates = SmsTemplete::on("mysql_" . $request->auth->parent_id)->where('is_deleted',"0")->get()->all();
+
+    //     if ($request->has('start') && $request->has('limit')) {
+    //         $total_row = count($templates);
+
+    //         $start = (int) $request->input('start');  // Start index (0-based)
+    //         $limit = (int) $request->input('limit');  // Number of records to fetch
+
+    //         $templates = array_slice($templates, $start, $limit, false);
+
+    //         return $this->successResponse("SMS Template List", [
+    //             'start' => $start,
+    //             'limit' => $limit,
+    //             'total' => $total_row,
+    //             'data' => $templates
+    //         ]);
+    //     }
+    //     return $this->successResponse("SMS Template List", $templates);
+    // }
 
     public function index_old_code(Request $request)
     {
@@ -593,4 +633,45 @@ class SmsTempleteController extends Controller
             ], $exception, 500);
         }
     }
+    // In your SmsTempleteController.php
+
+
+public function updateStatus(Request $request)
+{
+    // Validate incoming request
+    $validator = Validator::make($request->all(), [
+        'templete_id' => 'required|integer|exists:mysql_' . $request->auth->parent_id . '.sms_templete,templete_id',
+        'status'      => 'required|in:0,1'
+    ]);
+
+    if ($validator->fails()) {
+        return response()->json([
+            'message' => 'Validation Error',
+            'errors'  => $validator->errors()->all()
+        ], 422);
+    }
+
+    try {
+        $template = SmsTemplete::on("mysql_" . $request->auth->parent_id)
+                               ->findOrFail($request->templete_id);
+
+        $template->status = $request->status;
+        $template->save();
+
+        return response()->json([
+            'message' => 'SMS Template status updated successfully',
+            'data' => [
+                'templete_id' => $template->templete_id,
+                'status'      => $template->status
+            ]
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'message' => 'Something went wrong',
+            'error'   => $e->getMessage()
+        ], 500);
+    }
+}
+
+
 }
