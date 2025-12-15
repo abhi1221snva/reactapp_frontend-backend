@@ -749,10 +749,25 @@ if (!$request->has('no_agent_dropdown_action') || empty($request->no_agent_dropd
             array_push($string, 'dial_mode = :dial_mode');
             $data['dial_mode'] = $request->input('dial_mode');
         }
-        if ($request->has('group_id') && is_numeric($request->input('group_id'))) {
-            array_push($string, 'group_id = :group_id');
-            $data['group_id'] = $request->input('group_id');
-        }
+        // if ($request->has('group_id') && is_numeric($request->input('group_id'))) {
+        //     array_push($string, 'group_id = :group_id');
+        //     $data['group_id'] = $request->input('group_id');
+        // }
+        // group_id is NOT required when dial_mode = outbound_ai
+if ($request->input('dial_mode') === 'super_power_dial') {
+
+    // use provided group_id (assuming validation already handled elsewhere)
+    $string[] = 'group_id = :group_id';
+    $data['group_id'] = (int) $request->input('group_id');
+
+} else {
+
+    // NOT super_power_dial → force group_id = 0
+    $string[] = 'group_id = :group_id';
+    $data['group_id'] = 0;
+}
+
+
         if ($request->has('max_lead_temp') && is_numeric($request->input('max_lead_temp')) && $request->input('max_lead_temp') < 1000) {
             array_push($string, 'max_lead_temp = :max_lead_temp');
             $data['max_lead_temp'] = $request->input('max_lead_temp');
