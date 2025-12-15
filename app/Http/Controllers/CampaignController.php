@@ -251,7 +251,8 @@ class CampaignController extends Controller
             'call_time_start'   => 'date_format:H:i',
             'call_time_end'     => 'date_format:H:i',
             'dial_mode'         => 'string|max:255',
-            'group_id'          => 'numeric',
+               // 👇 CONDITIONAL RULE
+             'group_id'           => 'required_if:dial_mode,super_power_dial|numeric',
             'max_lead_temp'     => 'numeric',
             'min_lead_temp'     => 'numeric',
             'api'               => 'numeric',
@@ -354,7 +355,9 @@ class CampaignController extends Controller
             'max_lead_temp'     => 'numeric',
             'min_lead_temp'     => 'numeric',
             'api'               => 'numeric',
-            'group_id'          => 'required|numeric',
+                // 👇 CONDITIONAL RULE
+    'group_id'           => 'required_if:dial_mode,super_power_dial|numeric',
+            // 'group_id'          => 'required|numeric',
             'send_report'       => 'numeric',
             'disposition_id'    => 'required|array',
             'hopper_mode'       => 'numeric',
