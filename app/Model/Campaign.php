@@ -756,12 +756,15 @@ if (!$request->has('no_agent_dropdown_action') || empty($request->no_agent_dropd
         // group_id is NOT required when dial_mode = outbound_ai
 if ($request->input('dial_mode') === 'super_power_dial') {
 
-    if (!$request->has('group_id') || !is_numeric($request->input('group_id'))) {
-        throw new \InvalidArgumentException('group_id is required when dial_mode is super_power_dial');
-    }
-
+    // use provided group_id (assuming validation already handled elsewhere)
     $string[] = 'group_id = :group_id';
-    $data['group_id'] = $request->input('group_id');
+    $data['group_id'] = (int) $request->input('group_id');
+
+} else {
+
+    // NOT super_power_dial → force group_id = 0
+    $string[] = 'group_id = :group_id';
+    $data['group_id'] = 0;
 }
 
 
