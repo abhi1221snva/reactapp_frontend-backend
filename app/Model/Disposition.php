@@ -259,7 +259,7 @@ public function dispositionDetail($request)
     //         Log::log($e->getMessage());
     //     }
     // }
-    public function dispositionUpdate($request)
+    public function dispositionUpdateold($request)
 {
     try {
 
@@ -295,11 +295,15 @@ public function dispositionDetail($request)
         }
 
         // Is Deleted (Soft Delete)
-        // Is Deleted (Soft Delete)
         $isDeleting = false;
         if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
+            $updateString[] = 'is_deleted = :is_deleted';
+            $data['is_deleted'] = $request->input('is_deleted');
 
-            // 🔴 CHECK assignment BEFORE delete
+            if ($request->input('is_deleted') == 1) {
+                $isDeleting = true;   // mark for campaign_disposition deletion also
+            }
+                // 🔴 CHECK assignment BEFORE delete
             if ($request->input('is_deleted') == 1) {
 
                 $assigned = DB::connection($clientDb)
@@ -317,6 +321,9 @@ public function dispositionDetail($request)
 
                 $isDeleting = true;
             }
+
+            $updateString[] = 'is_deleted = :is_deleted';
+            $data['is_deleted'] = $request->input('is_deleted');
         }
 
         if (empty($updateString)) {
@@ -354,6 +361,108 @@ public function dispositionDetail($request)
 
     } catch (\Exception $e) {
 
+        return [
+            'success' => 'false',
+            'message' => 'Error: ' . $e->getMessage()
+        ];
+    }
+}
+public function dispositionUpdate($request)
+{
+    try {
+
+        if (!$request->has('disposition_id') || !is_numeric($request->input('disposition_id'))) {
+            return [
+                'success' => 'false',
+                'message' => "Disposition doesn't exist."
+            ];
+        }
+
+        $dispositionId = $request->input('disposition_id');
+        $clientDb = 'mysql_' . $request->auth->parent_id;
+
+        $updateString = [];
+        $data = [];
+
+        // Title
+        if ($request->has('title') && !empty($request->input('title'))) {
+            $updateString[] = 'title = :title';
+            $data['title'] = $request->input('title');
+        }
+
+        // Type
+        if ($request->has('d_type') && !empty($request->input('d_type'))) {
+            $updateString[] = 'd_type = :d_type';
+            $data['d_type'] = $request->input('d_type');
+        }
+
+        // Enable SMS
+        if ($request->has('enable_sms') && is_numeric($request->input('enable_sms'))) {
+            $updateString[] = 'enable_sms = :enable_sms';
+            $data['enable_sms'] = $request->input('enable_sms');
+        }
+
+        // Is Deleted (Soft Delete)
+        $isDeleting = false;
+        if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
+
+            // 🔴 CHECK assignment BEFORE delete
+            if ($request->input('is_deleted') == 1) {
+
+                $assigned = DB::connection($clientDb)
+                    ->table('campaign_disposition')
+                    ->where('disposition_id', $dispositionId)
+                    ->where('is_deleted', 0)
+                    ->exists();
+
+                if (!$assigned) {
+                    return [
+                        'success' => 'false',
+                        'message' => 'Disposition is not assigned to any campaign.'
+                    ];
+                }
+
+                $isDeleting = true;
+            }
+
+            $updateString[] = 'is_deleted = :is_deleted';
+            $data['is_deleted'] = $request->input('is_deleted');
+        }
+
+        if (empty($updateString)) {
+            return [
+                'success' => 'false',
+                'message' => 'Nothing to update.'
+            ];
+        }
+
+        // Final update
+        $data['id'] = $dispositionId;
+        $query = "UPDATE disposition SET " . implode(", ", $updateString) . " WHERE id = :id";
+
+        $save = DB::connection($clientDb)->update($query, $data);
+
+        // 🔁 If deleted → update campaign_disposition also
+        if ($isDeleting) {
+            DB::connection($clientDb)->update(
+                "UPDATE campaign_disposition SET is_deleted = 1 WHERE disposition_id = ?",
+                [$dispositionId]
+            );
+        }
+
+        if ($save == 1) {
+            return [
+                'success' => 'true',
+                'message' => 'Disposition updated successfully.'
+            ];
+        }
+
+        return [
+            'success' => 'false',
+            'message' => 'Disposition was not updated.'
+        ];
+
+    } catch (\Exception $e) {
         return [
             'success' => 'false',
             'message' => 'Error: ' . $e->getMessage()
