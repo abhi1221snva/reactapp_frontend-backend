@@ -263,8 +263,15 @@ class CampaignController extends Controller
 
 
         ]);
-        $response = $this->model->updateCampaign($this->request);
-        return response()->json($response);
+        $result = $this->model->updateCampaign($this->request);
+       // return response()->json($response);
+           return response()->json(
+        [
+            'success' => $result['success'],
+            'message' => $result['message']
+        ],
+        $result['status'] ?? 200
+    );
     }
     /*
      *Add Campaign details

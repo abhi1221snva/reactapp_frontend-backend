@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
 use App\Model\Client\CampaignList;
+use Illuminate\Database\QueryException;
 
 class Campaign extends Model
 {
@@ -454,8 +455,92 @@ public function campaignDetaillatest($request)
      * @param object $request
      * @return array
      */
+public function updateCampaign($request)
+{
+    try {
+        if (!$request->has('campaign_id') || !is_numeric($request->input('campaign_id'))) {
+            return [
+                'success' => false,
+                'message' => 'Campaign does not exist.',
+                'status'  => 422
+            ];
+        }
 
-    public function updateCampaign($request)
+        $validate = $this->validateCampaign($request);
+        $updateString = $validate['string'];
+        $data = $validate['data'];
+
+        if (empty($updateString) || empty($data)) {
+            return [
+                'success' => false,
+                'message' => 'Invalid campaign data.',
+                'status'  => 422
+            ];
+        }
+
+        $cmpId = $request->input('campaign_id');
+        $date_time = date('Y-m-d H:i:s');
+        $data['id'] = $cmpId;
+
+        DB::connection('mysql_' . $request->auth->parent_id)
+            ->update(
+                "UPDATE {$this->table} 
+                 SET updated = '{$date_time}', " . implode(', ', $updateString) . " 
+                 WHERE id = :id",
+                $data
+            );
+
+        // 🔴 DELETE OLD DISPOSITIONS
+        DB::connection('mysql_' . $request->auth->parent_id)
+            ->delete("DELETE FROM campaign_disposition WHERE campaign_id = ?", [$cmpId]);
+
+        $disposition_id = $request->input('disposition_id');
+
+        // 🔴 DUPLICATE CHECK
+        if (is_array($disposition_id) && count($disposition_id) !== count(array_unique($disposition_id))) {
+            return [
+                'success' => false,
+                'message' => 'Duplicate disposition values are not allowed.',
+                'status'  => 422
+            ];
+        }
+
+        if (is_array($disposition_id)) {
+            foreach ($disposition_id as $value) {
+                DB::connection('mysql_' . $request->auth->parent_id)->insert(
+                    "INSERT INTO campaign_disposition 
+                     (campaign_id, disposition_id, updated_at, is_deleted)
+                     VALUES (?, ?, ?, ?)",
+                    [$cmpId, $value, $date_time, 0]
+                );
+            }
+        }
+
+        return [
+            'success' => true,
+            'message' => 'Campaign updated successfully.',
+            'status'  => 200
+        ];
+
+    } catch (\Illuminate\Database\QueryException $e) {
+
+        if ($e->getCode() == 23000) {
+            return [
+                'success' => false,
+                'message' => 'Duplicate disposition selected.',
+                'status'  => 422
+            ];
+        }
+
+        return [
+            'success' => false,
+            'message' => $e->getMessage(),
+            'status'  => 500
+        ];
+    }
+}
+
+    public function updateCampaignold($request)
     {
         try {
             if ($request->has('campaign_id') && is_numeric($request->input('campaign_id'))) {
@@ -473,6 +558,13 @@ public function campaignDetaillatest($request)
                     $queryDel = "DELETE FROM campaign_disposition WHERE campaign_id= " . $cmpId;
                     $save &= DB::connection('mysql_' . $request->auth->parent_id)->update($queryDel);
                     $disposition_id = $request->input('disposition_id');
+                    if (is_array($disposition_id) && count($disposition_id) !== count(array_unique($disposition_id))) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Duplicate disposition values are not allowed.',
+                            'status'  => 422
+                        ]);
+                    }
                     if (count($disposition_id) > 0) {
                         foreach ($disposition_id as $key => $value) {
                             $insert = "INSERT INTO campaign_disposition SET campaign_id= :campaign_id , disposition_id= :disposition_id , updated_at= :updated_at , is_deleted= :is_deleted ";
@@ -498,8 +590,26 @@ public function campaignDetaillatest($request)
                 'message' => 'Campaign doesn\'t exist.'
             );
         } catch (Exception $e) {
+            if ($e->getCode() == 23000) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Duplicate disposition selected. Same disposition cannot be assigned multiple times.',
+            'status'  => 422
+        ]);
+    }
+
+    return response()->json([
+        'success' => false,
+        'message' => $e->getMessage(),
+        'status'  => 422
+    ]);
             Log::log($e->getMessage());
         } catch (InvalidArgumentException $e) {
+              return response()->json([
+        'success' => false,
+        'message' => $e->getMessage(),
+        'status'  => 500
+    ]);
             Log::log($e->getMessage());
         }
     }
