@@ -295,13 +295,27 @@ public function dispositionDetail($request)
         }
 
         // Is Deleted (Soft Delete)
+        // Is Deleted (Soft Delete)
         $isDeleting = false;
         if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
-            $updateString[] = 'is_deleted = :is_deleted';
-            $data['is_deleted'] = $request->input('is_deleted');
 
+            // 🔴 CHECK assignment BEFORE delete
             if ($request->input('is_deleted') == 1) {
-                $isDeleting = true;   // mark for campaign_disposition deletion also
+
+                $assigned = DB::connection($clientDb)
+                    ->table('campaign_disposition')
+                    ->where('disposition_id', $dispositionId)
+                    ->where('is_deleted', 0)
+                    ->exists();
+
+                if (!$assigned) {
+                    return [
+                        'success' => 'false',
+                        'message' => 'Disposition is not assigned to any campaign.'
+                    ];
+                }
+
+                $isDeleting = true;
             }
         }
 
