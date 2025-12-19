@@ -344,7 +344,7 @@ public function campaignDetaillatest($request)
 {
     try {
         $campaigns = self::allowedCampaigns($request->auth->parent_id, $request->auth->level, $request->auth->groups);
-     if ($request->has('title') && !empty($request->input('title'))) {
+        if ($request->has('title') && !empty($request->input('title'))) {
             $searchTitle = strtolower($request->input('title'));
             $campaigns = array_filter($campaigns, function ($c) use ($searchTitle) {
                 return strpos(strtolower($c->title), $searchTitle) !== false;
