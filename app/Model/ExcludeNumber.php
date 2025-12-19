@@ -151,150 +151,239 @@ class ExcludeNumber extends Model
      *@param object $request
      *@return array
      */
-    public function excludeNumberUpdate1($request)
-    {
-        try {
-            if ($request->has('number') && is_numeric($request->input('number')) && $request->has('campaign_id') && is_numeric($request->input('campaign_id')))
-            {
-                $updateString = array();
-                $data['number'] = $request->input('number');
-                $data['campaign_id'] = $request->input('campaign_id');
-                if ($request->has('new_campaign_id') && is_numeric($request->input('new_campaign_id'))) {
-                    array_push($updateString, 'campaign_id = :new_campaign_id');
-                    $data['new_campaign_id'] = $request->input('new_campaign_id');
-                }
-                if ($request->has('first_name') && !empty($request->input('first_name')))
-                {
-                    array_push($updateString, 'first_name = :first_name');
-                    $data['first_name'] = $request->input('first_name');
-                }
-                if ($request->has('last_name') && !empty($request->input('last_name'))) {
-                    array_push($updateString, 'last_name = :last_name');
-                    $data['last_name'] = $request->input('last_name');
-                }
-                if ($request->has('company_name') && !empty($request->input('company_name'))) {
-                    array_push($updateString, 'company_name = :company_name');
-                    $data['company_name'] = $request->input('company_name');
-                }
-                if (!empty($updateString) && !empty($data))
-                {
-                    $query = "UPDATE " . $this->table . " set " . implode(" , ", $updateString) . " WHERE number = :number AND campaign_id = :campaign_id";
-                    $save = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
-                    if ($save == 1) {
-                        return array(
-                            'success' => 'true',
-                            'message' => 'Exclude Number updated successfully.'
-                        );
-                    } else {
-                        return array(
-                            'success' => 'false',
-                            'message' => 'Exclude Number not updated.'
-                        );
-                    }
-                }
+    // public function excludeNumberUpdate1($request)
+    // {
+    //     try {
+    //         if ($request->has('number') && is_numeric($request->input('number')) && $request->has('campaign_id') && is_numeric($request->input('campaign_id')))
+    //         {
+    //             $updateString = array();
+    //             $data['number'] = $request->input('number');
+    //             $data['campaign_id'] = $request->input('campaign_id');
+    //             if ($request->has('new_campaign_id') && is_numeric($request->input('new_campaign_id'))) {
+    //                 array_push($updateString, 'campaign_id = :new_campaign_id');
+    //                 $data['new_campaign_id'] = $request->input('new_campaign_id');
+    //             }
+    //             if ($request->has('first_name') && !empty($request->input('first_name')))
+    //             {
+    //                 array_push($updateString, 'first_name = :first_name');
+    //                 $data['first_name'] = $request->input('first_name');
+    //             }
+    //             if ($request->has('last_name') && !empty($request->input('last_name'))) {
+    //                 array_push($updateString, 'last_name = :last_name');
+    //                 $data['last_name'] = $request->input('last_name');
+    //             }
+    //             if ($request->has('company_name') && !empty($request->input('company_name'))) {
+    //                 array_push($updateString, 'company_name = :company_name');
+    //                 $data['company_name'] = $request->input('company_name');
+    //             }
+    //             if (!empty($updateString) && !empty($data))
+    //             {
+    //                 $query = "UPDATE " . $this->table . " set " . implode(" , ", $updateString) . " WHERE number = :number AND campaign_id = :campaign_id";
+    //                 $save = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
+    //                 if ($save == 1) {
+    //                     return array(
+    //                         'success' => 'true',
+    //                         'message' => 'Exclude Number updated successfully.'
+    //                     );
+    //                 } else {
+    //                     return array(
+    //                         'success' => 'false',
+    //                         'message' => 'Exclude Number not updated.'
+    //                     );
+    //                 }
+    //             }
 
-                return array(
-                    'success' => 'false',
-                    'message' => 'Exclude Number doesn\'t exist.'
-                );
-            }
-        }
-        catch (Exception $e)
-        {
-            Log::log($e->getMessage());
-        }
-        catch (InvalidArgumentException $e)
-        {
-            Log::log($e->getMessage());
-        }
-    }
+    //             return array(
+    //                 'success' => 'false',
+    //                 'message' => 'Exclude Number doesn\'t exist.'
+    //             );
+    //         }
+    //     }
+    //     catch (Exception $e)
+    //     {
+    //         Log::log($e->getMessage());
+    //     }
+    //     catch (InvalidArgumentException $e)
+    //     {
+    //         Log::log($e->getMessage());
+    //     }
+    // }
+// public function excludeNumberUpdate($request)
+// {
+//     try {
+
+//         // Validate required fields
+//         if (!$request->has('number') || !is_numeric($request->number) ||
+//             !$request->has('campaign_id') || !is_numeric($request->campaign_id)) {
+
+//             return response()->json([
+//                 'success' => false,
+//                 'message' => 'Invalid number or campaign_id.'
+//             ], 400); // <-- return correct status code
+//         }
+
+//         $updateFields = [];
+//         $data = [];
+
+//         // OLD values (WHERE)
+//         $data['old_number']     = $request->number;
+//         $data['old_campaign_id'] = $request->campaign_id;
+
+//         // Update number
+//         if ($request->has('new_number') && is_numeric($request->new_number)) {
+//             $updateFields[] = "number = :new_number";
+//             $data['new_number'] = $request->new_number;
+//         }
+
+//         // Update campaign id
+//         if ($request->has('new_campaign_id') && is_numeric($request->new_campaign_id)) {
+//             $updateFields[] = "campaign_id = :new_campaign_id";
+//             $data['new_campaign_id'] = $request->new_campaign_id;
+//         }
+
+//         // Update first name
+//         if ($request->first_name) {
+//             $updateFields[] = "first_name = :first_name";
+//             $data['first_name'] = $request->first_name;
+//         }
+
+//         // Update last name
+//         if ($request->last_name) {
+//             $updateFields[] = "last_name = :last_name";
+//             $data['last_name'] = $request->last_name;
+//         }
+
+//         // Update company name
+//         if ($request->company_name) {
+//             $updateFields[] = "company_name = :company_name";
+//             $data['company_name'] = $request->company_name;
+//         }
+
+//         // No update fields found
+//         if (empty($updateFields)) {
+//             return response()->json([
+//                 'success' => false,
+//                 'message' => 'No valid fields to update.'
+//             ], 400);
+//         }
+
+//         // SQL QUERY
+//         $query = "
+//             UPDATE {$this->table}
+//             SET " . implode(", ", $updateFields) . "
+//             WHERE number = :old_number
+//             AND campaign_id = :old_campaign_id
+//         ";
+
+//         $save = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
+
+//         if ($save >= 1) {
+//             return response()->json([
+//                 'success' => true,
+//                 'message' => 'Exclude Number updated successfully.'
+//             ], 200);
+//         }
+
+//         return response()->json([
+//             'success' => false,
+//             'message' => 'No record found with given number and campaign_id.'
+//         ], 404); // <-- better response for "no changes"
+//     }
+//     catch (Exception $e) {
+
+//         return response()->json([
+//             'success' => false,
+//             'message' => 'Server error.'
+//         ], 500);
+//     }
+// }
 public function excludeNumberUpdate($request)
 {
     try {
-
-        // Validate required fields
-        if (!$request->has('number') || !is_numeric($request->number) ||
-            !$request->has('campaign_id') || !is_numeric($request->campaign_id)) {
-
-            return response()->json([
+        if (
+            !$request->has('number') || !is_numeric($request->number) ||
+            !$request->has('campaign_id') || !is_numeric($request->campaign_id)
+        ) {
+            return [
                 'success' => false,
-                'message' => 'Invalid number or campaign_id.'
-            ], 400); // <-- return correct status code
+                'message' => 'Invalid number or campaign_id.',
+                'code' => 400
+            ];
         }
 
         $updateFields = [];
         $data = [];
 
-        // OLD values (WHERE)
-        $data['old_number']     = $request->number;
+        $data['old_number'] = $request->number;
         $data['old_campaign_id'] = $request->campaign_id;
 
-        // Update number
         if ($request->has('new_number') && is_numeric($request->new_number)) {
             $updateFields[] = "number = :new_number";
             $data['new_number'] = $request->new_number;
         }
 
-        // Update campaign id
         if ($request->has('new_campaign_id') && is_numeric($request->new_campaign_id)) {
             $updateFields[] = "campaign_id = :new_campaign_id";
             $data['new_campaign_id'] = $request->new_campaign_id;
         }
 
-        // Update first name
         if ($request->first_name) {
             $updateFields[] = "first_name = :first_name";
             $data['first_name'] = $request->first_name;
         }
 
-        // Update last name
         if ($request->last_name) {
             $updateFields[] = "last_name = :last_name";
             $data['last_name'] = $request->last_name;
         }
 
-        // Update company name
         if ($request->company_name) {
             $updateFields[] = "company_name = :company_name";
             $data['company_name'] = $request->company_name;
         }
 
-        // No update fields found
         if (empty($updateFields)) {
-            return response()->json([
+            return [
                 'success' => false,
-                'message' => 'No valid fields to update.'
-            ], 400);
+                'message' => 'No valid fields to update.',
+                'code' => 400
+            ];
         }
 
-        // SQL QUERY
         $query = "
             UPDATE {$this->table}
-            SET " . implode(", ", $updateFields) . "
+            SET " . implode(', ', $updateFields) . "
             WHERE number = :old_number
-            AND campaign_id = :old_campaign_id
+              AND campaign_id = :old_campaign_id
         ";
 
-        $save = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
+        $save = DB::connection('mysql_' . $request->auth->parent_id)
+            ->update($query, $data);
 
         if ($save >= 1) {
-            return response()->json([
+            return [
                 'success' => true,
-                'message' => 'Exclude Number updated successfully.'
-            ], 200);
+                'message' => 'Exclude Number updated successfully.',
+                'code' => 200
+            ];
         }
 
-        return response()->json([
+        return [
             'success' => false,
-            'message' => 'No record found with given number and campaign_id.'
-        ], 404); // <-- better response for "no changes"
-    }
-    catch (Exception $e) {
+            'message' => 'No record found with given number and campaign_id.',
+            'code' => 404
+        ];
 
-        return response()->json([
+    } catch (\Throwable $e) {
+        Log::error('excludeNumberUpdate', [
+            'error' => $e->getMessage()
+        ]);
+
+        return [
             'success' => false,
-            'message' => 'Server error.'
-        ], 500);
+            'message' => 'Server error.',
+            'code' => 500
+        ];
     }
 }
 

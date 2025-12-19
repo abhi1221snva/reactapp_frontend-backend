@@ -142,7 +142,14 @@ class ExcludeNumberController extends Controller
             // 'id'            => 'required|numeric'
         ]);
         $response = $this->model->excludeNumberUpdate($this->request);
-        return response()->json($response);
+        //return response()->json($response);
+         return response()->json(
+        [
+            'success' => $response['success'],
+            'message' => $response['message']
+        ],
+        $response['code'] ?? 200
+    );
     }
     /*
      *Add Exclude Number details
