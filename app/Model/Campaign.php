@@ -378,9 +378,9 @@ public function campaignDetaillatest($request)
 
             // 2. campaign_list or hubspot_campaign_list
             if ($id->crm_title_url == 'hubspot') {
-                $sql = "SELECT * FROM hubspot_campaign_list WHERE " . implode(" AND ", $searchStr) . " AND is_deleted=0";
+                $sql = "SELECT * FROM hubspot_campaign_list WHERE " . implode(" AND ", $searchStr) . " AND is_deleted=0 AND status=1";
             } else {
-                $sql = "SELECT * FROM campaign_list WHERE " . implode(" AND ", $searchStr) . " AND is_deleted=0";
+                $sql = "SELECT * FROM campaign_list WHERE " . implode(" AND ", $searchStr) . " AND is_deleted=0 AND status=1";
             }
 
             $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data1);
