@@ -838,10 +838,20 @@ public function editList($request)
                     ['list_id' => $listId]
                 );
                 if ($recordCampaignList && (int)$recordCampaignList->rowCountListCampaign > 0) {
-                    DB::connection($parentConn)->delete(
-                        "DELETE FROM campaign_list WHERE list_id = :list_id",
-                        ['list_id' => $listId]
+                    // DB::connection($parentConn)->delete(
+                    //     "DELETE FROM campaign_list WHERE list_id = :list_id",
+                    //     ['list_id' => $listId]
+                    // );
+                    DB::connection($parentConn)->update(
+                        "UPDATE campaign_list 
+                        SET is_deleted = 1 
+                        WHERE list_id = :list_id AND campaign_id = :campaign_id",
+                        [
+                            'list_id' => $listId,
+                            'campaign_id' => $campaignId
+                        ]
                     );
+
                 }
 
                 // 2) Delete list_data rows for this list_id (if any)
