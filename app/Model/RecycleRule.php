@@ -698,7 +698,7 @@ public function editRecycleRule($request)
                 'disposition_id' => $disposition_id,   // disposition change
                 'call_time'      => $call_time,
                 'time'           => $time,
-                'updated_at'     => now(),
+                'updated_at'     => Carbon::now(),
             ]);
 
         if ($affected === 0) {
