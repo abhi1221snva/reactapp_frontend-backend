@@ -470,55 +470,146 @@ public function getList($request)
         'data' => []
     ];
 }
-    public function getList_oldcode($request)
-    {
-        if ($request->has('list_id') && is_numeric($request->input('list_id')) && $request->has('campaign_id') && is_numeric($request->input('campaign_id'))) {
-            $sql = "SELECT
-                    c.title as campaign, l.title as list, cl.campaign_id, cl.list_id, cl.updated_at , l.is_active
-                FROM
-                campaign_list as cl
-                LEFT JOIN list as l ON l.id = cl.list_id
-                LEFT JOIN campaign as c ON c.id = cl.campaign_id
-                WHERE cl.is_deleted = :is_deleted AND list_id = :list_id AND campaign_id = :campaign_id";
-            $record = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql, array('is_deleted' => 0, 'list_id' => $request->input('list_id'), 'campaign_id' => $request->input('campaign_id')));
-            $data = (array) $record;
+public function getListwithoutCampaign($request)
+{
+    $titleSearch = null;
+    if ($request->has('title') && !empty(trim($request->input('title')))) {
+        $titleSearch = trim($request->input('title'));
+    }
 
-            $sql = "SELECT * FROM list_header WHERE list_id = :list_id AND is_deleted = :is_deleted";
-            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, array('is_deleted' => 0, 'list_id' => $request->input('list_id')));
-            $listHeader = (array) $record;
-            $data['list_header'] = $listHeader;
-        } else {
-            $sql = "SELECT
-                          c.title as campaign, l.title as list, cl.campaign_id, cl.list_id, cl.updated_at, l.is_active
-                        FROM
-                        campaign_list as cl
-                        LEFT JOIN list as l ON l.id = cl.list_id
-                        LEFT JOIN campaign as c ON c.id = cl.campaign_id
-                        WHERE cl.is_deleted = :is_deleted";
-            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, array('is_deleted' => 0));
-            $data = (array) $record;
+    $connection = 'mysql_' . $request->auth->parent_id;
 
-            foreach ($data as $key => $id) {
-                $list['list_id'] = $id->list_id;
-                $sql_count_list = "SELECT count(1) as rowCountList FROM list_data WHERE list_id = :list_id ";
-                $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_count_list, $list);
-                $id->rowListData = $record_count_list->rowCountList;
+    /* ---------------- Single List ---------------- */
+    if ($request->has('list_id') && is_numeric($request->input('list_id'))) {
+
+        $sql = "SELECT 
+                    l.id,
+                    l.title,
+                    l.is_active,
+                    l.is_dialing,
+                    l.lead_count,
+                    l.updated_at
+                FROM list l
+                WHERE l.id = :list_id
+                  AND EXISTS (
+                        SELECT 1
+                        FROM campaign_list cl
+                        WHERE cl.list_id = l.id
+                          AND cl.is_deleted = 0
+                  )";
+
+        $params = [
+            'list_id' => $request->input('list_id')
+        ];
+
+        if ($titleSearch) {
+            $sql .= " AND l.title LIKE :title";
+            $params['title'] = '%' . $titleSearch . '%';
+        }
+
+        $record = DB::connection($connection)->selectOne($sql, $params);
+
+        if (!$record) {
+            return [
+                'success' => false,
+                'message' => 'List not found.',
+                'data' => []
+            ];
+        }
+
+        $data = (array) $record;
+
+        /* -------- List Header -------- */
+        $listHeader = DB::connection($connection)->select(
+            "SELECT *
+             FROM list_header
+             WHERE list_id = :list_id
+               AND is_deleted = 0",
+            ['list_id' => $request->input('list_id')]
+        );
+
+        $totalRows = count($listHeader);
+
+        if ($request->has('start') && $request->has('limit')) {
+            $listHeader = array_slice(
+                $listHeader,
+                (int) $request->input('start'),
+                (int) $request->input('limit')
+            );
+        }
+
+        $data['list_header'] = $listHeader;
+    }
+    /* ---------------- All Lists ---------------- */
+    else {
+
+        $sql = "SELECT
+                    l.id,
+                    l.title,
+                    l.is_active,
+                    l.is_dialing,
+                    l.lead_count,
+                    l.updated_at
+                FROM list l
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM campaign_list cl
+                    WHERE cl.list_id = l.id
+                      AND cl.is_deleted = 0
+                )";
+
+        $params = [];
+
+        if ($titleSearch) {
+            $sql .= " AND l.title LIKE :title";
+            $params['title'] = '%' . $titleSearch . '%';
+        }
+
+        $data = DB::connection($connection)->select($sql, $params);
+
+        foreach ($data as $list) {
+
+            if (!is_null($list->lead_count)) {
+                $list->rowListData = $list->lead_count;
+            } else {
+                $count = DB::connection($connection)->selectOne(
+                    "SELECT COUNT(1) AS total
+                     FROM list_data
+                     WHERE list_id = :list_id",
+                    ['list_id' => $list->id]
+                );
+
+                $list->rowListData = $count->total ?? 0;
+
+                DB::connection($connection)
+                    ->table('list')
+                    ->where('id', $list->id)
+                    ->update(['lead_count' => $list->rowListData]);
             }
         }
 
-        if (!empty($data)) {
-            return array(
-                'success' => 'true',
-                'message' => 'Lists detail.',
-                'data' => $data
-            );
-        }
-        return array(
-            'success' => 'false',
-            'message' => 'Lists not created.',
-            'data' => array()
+        $totalRows = count($data);
+    }
+
+    /* ---------------- Pagination ---------------- */
+    if ($request->has('start') && $request->has('limit')) {
+        $data = array_slice(
+            $data,
+            (int) $request->input('start'),
+            (int) $request->input('limit')
         );
     }
+
+    return [
+        'success'     => true,
+        'message'     => 'List details.',
+        'total_rows' => $totalRows,
+        'data'        => $data
+    ];
+}
+
+
+
 
     /*
      * Edit List
