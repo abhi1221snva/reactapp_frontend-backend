@@ -948,7 +948,7 @@ public function editList($request)
                 // Use commas to separate SET clauses (not AND)
                 $updateSql = "UPDATE campaign_list SET " . implode(", ", $updateClauses) .
                              " WHERE list_id = :list_id AND campaign_id = :campaign_id";
-
+                             
                 DB::connection($parentConn)->update($updateSql, $updateBindings);
             }
         }
