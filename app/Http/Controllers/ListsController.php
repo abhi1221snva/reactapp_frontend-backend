@@ -112,7 +112,15 @@ class ListsController extends Controller
         $response = $this->model->getList($this->request);
         return response()->json($response);
     }
-
+  public function getListWithoutCampaign()
+    {
+        $this->validate($this->request, [
+            'campaign_id' => 'numeric',
+            'list_id'    => 'numeric'
+        ]);
+        $response = $this->model->getListwithoutCampaign($this->request);
+        return response()->json($response);
+    }
 
     /**
      * @OA\Post(

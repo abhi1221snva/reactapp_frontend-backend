@@ -116,10 +116,12 @@ public function extensionDetail(Request $request, int $extension_id = null)
 
         // ✅ Add search conditions if search text provided
         if (!empty($search)) {
-            $searchSql = " AND (users.first_name LIKE ? OR users.last_name LIKE ? OR users.email LIKE ?)";
+            $searchSql = " AND (users.first_name LIKE ? OR users.last_name LIKE ? OR users.email LIKE ? OR users.extension LIKE )";
             $bindings[] = "%$search%";
             $bindings[] = "%$search%";
             $bindings[] = "%$search%";
+            $bindings[] = "%$search%";
+
         }
 
         if ($request->auth->level > 5) {

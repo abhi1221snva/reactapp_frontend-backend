@@ -426,6 +426,8 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->get('list-data/{id}/content', 'ListsController@getListContentView'); //done
   $router->post('list-data/{id}/content', 'ListsController@getListContentView'); //done
   $router->post('list', 'ListsController@getList'); //done
+  $router->post('raw-list', 'ListsController@getListWithoutCampaign'); //done
+
   $router->post('edit-list', 'ListsController@editList');  //done for delete not edit
   $router->post('add-list', 'ListsController@addList');
   $router->post('add-list-api',  'ListsController@addListUsingApi');//done
