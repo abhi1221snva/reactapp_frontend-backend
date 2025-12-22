@@ -37,16 +37,31 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
     protected $hidden = [
         'password',
     ];
-    public function login(string $email, string $password)
+    public function login(string $email, string $password,string $easifyToken)
     {
         if(!empty($email) && !empty($password))
         {
             // Find the user by email
             /** @var User $user */
-            $user = User::where('email', "=", $email)->first();
-            if (!$user) {
-                throw new RenderableException('Email not registered', [], 401);
-            }
+           // 1️⃣ Check email first
+                $user = User::where('email', $email)->first();
+
+                if (!$user) {
+                    throw new RenderableException(
+                        'Email not registered',
+                        [],
+                        401
+                    );
+                }
+
+                // 2️⃣ Check Easify token match
+                if ($user->easify_user_uuid !== $easifyToken) {
+                    throw new RenderableException(
+                        'Invalid or mismatched X-Easify-User-Token',
+                        [],
+                        401
+                    );
+                }
             if ($user->is_deleted) {
                 throw new RenderableException('Account de-activated', [], 403);
             }
@@ -79,7 +94,7 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
         throw new RenderableException('Invalid email or password', [], 401);
     }
 
-    public function loginApiKey(string $email, string $apiKey)
+    public function loginApiKey(string $email, string $apiKey,string $easifyToken)
     {
         if(!empty($email) && !empty($apiKey))
         {
@@ -89,6 +104,14 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
             if (!$user) {
                 throw new RenderableException('Email not registered', [], 401);
             }
+                 // 2️⃣ Check Easify token match
+                if ($user->easify_user_uuid !== $easifyToken) {
+                    throw new RenderableException(
+                        'Invalid or mismatched X-Easify-User-Token',
+                        [],
+                        401
+                    );
+                }
             if ($user->is_deleted) {
                 throw new RenderableException('Account de-activated', [], 403);
             }
