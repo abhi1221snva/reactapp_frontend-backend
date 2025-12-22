@@ -128,7 +128,8 @@ $app->routeMiddleware([
     'auth.admin' => App\Http\Middleware\AdminAuth::class,
     'auth.superadmin' => App\Http\Middleware\SuperAdminAuth::class,
     'websiteclient' => App\Http\Middleware\WebSiteClientAuth::class,
-    'hasComponent' => App\Http\Middleware\HasComponent::class
+    'hasComponent' => App\Http\Middleware\HasComponent::class,
+    'easify.appkey' => App\Http\Middleware\EasifyAppKeyMiddleware::class,
 ]);
 
 if (!class_exists('Redis')) {

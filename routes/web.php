@@ -21,6 +21,19 @@ $router->get('/list-all-cache', function () {
     ]);
 });
 
+
+$router->group(['middleware' => 'easify.appkey'], function () use ($router) {
+
+    //$router->post('/register', 'AuthController@register');
+$router->POST('authentication', 'AuthenticationController@authentication');
+    
+    //$router->post('/validate-email', 'AuthController@validateEmail');
+
+});
+
+
+
+
 $router->get('/redis-test', function () {
     externalRedisCacheSet(123, 'test-prompt', ['data' => 'value from Redis!']);
     return externalRedisCacheGet(123, 'test-prompt', 'Not found');
@@ -32,7 +45,6 @@ $router->get('receiver-fax', 'FaxController@receiverFax');
 $router->post('receiver-fax', 'FaxController@receiverFax');
 
 //login
-$router->POST('authentication', 'AuthenticationController@authentication');
 $router->POST('authentication_copy', 'AuthenticationController@authentication_copy');
 
 $router->POST('verify_google_otp', 'TwoFactorController@verify_google_otp');
