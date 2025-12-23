@@ -93,7 +93,7 @@ class AuthenticationController extends Controller
     public function authentication(Authentication $authentication)
     {
         $apiKey = $this->request->input('apiKey', null);
-       $easifyToken = $this->request->header('X-Easify-User-Token');
+      // $easifyToken = $this->request->header('X-Easify-User-Token');
         if (!empty($apiKey)) {
 
             $this->validate($this->request, [
@@ -124,6 +124,8 @@ class AuthenticationController extends Controller
 
             if (!empty($apiKey)) {
                 $data = $authentication->loginApiKey($this->request->input('email'), $this->request->input('apiKey'),$easifyToken);
+                $data = $authentication->loginApiKey($this->request->input('email'), $this->request->input('apiKey'));
+
             }
 
             //close api key
@@ -131,7 +133,9 @@ class AuthenticationController extends Controller
             else {
 
 
-                $data = $authentication->login($this->request->input('email'), $this->request->input('password'),$easifyToken);
+                //$data = $authentication->login($this->request->input('email'), $this->request->input('password'),$easifyToken);
+                $data = $authentication->login($this->request->input('email'), $this->request->input('password'));
+
 
                 $client = Client::findOrFail($data['base_parent_id']);
                 if ($client->is_deleted == 1) {
