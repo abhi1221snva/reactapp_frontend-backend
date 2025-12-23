@@ -1181,7 +1181,10 @@ if ($request->input('dial_mode') === 'super_power_dial') {
 public function getCampaignAndList($request)
 {
     $campaignId = $request->input('campaign_id');
-    $isDeleted = $request->input('is_deleted', 0); // default to 0
+   // $isDeleted = $request->input('is_deleted', 0); // default to 0
+$isDeleted = is_numeric($request->input('is_deleted'))
+    ? (int) $request->input('is_deleted')
+    : 0;
 
     // Validate
     if (!is_numeric($campaignId)) {
@@ -1191,34 +1194,61 @@ public function getCampaignAndList($request)
             'data' => []
         ];
     }
-
+if (!is_numeric($isDeleted)) {
+    $isDeleted = 0;
+}
     try {
         // Main query with lead_count added
-        $sql = "
-            SELECT 
-                campaign_list.campaign_id,
-                campaign_list.status,
-                campaign_list.list_id,
-                campaign_list.is_deleted,
-                list.title AS l_title,
-                list.lead_count AS lead_count,   -- 🔥 Added
-                campaign_list.updated_at,
-                list.id,
-                campaign.title,
-                campaign.crm_title_url,
-                campaign.updated
-            FROM campaign_list
-            INNER JOIN list ON campaign_list.list_id = list.id
-            INNER JOIN campaign ON campaign_list.campaign_id = campaign.id
-            WHERE campaign_list.campaign_id = :campaign_id
-              AND campaign_list.is_deleted = :is_deleted
-              AND campaign_list.status = 1
-        ";
+        // $sql = "
+        //     SELECT 
+        //         campaign_list.campaign_id,
+        //         campaign_list.status,
+        //         campaign_list.list_id,
+        //         campaign_list.is_deleted,
+        //         list.title AS l_title,
+        //         list.lead_count AS lead_count,   -- 🔥 Added
+        //         campaign_list.updated_at,
+        //         list.id,
+        //         campaign.title,
+        //         campaign.crm_title_url,
+        //         campaign.updated
+        //     FROM campaign_list
+        //     INNER JOIN list ON campaign_list.list_id = list.id
+        //     INNER JOIN campaign ON campaign_list.campaign_id = campaign.id
+        //     WHERE campaign_list.campaign_id = :campaign_id
+        //       AND campaign_list.is_deleted = :is_deleted
+        //       AND campaign_list.status = 1
+        // ";
 
-        $bindings = [
-            'campaign_id' => $campaignId,
-            'is_deleted' => $isDeleted,
-        ];
+        // $bindings = [
+        //     'campaign_id' => $campaignId,
+        //     'is_deleted' => $isDeleted,
+        // ];
+$sql = "
+    SELECT 
+        campaign_list.campaign_id,
+        campaign_list.status,
+        campaign_list.list_id,
+        campaign_list.is_deleted,
+        list.title AS l_title,
+        list.lead_count AS lead_count,
+        campaign_list.updated_at,
+        list.id,
+        campaign.title,
+        campaign.crm_title_url,
+        campaign.updated
+    FROM campaign_list
+    INNER JOIN list ON campaign_list.list_id = list.id
+    INNER JOIN campaign ON campaign_list.campaign_id = campaign.id
+    WHERE campaign_list.campaign_id = :campaign_id
+      AND campaign_list.is_deleted = :is_deleted
+      AND campaign_list.status = 1
+";
+
+$bindings = [
+    'campaign_id' => (int) $campaignId,
+    'is_deleted'  => (int) $isDeleted,
+];
 
         $records = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $bindings);
 
