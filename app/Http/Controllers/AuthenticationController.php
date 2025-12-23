@@ -22,12 +22,13 @@ use App\Services\MailService;
 
 use App\Mail\SystemNotificationMail;
 use App\Model\Master\Client;
+use App\Model\Master\GatewayCredential;
 
 use Plivo\RestClient;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
-
-
+use Illuminate\Support\Facades\Validator;
+use Carbon\Carbon;
 
 
 class AuthenticationController extends Controller
@@ -400,7 +401,7 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
 
 
 
-    public function checkEmail(Request $request)
+    public function checkEmailold(Request $request)
     {
         $this->validate($request, [
             'email' => 'required|email'
@@ -410,6 +411,39 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
 
         return response()->json(['exists'  => $exists,'message' => $exists ? 'Email already exists' : 'Email is available' ]);
     }
+public function checkEmail(Request $request)
+{
+       $appKey = $request->header('X-Easify-App-Key');
+
+        if ($appKey !== env('EASIFY_APP_KEY')) {
+            return response()->json([
+                'message' => 'Invalid or missing X-Easify-App-Key'
+            ], 401);
+        }
+    // Email format validation
+      $this->validate($request, [
+        'email'      => 'required|email',
+    ]);
+
+    // Check availability
+    $exists = User::where('email', $request->email)->exists();
+
+    if ($exists) {
+        return response()->json([
+            'message' => 'Email validation failed',
+            'data' => [
+                'is_valid' => false
+            ]
+        ], 200);
+    }
+
+    return response()->json([
+        'message' => 'Email validation successful',
+        'data' => [
+            'is_valid' => true
+        ]
+    ], 200);
+}
 
     public function createUserold(Request $request)
 {
@@ -687,5 +721,97 @@ $nameParts = preg_split('/\s+/', trim($request->name), 2);
 
     return response()->json($authData);
 }
+public function createCredential(Request $request)
+{
+    // 1️⃣ Validate request payload
+    $validator = Validator::make($request->all(), [
+        'uuid'                       => 'required|string',
+        'provider'                   => 'required|string',
+        'type'                       => 'required|string',
+        'credentials'                => 'required|array',
+        'credentials.account_name'   => 'required|string',
+        'credentials.account_sid'    => 'required|string',
+        'credentials.auth_token'     => 'required|string',
+    ]);
 
+    if ($validator->fails()) {
+        return response()->json([
+            'message' => 'Failed to create credential',
+            'errors'  => $validator->errors()
+        ], 422);
+    }
+
+    try {
+        // 2️⃣ Create credential record
+        $credential = GatewayCredential::create([
+            'uuid'        => $request->uuid,
+            'user_uuid'  => $request->header('X-Easify-User-Token'),
+            'provider'    => $request->provider,
+            'type'        => $request->type,
+            'credentials' => json_encode($request->credentials),
+        ]);
+
+        // 3️⃣ Success response
+        return response()->json([
+            'message' => 'Credential created successfully',
+            'data' => [
+                'uuid'       => $credential->uuid,
+                'provider'   => $credential->provider,
+                'type'       => $credential->type,
+                'created_at' => $credential->created_at->toIso8601String(),
+            ]
+        ], 201);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'message' => 'Failed to create credential',
+            'errors'  => [
+                'exception' => [$e->getMessage()]
+            ]
+        ], 500);
+    }
+}
+public function deleteCredential(Request $request)
+{
+    // 1️⃣ Validate payload
+    $validator = Validator::make($request->all(), [
+        'uuid' => 'required|string'
+    ]);
+
+    if ($validator->fails()) {
+        return response()->json([
+            'message' => 'Failed to delete credential',
+            'errors'  => $validator->errors()
+        ], 422);
+    }
+
+    // 2️⃣ Identify user
+    $userUuid = $request->header('X-Easify-User-Token');
+
+    // 3️⃣ Find credential (MASTER DB)
+    $credential = GatewayCredential::where('uuid', $request->uuid)
+        ->where('user_uuid', $userUuid)
+        ->first();
+
+    if (! $credential) {
+        return response()->json([
+            'message' => 'Failed to delete credential',
+            'errors'  => [
+                'uuid' => ['The credential was not found.']
+            ]
+        ], 404);
+    }
+
+    // 4️⃣ Soft delete
+    $credential->delete();
+
+    // 5️⃣ Success response
+    return response()->json([
+        'message' => 'Credential deleted successfully',
+        'data' => [
+            'uuid'       => $credential->uuid,
+            'deleted_at' => Carbon::now()->toIso8601String()
+        ]
+    ], 200);
+}
 }
