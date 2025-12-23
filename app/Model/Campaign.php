@@ -1182,9 +1182,7 @@ public function getCampaignAndList($request)
 {
     $campaignId = $request->input('campaign_id');
    // $isDeleted = $request->input('is_deleted', 0); // default to 0
-$isDeleted = is_numeric($request->input('is_deleted'))
-    ? (int) $request->input('is_deleted')
-    : 0;
+$isDeleted  = (int) $request->input('is_deleted', 0);
 
     // Validate
     if (!is_numeric($campaignId)) {
@@ -1194,9 +1192,7 @@ $isDeleted = is_numeric($request->input('is_deleted'))
             'data' => []
         ];
     }
-if (!is_numeric($isDeleted)) {
-    $isDeleted = 0;
-}
+
     try {
         // Main query with lead_count added
         // $sql = "
@@ -1226,29 +1222,31 @@ if (!is_numeric($isDeleted)) {
         // ];
 $sql = "
     SELECT 
-        campaign_list.campaign_id,
-        campaign_list.status,
-        campaign_list.list_id,
-        campaign_list.is_deleted,
-        list.title AS l_title,
-        list.lead_count AS lead_count,
-        campaign_list.updated_at,
-        list.id,
-        campaign.title,
-        campaign.crm_title_url,
-        campaign.updated
-    FROM campaign_list
-    INNER JOIN list ON campaign_list.list_id = list.id
-    INNER JOIN campaign ON campaign_list.campaign_id = campaign.id
-    WHERE campaign_list.campaign_id = :campaign_id
-      AND campaign_list.is_deleted = :is_deleted
-      AND campaign_list.status = 1
+        cl.campaign_id,
+        cl.status,
+        cl.list_id,
+        cl.is_deleted,
+        l.title AS l_title,
+        l.lead_count,
+        cl.updated_at,
+        l.id,
+        c.title,
+        c.crm_title_url,
+        c.updated
+    FROM campaign_list cl
+    INNER JOIN list l ON cl.list_id = l.id
+    INNER JOIN campaign c ON cl.campaign_id = c.id
+    WHERE cl.campaign_id = :campaign_id
+      AND cl.is_deleted = :is_deleted
+      AND cl.status = 1
 ";
 
 $bindings = [
-    'campaign_id' => (int) $campaignId,
-    'is_deleted'  => (int) $isDeleted,
+    'campaign_id' => $campaignId,
+    'is_deleted'  => $isDeleted,
 ];
+
+
 
         $records = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $bindings);
 
@@ -1797,6 +1795,14 @@ $campaign->setAttribute('created_date', $campaign->updated ?? null);
 
 // Optionally remove old keys to clean response
 unset($campaign->rowLeadReport, $campaign->rowListData, $campaign->updated);
+if (!empty($campaign->call_schedule_id)) {
+    $schedule = DB::connection('mysql_' . $request->auth->parent_id)
+        ->table('call_timers')
+        ->where('id', $campaign->call_schedule_id)
+        ->value('title');
+
+    $campaign->setAttribute('schedule_name', $schedule ?? null);
+}
     // return as collection for consistency
     return collect($campaign);
 //     return [

@@ -123,7 +123,7 @@ class AuthenticationController extends Controller
 
 
             if (!empty($apiKey)) {
-                $data = $authentication->loginApiKey($this->request->input('email'), $this->request->input('apiKey'),$easifyToken);
+                //$data = $authentication->loginApiKey($this->request->input('email'), $this->request->input('apiKey'),$easifyToken);
                 $data = $authentication->loginApiKey($this->request->input('email'), $this->request->input('apiKey'));
 
             }
@@ -411,12 +411,12 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
         return response()->json(['exists'  => $exists,'message' => $exists ? 'Email already exists' : 'Email is available' ]);
     }
 
-    public function createUser(Request $request)
+    public function createUserold(Request $request)
 {
     // Step 1: Validate required fields
     $this->validate($request, [
         'email'      => 'required|email',
-        'password'   => 'required|min:6'
+        'password'   => 'required|min:6',
     ]);
 
     // Step 2: Check if email already exists
@@ -431,7 +431,7 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
     $availableClient = Client::where('reserved', 1)
         ->where('client_type', 'voiptella')
         ->first();
-
+    
     if (!$availableClient) {
         return response()->json([
             'success' => false,
@@ -506,7 +506,186 @@ return  $authData = $authResponse->json();
 
 
 
+   public function loginV2(Authentication $authentication)
+{
+    try {
 
+        // 🔑 Read token from header
+        $easifyToken = $this->request->header('X-Easify-User-Token');
 
+        if (empty($easifyToken)) {
+            throw new RenderableException('X-Easify-User-Token missing', [], 401);
+        }
+
+        // 🔍 Find user by token
+        $user = User::where('easify_user_uuid', $easifyToken)->first();
+
+        if (!$user) {
+            throw new RenderableException('Invalid token', [], 401);
+        }
+
+        if ($user->is_deleted == 1) {
+            throw new RenderableException('Account de-activated', [], 401);
+        }
+
+        // 🔐 Use same response-building logic
+        // Reuse existing authentication service
+        $data = $authentication->loginByUserId($user->id);
+if (empty($data) || !is_array($data)) {
+    throw new RenderableException('Login failed', [], 401);
+}
+
+        // ---------- SAME CHECKS AS authentication() ----------
+        $clientIp = $this->request->ip();
+
+        if ($data['ip_filtering'] == 1) {
+            $allowed_ip = AllowedIp::on("mysql_" . $data["parent_id"])
+                ->where('ip_address', $clientIp)
+                ->exists();
+
+            if (!$allowed_ip) {
+                throw new RenderableException('Unauthorised IP address', [], 401);
+            }
+        }
+
+        $client = Client::findOrFail($data['base_parent_id']);
+        if ($client->is_deleted == 1) {
+            throw new RenderableException('Account de-activated', [], 401);
+        }
+
+        // ---------- EXTENSION / SERVER ----------
+        $objUserExtension = UserExtension::where("username", $data['alt_extension'])->first();
+        $data['secret'] = $objUserExtension->secret ?? null;
+
+        $server = AsteriskServer::find($data["asterisk_server_id"]);
+        $data["server"] = $server->host ?? null;
+        $data["domain"] = $server->domain ?? null;
+
+        // ---------- RESPONSE (same as authentication) ----------
+        $response = [
+            "id" => $data["id"],
+            "parent_id" => $data["parent_id"],
+            "first_name" => $data["first_name"],
+            "last_name" => $data["last_name"],
+            "mobile" => $data["mobile"],
+            "email" => $data["email"],
+            "companyName" => $data["permissions"][$data["parent_id"]]["companyName"],
+            "companyLogo" => $data["permissions"][$data["parent_id"]]["companyLogo"],
+            "profile_pic" => $data["profile_pic"],
+            "extension" => $data["extension"],
+            "alt_extension" => $data["alt_extension"],
+            "app_extension" => $data["app_extension"],
+            "dialer_mode" => $data["dialer_mode"],
+            "token" => $data["token"],
+            "expires_at" => $data["expires_at"],
+            "server" => $data["server"],
+            "domain" => $data["domain"],
+            "did" => $data["did"],
+            "secret" => base64_encode(convert_uuencode($objUserExtension->secret))
+        ];
+
+        // ---------- LOGIN LOG ----------
+        $log = new LoginLog();
+        $log->user_id = $data["id"];
+        $log->client_id = $data["parent_id"];
+        $log->ip = $clientIp;
+        $log->user_agent = $this->request->userAgent();
+        $log->save();
+
+        return $this->successResponse("Login successful", $response);
+
+    } catch (\Throwable $exception) {
+        return $this->failResponse(
+            $exception->getMessage(),
+            [],
+            $exception,
+            $exception->getCode() ?: 401
+        );
+    }
+}
+
+public function createUser(Request $request)
+{
+    // 1️⃣ Validate payload
+    $this->validate($request, [
+        'email'        => 'required|email',
+        'name'         => 'required|string',
+        'country_code' => ['required', 'regex:/^\+\d{1,4}$/'],
+        'phone_number' => ['required', 'regex:/^\d{6,15}$/'],
+        'password'     => 'required|min:6',
+    ]);
+
+    // 2️⃣ Read Easify User Token from header
+    $easifyUserToken = $request->header('X-Easify-User-Token');
+
+    if (!$easifyUserToken) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Missing X-Easify-User-Token header'
+        ], 401);
+    }
+   $appKey = $request->header('X-Easify-App-Key');
+
+        if ($appKey !== env('EASIFY_APP_KEY')) {
+            return response()->json([
+                'message' => 'Invalid or missing X-Easify-App-Key'
+            ], 401);
+        }
+    // 3️⃣ Check email uniqueness
+    if (User::where('email', $request->email)->exists()) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Email already exists'
+        ], 409);
+    }
+
+    // 4️⃣ Find reserved client
+    $availableClient = Client::where('reserved', 1)
+        ->where('client_type', 'voiptella')
+        ->first();
+        Log::info('client avaiable',['availableClient'=>$availableClient]);
+    if (!$availableClient) {
+        return response()->json([
+            'success' => false,
+            'message' => 'No available client found'
+        ], 404);
+    }
+
+    // 5️⃣ Fetch base user
+    $user = User::where('base_parent_id', $availableClient->id)->first();
+    if(!$user){
+    Log::warning('No user found for this client', ['client_id' => $availableClient->id]);
+}
+// 6️⃣ Update user details
+$nameParts = preg_split('/\s+/', trim($request->name), 2);
+    // 6️⃣ Update user details
+    $user->email            = $request->email;
+    $user->first_name       = $nameParts[0];
+    $user->last_name        = $nameParts[1] ?? '';
+    $user->country_code     = ltrim($request->country_code, '+'); // ✅ strip +
+    $user->mobile           = $request->phone_number;
+    $user->password         = Hash::make($request->password);
+    $user->easify_user_uuid = $easifyUserToken; // ✅ REQUIRED
+    $user->save();
+
+    // 7️⃣ Update SIP extensions
+    UserExtension::whereIn('username', [
+        $user->extension,
+        $user->alt_extension,
+        $user->app_extension
+    ])->update([
+        'secret' => $request->password
+    ]);
+
+    // 8️⃣ Mark client consumed
+    $availableClient->reserved = 0;
+    $availableClient->save();
+
+    // 9️⃣ Return SAME response as login/authenticate
+    $authService = new Authentication();
+    $authData = $authService->loginByUserId($user->id);
+
+    return response()->json($authData);
+}
 
 }
