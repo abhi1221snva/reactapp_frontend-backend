@@ -648,6 +648,68 @@ public function editRecycleRule($request)
     try {
         $parentConn = 'mysql_' . $request->auth->parent_id;
 
+        // ---------------- VALIDATION ----------------
+        if (
+            !$request->has('recycle_rule_id') ||
+            !$request->has('campaign_id') ||
+            !$request->has('list_id') ||
+            !$request->has('disposition_id') ||
+            !$request->has('day')
+        ) {
+            return ['success' => 'false', 'message' => 'Missing required fields'];
+        }
+
+        $id             = (int) $request->recycle_rule_id;
+        $campaign_id    = (int) $request->campaign_id;
+        $list_id        = (int) $request->list_id;
+        $disposition_id = (int) $request->disposition_id;
+        $call_time      = $request->call_time;
+        $time           = $request->time;
+
+        // ---------------- DAY VALIDATION ----------------
+        $validDays = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+        if (!in_array($request->day, $validDays)) {
+            return ['success' => 'false', 'message' => 'Invalid day'];
+        }
+
+        // ---------------- UPDATE ----------------
+        $affected = DB::connection($parentConn)
+            ->table('recycle_rule')
+            ->where('id', $id) // ✅ ONLY primary key
+            ->update([
+                'list_id'        => $list_id,        // ✅ NOW UPDATES
+                'day'            => $request->day,
+                'disposition_id' => $disposition_id,
+                'call_time'      => $call_time,
+                'time'           => $time,
+                'updated_at'     => Carbon::now(),
+            ]);
+
+        if ($affected === 0) {
+            return [
+                'success' => 'false',
+                'message' => 'Recycle rule not found'
+            ];
+        }
+
+        return [
+            'success' => 'true',
+            'message' => 'Recycle rule updated successfully'
+        ];
+
+    } catch (\Throwable $e) {
+        return [
+            'success' => 'false',
+            'message' => 'Error: ' . $e->getMessage()
+        ];
+    }
+}
+
+public function editRecycleRule1($request)
+{
+    try {
+        $parentConn = 'mysql_' . $request->auth->parent_id;
+
         // ---------------------------------------------------------
         // VALIDATION
         // ---------------------------------------------------------
