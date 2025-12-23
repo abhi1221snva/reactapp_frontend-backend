@@ -22,14 +22,18 @@ $router->get('/list-all-cache', function () {
 });
 
 
-$router->group(['middleware' => 'easify.appkey'], function () use ($router) {
+$router->POST('authentication', 'AuthenticationController@authentication');
+
+
+
+//$router->group(['middleware' => 'easify.appkey'], function () use ($router) {
 
     //$router->post('/register', 'AuthController@register');
-$router->POST('authentication', 'AuthenticationController@authentication');
+//$router->POST('authentication', 'AuthenticationController@authentication');
     
     //$router->post('/validate-email', 'AuthController@validateEmail');
 
-});
+//});
 
 
 
