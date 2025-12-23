@@ -624,7 +624,13 @@ public function createUser(Request $request)
             'message' => 'Missing X-Easify-User-Token header'
         ], 401);
     }
+   $appKey = $request->header('X-Easify-App-Key');
 
+        if ($appKey !== env('EASIFY_APP_KEY')) {
+            return response()->json([
+                'message' => 'Invalid or missing X-Easify-App-Key'
+            ], 401);
+        }
     // 3️⃣ Check email uniqueness
     if (User::where('email', $request->email)->exists()) {
         return response()->json([
