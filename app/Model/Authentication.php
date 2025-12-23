@@ -55,13 +55,13 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
                 }
 
                 // 2️⃣ Check Easify token match
-                if ($user->easify_user_uuid !== $easifyToken) {
+               /* if ($user->easify_user_uuid !== $easifyToken) {
                     throw new RenderableException(
                         'Invalid or mismatched X-Easify-User-Token',
                         [],
                         401
                     );
-                }
+                }*/
             if ($user->is_deleted) {
                 throw new RenderableException('Account de-activated', [], 403);
             }
