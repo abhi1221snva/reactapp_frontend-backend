@@ -13,7 +13,8 @@ use Illuminate\Support\Facades\Hash;
 use App\Http\Helper\JwtToken;
 use App\Model\Dids;
 use App\Model\Master\Client;
-
+use Illuminate\Support\Str;
+use Carbon\Carbon;
 
 class Authentication extends Model implements AuthenticatableContract, AuthorizableContract
 {
@@ -94,7 +95,7 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
         throw new RenderableException('Invalid email or password', [], 401);
     }
 
-    public function loginApiKey(string $email, string $apiKey,string $easifyToken)
+    public function loginApiKey(string $email, string $apiKey)
     {
         if(!empty($email) && !empty($apiKey))
         {
@@ -105,13 +106,13 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
                 throw new RenderableException('Email not registered', [], 401);
             }
                  // 2️⃣ Check Easify token match
-                if ($user->easify_user_uuid !== $easifyToken) {
-                    throw new RenderableException(
-                        'Invalid or mismatched X-Easify-User-Token',
-                        [],
-                        401
-                    );
-                }
+                // if ($user->easify_user_uuid !== $easifyToken) {
+                //     throw new RenderableException(
+                //         'Invalid or mismatched X-Easify-User-Token',
+                //         [],
+                //         401
+                //     );
+                // }
             if ($user->is_deleted) {
                 throw new RenderableException('Account de-activated', [], 403);
             }
@@ -174,4 +175,42 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
         // Bad Request response
         throw new RenderableException('Invalid email or ApiKey', [], 401);
     }
+public function loginByUserId(int $userId)
+{
+    /** @var User $user */
+    $user = User::findOrFail($userId);
+
+    if ($user->is_deleted) {
+        throw new RenderableException('Account de-activated', [], 403);
+    }
+
+    // 🔁 Reuse existing login logic without password
+    return $this->loginWithoutPassword($user);
+}
+
+protected function loginWithoutPassword(User $user)
+{
+    $data = $user->toArray();
+    $data['permissions'] = $user->getPermissions(true);
+
+    $didObj = Dids::on('mysql_' . $user->parent_id)
+        ->where('sms_email', $user->id)
+        ->first();
+
+    $data['did'] = $didObj ? $didObj->cli : '';
+
+    // role info
+    $roleInfo = RolesService::getById($data['role']);
+    $data['role']  = $roleInfo["name"];
+    $data['level'] = $roleInfo["level"];
+
+    // 🔑 generate JWT token (same as login)
+    $token = JwtToken::createToken($user->id);
+    $data['token'] = $token[0];
+    $data['expires_at'] = $token[1];
+
+    return $data;
+}
+
+
 }

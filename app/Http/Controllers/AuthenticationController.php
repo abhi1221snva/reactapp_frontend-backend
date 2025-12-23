@@ -123,7 +123,7 @@ class AuthenticationController extends Controller
 
 
             if (!empty($apiKey)) {
-                $data = $authentication->loginApiKey($this->request->input('email'), $this->request->input('apiKey'),$easifyToken);
+                //$data = $authentication->loginApiKey($this->request->input('email'), $this->request->input('apiKey'),$easifyToken);
                 $data = $authentication->loginApiKey($this->request->input('email'), $this->request->input('apiKey'));
 
             }
@@ -506,7 +506,103 @@ return  $authData = $authResponse->json();
 
 
 
+   public function loginV2(Authentication $authentication)
+{
+    try {
 
+        // 🔑 Read token from header
+        $easifyToken = $this->request->header('X-Easify-User-Token');
+
+        if (empty($easifyToken)) {
+            throw new RenderableException('X-Easify-User-Token missing', [], 401);
+        }
+
+        // 🔍 Find user by token
+        $user = User::where('easify_user_uuid', $easifyToken)->first();
+
+        if (!$user) {
+            throw new RenderableException('Invalid token', [], 401);
+        }
+
+        if ($user->is_deleted == 1) {
+            throw new RenderableException('Account de-activated', [], 401);
+        }
+
+        // 🔐 Use same response-building logic
+        // Reuse existing authentication service
+        $data = $authentication->loginByUserId($user->id);
+if (empty($data) || !is_array($data)) {
+    throw new RenderableException('Login failed', [], 401);
+}
+
+        // ---------- SAME CHECKS AS authentication() ----------
+        $clientIp = $this->request->ip();
+
+        if ($data['ip_filtering'] == 1) {
+            $allowed_ip = AllowedIp::on("mysql_" . $data["parent_id"])
+                ->where('ip_address', $clientIp)
+                ->exists();
+
+            if (!$allowed_ip) {
+                throw new RenderableException('Unauthorised IP address', [], 401);
+            }
+        }
+
+        $client = Client::findOrFail($data['base_parent_id']);
+        if ($client->is_deleted == 1) {
+            throw new RenderableException('Account de-activated', [], 401);
+        }
+
+        // ---------- EXTENSION / SERVER ----------
+        $objUserExtension = UserExtension::where("username", $data['alt_extension'])->first();
+        $data['secret'] = $objUserExtension->secret ?? null;
+
+        $server = AsteriskServer::find($data["asterisk_server_id"]);
+        $data["server"] = $server->host ?? null;
+        $data["domain"] = $server->domain ?? null;
+
+        // ---------- RESPONSE (same as authentication) ----------
+        $response = [
+            "id" => $data["id"],
+            "parent_id" => $data["parent_id"],
+            "first_name" => $data["first_name"],
+            "last_name" => $data["last_name"],
+            "mobile" => $data["mobile"],
+            "email" => $data["email"],
+            "companyName" => $data["permissions"][$data["parent_id"]]["companyName"],
+            "companyLogo" => $data["permissions"][$data["parent_id"]]["companyLogo"],
+            "profile_pic" => $data["profile_pic"],
+            "extension" => $data["extension"],
+            "alt_extension" => $data["alt_extension"],
+            "app_extension" => $data["app_extension"],
+            "dialer_mode" => $data["dialer_mode"],
+            "token" => $data["token"],
+            "expires_at" => $data["expires_at"],
+            "server" => $data["server"],
+            "domain" => $data["domain"],
+            "did" => $data["did"],
+            "secret" => base64_encode(convert_uuencode($objUserExtension->secret))
+        ];
+
+        // ---------- LOGIN LOG ----------
+        $log = new LoginLog();
+        $log->user_id = $data["id"];
+        $log->client_id = $data["parent_id"];
+        $log->ip = $clientIp;
+        $log->user_agent = $this->request->userAgent();
+        $log->save();
+
+        return $this->successResponse("Login successful", $response);
+
+    } catch (\Throwable $exception) {
+        return $this->failResponse(
+            $exception->getMessage(),
+            [],
+            $exception,
+            $exception->getCode() ?: 401
+        );
+    }
+}
 
 
 }

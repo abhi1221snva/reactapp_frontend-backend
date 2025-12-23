@@ -24,6 +24,14 @@ $router->get('/list-all-cache', function () {
 
 $router->POST('authentication', 'AuthenticationController@authentication');
 
+$router->group([
+    'prefix' => 'v2',
+    'middleware' => 'easify.appkey'
+], function () use ($router) {
+
+    $router->post('/login', 'AuthenticationController@loginv2');
+
+});
 
 
 //$router->group(['middleware' => 'easify.appkey'], function () use ($router) {
