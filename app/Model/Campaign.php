@@ -1795,6 +1795,14 @@ $campaign->setAttribute('created_date', $campaign->updated ?? null);
 
 // Optionally remove old keys to clean response
 unset($campaign->rowLeadReport, $campaign->rowListData, $campaign->updated);
+if (!empty($campaign->call_schedule_id)) {
+    $schedule = DB::connection('mysql_' . $request->auth->parent_id)
+        ->table('call_timers')
+        ->where('id', $campaign->call_schedule_id)
+        ->value('title');
+
+    $campaign->setAttribute('schedule_name', $schedule ?? null);
+}
     // return as collection for consistency
     return collect($campaign);
 //     return [
