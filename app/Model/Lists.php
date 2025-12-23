@@ -484,7 +484,7 @@ public function getListwithoutCampaign($request)
 
         $sql = "SELECT 
                     l.id,
-                    l.title,
+                    l.title AS l_title,
                     l.is_active,
                     l.is_dialing,
                     l.lead_count,
@@ -545,7 +545,7 @@ public function getListwithoutCampaign($request)
 
         $sql = "SELECT
                     l.id,
-                    l.title,
+                    l.title AS l_title,
                     l.is_active,
                     l.is_dialing,
                     l.lead_count,
