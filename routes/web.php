@@ -30,8 +30,10 @@ $router->group([
 ], function () use ($router) {
 
     $router->post('/login', 'AuthenticationController@loginv2');
-
-});
+    
+    
+  });
+  $router->post('v2/register', 'AuthenticationController@createUser');
 
 
 //$router->group(['middleware' => 'easify.appkey'], function () use ($router) {
@@ -1536,6 +1538,6 @@ $router->get('ai-coach-api', 'AiCoachController@index');
 #new apis for phonify
 
 $router->post('/api/auth/check-email', 'AuthenticationController@checkEmail');
-$router->post('/api/auth/create-user', 'AuthenticationController@createUser');
+// $router->post('/api/auth/create-user', 'AuthenticationController@createUser');
 
 
