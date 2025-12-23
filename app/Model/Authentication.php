@@ -37,7 +37,7 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
     protected $hidden = [
         'password',
     ];
-    public function login(string $email, string $password,string $easifyToken)
+    public function login(string $email, string $password)
     {
         if(!empty($email) && !empty($password))
         {
