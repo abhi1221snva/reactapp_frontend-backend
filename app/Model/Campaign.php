@@ -1178,217 +1178,172 @@ if ($request->input('dial_mode') === 'super_power_dial') {
     //         ];
     //     }
     // }
+
 public function getCampaignAndList($request)
 {
-    $campaignId = $request->input('campaign_id');
-   // $isDeleted = $request->input('is_deleted', 0); // default to 0
-$isDeleted  = (int) $request->input('is_deleted', 0);
-
-    // Validate
-    if (!is_numeric($campaignId)) {
-        return [
-            'success' => 'false',
-            'message' => 'Invalid campaign_id',
-            'data' => []
-        ];
-    }
-
     try {
-        // Main query with lead_count added
-        // $sql = "
-        //     SELECT 
-        //         campaign_list.campaign_id,
-        //         campaign_list.status,
-        //         campaign_list.list_id,
-        //         campaign_list.is_deleted,
-        //         list.title AS l_title,
-        //         list.lead_count AS lead_count,   -- 🔥 Added
-        //         campaign_list.updated_at,
-        //         list.id,
-        //         campaign.title,
-        //         campaign.crm_title_url,
-        //         campaign.updated
-        //     FROM campaign_list
-        //     INNER JOIN list ON campaign_list.list_id = list.id
-        //     INNER JOIN campaign ON campaign_list.campaign_id = campaign.id
-        //     WHERE campaign_list.campaign_id = :campaign_id
-        //       AND campaign_list.is_deleted = :is_deleted
-        //       AND campaign_list.status = 1
-        // ";
+        $parentConn = 'mysql_' . $request->auth->parent_id;
 
-        // $bindings = [
-        //     'campaign_id' => $campaignId,
-        //     'is_deleted' => $isDeleted,
-        // ];
-$sql = "
-    SELECT 
-        cl.campaign_id,
-        cl.status,
-        cl.list_id,
-        cl.is_deleted,
-        l.title AS l_title,
-        l.lead_count,
-        cl.updated_at,
-        l.id,
-        c.title,
-        c.crm_title_url,
-        c.updated
-    FROM campaign_list cl
-    INNER JOIN list l ON cl.list_id = l.id
-    INNER JOIN campaign c ON cl.campaign_id = c.id
-    WHERE cl.campaign_id = :campaign_id
-      AND cl.is_deleted = :is_deleted
-      AND cl.status = 1
-";
+        // -------------------------------------------------
+        // INPUT & VALIDATION
+        // -------------------------------------------------
+        $campaignId = $request->input('campaign_id');
 
-$bindings = [
-    'campaign_id' => $campaignId,
-    'is_deleted'  => $isDeleted,
-];
-
-
-
-        $records = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $bindings);
-
-        if (empty($records)) {
+        if (!is_numeric($campaignId)) {
             return [
                 'success' => 'false',
-                'message' => 'No campaign list found.',
-                'data' => []
+                'message' => 'Invalid campaign_id',
+                'data'    => []
             ];
         }
 
-        // Add dynamic counts
-        foreach ($records as $record) {
+        // Normalize is_deleted (NEVER empty)
+        $isDeleted = ($request->has('is_deleted') && $request->input('is_deleted') !== '')
+            ? (int) $request->input('is_deleted')
+            : 0;
 
-            $data1 = [
-                'campaign_id' => $record->campaign_id,
-                'list_id'     => $record->list_id,
+        // -------------------------------------------------
+        // FETCH CAMPAIGN (to know CRM type)
+        // -------------------------------------------------
+        $campaign = DB::connection($parentConn)
+            ->table('campaign')
+            ->where('id', (int) $campaignId)
+            ->first();
+
+        if (!$campaign) {
+            return [
+                'success' => 'false',
+                'message' => 'Campaign not found',
+                'data'    => []
             ];
-
-            // lead_report count
-            $sqlLeadReport = "
-                SELECT COUNT(1) as rowCountLeadReport 
-                FROM lead_report 
-                WHERE campaign_id = :campaign_id 
-                  AND list_id = :list_id
-            ";
-            $leadCount = DB::connection('mysql_' . $request->auth->parent_id)
-                ->selectOne($sqlLeadReport, $data1);
-
-            $record->rowLeadReport = $leadCount->rowCountLeadReport ?? 0;
-
-            // list_data count
-            $sqlListData = "
-                SELECT COUNT(1) as rowCountList 
-                FROM list_data 
-                WHERE list_id = :list_id
-            ";
-            $listCount = DB::connection('mysql_' . $request->auth->parent_id)
-                ->selectOne($sqlListData, ['list_id' => $record->list_id]);
-
-            $record->rowListData = $listCount->rowCountList ?? 0;
-            $record->happer_count = $record->rowListData;
-
-            // existing field reused
-            $record->created_date = $record->updated_at;
-
-            // 🔥 Ensure lead_count always returned
-            $record->lead_count = $record->lead_count ?? 0;
         }
 
-        return [
-            'success' => 'true',
-            'message' => 'Campaign List detail.',
-            'data'    => $records,
+        // -------------------------------------------------
+        // BUILD QUERY (NORMAL vs HUBSPOT)
+        // -------------------------------------------------
+        if ($campaign->crm_title_url === 'hubspot') {
+
+            $sql = "
+                SELECT 
+                    cl.campaign_id,
+                    cl.status,
+                    cl.list_id,
+                    cl.is_deleted,
+                    l.title AS l_title,
+                    l.size AS lead_count,
+                    cl.updated_at,
+                    c.title,
+                    c.crm_title_url,
+                    c.updated
+                FROM hubspot_campaign_list cl
+                INNER JOIN hubspot_lists l ON cl.list_id = l.list_id
+                INNER JOIN campaign c ON cl.campaign_id = c.id
+                WHERE cl.campaign_id = :campaign_id
+                  AND cl.is_deleted = :is_deleted
+                  AND cl.status = 1
+            ";
+
+        } else {
+
+            $sql = "
+                SELECT 
+                    cl.campaign_id,
+                    cl.status,
+                    cl.list_id,
+                    cl.is_deleted,
+                    l.title AS l_title,
+                    l.lead_count,
+                    cl.updated_at,
+                    l.id,
+                    c.title,
+                    c.crm_title_url,
+                    c.updated
+                FROM campaign_list cl
+                INNER JOIN list l ON cl.list_id = l.id
+                INNER JOIN campaign c ON cl.campaign_id = c.id
+                WHERE cl.campaign_id = :campaign_id
+                  AND cl.is_deleted = :is_deleted
+                  AND cl.status = 1
+            ";
+        }
+
+        $bindings = [
+            'campaign_id' => (int) $campaignId,
+            'is_deleted'  => (int) $isDeleted,
         ];
 
-    } catch (\Exception $e) {
+        $records = DB::connection($parentConn)->select($sql, $bindings);
+
+        // -------------------------------------------------
+        // NO LIST ATTACHED (SAFE EXIT)
+        // -------------------------------------------------
+        if (empty($records)) {
+            return [
+                'success' => 'true',
+                'message' => 'Campaign exists but no list attached',
+                'data'    => []
+            ];
+        }
+
+        // -------------------------------------------------
+        // ADD COUNTS
+        // -------------------------------------------------
+        foreach ($records as $record) {
+
+            // Lead report count
+            $leadCount = DB::connection($parentConn)
+                ->selectOne(
+                    "SELECT COUNT(1) AS total FROM lead_report 
+                     WHERE campaign_id = :campaign_id AND list_id = :list_id",
+                    [
+                        'campaign_id' => $record->campaign_id,
+                        'list_id'     => $record->list_id
+                    ]
+                );
+
+            $record->rowLeadReport = $leadCount->total ?? 0;
+
+            // List data count (non-hubspot only)
+            if ($campaign->crm_title_url !== 'hubspot') {
+                $listCount = DB::connection($parentConn)
+                    ->selectOne(
+                        "SELECT COUNT(1) AS total FROM list_data WHERE list_id = :list_id",
+                        ['list_id' => $record->list_id]
+                    );
+
+                $record->rowListData = $listCount->total ?? 0;
+            } else {
+                $record->rowListData = $record->lead_count ?? 0;
+            }
+
+            // Hopper count
+            $record->hopper_count = $record->rowListData;
+
+            // Rename fields
+            $record->created_date = $record->updated_at;
+            $record->lead_count   = $record->lead_count ?? 0;
+        }
+
+        // -------------------------------------------------
+        // RESPONSE
+        // -------------------------------------------------
+        return [
+            'success' => 'true',
+            'message' => 'Campaign list detail',
+            'data'    => $records
+        ];
+
+    } catch (\Throwable $e) {
         return [
             'success' => 'false',
             'message' => 'Error: ' . $e->getMessage(),
-            'data' => []
+            'data'    => []
         ];
     }
 }
 
 
-    function getCampaignAndList_old($request)
-    {
-
-        try {
-            $data = array();
-            $searchStr = array();
-            if ($request->has('campaign_id') && is_numeric($request->input('campaign_id'))) {
-                $data['campaign_id'] = $request->input('campaign_id');
-                $data['is_deleted'] = $request->input('is_deleted');
-            }
-
-            // $sql = "SELECT campaign_list.campaign_id,campaign_list.status,campaign_list.list_id,campaign_list.is_deleted,list.title as l_title,list.id,campaign.title,campaign.crm_title_url FROM campaign_list inner join list on campaign_list.list_id = list.id inner join campaign on campaign_list.campaign_id = campaign.id WHERE campaign_list.campaign_id = '" . $request->input('campaign_id') . "' and campaign_list.is_deleted ='" . $request->input('is_deleted') . "'";
-
-            // $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
-            $sql = "SELECT campaign_list.campaign_id,
-               campaign_list.status,
-               campaign_list.list_id,
-               campaign_list.is_deleted,
-               list.title as l_title,
-               list.id,
-               campaign.title,
-               campaign.crm_title_url 
-                FROM campaign_list 
-                INNER JOIN list ON campaign_list.list_id = list.id 
-                INNER JOIN campaign ON campaign_list.campaign_id = campaign.id 
-                WHERE campaign_list.campaign_id = :campaign_id 
-                AND campaign_list.is_deleted = :is_deleted";
-
-        $params = [
-            'campaign_id' => $request->input('campaign_id'),
-            'is_deleted'  => $request->input('is_deleted'),
-        ];
-
-        $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $params);
-
-            $data = (array) $record;
-
-            foreach ($data as $key => $id) {
-
-                $data1['campaign_id'] = $id->campaign_id;
-                $data1['list_id'] = $id->list_id;
-
-                $sql_count_lead_report = "SELECT count(1) as rowCountLearReport FROM lead_report WHERE campaign_id = :campaign_id  and list_id = :list_id";
-                $record_count_lead = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_count_lead_report, $data1);
-                $id->rowLeadReport = $record_count_lead->rowCountLearReport;
-
-                $list_data['list_id'] = $id->list_id;
-
-
-                $sql_count_list = "SELECT count(1) as rowCountList FROM list_data WHERE list_id=:list_id ";
-                $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_count_list, $list_data);
-
-                //return $data = (array)$record_count_list;
-                //$id->rowList = $count;
-                $id->rowListData = $record_count_list[0]->rowCountList;
-            }
-
-            //return $data;
-            if (!empty($data)) {
-                return array(
-                    'success' => 'true',
-                    'message' => 'Campaign List detail.',
-                    'data' => $data
-                );
-            }
-            return array(
-                'success' => 'false',
-                'message' => 'Campaign List Found.',
-                'data' => array()
-            );
-        } catch (Exception $e) {
-            echo $e->getMessage();
-        } catch (InvalidArgumentException $e) {
-            echo $e->getMessage();
-        }
-    }
+  
 
     function getDispositionAndList($request)
     {
