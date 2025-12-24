@@ -601,7 +601,7 @@ public function createUser(Request $request)
 
         // 4️⃣ Find reserved client
         $availableClient = Client::where('reserved', 1)
-            ->where('client_type', 'voiptella')
+            ->where('client_type', 'phonify')
             ->first();
 
         if (!$availableClient) {
