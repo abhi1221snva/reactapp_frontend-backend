@@ -591,7 +591,12 @@ public function createUser(Request $request)
         if ($appKey !== env('EASIFY_APP_KEY')) {
             throw new \Exception('Invalid or missing X-Easify-App-Key', 401);
         }
-
+        // ✅ ADD THIS BLOCK HERE
+        if (User::where('easify_user_uuid', $easifyUserToken)->exists()) {
+            throw ValidationException::withMessages([
+                'easify_user_uuid' => ['This X-Easify-User-Token is already registered.']
+            ]);
+        }
         // 3️⃣ Email uniqueness (validation error → 422)
         if (User::where('email', $request->email)->exists()) {
             throw ValidationException::withMessages([
