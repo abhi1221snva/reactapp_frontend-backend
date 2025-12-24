@@ -36,7 +36,7 @@ $router->group([
     
   });
   $router->post('v2/register', 'AuthenticationController@createUser');
-$router->post('v2/check-email', 'AuthenticationController@checkEmail');
+$router->post('v2/validate-email', 'AuthenticationController@checkEmail');
 
 
 //$router->group(['middleware' => 'easify.appkey'], function () use ($router) {

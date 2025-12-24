@@ -30,7 +30,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 
-
+use Illuminate\Validation\ValidationException;
 class AuthenticationController extends Controller
 {
     /**
@@ -401,142 +401,62 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
 
 
 
-    public function checkEmailold(Request $request)
-    {
-        $this->validate($request, [
-            'email' => 'required|email'
-        ]);
+ 
 
-        $exists = User::where('email', $request->email)->exists();
-
-        return response()->json(['exists'  => $exists,'message' => $exists ? 'Email already exists' : 'Email is available' ]);
-    }
 public function checkEmail(Request $request)
 {
-       $appKey = $request->header('X-Easify-App-Key');
+    try {
 
+        // 1️⃣ Validate App Key
+        $appKey = $request->header('X-Easify-App-Key');
         if ($appKey !== env('EASIFY_APP_KEY')) {
-            return response()->json([
-                'message' => 'Invalid or missing X-Easify-App-Key'
-            ], 401);
+            throw new \Exception('Invalid or missing X-Easify-App-Key', 401);
         }
-    // Email format validation
-      $this->validate($request, [
-        'email'      => 'required|email',
-    ]);
 
-    // Check availability
-    $exists = User::where('email', $request->email)->exists();
+        // 2️⃣ Validate email format
+        $this->validate($request, [
+            'email' => 'required|email',
+        ]);
 
-    if ($exists) {
+        // 3️⃣ Check availability
+        $exists = User::where('email', $request->email)->exists();
+
+        if ($exists) {
+            return response()->json([
+                'message' => 'Email validation failed',
+                'data' => [
+                    'is_valid' => false
+                ]
+            ], 200);
+        }
+
         return response()->json([
-            'message' => 'Email validation failed',
+            'message' => 'Email validation successful',
             'data' => [
-                'is_valid' => false
+                'is_valid' => true
             ]
         ], 200);
-    }
 
-    return response()->json([
-        'message' => 'Email validation successful',
-        'data' => [
-            'is_valid' => true
-        ]
-    ], 200);
+    } catch (ValidationException $e) {
+
+        return response()->json([
+            'message' => 'Invalid email format',
+            'errors' => $e->errors()
+        ], 422);
+
+    } catch (\Throwable $e) {
+
+        $statusCode = in_array($e->getCode(), [401, 404, 422])
+            ? $e->getCode()
+            : 500;
+
+        return response()->json([
+            'message' => $e->getMessage(),
+            'errors' => []
+        ], $statusCode);
+    }
 }
-
-    public function createUserold(Request $request)
-{
-    // Step 1: Validate required fields
-    $this->validate($request, [
-        'email'      => 'required|email',
-        'password'   => 'required|min:6',
-    ]);
-
-    // Step 2: Check if email already exists
-    if (User::where('email', $request->email)->exists()) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Email already exists in the system.'
-        ], 409);
-    }
-
-    // Step 3: Find reserved voiptella client
-    $availableClient = Client::where('reserved', 1)
-        ->where('client_type', 'voiptella')
-        ->first();
-    
-    if (!$availableClient) {
-        return response()->json([
-            'success' => false,
-            'message' => 'No available client found. All voiptella clients are reserved.'
-        ], 404);
-    }
-
-    // Step 4: Find user assigned to this client
-    $existingUser = User::where('base_parent_id', $availableClient->id)->first();
-
-    if (!$existingUser) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Client found but no associated user exists.'
-        ], 404);
-    }
-
-
-    $phone = substr($request->phone, -10);
-
-    $countryCode = substr($request->phone, 0, strlen($request->phone) - 10);
-
-    // Step 5: Update user details
-    $existingUser->email      = $request->email;
-    //$existingUser->first_name = $request->first_name;
-    //$existingUser->last_name  = $request->last_name;
-    $existingUser->mobile  = $phone;
-    $existingUser->country_code  = $countryCode;
-
-
-    $existingUser->password   = Hash::make($request->password);
-    $existingUser->save();
-
-    // Step 6: Update SIP passwords in user_extensions
-    $extensionsToUpdate = [
-        $existingUser->extension,
-        $existingUser->alt_extension,
-        $existingUser->app_extension
-    ];
-
-    UserExtension::whereIn('username', $extensionsToUpdate)
-        ->update(['secret' => $request->password]);
-
-    // Step 7: Mark client as reserved = 0 (now consumed)
-    $availableClient->reserved = 0;
-    $availableClient->save();
-
-   $authResponse = Http::post(env('APP_URL') . '/authentication', [
-    'email'    => $existingUser->email,
-    'password' => $request->password,
-    'device'   => 'desktop_app'
-]);
-
-return  $authData = $authResponse->json();
-
-    // Step 9: Return success response with authentication details
-    return response()->json([
-        'success' => true,
-        'message' => 'User created and authenticated successfully.',
-        'client_id'    => $availableClient->id,
-        'company_name' => $availableClient->company_name,
-        'user' => [
-            'id'         => $existingUser->id,
-            'email'      => $existingUser->email,
-            'first_name' => $existingUser->first_name,
-            'last_name'  => $existingUser->last_name
-        ],
-        'auth' => $authResponse   // token + login response
-    ]);
-}
-
+   
 
 
 
@@ -582,7 +502,11 @@ if (empty($data) || !is_array($data)) {
             }
         }
 
-        $client = Client::findOrFail($data['base_parent_id']);
+        $client = Client::find($data['base_parent_id']);
+        if (!$client) {
+            throw new RenderableException('Client not found', [], 404);
+        }
+
         if ($client->is_deleted == 1) {
             throw new RenderableException('Account de-activated', [], 401);
         }
@@ -628,99 +552,127 @@ if (empty($data) || !is_array($data)) {
 
         return $this->successResponse("Login successful", $response);
 
-    } catch (\Throwable $exception) {
-        return $this->failResponse(
-            $exception->getMessage(),
-            [],
-            $exception,
-            $exception->getCode() ?: 401
-        );
+    }catch (\Throwable $exception) {
+
+    $statusCode = in_array($exception->getCode(), [400, 401, 404, 422])
+        ? $exception->getCode()
+        : 500;
+
+    return $this->failResponse(
+        $exception->getMessage(),
+        [],
+        $exception,
+        $statusCode
+    );
     }
 }
+
 
 public function createUser(Request $request)
 {
-    // 1️⃣ Validate payload
-    $this->validate($request, [
-        'email'        => 'required|email',
-        'name'         => 'required|string',
-        'country_code' => ['required', 'regex:/^\+\d{1,4}$/'],
-        'phone_number' => ['required', 'regex:/^\d{6,15}$/'],
-        'password'     => 'required|min:6',
-    ]);
+    try {
 
-    // 2️⃣ Read Easify User Token from header
-    $easifyUserToken = $request->header('X-Easify-User-Token');
+        // 1️⃣ Validate payload
+        $this->validate($request, [
+            'email'        => 'required|email',
+            'name'         => 'required|string',
+            'country_code' => ['required', 'regex:/^\+\d{1,4}$/'],
+            'phone_number' => ['required', 'regex:/^\d{6,15}$/'],
+            'password'     => 'required|min:6',
+        ]);
 
-    if (!$easifyUserToken) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Missing X-Easify-User-Token header'
-        ], 401);
-    }
-   $appKey = $request->header('X-Easify-App-Key');
-
-        if ($appKey !== env('EASIFY_APP_KEY')) {
-            return response()->json([
-                'message' => 'Invalid or missing X-Easify-App-Key'
-            ], 401);
+        // 2️⃣ Validate headers
+        $easifyUserToken = $request->header('X-Easify-User-Token');
+        if (!$easifyUserToken) {
+            throw new \Exception('Missing X-Easify-User-Token', 401);
         }
-    // 3️⃣ Check email uniqueness
-    if (User::where('email', $request->email)->exists()) {
+
+        $appKey = $request->header('X-Easify-App-Key');
+        if ($appKey !== env('EASIFY_APP_KEY')) {
+            throw new \Exception('Invalid or missing X-Easify-App-Key', 401);
+        }
+
+        // 3️⃣ Email uniqueness (validation error → 422)
+        if (User::where('email', $request->email)->exists()) {
+            throw ValidationException::withMessages([
+                'email' => ['The email has already been taken.']
+            ]);
+        }
+
+        // 4️⃣ Find reserved client
+        $availableClient = Client::where('reserved', 1)
+            ->where('client_type', 'voiptella')
+            ->first();
+
+        if (!$availableClient) {
+            throw new \Exception('No available client found', 404);
+        }
+
+        // 5️⃣ Fetch base user
+        $user = User::where('base_parent_id', $availableClient->id)->first();
+        if (!$user) {
+            throw new \Exception('Base user not found', 404);
+        }
+
+        // 6️⃣ Update user details
+        $nameParts = preg_split('/\s+/', trim($request->name), 2);
+
+        $user->email            = $request->email;
+        $user->first_name       = $nameParts[0];
+        $user->last_name        = $nameParts[1] ?? '';
+        $user->country_code     = ltrim($request->country_code, '+'); // store without +
+        $user->mobile           = $request->phone_number;
+        $user->password         = Hash::make($request->password);
+        $user->easify_user_uuid = $easifyUserToken;
+        $user->save();
+
+        // 7️⃣ Update SIP extensions
+        UserExtension::whereIn('username', [
+            $user->extension,
+            $user->alt_extension,
+            $user->app_extension
+        ])->update([
+            'secret' => $request->password
+        ]);
+
+        // 8️⃣ Mark client as consumed
+        $availableClient->reserved = 0;
+        $availableClient->save();
+
+        // 9️⃣ Return SAME response as /authenticate
+        $authService = new Authentication();
+        $authData = $authService->loginByUserId($user->id);
+
+        if (empty($authData) || !is_array($authData)) {
+            throw new \Exception('Registration failed', 500);
+        }
+
         return response()->json([
-            'success' => false,
-            'message' => 'Email already exists'
-        ], 409);
-    }
+            "message" => "User registered successfully",
+            "data" => $authData
+        ], 200);
 
-    // 4️⃣ Find reserved client
-    $availableClient = Client::where('reserved', 1)
-        ->where('client_type', 'voiptella')
-        ->first();
-        Log::info('client avaiable',['availableClient'=>$availableClient]);
-    if (!$availableClient) {
+    } catch (ValidationException $e) {
+
         return response()->json([
-            'success' => false,
-            'message' => 'No available client found'
-        ], 404);
+            "message" => "Validation failed",
+            "errors" => $e->errors()
+        ], 422);
+
+    } catch (\Throwable $e) {
+
+        $statusCode = in_array($e->getCode(), [400, 401, 404, 422])
+            ? $e->getCode()
+            : 500;
+
+        return response()->json([
+            "message" => $e->getMessage(),
+            "errors" => []
+        ], $statusCode);
     }
-
-    // 5️⃣ Fetch base user
-    $user = User::where('base_parent_id', $availableClient->id)->first();
-    if(!$user){
-    Log::warning('No user found for this client', ['client_id' => $availableClient->id]);
 }
-// 6️⃣ Update user details
-$nameParts = preg_split('/\s+/', trim($request->name), 2);
-    // 6️⃣ Update user details
-    $user->email            = $request->email;
-    $user->first_name       = $nameParts[0];
-    $user->last_name        = $nameParts[1] ?? '';
-    $user->country_code     = ltrim($request->country_code, '+'); // ✅ strip +
-    $user->mobile           = $request->phone_number;
-    $user->password         = Hash::make($request->password);
-    $user->easify_user_uuid = $easifyUserToken; // ✅ REQUIRED
-    $user->save();
 
-    // 7️⃣ Update SIP extensions
-    UserExtension::whereIn('username', [
-        $user->extension,
-        $user->alt_extension,
-        $user->app_extension
-    ])->update([
-        'secret' => $request->password
-    ]);
 
-    // 8️⃣ Mark client consumed
-    $availableClient->reserved = 0;
-    $availableClient->save();
-
-    // 9️⃣ Return SAME response as login/authenticate
-    $authService = new Authentication();
-    $authData = $authService->loginByUserId($user->id);
-
-    return response()->json($authData);
-}
 public function createCredential(Request $request)
 {
     // 1️⃣ Validate request payload
