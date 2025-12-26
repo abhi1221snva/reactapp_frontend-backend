@@ -11,8 +11,22 @@ use App\Model\Client\PromptFunction;
 use App\Model\SmsTemplete;
 use App\Model\Client\EmailTemplete;
 use App\Model\Client\Label;
+use Carbon\Carbon;
 
+if (!function_exists('convertToUserTimezone')) {
+    function convertToUserTimezone($datetime, $timezone = null, $format = 'Y-m-d H:i:s')
+    {
+        if (empty($datetime)) {
+            return null;
+        }
 
+        $timezone = $timezone ?? 'Asia/Kolkata';
+
+        return Carbon::parse($datetime)
+            ->timezone($timezone)
+            ->format($format);
+    }
+}
 if (!function_exists('hhmmss')) {
     function hhmmss($seconds)
     {

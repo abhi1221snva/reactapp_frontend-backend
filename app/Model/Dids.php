@@ -306,11 +306,28 @@ public function getList($request)
         // Base query
         $baseSql = "SELECT * FROM " . $this->table . " WHERE is_deleted = '0'";
 
-        // Apply search
+        // // Apply search
+        // if ($request->has('search') && !empty($request->input('search'))) {
+        //     $search = $request->input('search');
+        //     $baseSql .= " AND cli = '" . $search . "'";
+        // }
         if ($request->has('search') && !empty($request->input('search'))) {
             $search = $request->input('search');
-            $baseSql .= " AND cli = '" . $search . "'";
+        
+            // Remove everything except digits
+            $normalizedSearch = preg_replace('/\D+/', '', $search);
+        
+            // If number entered without country code (assume last 10 digits)
+            if (strlen($normalizedSearch) > 10) {
+                $last10 = substr($normalizedSearch, -10);
+            } else {
+                $last10 = $normalizedSearch;
+            }
+        
+            // Match last 10 digits in DB (works for all formats)
+            $baseSql .= " AND REPLACE(REPLACE(REPLACE(REPLACE(cli, '+', ''), '-', ''), ' ', ''), '(', '') LIKE '%$last10%'";
         }
+        
 
         // Count query
         $countSql = str_replace("SELECT *", "SELECT COUNT(*) AS total", $baseSql);
