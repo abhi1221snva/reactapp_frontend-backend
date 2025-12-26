@@ -4,7 +4,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Lists extends Model
 {
-    public $timestamps = false;
+    public $timestamps = true;
 
     protected $table = "list";
 }

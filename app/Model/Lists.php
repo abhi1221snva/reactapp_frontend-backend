@@ -411,7 +411,8 @@ public function getList($request)
                     cl.updated_at, 
                     l.is_active,
                     l.lead_count,
-                      l.is_dialing     -- ✅ Added this line
+                      l.is_dialing,    -- ✅ Added this line
+                      l.created_at
                 FROM
                     campaign_list AS cl
                 LEFT JOIN list AS l ON l.id = cl.list_id
@@ -460,7 +461,8 @@ public function getList($request)
                     cl.updated_at, 
                     l.is_active,
                     l.lead_count,
-                      l.is_dialing     -- ✅ Added this line
+                      l.is_dialing,    -- ✅ Added this line
+                      l.created_at
                 FROM
                     campaign_list AS cl
                 LEFT JOIN list AS l ON l.id = cl.list_id
