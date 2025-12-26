@@ -392,6 +392,11 @@ class Lists extends Model
 
 public function getList($request)
 {
+    $userTimezone = $request->auth->timezone ?? 'Asia/Kolkata';
+    Log::info('User timezone', [
+        'timezone' => $request->auth->timezone ?? null
+    ]);
+    
     $titleSearch = null;
     if ($request->has('title') && !empty(trim($request->input('title')))) {
         $titleSearch = trim($request->input('title'));
@@ -435,7 +440,9 @@ public function getList($request)
 
         $record = DB::connection($connection)->selectOne($sql, $params);
         $data = (array) $record;
-
+        $data['created_at'] = convertToUserTimezone($data['created_at'] ?? null, $userTimezone);
+        $data['updated_at'] = convertToUserTimezone($data['updated_at'] ?? null, $userTimezone);
+        
         $sql = "SELECT * FROM list_header WHERE list_id = :list_id AND is_deleted = :is_deleted";
         $record = DB::connection($connection)->select($sql, [
             'is_deleted' => 0,
@@ -481,7 +488,8 @@ public function getList($request)
 
         foreach ($data as $id) {
             $list_id = $id->list_id;
-
+            $id->created_at = convertToUserTimezone($id->created_at, $userTimezone);
+            $id->updated_at = convertToUserTimezone($id->updated_at, $userTimezone);
             // ✅ If lead_count is not null, use it directly
             if (!is_null($id->lead_count)) {
                 $id->rowListData = $id->lead_count;
