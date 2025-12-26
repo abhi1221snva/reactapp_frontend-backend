@@ -1094,53 +1094,65 @@ class Dialer extends Model
         );
     }
 
-    // public function dispositionByCampaignId(int $campaignId, int $clientId)
-    // {
-    //     $sql = "SELECT d.id, d.title,d.enable_sms, d_type FROM campaign_disposition as cd INNER JOIN disposition as d ON cd.disposition_id = d.id  WHERE cd.is_deleted = :is_deleted AND cd.campaign_id = :campaign_id AND d.title!='' ";
-    //     $record = DB::connection("mysql_$clientId")->select($sql, array('is_deleted' => 0, 'campaign_id' => $campaignId));
-    //     $dataClient = (array)$record;
-    //     $data = $dataClient;
-    //     if (!empty($data)) {
-    //         return array(
-    //             'success' => 'true',
-    //             'message' => 'Dispositions detail.',
-    //             'data' => $data
-    //         );
-    //     }
-    //     return array(
-    //         'success' => 'false',
-    //         'message' => 'Dispositions not created.',
-    //         'data' => array()
-    //     );
-    // }
+ 
+// public function dispositionByCampaignId(int $campaignId, int $clientId)
+// {
+
+// $sql = "SELECT d.id, d.title, d.enable_sms, d.d_type 
+//         FROM campaign_disposition AS cd 
+//         INNER JOIN disposition AS d 
+//             ON cd.disposition_id = d.id  
+//         WHERE cd.is_deleted = :cd_deleted 
+//           AND d.is_deleted = :d_deleted 
+//           AND cd.campaign_id = :campaign_id
+//           AND d.title != ''";
+
+
+// $record = DB::connection("mysql_$clientId")->select($sql, [
+//     'cd_deleted' => 0,
+//     'd_deleted' => 0,
+//     'campaign_id' => $campaignId
+// ]);
+
+//     $data = (array) $record;
+
+//     if (!empty($data)) {
+//         return [
+//             'success' => 'true',
+//             'message' => 'Dispositions detail.',
+//             'data' => $data
+//         ];
+//     }
+
+//     return [
+//         'success' => 'false',
+//         'message' => 'Dispositions not created.',
+//         'data' => []
+//     ];
+// }
 public function dispositionByCampaignId(int $campaignId, int $clientId)
 {
-    // $sql = "SELECT d.id, d.title, d.enable_sms, d.d_type 
-    //         FROM campaign_disposition AS cd 
-    //         INNER JOIN disposition AS d 
-    //             ON cd.disposition_id = d.id  
-    //         WHERE cd.is_deleted = :is_deleted 
-    //           AND d.is_deleted = :is_deleted 
-    //           AND cd.campaign_id = :campaign_id
-    //           AND d.title != ''";
-$sql = "SELECT d.id, d.title, d.enable_sms, d.d_type 
-        FROM campaign_disposition AS cd 
-        INNER JOIN disposition AS d 
-            ON cd.disposition_id = d.id  
-        WHERE cd.is_deleted = :cd_deleted 
-          AND d.is_deleted = :d_deleted 
+    $sql = "
+        SELECT 
+            d.id,
+            d.title,
+            d.enable_sms,
+            d.d_type
+        FROM campaign_disposition AS cd
+        INNER JOIN disposition AS d
+            ON cd.disposition_id = d.id
+        WHERE cd.is_deleted = :cd_deleted
+          AND d.is_deleted = :d_deleted
+          AND d.status = 1
           AND cd.campaign_id = :campaign_id
-          AND d.title != ''";
+          AND d.title != ''
+    ";
 
-    // $record = DB::connection("mysql_$clientId")->select($sql, [
-    //     'is_deleted' => 0,
-    //     'campaign_id' => $campaignId
-    // ]);
-$record = DB::connection("mysql_$clientId")->select($sql, [
-    'cd_deleted' => 0,
-    'd_deleted' => 0,
-    'campaign_id' => $campaignId
-]);
+    $record = DB::connection("mysql_$clientId")->select($sql, [
+        'cd_deleted'  => 0,
+        'd_deleted'   => 0,
+        'campaign_id' => $campaignId
+    ]);
 
     $data = (array) $record;
 
@@ -1158,6 +1170,7 @@ $record = DB::connection("mysql_$clientId")->select($sql, [
         'data' => []
     ];
 }
+
 
     // public function getLead(int $parentId, int $extension)
     // {
