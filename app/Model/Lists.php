@@ -62,47 +62,105 @@ class Lists extends Model
      * @return array
      */
 
+    // public function getListHeader($request)
+    // {
+    //     try {
+    //         $data = array();
+    //         $searchStr = array();
+    //         if ($request->has('list_data') && is_array($request->input('list_data'))) {
+    //             $data['list_id'] = $request->input('list_data');
+    //         }
+    //         if ($data['list_id'][0] == '0') {
+    //             $list = implode(',', $data['list_id']);
+    //             $list = "'" . implode("', '", $data['list_id']) . "'";
+    //             $data['list_id'] = $list;
+    //             $sql = "SELECT list_header.column_name,label.title FROM list_header inner join label on label.id = list_header.label_id  WHERE list_header.list_id NOT IN(" . $list . ") group by label.title";
+    //         } else {
+    //             $list = implode(',', $data['list_id']);
+    //             $list = "'" . implode("', '", $data['list_id']) . "'";
+    //             $data['list_id'] = $list;
+    //             $sql = "SELECT list_header.column_name,label.title FROM list_header inner join label on label.id = list_header.label_id  WHERE list_header.list_id IN(" . $list . ") group by label.title";
+    //         }
+    //         $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
+    //         $data = (array) $record;
+    //         if (!empty($data)) {
+    //             return array(
+    //                 'success' => 'true',
+    //                 'message' => 'List header detail.',
+    //                 'data' => $data
+    //             );
+    //         } else {
+    //             return array(
+    //                 'success' => 'false',
+    //                 'message' => 'List Header not created.',
+    //                 'data' => array()
+    //             );
+    //         }
+    //     } catch (Exception $e) {
+    //         Log::log($e->getMessage());
+    //     } catch (InvalidArgumentException $e) {
+    //         Log::log($e->getMessage());
+    //     }
+    // }
     public function getListHeader($request)
     {
         try {
             $data = array();
-            $searchStr = array();
+    
             if ($request->has('list_data') && is_array($request->input('list_data'))) {
                 $data['list_id'] = $request->input('list_data');
             }
+    
+            // Prepare list ids
+            $list = "'" . implode("', '", $data['list_id']) . "'";
+    
             if ($data['list_id'][0] == '0') {
-                $list = implode(',', $data['list_id']);
-                $list = "'" . implode("', '", $data['list_id']) . "'";
-                $data['list_id'] = $list;
-                $sql = "SELECT list_header.column_name,label.title FROM list_header inner join label on label.id = list_header.label_id  WHERE list_header.list_id NOT IN(" . $list . ") group by label.title";
+                $sql = "
+                    SELECT 
+                        list_header.column_name,
+                        list_header.is_search,
+                        label.title
+                    FROM list_header
+                    INNER JOIN label ON label.id = list_header.label_id
+                    WHERE list_header.list_id NOT IN ($list)
+                    GROUP BY label.title, list_header.column_name, list_header.is_search
+                ";
             } else {
-                $list = implode(',', $data['list_id']);
-                $list = "'" . implode("', '", $data['list_id']) . "'";
-                $data['list_id'] = $list;
-                $sql = "SELECT list_header.column_name,label.title FROM list_header inner join label on label.id = list_header.label_id  WHERE list_header.list_id IN(" . $list . ") group by label.title";
+                $sql = "
+                    SELECT 
+                        list_header.column_name,
+                        list_header.is_search,
+                        label.title
+                    FROM list_header
+                    INNER JOIN label ON label.id = list_header.label_id
+                    WHERE list_header.list_id IN ($list)
+                    GROUP BY label.title, list_header.column_name, list_header.is_search
+                ";
             }
+    
             $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
             $data = (array) $record;
+    
             if (!empty($data)) {
-                return array(
+                return [
                     'success' => 'true',
                     'message' => 'List header detail.',
-                    'data' => $data
-                );
+                    'data'    => $data
+                ];
             } else {
-                return array(
+                return [
                     'success' => 'false',
                     'message' => 'List Header not created.',
-                    'data' => array()
-                );
+                    'data'    => []
+                ];
             }
         } catch (Exception $e) {
-            Log::log($e->getMessage());
+            Log::error($e->getMessage());
         } catch (InvalidArgumentException $e) {
-            Log::log($e->getMessage());
+            Log::error($e->getMessage());
         }
     }
-
+    
     // public function searchLeads($request)
     // {
     //     try {

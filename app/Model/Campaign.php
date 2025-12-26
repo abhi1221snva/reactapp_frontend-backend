@@ -1682,15 +1682,36 @@ function campaignById($request)
 
     $campaign->rowList = $count;
 
-    $list_ids = "'" . implode("','", $id_list) . "'";
-    if ($campaign->crm_title_url === 'hubspot') {
-        $sql_count_list = "SELECT sum(size) as rowCountList FROM hubspot_lists WHERE list_id IN ($list_ids)";
-    } else {
-        $sql_count_list = "SELECT count(1) as rowCountList FROM list_data WHERE list_id IN ($list_ids)";
-    }
+    // $list_ids = "'" . implode("','", $id_list) . "'";
+    // if ($campaign->crm_title_url === 'hubspot') {
+    //     $sql_count_list = "SELECT sum(size) as rowCountList FROM hubspot_lists WHERE list_id IN ($list_ids)";
+    // } else {
+    //     $sql_count_list = "SELECT count(1) as rowCountList FROM list_data WHERE list_id IN ($list_ids)";
+    // }
 
-    $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_count_list);
-    $campaign->rowListData = $record_count_list[0]->rowCountList ?? 0;
+    // $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_count_list);
+    // $campaign->rowListData = $record_count_list[0]->rowCountList ?? 0;
+// === Total leads (same logic as campaignDetail) ===
+if (!empty($id_list)) {
+
+    $sql_lead_count = "SELECT SUM(lead_count) as totalLeadCount FROM list WHERE id IN (" . implode(',', $id_list) . ")";
+    $lead_count_record = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_lead_count);
+
+    if (!empty($lead_count_record) && $lead_count_record->totalLeadCount > 0) {
+        $campaign->total_leads = (int) $lead_count_record->totalLeadCount;
+    } else {
+        if ($campaign->crm_title_url == 'hubspot') {
+            $sql = "SELECT SUM(size) as total FROM hubspot_lists WHERE list_id IN ('" . implode("','", $id_list) . "')";
+        } else {
+            $sql = "SELECT COUNT(*) as total FROM list_data WHERE list_id IN ('" . implode("','", $id_list) . "')";
+        }
+
+        $record = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql);
+        $campaign->total_leads = (int) ($record->total ?? 0);
+    }
+} else {
+    $campaign->total_leads = 0;
+}
 
     // === Lead temp count ===
     $sql_lead_temp = "SELECT count(1) as rowLeadTemp FROM lead_temp WHERE campaign_id = :campaign_id ";
@@ -1744,8 +1765,8 @@ function campaignById($request)
         $campaign->setAttribute('audio_message_amd', 0);
     }
     // === Rename / Map columns for API output ===
-$campaign->setAttribute('total_leads', $campaign->rowLeadReport ?? 0);
-$campaign->setAttribute('dialed_leads', $campaign->rowListData ?? 0);
+//$campaign->setAttribute('total_leads', $campaign->rowLeadReport ?? 0);
+$campaign->setAttribute('dialed_leads', $campaign->rowLeadReport ?? 0);
 $campaign->setAttribute('created_date', $campaign->updated ?? null);
 
 // Optionally remove old keys to clean response

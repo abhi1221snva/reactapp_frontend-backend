@@ -8,6 +8,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Model\User;
 use Illuminate\Support\Facades\Log;
+use App\Model\Client\Campaign;
+use Carbon\Carbon;
 
 
 
@@ -397,7 +399,7 @@ class GroupController extends Controller
             return $this->failResponse("Failed to delete extension group", [$exception->getMessage()], $exception, 404);
         }
     }
-    public function deleteNew(Request $request)
+    public function deleteNew1(Request $request)
     {
            $this->validate($request, [
             'group_id'        =>'required'
@@ -423,6 +425,73 @@ class GroupController extends Controller
             return $this->failResponse("Failed to delete extension group", [$exception->getMessage()], $exception, 404);
         }
     }
+    public function deleteNew(Request $request)
+{
+    $this->validate($request, [
+        'group_id' => 'required|numeric'
+    ]);
+
+    $id = $request->input('group_id');
+
+    try {
+        $connection = "mysql_" . $request->auth->parent_id;
+
+        // 1️⃣ Find extension group
+        $extGroup = ExtensionGroup::on($connection)->findOrFail($id);
+
+        // 2️⃣ Check if already deleted
+        if ($extGroup->is_deleted) {
+            return $this->failResponse(
+                "Extension group not found",
+                ["Invalid extension group id $id"],
+                null,
+                404
+            );
+        }
+
+        // 3️⃣ Check if group is assigned to any campaign
+        $isAssignedToCampaign = Campaign::on($connection)
+            ->where('group_id', $id)
+            ->where('is_deleted', 0) // optional but recommended
+            ->exists();
+
+        if ($isAssignedToCampaign) {
+            return $this->failResponse(
+                "Extension group cannot be deleted",
+                ["This group is already assigned to a campaign."],
+                null,
+                400
+            );
+        }
+
+        // 4️⃣ Soft delete
+        $extGroup->title = $extGroup->title . " | Deleted on " . Carbon::now()->format('Y-m-d H:i:s');
+        $extGroup->is_deleted = 1;
+        $extGroup->saveOrFail();
+
+        return $this->successResponse(
+            "Extension group deleted",
+            $extGroup->toArray()
+        );
+
+    } catch (ModelNotFoundException $exception) {
+        return $this->failResponse(
+            "Extension group not found",
+            ["Invalid extension group id $id"],
+            $exception,
+            404
+        );
+
+    } catch (\Throwable $exception) {
+        return $this->failResponse(
+            "Failed to delete extension group",
+            [$exception->getMessage()],
+            $exception,
+            500
+        );
+    }
+}
+
     /**
      * @OA\Put(
      *     path="/extension-group",
