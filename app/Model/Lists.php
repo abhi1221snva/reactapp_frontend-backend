@@ -11,6 +11,7 @@ use App\Model\Client\CampaignList;
 use App\Model\Client\LeadTemp;
 use Illuminate\Support\Facades\Schema;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use Carbon\Carbon;
 
 
 class Lists extends Model
@@ -1363,17 +1364,28 @@ public function editListold($request)
     // ---------------------------------------------------
     // INSERT LIST
     // ---------------------------------------------------
-    $query = "INSERT INTO list (title, is_active, duplicate_check) 
-              VALUES (:title, 1, :duplicate_check)";
 
+    $query = "INSERT INTO list 
+                (title, is_active, duplicate_check, created_at, updated_at)
+              VALUES 
+                (:title, 1, :duplicate_check, :created_at, :updated_at)";
+    
+    $now = Carbon::now(); // Uses Laravel app timezone
+    
     $add = DB::connection($dataBase)->insert($query, [
-        'title' => $request->input('title'),
-        'duplicate_check' => $request->input('duplicate_check') ?? 0
+        'title'           => $request->input('title'),
+        'duplicate_check' => $request->input('duplicate_check') ?? 0,
+        'created_at'      => $now,
+        'updated_at'      => $now
     ]);
-
-    if ($add != 1) {
-        return ['success' => 'false', 'message' => 'Unable to create list'];
+    
+    if (!$add) {
+        return [
+            'success' => false,
+            'message' => 'Unable to create list'
+        ];
     }
+    
 
     $record = DB::connection($dataBase)
         ->selectOne("SELECT id FROM list ORDER BY id DESC LIMIT 1");
