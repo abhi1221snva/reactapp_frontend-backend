@@ -51,7 +51,19 @@ class Label extends Model
         $sql = "SELECT * FROM " . $this->table . $str . " ORDER BY display_order ASC";
         $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
         $data = (array)$record;
+        // ✅ User timezone
+       $userTimezone = $request->auth->timezone ?? 'Asia/Kolkata';
 
+        foreach ($data as &$row) {
+            if (!empty($row->created_at)) {
+                $row->created_at = convertToUserTimezone($row->created_at, $userTimezone);
+            }
+
+            if (!empty($row->updated_at)) {
+                $row->updated_at = convertToUserTimezone($row->updated_at, $userTimezone);
+            }
+        }
+        unset($row);
         if (!empty($data)) {
             // Pagination if start & limit are provided
             if ($request->has('start') && $request->has('limit')) {

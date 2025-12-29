@@ -97,6 +97,8 @@ class Api extends Model
      */
     public function apiDetail($request)
     {
+         // ✅ User timezone (default fallback)
+        $userTimezone = $request->auth->timezone ?? 'Asia/Kolkata';
         if ($request->has('api_id') && is_numeric($request->input('api_id'))) {
             $sql = "SELECT a.*, c.title as campaign FROM " . $this->table . " as a LEFT JOIN campaign as c ON c.id = a.campaign_id WHERE a.is_deleted = :is_deleted AND a.id = :id";
             $record =  DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql, array('id' => $request->input('api_id'), 'is_deleted' => 0));
@@ -107,11 +109,28 @@ class Api extends Model
             $sql = "SELECT disposition_id FROM api_disposition  WHERE api_id = :api_id AND is_deleted = :is_deleted";
             $record =  DB::connection('mysql_' . $request->auth->parent_id)->select($sql, array('api_id' => $data['id'], 'is_deleted' => 0));
             $data['disposition'] = (array)$record;
+                // ✅ Convert timestamps (single record)
+        if (!empty($data['created_at'])) {
+            $data['created_at'] = convertToUserTimezone($data['created_at'], $userTimezone);
+        }
+        if (!empty($data['updated_at'])) {
+            $data['updated_at'] = convertToUserTimezone($data['updated_at'], $userTimezone);
+        }
         } else {
             $sql = "SELECT a.*, c.title as campaign FROM " . $this->table . " as a LEFT JOIN campaign as c ON c.id = a.campaign_id  WHERE a.is_deleted = :is_deleted";
             $record =  DB::connection('mysql_' . $request->auth->parent_id)->select($sql, array('is_deleted' => 0));
             $data = (array)$record;
             $totalRows = count($data);
+             // ✅ Convert timestamps (multiple records)
+            foreach ($data as &$row) {
+                if (!empty($row->created_at)) {
+                    $row->created_at = convertToUserTimezone($row->created_at, $userTimezone);
+                }
+                if (!empty($row->updated_at)) {
+                    $row->updated_at = convertToUserTimezone($row->updated_at, $userTimezone);
+                }
+            }
+            unset($row);
             if ($request->has('start') && $request->has('limit')) {
                 $start = (int)$request->input('start'); // Start index (0-based)
                 $limit = (int)$request->input('limit'); // Limit number of records to fetch
