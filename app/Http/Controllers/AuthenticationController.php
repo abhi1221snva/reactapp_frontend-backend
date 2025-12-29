@@ -22,7 +22,7 @@ use App\Services\MailService;
 
 use App\Mail\SystemNotificationMail;
 use App\Model\Master\Client;
-use App\Model\Master\GatewayCredential;
+use App\Model\Client\SmsProviders;
 
 use Plivo\RestClient;
 use Illuminate\Support\Facades\Hash;
@@ -31,6 +31,8 @@ use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 
 use Illuminate\Validation\ValidationException;
+use Illuminate\Database\QueryException;
+
 class AuthenticationController extends Controller
 {
     /**
@@ -677,7 +679,6 @@ public function createUser(Request $request)
     }
 }
 
-
 public function createCredential(Request $request)
 {
     // 1️⃣ Validate request payload
@@ -698,17 +699,44 @@ public function createCredential(Request $request)
         ], 422);
     }
 
+    // 2️⃣ Get user & DB
+    $user_uuid = $request->header('X-Easify-User-Token');
+    $parent_id = User::where('easify_user_uuid', $user_uuid)->value('parent_id');
+
+    if (!$parent_id) {
+        return response()->json([
+            'message' => 'Invalid user'
+        ], 401);
+    }
+
+    $connection = "mysql_" . $parent_id;
+
+    // ✅ 3️⃣ CHECK DUPLICATE UUID (IMPORTANT)
+    $alreadyExists = SmsProviders::on($connection)
+        ->where('uuid', $request->uuid)
+        ->exists();
+
+    if ($alreadyExists) {
+        return response()->json([
+            'message' => 'Credential already exists',
+            'errors'  => [
+                'uuid' => ['This credential UUID already exists']
+            ]
+        ], 422); // Conflict
+    }
+
     try {
-        // 2️⃣ Create credential record
-        $credential = GatewayCredential::create([
-            'uuid'        => $request->uuid,
-            'user_uuid'  => $request->header('X-Easify-User-Token'),
-            'provider'    => $request->provider,
-            'type'        => $request->type,
-            'credentials' => json_encode($request->credentials),
+        // 4️⃣ Create credential
+        $credential = SmsProviders::on($connection)->create([
+            'uuid'         => $request->uuid,
+            'provider'     => $request->provider,
+            'type'         => $request->type,
+            'label_name'   => $request->credentials['account_name'],
+            'auth_id'      => $request->credentials['account_sid'],
+            'access_token' => $request->credentials['auth_token'],
+            'status'       => 1,
         ]);
 
-        // 3️⃣ Success response
         return response()->json([
             'message' => 'Credential created successfully',
             'data' => [
@@ -717,17 +745,26 @@ public function createCredential(Request $request)
                 'type'       => $credential->type,
                 'created_at' => $credential->created_at->toIso8601String(),
             ]
-        ], 201);
+        ], 200);
 
-    } catch (\Exception $e) {
-        return response()->json([
-            'message' => 'Failed to create credential',
-            'errors'  => [
-                'exception' => [$e->getMessage()]
-            ]
-        ], 500);
+    } catch (QueryException $e) {
+
+        // ✅ 5️⃣ Handle duplicate key at DB level (fallback)
+        if ($e->getCode() === '23000') {
+            return response()->json([
+                'message' => 'Credential already exists',
+                'errors'  => [
+                    'uuid' => ['Duplicate credential UUID']
+                ]
+            ], 422);
+        }
+
+        throw $e; // rethrow other DB errors
     }
 }
+
+
+
 public function deleteCredential(Request $request)
 {
     // 1️⃣ Validate payload
@@ -743,11 +780,16 @@ public function deleteCredential(Request $request)
     }
 
     // 2️⃣ Identify user
-    $userUuid = $request->header('X-Easify-User-Token');
+           $user_uuid  = $request->header('X-Easify-User-Token');
+           $parent_id = User::where('easify_user_uuid', $user_uuid)->value('parent_id');
+           if (!$parent_id) {
+        return response()->json([
+            'message' => 'Invalid user'
+        ], 401);
+    }
 
     // 3️⃣ Find credential (MASTER DB)
-    $credential = GatewayCredential::where('uuid', $request->uuid)
-        ->where('user_uuid', $userUuid)
+    $credential = SmsProviders::on("mysql_" . $parent_id)->where('uuid', $request->uuid)
         ->first();
 
     if (! $credential) {
