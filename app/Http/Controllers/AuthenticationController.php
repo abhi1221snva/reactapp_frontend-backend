@@ -616,7 +616,7 @@ public function createUser(Request $request)
         }
 
         // 5️⃣ Fetch base user
-        $user = User::where('base_parent_id', $availableClient->id)->first();
+        $user = User::where('parent_id', $availableClient->id)->first();
         if (!$user) {
             throw new \Exception('Base user not found', 404);
         }
