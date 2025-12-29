@@ -70,7 +70,20 @@ class CustomFieldLabelController extends Controller
         }
     
         $custom_field_labels = $query->get()->toArray();
-    
+      // ✅ User timezone
+        $userTimezone = $request->auth->timezone ?? 'Asia/Kolkata';
+
+        // ✅ Convert timestamps
+        foreach ($custom_field_labels as &$row) {
+            if (!empty($row['created_at'])) {
+                $row['created_at'] = convertToUserTimezone($row['created_at'], $userTimezone);
+            }
+
+            if (!empty($row['updated_at'])) {
+                $row['updated_at'] = convertToUserTimezone($row['updated_at'], $userTimezone);
+            }
+        }
+        unset($row);
         return $this->successResponse("Custom Field Labels List", [
             'total_rows' => $totalRows,
             'data'       => $custom_field_labels
