@@ -3,15 +3,18 @@ namespace App\Model\Client;
 
 use App\Exceptions\RenderableException;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class SmsProviders extends Model
 {
+    use SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
      *
      * @var array
      */
+
     protected $table = "sms_providers";
 
     protected $fillable = [
@@ -26,7 +29,8 @@ class SmsProviders extends Model
         'sip_username',
         'sip_password',
         'host',
-        'user_extension_id'
+        'user_extension_id',
+        'uuid','type'
     ];
 
     
