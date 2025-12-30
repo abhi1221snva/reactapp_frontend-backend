@@ -631,6 +631,8 @@ public function createUser(Request $request)
         $user->mobile           = $request->phone_number;
         $user->password         = Hash::make($request->password);
         $user->easify_user_uuid = $easifyUserToken;
+        $user->timezone = $request->timezone ?? 'Asia/Kolkata';
+
         $user->save();
 
         // 7️⃣ Update SIP extensions

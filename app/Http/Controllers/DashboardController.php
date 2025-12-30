@@ -290,8 +290,17 @@ function getLeadCount(Request $request) {
  public function getCallBack($request)
     {
         try {
+        $timezone = $request->auth->timezone 
+            ?? env('APP_TIMEZONE') 
+            ?? 'UTC';
 
-        date_default_timezone_set($request->auth->timezone); // your user's timezone
+        if (empty($timezone) || !in_array($timezone, timezone_identifiers_list())) {
+            $timezone = env('APP_TIMEZONE') ?? 'Asia/Kolkata';
+        }
+
+        date_default_timezone_set($timezone);
+
+        //date_default_timezone_set($request->auth->timezone); // your user's timezone
         $my_datetime=$request->start_date;//'2023-04-03 07:57:37';
         $my_datetime1=$request->end_date;//'2023-04-03 07:57:37';
 
