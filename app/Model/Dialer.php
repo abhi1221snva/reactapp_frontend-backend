@@ -121,7 +121,7 @@ class Dialer extends Model
         }
     }
 
-    public function getAgentCampaign($request)
+    public function getAgentCampaignold($request)
     {
         try {
             $now_timezone_time = "";
@@ -284,8 +284,7 @@ class Dialer extends Model
         }
     }
 
-
-    public function getAgentCampaign_oldcode($request)
+  public function getAgentCampaign($request)
     {
         try {
             $now_timezone_time = "";
@@ -293,32 +292,20 @@ class Dialer extends Model
             $timeZoneService = new TimezoneService();
             if (!empty($request->auth->timezone)) {
                 $timezoneValue = $timeZoneService->findTimezoneValue($request->auth->timezone);
-
-
                 $time = explode(':', $timezoneValue);
                 $hour = $time[0];
                 $minute = $time[1];
 
                 $merge = $hour . ' hours' . ' ' . $minute . ' minute'; //-05 hours 00 minute
-                //new code
-
-
-
-
                 $tz = $request->auth->timezone;
                 $timestamp = time();
                 $dt = new DateTime("now", new DateTimeZone($tz)); //first argument "must" be a string
                 $dt->setTimestamp($timestamp); //adjust the object to correct timestamp
                 $now_timezone_time = $dt->format('H:i:s');
+                $dayKey = strtolower($dt->format('l')); // ✅ REQUIRED
+
             }
-
-
-            //close code
-
-
-
-            // $now_timezone_time = date('H:i:s', strtotime($merge));
-
+             
 
             if ($request->auth->role == '2' || $request->auth->role == '3' || $request->auth->role == '1' || $request->auth->role == '6' || $request->auth->role == '5') {
 
@@ -327,9 +314,6 @@ class Dialer extends Model
                 if ($intWebPhoneSetting == 1) {
                     $extension = $request->auth->alt_extension;
                 }
-
-                /* new code implement*/
-
                 $dataUser = User::where('id', $request->auth->id)->get()->first();
 
                 $dialer_mode = $dataUser->dialer_mode;
@@ -344,13 +328,12 @@ class Dialer extends Model
                     $extension =  $request->auth->extension;
                 }
 
-                //echo $extension;die;
-
-                /*close new code implement*/
-
                 $connection = "mysql_" . $request->auth->parent_id;
 
                 $extensionGroup = DB::connection($connection)->select("SELECT * FROM extension_group_map WHERE extension = :extension AND is_deleted = :is_deleted", array('extension' => $extension, 'is_deleted' => 0));
+                 Log::info('extensionGroup', [
+                    'extensionGroup' => $extensionGroup
+                ]);
                 if (!empty($extensionGroup)) {
                     $inStr = array();
                     $data['is_deleted'] = 0;
@@ -361,16 +344,111 @@ class Dialer extends Model
                         $groupArray[] = $value->group_id;
                         $count++;
                     }
+                     Log::info('inStr', [
+                    'inStr' => $inStr
+                ]);
+                //     $campaign = DB::connection($connection)->select("
+                //     SELECT c.*, ct.week_plan
+                //     FROM campaign c
+                //     JOIN call_timers ct ON ct.id = c.call_schedule_id
+                //     WHERE c.group_id IN (" . implode(' , ', $inStr) . ")
+                //     AND c.is_deleted = :is_deleted
+                //     AND c.status = 1
+                // ", $data);
+                $campaign = DB::connection($connection)->select("
+    SELECT c.*, ct.week_plan
+    FROM campaign c
+    LEFT JOIN call_timers ct ON ct.id = c.call_schedule_id
+    WHERE c.group_id IN (" . implode(' , ', $inStr) . ")
+    AND c.is_deleted = :is_deleted
+    AND c.status = 1
+", $data);
+
+                Log::info('Campaign  Debug', [
+                    'campaign' => $campaign
+                ]);
+                $filteredCampaign = [];
+            foreach ($campaign as $row) {
+
+               $weekPlan = json_decode($row->week_plan, true);
+
+if (json_last_error() !== JSON_ERROR_NONE) {
+    Log::error('Invalid week_plan JSON', [
+        'campaign_id' => $row->id,
+        'error' => json_last_error_msg(),
+        'week_plan' => $row->week_plan
+    ]);
+    continue;
+}
 
 
-                    /*$campaign = DB::connection($connection)->select("SELECT * FROM campaign WHERE group_id in (" . implode(' , ', $inStr) . ") AND is_deleted = :is_deleted AND status=1 AND (time(now()) between call_time_start and call_time_end)", $data);*/
+                // Pick today's plan or default
+                $plan = $weekPlan[$dayKey] ?? $weekPlan['default'] ?? null;
+               Log::info('Campaign Time Debug', [
+                    'timezone' => $request->auth->timezone,
+                    'day' => $dayKey,
+                    'now' => $now_timezone_time,
+                    'plan' => $weekPlan
+                ]);
+            if (!$plan || empty($plan['start']) || empty($plan['end'])) {
+                continue;
+            }
+   
+            $start = $plan['start'] . ':00';
+            $end   = $plan['end'] . ':00';
 
-                    $campaign = DB::connection($connection)->select("SELECT * FROM campaign WHERE group_id in (" . implode(' , ', $inStr) . ") AND is_deleted = :is_deleted AND status=1 AND ('$now_timezone_time' between call_time_start and call_time_end)", $data);
+            // Normal shift
+            if ($start <= $end) {
+                if ($now_timezone_time >= $start && $now_timezone_time <= $end) {
+                    $filteredCampaign[] = $row;
+                }
+            }
+    // Overnight shift (e.g. 22:00 → 06:00)
+        else {
+            if ($now_timezone_time >= $start || $now_timezone_time <= $end) {
+                $filteredCampaign[] = $row;
+            }
+        }
+}
+
+$campaign = $filteredCampaign;
+$totalRows = count($campaign);
+
 
                     $extensionLive = ExtensionLive::on($connection)->find($extension);
                     $login = $extensionLive ? $extensionLive->toArray() : false;
 
+                    if ($request->has('start') && $request->has('limit')) {
+                        $start = (int)$request->input('start'); // Start index (0-based)
+                        $limit = (int)$request->input('limit'); // Limit number of records to fetch
+
+                        if ($start == 0 && $limit > 0) {
+                            $campaign = array_slice($campaign, 0, $limit); // Fetch only the first 'limit' records
+                        } else {
+                            // For normal pagination, calculate length from start and limit
+                            $length = $limit;
+                            //$$campaign = array_slice($campaign, $start, $length); // Fetch data from start to start+length
+                            $campaign = array_slice($campaign, $start, $limit);
+
+                        }
+
+                        return array(
+                            'utc_time' => $current_time_utc,
+                            'timezone' => $request->auth->timezone,
+                            'timezoneValue' => $timezoneValue,
+                            'time' => $now_timezone_time . "(" . $timezoneValue . ")",
+
+                            'success' => true,
+                            'message' => 'List of campaign for extension.',
+                            'total_rows' => $totalRows,
+                            'data' => $campaign,
+                            'login' => $login,
+                        );
+                    }
+
+
                     if (!empty($campaign)) {
+
                         return array(
                             'utc_time' => $current_time_utc,
                             'timezone' => $request->auth->timezone,
@@ -420,6 +498,7 @@ class Dialer extends Model
             );
         }
     }
+   
     /*
      *Fetch Lead Count In Temp table
      *@param object $request
