@@ -76,7 +76,21 @@ public function index(Request $request)
         $start = 0;
         $limit = $totalRows;
     }
+   // ✅ User timezone (default fallback)
+    $userTimezone = $request->auth->timezone ?? 'Asia/Kolkata';
 
+    // ✅ Convert created_at & updated_at for response
+    $timers->transform(function ($timer) use ($userTimezone) {
+        if (!empty($timer->created_at)) {
+            $timer->created_at = convertToUserTimezone($timer->created_at, $userTimezone);
+        }
+
+        if (!empty($timer->updated_at)) {
+            $timer->updated_at = convertToUserTimezone($timer->updated_at, $userTimezone);
+        }
+
+        return $timer;
+    });
     return $this->successResponse("Call Timers", [
         "total_rows"   => $totalRows,
         "start"        => $start,
