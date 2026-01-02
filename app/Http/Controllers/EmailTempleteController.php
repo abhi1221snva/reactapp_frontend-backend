@@ -71,37 +71,76 @@ class EmailTempleteController extends Controller
      * )
      */
 
-    public function index(Request $request)
-    {
-        $templates = EmailTemplete::on("mysql_" . $request->auth->parent_id)->get()->all();
+    // public function index(Request $request)
+    // {
+    //     $templates = EmailTemplete::on("mysql_" . $request->auth->parent_id)->get()->all();
 
-        if ($request->has('search') && !empty($request->input('search'))) {
-            $search = $request->input('search');
-            $connection = "mysql_" . $request->auth->parent_id;
+    //     if ($request->has('search') && !empty($request->input('search'))) {
+    //         $search = $request->input('search');
+    //         $connection = "mysql_" . $request->auth->parent_id;
 
-            $query = EmailTemplete::on($connection);
+    //         $query = EmailTemplete::on($connection);
 
-            $query->where(function ($q) use ($search) {
-                $q->where('template_name', 'like', '%' . $search . '%')
-                    ->orWhere('subject', 'like', '%' . $search . '%');
-            });
-            $templates = $query->get();
-            return $this->successResponse("Template List", $templates->toArray());
-        }
-        if ($request->has('start') && $request->has('limit')) {
-            $total_row = count($templates);
-            $start = (int)$request->input('start'); // Start index (0-based)
-            $limit = (int)$request->input('limit'); // Limit number of records to fetch
-            $templates = array_slice($templates, $start, $limit, false);
-            return $this->successResponse("Custom Templates", [
-                'start' => $start,
-                'limit' => $limit,
-                'total' => $total_row,
-                'data' => $templates
-            ]);
-        }
-        return $this->successResponse("Template List", $templates);
+    //         $query->where(function ($q) use ($search) {
+    //             $q->where('template_name', 'like', '%' . $search . '%')
+    //                 ->orWhere('subject', 'like', '%' . $search . '%');
+    //         });
+    //         $templates = $query->get();
+    //         return $this->successResponse("Template List", $templates->toArray());
+    //     }
+    //     if ($request->has('start') && $request->has('limit')) {
+    //         $total_row = count($templates);
+    //         $start = (int)$request->input('start'); // Start index (0-based)
+    //         $limit = (int)$request->input('limit'); // Limit number of records to fetch
+    //         $templates = array_slice($templates, $start, $limit, false);
+    //         return $this->successResponse("Custom Templates", [
+    //             'start' => $start,
+    //             'limit' => $limit,
+    //             'total' => $total_row,
+    //             'data' => $templates
+    //         ]);
+    //     }
+    //     return $this->successResponse("Template List", $templates);
+    // }
+public function index(Request $request)
+{
+    $connection = "mysql_" . $request->auth->parent_id;
+
+    // Base query
+    $query = EmailTemplete::on($connection);
+
+    // Apply search (optional)
+    if ($request->has('search') && !empty($request->input('search'))) {
+        $search = $request->input('search');
+
+        $query->where(function ($q) use ($search) {
+            $q->where('template_name', 'like', '%' . $search . '%')
+              ->orWhere('subject', 'like', '%' . $search . '%');
+        });
     }
+
+    // Total count before pagination
+    $total = $query->count();
+
+    // Apply pagination (optional)
+    if ($request->has('start') && $request->has('limit')) {
+        $start = (int) $request->input('start');
+        $limit = (int) $request->input('limit');
+
+        $query->skip($start)->take($limit);
+    }
+
+    // Fetch data
+    $templates = $query->get();
+
+    // ✅ Unified response
+    return $this->successResponse("Template List", [
+        'start' => $request->input('start', 0),
+        'limit' => $request->input('limit', $total),
+        'total' => $total,
+        'data'  => $templates
+    ]);
+}
 
 
     public function index_old(Request $request)
