@@ -600,28 +600,41 @@ public function dispositionUpdate($request)
             Log::log($e->getMessage());
         }
     }
-    function updateDispositionStatus($request) {
+    function updateDispositionStatus($request) 
+    {
         $listId = $request->input('listId');
         $status = $request->input('status');
+        $clientDb = 'mysql_' . $request->auth->parent_id;
+
+        // 🔴 Block status change if disposition is assigned to any campaign
+        $assigned = DB::connection($clientDb)
+            ->table('campaign_disposition')
+            ->where('disposition_id', $listId)
+            ->where('is_deleted', 0)
+            ->exists();
+
+       if ($assigned && (int)$status === 0) {
+    return [
+        'success' => 'false',
+        'message' => 'Disposition is assigned to a campaign and you can’t disable it.'
+    ];
+}
 
         $saveRecord =     
         DB::connection('mysql_' . $request->auth->parent_id)
         ->table('disposition')
         ->where('id', $listId)
         ->update(['status' => $status]);
-    // Log::debug('Received listId: ', ['listId' => $listId]);
-    // Log::debug('Received status: ', ['status' => $status]);
-    // Log::debug('Number of updated rows: ', ['saveRecord' => $saveRecord]);
-if ($saveRecord > 0) {
-    return array(
-                    'success'=>'true',
-        'message' => 'Disposition status updated successfully'
-                );
-} else {
-    return array(
-                    'status' => 'false',
-        'message' => 'Status  update failed'
-                );
-        }
+        if ($saveRecord > 0) {
+            return array(
+                            'success'=>'true',
+                'message' => 'Disposition status updated successfully'
+                        );
+        } else {
+            return array(
+                            'status' => 'false',
+                'message' => 'Status  update failed'
+                        );
+                }
     }
 }
