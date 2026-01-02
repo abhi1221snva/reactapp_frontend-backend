@@ -415,12 +415,12 @@ public function dispositionUpdate($request)
                     ->where('is_deleted', 0)
                     ->exists();
 
-                if (!$assigned) {
-                    return [
-                        'success' => 'false',
-                        'message' => 'Disposition is not assigned to any campaign.'
-                    ];
-                }
+                   if ($assigned) {
+                        return [
+                            'success' => 'false',
+                            'message' => 'Disposition is assigned to a campaign and cannot be deleted.'
+                        ];
+                    }
 
                 $isDeleting = true;
             }
