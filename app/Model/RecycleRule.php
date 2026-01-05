@@ -647,7 +647,37 @@ public function editRecycleRule($request)
 {
     try {
         $parentConn = 'mysql_' . $request->auth->parent_id;
+   // ================= DELETE LOGIC (ADD THIS BLOCK) =================
+        if ($request->has('is_deleted') && (int)$request->is_deleted === 1) {
 
+            if (!$request->has('recycle_rule_id')) {
+                return [
+                    'success' => 'false',
+                    'message' => 'recycle_rule_id is required for delete'
+                ];
+            }
+
+            $affected = DB::connection($parentConn)
+                ->table('recycle_rule')
+                ->where('id', (int)$request->recycle_rule_id)
+                ->update([
+                    'is_deleted' => 1,
+                    'updated_at' => Carbon::now()
+                ]);
+
+            if ($affected === 0) {
+                return [
+                    'success' => 'false',
+                    'message' => 'Recycle rule not found'
+                ];
+            }
+
+            return [
+                'success' => 'true',
+                'message' => 'Recycle rule deleted successfully'
+            ];
+        }
+        // ================= DELETE LOGIC END =================
         // ---------------- VALIDATION ----------------
         if (
             !$request->has('recycle_rule_id') ||
@@ -709,6 +739,7 @@ public function editRecycleRule1($request)
 {
     try {
         $parentConn = 'mysql_' . $request->auth->parent_id;
+        
 
         // ---------------------------------------------------------
         // VALIDATION
