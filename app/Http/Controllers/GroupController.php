@@ -612,68 +612,107 @@ public function patchNew(Request $request)
      *     )
      * )
      */
-    public function add(Request $request)
-    {
-        $this->validate($request, [
-            'title' => 'required|string|max:255',
-            'extensions' => 'nullable|array',
-            'extensions.*' => 'nullable|string',
-        ]);
-
-        try {
-            $extensionGroup = new ExtensionGroup();
-            $extensionGroup->setConnection("mysql_" . $request->auth->parent_id);
-            $extensionGroup->title = $request->get('title');
-
-            $extensionGroup->saveOrFail();
-            if (!empty($request->get('extensions'))) {
-                $extensionIds = $request->get('extensions');
-                $id = $extensionGroup->id; // Assign the generated id to $id
-
-                foreach ($extensionIds as $extensionId) {
-
-                    $allTypeExtension = User::where('extension', $extensionId)->first();
-
-                    $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
-                    $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, ['extension' => $extensionId, 'group_id' => $id]);
-
-                    $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
-                    $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, ['extension' => $allTypeExtension->alt_extension, 'group_id' => $id]);
-
-                    $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
-                    $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, ['extension' => $allTypeExtension->app_extension, 'group_id' => $id]);
-                }
-            }
-            return $this->successResponse("Extension group added successfully", $extensionGroup->toArray());
-        } catch (\Throwable $exception) {
-            return $this->failResponse("Failed to add new extension group", [$exception->getMessage()], $exception, 500);
-        }
-    }
-
     // public function add(Request $request)
     // {
     //     $this->validate($request, [
-    //         'title'     => 'required|string|max:255',
+    //         'title' => 'required|string|max:255',
+    //         'extensions' => 'nullable|array',
+    //         'extensions.*' => 'nullable|string',
     //     ]);
+
     //     try {
     //         $extensionGroup = new ExtensionGroup();
     //         $extensionGroup->setConnection("mysql_" . $request->auth->parent_id);
-    //         $extensionGroup->title = $request->get("title");
-    //         extension = $request->extensions;
+    //         $extensionGroup->title = $request->get('title');
 
-    //             //return $extension;
-
-    //             foreach ($extension as $value) {
-    //                 $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
-    //                 $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, array('extension' => $value, 'group_id' => $id));
-
-    //             }
     //         $extensionGroup->saveOrFail();
-    //         return $this->successResponse("Added Successfully", $extensionGroup->toArray());
+    //         if (!empty($request->get('extensions'))) {
+    //             $extensionIds = $request->get('extensions');
+    //             $id = $extensionGroup->id; // Assign the generated id to $id
+
+    //             foreach ($extensionIds as $extensionId) {
+
+    //                 $allTypeExtension = User::where('extension', $extensionId)->first();
+
+    //                 $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
+    //                 $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, ['extension' => $extensionId, 'group_id' => $id]);
+
+    //                 $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
+    //                 $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, ['extension' => $allTypeExtension->alt_extension, 'group_id' => $id]);
+
+    //                 $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
+    //                 $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, ['extension' => $allTypeExtension->app_extension, 'group_id' => $id]);
+    //             }
+    //         }
+    //         return $this->successResponse("Extension group added successfully", $extensionGroup->toArray());
     //     } catch (\Throwable $exception) {
     //         return $this->failResponse("Failed to add new extension group", [$exception->getMessage()], $exception, 500);
     //     }
     // }
+
+   public function add(Request $request)
+{
+    $this->validate($request, [
+        'title' => 'required|string|max:255',
+        'extensions' => 'nullable|array',
+        'extensions.*' => 'nullable|string',
+    ]);
+
+    $conn = 'mysql_' . $request->auth->parent_id;
+
+    try {
+        DB::connection($conn)->beginTransaction();
+
+        $extensionGroup = new ExtensionGroup();
+        $extensionGroup->setConnection($conn);
+        $extensionGroup->title = $request->title;
+        $extensionGroup->saveOrFail();
+
+        if (!empty($request->extensions)) {
+            foreach ($request->extensions as $extensionId) {
+
+                $user = User::where('extension', $extensionId)->first();
+                if (!$user) continue;
+
+                $extensions = array_unique(array_filter([
+                    $extensionId,
+                    $user->alt_extension,
+                    $user->app_extension
+                ]));
+
+                foreach ($extensions as $ext) {
+                    DB::connection($conn)
+                        ->table('extension_group_map')
+                        ->insert([
+                            'extension'  => $ext,
+                            'group_id'   => $extensionGroup->id,
+                            'is_deleted' => 0,
+                            'created_at'=> now(),
+                            'updated_at'=> now(),
+                        ]);
+                }
+            }
+        }
+
+        DB::connection($conn)->commit();
+
+        return $this->successResponse(
+            "Extension group added successfully",
+            $extensionGroup->toArray()
+        );
+
+    } catch (\Throwable $exception) {
+        DB::connection($conn)->rollBack();
+
+        return $this->failResponse(
+            "Failed to add new extension group",
+            [$exception->getMessage()],
+            $exception,
+            500
+        );
+    }
+}
+
 
     /**
      * @OA\Post(
