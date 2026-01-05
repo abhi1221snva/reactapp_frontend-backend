@@ -465,7 +465,7 @@ public function checkEmail(Request $request)
    public function loginV2(Authentication $authentication)
 {
     try {
-        $appKey = $request->header('X-Easify-App-Key');
+        $appKey = $this->request->header('X-Easify-App-Key');
         if ($appKey !== env('EASIFY_APP_KEY')) {
             throw new \Exception('Invalid or missing X-Easify-App-Key', 401);
         }
