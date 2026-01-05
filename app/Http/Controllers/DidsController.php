@@ -1104,106 +1104,207 @@ class DidsController extends Controller
      * @param type $request
      * @return string
      */
-    private function getDidfromDidSale($request)
-    {
-        $result = [];
-        try {
-            $number = str_replace(array('(', ')', '_', '-', ' '), array(''), $request->data['phone']);
-            $show = isset($request->data['show']) ? $request->data['show'] : 10;
-            $country_code = isset($request->data['country']) ? $request->data['country'] : 1;
-            $number_type = isset($request->data['numberType']) ? $request->data['numberType'] : 'local';
+    // private function getDidfromDidSale($request)
+    // {
+    //     $result = [];
+    //     try {
+    //         $number = str_replace(array('(', ')', '_', '-', ' '), array(''), $request->data['phone']);
+    //         $show = isset($request->data['show']) ? $request->data['show'] : 10;
+    //         $country_code = isset($request->data['country']) ? $request->data['country'] : 1;
+    //         $number_type = isset($request->data['numberType']) ? $request->data['numberType'] : 'local';
 
-            $url = env('DID_SALE_API_URL') . "products/ListNumberAPI?number=$number&page_number=1&show=$show";
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
-            curl_setopt($ch, CURLOPT_HEADER, FALSE);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, array("Accept: application/json", "Authorization: Basic " . base64_encode(env('DID_SALE_SERVICE_KEY') . ':' . env('DID_SALE_SERVICE_TOKEN'))));
-            $response = curl_exec($ch);
-            $response = json_decode($response, 1);
-            Log::info('reached didforsale response', ['response' => $response]);
-            if ($response['status']) {
-                foreach ($response['numbers'] as $row) {
-                    $temp = [
-                        "<input type='checkbox' id='select_all_checkbox_" . $row['number'] . "' value='" . $row['number'] . "' data-ratecenter='" . $row['ratecenter'] . "' data-referenceid='" . $row['reference_id'] . "' data-state='" . $row['state'] . "' data-didtype='Metered' class='did_checkbox' /><label for='select_all_checkbox_" . $row['number'] . "'></label>",
-                        $row['number'],
-                        $row['state'],
-                        "Metered"
-                    ];
-                    $result[] = $temp;
-                }
-            } else {
-                throw new Exception(json_encode($response['message']));
-            }
-        } catch (Exception $e) {
-            Log::error('didforsale REST Exception', ['message' => $e->getMessage()]);
-            throw new Exception($e->getMessage());
-            // return response()->json(['message' => 'Error fetching phone numbers from Twilio: ' . $e->getMessage()], 500);
-        } catch (Exception $e) {
-            Log::error('General Exception', ['message' => $e->getMessage()]);
-            throw new Exception('Error: ' . $e->getMessage());
+    //         $url = env('DID_SALE_API_URL') . "products/ListNumberAPI?number=$number&page_number=1&show=$show";
+    //         $ch = curl_init();
+    //         curl_setopt($ch, CURLOPT_URL, $url);
+    //         curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
+    //         curl_setopt($ch, CURLOPT_HEADER, FALSE);
+    //         curl_setopt($ch, CURLOPT_HTTPHEADER, array("Accept: application/json", "Authorization: Basic " . base64_encode(env('DID_SALE_SERVICE_KEY') . ':' . env('DID_SALE_SERVICE_TOKEN'))));
+    //         $response = curl_exec($ch);
+    //         $response = json_decode($response, 1);
+    //         Log::info('reached didforsale response', ['response' => $response]);
+    //         if ($response['status']) {
+    //             foreach ($response['numbers'] as $row) {
+    //                 $temp = [
+    //                     "<input type='checkbox' id='select_all_checkbox_" . $row['number'] . "' value='" . $row['number'] . "' data-ratecenter='" . $row['ratecenter'] . "' data-referenceid='" . $row['reference_id'] . "' data-state='" . $row['state'] . "' data-didtype='Metered' class='did_checkbox' /><label for='select_all_checkbox_" . $row['number'] . "'></label>",
+    //                     $row['number'],
+    //                     $row['state'],
+    //                     "Metered"
+    //                 ];
+    //                 $result[] = $temp;
+    //             }
+    //         } else {
+    //             throw new Exception(json_encode($response['message']));
+    //         }
+    //     } catch (Exception $e) {
+    //         Log::error('didforsale REST Exception', ['message' => $e->getMessage()]);
+    //         throw new Exception($e->getMessage());
+    //         // return response()->json(['message' => 'Error fetching phone numbers from Twilio: ' . $e->getMessage()], 500);
+    //     } catch (Exception $e) {
+    //         Log::error('General Exception', ['message' => $e->getMessage()]);
+    //         throw new Exception('Error: ' . $e->getMessage());
+    //     }
+    //     return $result;
+    // }
+private function getDidfromDidSale($request)
+{
+    $result = [];
+
+    try {
+        $number      = str_replace(['(', ')', '_', '-', ' '], '', $request->data['phone'] ?? '');
+        $show        = $request->data['show'] ?? 10;
+        $number_type = $request->data['numberType'] ?? 'local';
+
+        $url = env('DID_SALE_API_URL') .
+            "products/ListNumberAPI?number={$number}&page_number=1&show={$show}";
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HEADER         => false,
+            CURLOPT_HTTPHEADER     => [
+                "Accept: application/json",
+                "Authorization: Basic " . base64_encode(
+                    env('DID_SALE_SERVICE_KEY') . ':' . env('DID_SALE_SERVICE_TOKEN')
+                ),
+            ],
+        ]);
+
+        $response = curl_exec($ch);
+        $response = json_decode($response, true);
+
+        Log::info('DIDForSale response', ['response' => $response]);
+
+        if (!isset($response['status']) || !$response['status']) {
+            Log::warning('DIDForSale invalid response', ['response' => $response]);
+            return [];
         }
-        return $result;
+
+        foreach ($response['numbers'] as $row) {
+            $result[] = [
+                "phone_number" => $row['number'],
+                "state"        => $row['state'] ?? '',
+                "rate_center"  => $row['ratecenter'] ?? '',
+                "type"         => "metered",
+            ];
+        }
+
+    } catch (\Exception $e) {
+        Log::error('DIDForSale Exception', ['message' => $e->getMessage()]);
+        return [];
     }
 
-    private function getDidfromDidPlivo($request)
-    {
-        $result = [];
-        try {
-            $number = str_replace(array('(', ')', '_', '-', ' '), array(''), $request->data['phone']);
-            $show = isset($request->data['show']) ? $request->data['show'] : 10;
-            $country_code = isset($request->data['country']) ? $request->data['country'] : 1;
-            $number_type = isset($request->data['numberType']) ? $request->data['numberType'] : 'local';
+    return $result;
+}
 
-            $params = array(
-                'limit' => $show,
-                'country_iso' => 'US', # The ISO code A2 of the country
-                'type' => $number_type, # The type of number you are looking for. The possible number types are local, national and tollfree.
-                'pattern' => $number, # Represents the pattern of the number to be searched. 
-                //'region' => 'Texas' # This filter is only applicable when the number_type is local. Region based filtering can be performed.
-            );
+    // private function getDidfromDidPlivo($request)
+    // {
+    //     $result = [];
+    //     try {
+    //         $number = str_replace(array('(', ')', '_', '-', ' '), array(''), $request->data['phone']);
+    //         $show = isset($request->data['show']) ? $request->data['show'] : 10;
+    //         $country_code = isset($request->data['country']) ? $request->data['country'] : 1;
+    //         $number_type = isset($request->data['numberType']) ? $request->data['numberType'] : 'local';
 
-            $database = "mysql_" . $request->auth->parent_id;
+    //         $params = array(
+    //             'limit' => $show,
+    //             'country_iso' => 'US', # The ISO code A2 of the country
+    //             'type' => $number_type, # The type of number you are looking for. The possible number types are local, national and tollfree.
+    //             'pattern' => $number, # Represents the pattern of the number to be searched. 
+    //             //'region' => 'Texas' # This filter is only applicable when the number_type is local. Region based filtering can be performed.
+    //         );
+
+    //         $database = "mysql_" . $request->auth->parent_id;
 
 
-            $sms_setting = SmsProviders::on($database)->where("status", '1')->where('provider', 'plivo')->get()->first();
-            if (!$sms_setting) {
-                throw new Exception('Plivo settings not found in the database.');
-            }
-            $auth_id = $sms_setting->auth_id;
-            $api_key = $sms_setting->api_key;
+    //         $sms_setting = SmsProviders::on($database)->where("status", '1')->where('provider', 'plivo')->get()->first();
+    //         if (!$sms_setting) {
+    //             throw new Exception('Plivo settings not found in the database.');
+    //         }
+    //         $auth_id = $sms_setting->auth_id;
+    //         $api_key = $sms_setting->api_key;
 
-            if (empty($auth_id) || empty($api_key)) {
-                throw new Exception('Invalid Plivo credentials: Auth ID or key is missing.');
-            }
+    //         if (empty($auth_id) || empty($api_key)) {
+    //             throw new Exception('Invalid Plivo credentials: Auth ID or key is missing.');
+    //         }
 
-            $client = new RestClient($auth_id, $api_key);
-            $response = $client->phonenumbers->list('US', $params);
-            ///  return $response;
+    //         $client = new RestClient($auth_id, $api_key);
+    //         $response = $client->phonenumbers->list('US', $params);
+    //         ///  return $response;
 
-            foreach ($response as $list) {
-                $temp = [
-                    "<input type='checkbox' id='select_all_checkbox_" . $list->properties['number'] . "' value='" . $list->properties['number'] . "' data-ratecenter='" . $list->properties['rateCenter'] . "' data-referenceid='" . $list->properties['rateCenter'] . "' data-state='" . $list->properties['region'] . "' data-didtype='fixed' class='did_checkbox' /><label for='select_all_checkbox_" . $list->properties['number'] . "'></label>",
-                    $list->properties['number'],
-                    $list->properties['region'],
-                    "Metered"
-                ];
-                $result[] = $temp;
-            }
-        } catch (\Plivo\Exceptions\RestException $e) {
-            Log::error('Plivo REST Exception', ['message' => $e->getMessage()]);
-            throw new Exception('Error fetching phone numbers from Twilio: ' . $e->getMessage());
-            // return response()->json(['message' => 'Error fetching phone numbers from Twilio: ' . $e->getMessage()], 500);
-        } catch (Exception $e) {
-            Log::error('General Exception', ['message' => $e->getMessage()]);
-            throw new Exception('Error: ' . $e->getMessage());
+    //         foreach ($response as $list) {
+    //             $temp = [
+    //                 "<input type='checkbox' id='select_all_checkbox_" . $list->properties['number'] . "' value='" . $list->properties['number'] . "' data-ratecenter='" . $list->properties['rateCenter'] . "' data-referenceid='" . $list->properties['rateCenter'] . "' data-state='" . $list->properties['region'] . "' data-didtype='fixed' class='did_checkbox' /><label for='select_all_checkbox_" . $list->properties['number'] . "'></label>",
+    //                 $list->properties['number'],
+    //                 $list->properties['region'],
+    //                 "Metered"
+    //             ];
+    //             $result[] = $temp;
+    //         }
+    //     } catch (\Plivo\Exceptions\RestException $e) {
+    //         Log::error('Plivo REST Exception', ['message' => $e->getMessage()]);
+    //         throw new Exception('Error fetching phone numbers from Twilio: ' . $e->getMessage());
+    //         // return response()->json(['message' => 'Error fetching phone numbers from Twilio: ' . $e->getMessage()], 500);
+    //     } catch (Exception $e) {
+    //         Log::error('General Exception', ['message' => $e->getMessage()]);
+    //         throw new Exception('Error: ' . $e->getMessage());
+    //     }
+    //     return $result;
+    // }
+
+
+
+   private function getDidfromDidPlivo($request)
+{
+    $result = [];
+
+    try {
+        $number       = str_replace(['(', ')', '_', '-', ' '], '', $request->data['phone'] ?? '');
+        $show         = $request->data['show'] ?? 10;
+        $country_code = $request->data['country'] ?? 1;
+        $number_type  = $request->data['numberType'] ?? 'local';
+
+        $params = [
+            'limit'       => $show,
+            'country_iso' => 'US',
+            'type'        => $number_type,
+            'pattern'     => $number,
+        ];
+
+        $database = "mysql_" . $request->auth->parent_id;
+
+        $sms_setting = SmsProviders::on($database)
+            ->where("status", '1')
+            ->where('provider', 'plivo')
+            ->first();
+
+        if (!$sms_setting || empty($sms_setting->auth_id) || empty($sms_setting->api_key)) {
+            Log::warning('Plivo credentials missing');
+            return [];
         }
-        return $result;
+
+        $client   = new RestClient($sms_setting->auth_id, $sms_setting->api_key);
+        $response = $client->phonenumbers->list('US', $params);
+
+        foreach ($response as $list) {
+            $result[] = [
+                "phone_number" => $list->properties['number'],
+                "state"        => $list->properties['region'] ?? '',
+                "rate_center"  => $list->properties['rateCenter'] ?? '',
+                "type"         => $number_type,
+            ];
+        }
+
+    } catch (\Plivo\Exceptions\RestException $e) {
+        Log::error('Plivo REST Exception', ['message' => $e->getMessage()]);
+        return [];
+    } catch (\Exception $e) {
+        Log::error('Plivo General Exception', ['message' => $e->getMessage()]);
+        return [];
     }
 
+    return $result;
+}
 
-
-   
 
 
     private function getDidfromDidTelnyxlatest($request)
@@ -1294,124 +1395,218 @@ class DidsController extends Controller
         Log::info("telnyx result", ['result' => $result]);
     }
 
-    private function getDidfromDidTelnyx($request)
-    {
-        $result = [];
+    // private function getDidfromDidTelnyx($request)
+    // {
+    //     $result = [];
 
-        // ✅ STATIC FALLBACK DATA
-        $staticResult = [
-            [
-                "<input type='checkbox' id='select_all_checkbox_13213880956' value='13213880956' data-ratecenter='Orlando' data-referenceid='Orlando' data-state='Florida' data-didtype='fixed' class='did_checkbox' /><label for='select_all_checkbox_13213880956'></label>",
-                "13213880956",
-                "Florida",
-                "Metered"
-            ],
-            [
-                "<input type='checkbox' id='select_all_checkbox_13218062546' value='13218062546' data-ratecenter='Cocoa' data-referenceid='Cocoa' data-state='Florida' data-didtype='fixed' class='did_checkbox' /><label for='select_all_checkbox_13218062546'></label>",
-                "13218062546",
-                "Florida",
-                "Metered"
-            ],
-            [
-                "<input type='checkbox' id='select_all_checkbox_13213370741' value='13213370741' data-ratecenter='Kissimmee' data-referenceid='Kissimmee' data-state='Florida' data-didtype='fixed' class='did_checkbox' /><label for='select_all_checkbox_13213370741'></label>",
-                "13213370741",
-                "Florida",
-                "Metered"
-            ],
-            [
-                "<input type='checkbox' id='select_all_checkbox_13213880491' value='13213880491' data-ratecenter='Orlando' data-referenceid='Orlando' data-state='Florida' data-didtype='fixed' class='did_checkbox' /><label for='select_all_checkbox_13213880491'></label>",
-                "13213880491",
-                "Florida",
-                "Metered"
-            ],
-            [
-                "<input type='checkbox' id='select_all_checkbox_13214201421' value='13214201421' data-ratecenter='Sanford' data-referenceid='Sanford' data-state='Florida' data-didtype='fixed' class='did_checkbox' /><label for='select_all_checkbox_13214201421'></label>",
-                "13214201421",
-                "Florida",
-                "Metered"
-            ],
-            [
-                "<input type='checkbox' id='select_all_checkbox_13212801632' value='13212801632' data-ratecenter='Winter Park' data-referenceid='Winter Park' data-state='Florida' data-didtype='fixed' class='did_checkbox' /><label for='select_all_checkbox_13212801632'></label>",
-                "13212801632",
-                "Florida",
-                "Metered"
-            ],
-        ];
+    //     // ✅ STATIC FALLBACK DATA
+    //     $staticResult = [
+    //         [
+    //             "<input type='checkbox' id='select_all_checkbox_13213880956' value='13213880956' data-ratecenter='Orlando' data-referenceid='Orlando' data-state='Florida' data-didtype='fixed' class='did_checkbox' /><label for='select_all_checkbox_13213880956'></label>",
+    //             "13213880956",
+    //             "Florida",
+    //             "Metered"
+    //         ],
+    //         [
+    //             "<input type='checkbox' id='select_all_checkbox_13218062546' value='13218062546' data-ratecenter='Cocoa' data-referenceid='Cocoa' data-state='Florida' data-didtype='fixed' class='did_checkbox' /><label for='select_all_checkbox_13218062546'></label>",
+    //             "13218062546",
+    //             "Florida",
+    //             "Metered"
+    //         ],
+    //         [
+    //             "<input type='checkbox' id='select_all_checkbox_13213370741' value='13213370741' data-ratecenter='Kissimmee' data-referenceid='Kissimmee' data-state='Florida' data-didtype='fixed' class='did_checkbox' /><label for='select_all_checkbox_13213370741'></label>",
+    //             "13213370741",
+    //             "Florida",
+    //             "Metered"
+    //         ],
+    //         [
+    //             "<input type='checkbox' id='select_all_checkbox_13213880491' value='13213880491' data-ratecenter='Orlando' data-referenceid='Orlando' data-state='Florida' data-didtype='fixed' class='did_checkbox' /><label for='select_all_checkbox_13213880491'></label>",
+    //             "13213880491",
+    //             "Florida",
+    //             "Metered"
+    //         ],
+    //         [
+    //             "<input type='checkbox' id='select_all_checkbox_13214201421' value='13214201421' data-ratecenter='Sanford' data-referenceid='Sanford' data-state='Florida' data-didtype='fixed' class='did_checkbox' /><label for='select_all_checkbox_13214201421'></label>",
+    //             "13214201421",
+    //             "Florida",
+    //             "Metered"
+    //         ],
+    //         [
+    //             "<input type='checkbox' id='select_all_checkbox_13212801632' value='13212801632' data-ratecenter='Winter Park' data-referenceid='Winter Park' data-state='Florida' data-didtype='fixed' class='did_checkbox' /><label for='select_all_checkbox_13212801632'></label>",
+    //             "13212801632",
+    //             "Florida",
+    //             "Metered"
+    //         ],
+    //     ];
 
-        try {
-            $searchTerm  = isset($request->data['phone']) ? $request->data['phone'] : '';
-            $number      = str_replace(['(', ')', '_', '-', ' '], '', $searchTerm);
-            $show        = isset($request->data['show']) ? $request->data['show'] : 10;
-            $country_code = isset($request->data['country']) ? $request->data['country'] : 1;
-            $number_type = isset($request->data['numberType']) ? $request->data['numberType'] : 'local';
+    //     try {
+    //         $searchTerm  = isset($request->data['phone']) ? $request->data['phone'] : '';
+    //         $number      = str_replace(['(', ')', '_', '-', ' '], '', $searchTerm);
+    //         $show        = isset($request->data['show']) ? $request->data['show'] : 10;
+    //         $country_code = isset($request->data['country']) ? $request->data['country'] : 1;
+    //         $number_type = isset($request->data['numberType']) ? $request->data['numberType'] : 'local';
 
-            $database = "mysql_" . $request->auth->parent_id;
+    //         $database = "mysql_" . $request->auth->parent_id;
 
-            $sms_setting = SmsProviders::on($database)
-                ->where("status", '1')
-                ->where('provider', 'telnyx')
-                ->first();
+    //         $sms_setting = SmsProviders::on($database)
+    //             ->where("status", '1')
+    //             ->where('provider', 'telnyx')
+    //             ->first();
 
-            // ✅ RETURN STATIC VALUES IF CREDENTIALS NOT FOUND
-            if (!$sms_setting || empty($sms_setting->api_key)) {
-                Log::warning('Telnyx credentials missing, returning static DID list');
-                return $staticResult;
-            }
+    //         // ✅ RETURN STATIC VALUES IF CREDENTIALS NOT FOUND
+    //         if (!$sms_setting || empty($sms_setting->api_key)) {
+    //             Log::warning('Telnyx credentials missing, returning static DID list');
+    //             return $staticResult;
+    //         }
 
-            $api_key = $sms_setting->api_key;
+    //         $api_key = $sms_setting->api_key;
 
-            $telnyxApiEndpoint = 'https://api.telnyx.com/v2/available_phone_numbers';
+    //         $telnyxApiEndpoint = 'https://api.telnyx.com/v2/available_phone_numbers';
 
-            $filters = [
-                'country_code' => $country_code,
-                'best_effort'  => true,
-                'limit'        => $show,
-                'national_destination_code' => $number,
-                'phone_number_type' => $number_type
-            ];
+    //         $filters = [
+    //             'country_code' => $country_code,
+    //             'best_effort'  => true,
+    //             'limit'        => $show,
+    //             'national_destination_code' => $number,
+    //             'phone_number_type' => $number_type
+    //         ];
 
-            $ch = curl_init($telnyxApiEndpoint . '?' . http_build_query(['filter' => $filters]));
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Accept: application/json',
-                'Authorization: Bearer ' . $api_key,
-            ]);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    //         $ch = curl_init($telnyxApiEndpoint . '?' . http_build_query(['filter' => $filters]));
+    //         curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    //             'Accept: application/json',
+    //             'Authorization: Bearer ' . $api_key,
+    //         ]);
+    //         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 
-            $response    = curl_exec($ch);
-            $result_data = json_decode($response, true);
+    //         $response    = curl_exec($ch);
+    //         $result_data = json_decode($response, true);
 
-            if (isset($result_data['data']) && is_array($result_data['data'])) {
-                foreach ($result_data['data'] as $list) {
+    //         if (isset($result_data['data']) && is_array($result_data['data'])) {
+    //             foreach ($result_data['data'] as $list) {
 
-                    foreach ($list['region_information'] as $region) {
-                        if ($region['region_type'] === 'state') {
-                            $rateCenter = $region['region_name'];
-                            $stateCodeInfo = \App\Model\Master\AreaCodeList::where('state_code', $rateCenter)->first();
-                            $stateName = $stateCodeInfo ? $stateCodeInfo->state_name : $rateCenter;
-                        }
-                    }
+    //                 foreach ($list['region_information'] as $region) {
+    //                     if ($region['region_type'] === 'state') {
+    //                         $rateCenter = $region['region_name'];
+    //                         $stateCodeInfo = \App\Model\Master\AreaCodeList::where('state_code', $rateCenter)->first();
+    //                         $stateName = $stateCodeInfo ? $stateCodeInfo->state_name : $rateCenter;
+    //                     }
+    //                 }
 
-                    $temp = [
-                        "<input type='checkbox' id='select_all_checkbox_{$list['phone_number']}' value='{$list['phone_number']}' data-ratecenter='{$rateCenter}' data-referenceid='{$rateCenter}' data-state='{$rateCenter}' data-didtype='fixed' class='did_checkbox' /><label for='select_all_checkbox_{$list['phone_number']}'></label>",
-                        $list['phone_number'],
-                        $stateName,
-                        $list['phone_number_type'],
-                    ];
+    //                 $temp = [
+    //                     "<input type='checkbox' id='select_all_checkbox_{$list['phone_number']}' value='{$list['phone_number']}' data-ratecenter='{$rateCenter}' data-referenceid='{$rateCenter}' data-state='{$rateCenter}' data-didtype='fixed' class='did_checkbox' /><label for='select_all_checkbox_{$list['phone_number']}'></label>",
+    //                     $list['phone_number'],
+    //                     $stateName,
+    //                     $list['phone_number_type'],
+    //                 ];
 
-                    $result[] = $temp;
-                }
-            } else {
-                return $staticResult; // ✅ fallback if API gives empty data
-            }
+    //                 $result[] = $temp;
+    //             }
+    //         } else {
+    //             return $staticResult; // ✅ fallback if API gives empty data
+    //         }
 
-        } catch (\Exception $e) {
-            Log::error('Telnyx error, returning static DID list', ['error' => $e->getMessage()]);
+    //     } catch (\Exception $e) {
+    //         Log::error('Telnyx error, returning static DID list', ['error' => $e->getMessage()]);
+    //         return $staticResult;
+    //     }
+
+    //     Log::info("telnyx result", ['result' => $result]);
+    //     return $result;
+    // }
+private function getDidfromDidTelnyx($request)
+{
+    $result = [];
+
+    // ✅ STATIC FALLBACK DATA (SIMPLE FORMAT)
+    $staticResult = [
+        [
+            "phone_number" => "13213880956",
+            "state" => "Florida",
+            "rate_center" => "Orlando",
+            "type" => "fixed"
+        ],
+        [
+            "phone_number" => "13218062546",
+            "state" => "Florida",
+            "rate_center" => "Cocoa",
+            "type" => "fixed"
+        ],
+        [
+            "phone_number" => "13213370741",
+            "state" => "Florida",
+            "rate_center" => "Kissimmee",
+            "type" => "fixed"
+        ],
+    ];
+
+    try {
+        $searchTerm   = $request->data['phone'] ?? '';
+        $number       = str_replace(['(', ')', '_', '-', ' '], '', $searchTerm);
+        $show         = $request->data['show'] ?? 10;
+        $country_code = $request->data['country'] ?? 1;
+        $number_type  = $request->data['numberType'] ?? 'local';
+
+        $database = "mysql_" . $request->auth->parent_id;
+
+        $sms_setting = SmsProviders::on($database)
+            ->where("status", '1')
+            ->where('provider', 'telnyx')
+            ->first();
+
+        // ✅ If credentials missing → static data
+        if (!$sms_setting || empty($sms_setting->api_key)) {
             return $staticResult;
         }
 
-        Log::info("telnyx result", ['result' => $result]);
-        return $result;
+        $filters = [
+            'country_code' => $country_code,
+            'best_effort'  => true,
+            'limit'        => $show,
+            'national_destination_code' => $number,
+            'phone_number_type' => $number_type
+        ];
+
+        $ch = curl_init('https://api.telnyx.com/v2/available_phone_numbers?' . http_build_query(['filter' => $filters]));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Accept: application/json',
+            'Authorization: Bearer ' . $sms_setting->api_key,
+        ]);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+
+        $response = curl_exec($ch);
+        $data = json_decode($response, true);
+
+        if (!isset($data['data']) || !is_array($data['data'])) {
+            return $staticResult;
+        }
+
+        foreach ($data['data'] as $list) {
+            $rateCenter = '';
+            $stateName  = '';
+
+            foreach ($list['region_information'] ?? [] as $region) {
+                if ($region['region_type'] === 'state') {
+                    $rateCenter = $region['region_name'];
+                    $stateInfo = \App\Model\Master\AreaCodeList::where('state_code', $rateCenter)->first();
+                    $stateName = $stateInfo ? $stateInfo->state_name : $rateCenter;
+                }
+            }
+
+            $result[] = [
+                "phone_number" => $list['phone_number'],
+                "state"        => $stateName,
+                "rate_center"  => $rateCenter,
+                "type"         => $list['phone_number_type'],
+            ];
+        }
+
+    } catch (\Exception $e) {
+        Log::error('Telnyx error', ['error' => $e->getMessage()]);
+        return $staticResult;
     }
+
+    return $result;
+}
 
     private function getDidfromDidTwilio($request)
     {
