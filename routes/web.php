@@ -29,13 +29,12 @@ $router->group([
     'middleware' => 'easify.appkey'
 ], function () use ($router) {
 
-    $router->post('/credential/create', 'AuthenticationController@createCredential');
-    $router->post('/credential/delete', 'AuthenticationController@deleteCredential');
-
-    
-  });
-  $router->post('v2/login', 'AuthenticationController@loginv2');
-
+  $router->post('/credential/create', 'AuthenticationController@createCredential');
+  $router->post('/credential/delete', 'AuthenticationController@deleteCredential');
+  
+  
+});
+$router->post('v2/login', 'AuthenticationController@loginv2');
   $router->post('v2/register', 'AuthenticationController@createUser');
 $router->post('v2/validate-email', 'AuthenticationController@checkEmail');
 
@@ -191,6 +190,9 @@ $router->POST('merchant-add', 'Merchant\AuthController@add');
 $router->POST('merchant-auth', 'Merchant\AuthController@login');
 $router->POST('merchants', 'Merchant\AuthController@get');
 ##########Merchant's routes ends
+
+// Team Chat Widget Public Routes (No Auth Required)
+$router->get('team-chat/widget/validate', 'TeamChatWidgetController@validateToken');
 
 $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   // $router->post('auth/google/callback', 'UserMailController@googlecallback');
@@ -920,6 +922,40 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   //return company users for chat application
   $router->get('company-users', 'ContactsController@getCompanyUsers');
 
+  // Team Chat Routes
+  $router->get('team-chat/widget-data', 'TeamChatController@getWidgetData');
+  $router->get('team-chat/conversations', 'TeamChatController@getConversations');
+  $router->post('team-chat/conversations', 'TeamChatController@createConversation');
+  $router->post('team-chat/conversations/direct', 'TeamChatController@getOrCreateDirectConversation');
+  $router->get('team-chat/conversations/{uuid}', 'TeamChatController@getConversation');
+  $router->get('team-chat/conversations/{uuid}/messages', 'TeamChatController@getMessages');
+  $router->post('team-chat/conversations/{uuid}/messages', 'TeamChatController@sendMessage');
+  $router->post('team-chat/conversations/{uuid}/attachments', 'TeamChatController@uploadAttachment');
+  $router->post('team-chat/conversations/{uuid}/read', 'TeamChatController@markAsRead');
+  $router->post('team-chat/conversations/{uuid}/typing', 'TeamChatController@typing');
+  $router->post('team-chat/conversations/{uuid}/participants', 'TeamChatController@addParticipants');
+  $router->post('team-chat/conversations/{uuid}/leave', 'TeamChatController@leaveConversation');
+  $router->get('team-chat/attachments/{attachmentId}/download', 'TeamChatController@downloadAttachment');
+  $router->post('team-chat/presence', 'TeamChatController@updatePresence');
+  $router->get('team-chat/users/online', 'TeamChatController@getOnlineUsers');
+  $router->get('team-chat/users/search', 'TeamChatController@searchUsers');
+  $router->get('team-chat/unread-count', 'TeamChatController@getUnreadCount');
+  $router->post('team-chat/pusher/auth', 'TeamChatController@pusherAuth');
+  $router->get('team-chat/ice-servers', 'TeamChatController@getIceServers');
+  $router->post('team-chat/conversations/{uuid}/call', 'TeamChatController@initiateCall');
+  $router->post('team-chat/conversations/{uuid}/call/signal', 'TeamChatController@callSignal');
+  $router->post('team-chat/conversations/{uuid}/call/accept', 'TeamChatController@acceptCall');
+  $router->post('team-chat/conversations/{uuid}/call/end', 'TeamChatController@endCall');
+
+  // Team Chat Widget Token Management (Protected)
+  $router->get('team-chat/widget/tokens', 'TeamChatWidgetController@getTokens');
+  $router->post('team-chat/widget/tokens', 'TeamChatWidgetController@createToken');
+  $router->get('team-chat/widget/tokens/{tokenId}/embed-code', 'TeamChatWidgetController@getEmbedCode');
+  $router->put('team-chat/widget/tokens/{tokenId}', 'TeamChatWidgetController@updateToken');
+  $router->post('team-chat/widget/tokens/{tokenId}/toggle', 'TeamChatWidgetController@toggleToken');
+  $router->delete('team-chat/widget/tokens/{tokenId}', 'TeamChatWidgetController@revokeToken');
+  $router->get('team-chat/widget/users', 'TeamChatWidgetController@getAvailableUsers');
+
   // Tariff Label Fields
   $router->get('tariff-labels', 'TariffLabelController@index');
   $router->put('tariff-plan', 'TariffLabelController@create');
@@ -1349,6 +1385,30 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
     $router->post('prompts/delete/{id}', 'PromptController@destroy');
 
     $router->post('prompts/{id}/functions', 'PromptController@saveFunctions');
+
+  // Attendance Management
+  $router->post('attendance/clock-in', 'AttendanceController@clockIn');
+  $router->post('attendance/clock-out', 'AttendanceController@clockOut');
+  $router->get('attendance/status', 'AttendanceController@getStatus');
+  $router->post('attendance/break/start', 'AttendanceController@startBreak');
+  $router->post('attendance/break/end', 'AttendanceController@endBreak');
+  $router->post('attendance/list', 'AttendanceController@getAttendanceList');
+  $router->post('attendance/update', 'AttendanceController@updateAttendance');
+  $router->get('attendance/my-attendance', 'AttendanceController@getMyAttendance');
+
+  // Shift Management
+  $router->post('shift/list', 'ShiftController@getShiftList');
+  $router->post('shift/add', 'ShiftController@addShift');
+  $router->post('shift/update', 'ShiftController@updateShift');
+  $router->post('shift/delete', 'ShiftController@deleteShift');
+  $router->post('shift/assign', 'ShiftController@assignShiftToUser');
+
+  // Attendance Reports
+  $router->post('attendance/report/daily', 'AttendanceReportController@getDailyReport');
+  $router->post('attendance/report/weekly', 'AttendanceReportController@getWeeklyReport');
+  $router->post('attendance/report/monthly', 'AttendanceReportController@getMonthlyReport');
+  $router->post('attendance/report/summary', 'AttendanceReportController@getSummaryReport');
+  $router->post('attendance/report/alerts', 'AttendanceReportController@getLateEarlyAlerts');
 });
 
 
