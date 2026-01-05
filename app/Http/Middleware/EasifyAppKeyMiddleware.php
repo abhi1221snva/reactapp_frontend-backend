@@ -19,7 +19,8 @@ class EasifyAppKeyMiddleware
         }
 
         // 2️⃣ Register API ke liye user token skip
-        if ($request->is('register')) {
+           // 2️⃣ Skip user-token validation for auth routes
+        if ($request->is('v2/register') || $request->is('v2/login')) {
             return $next($request);
         }
 

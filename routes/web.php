@@ -29,12 +29,13 @@ $router->group([
     'middleware' => 'easify.appkey'
 ], function () use ($router) {
 
-    $router->post('/login', 'AuthenticationController@loginv2');
     $router->post('/credential/create', 'AuthenticationController@createCredential');
     $router->post('/credential/delete', 'AuthenticationController@deleteCredential');
 
     
   });
+  $router->post('v2/login', 'AuthenticationController@loginv2');
+
   $router->post('v2/register', 'AuthenticationController@createUser');
 $router->post('v2/validate-email', 'AuthenticationController@checkEmail');
 
