@@ -487,9 +487,9 @@ public function checkEmail(Request $request)
         // 🔐 Use same response-building logic
         // Reuse existing authentication service
         $data = $authentication->loginByUserId($user->id);
-if (empty($data) || !is_array($data)) {
-    throw new RenderableException('Login failed', [], 401);
-}
+        if (empty($data) || !is_array($data)) {
+            throw new RenderableException('Login failed', [], 401);
+        }
 
         // ---------- SAME CHECKS AS authentication() ----------
         $clientIp = $this->request->ip();
