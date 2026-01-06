@@ -1001,6 +1001,8 @@ public function extensionDetailList(Request $request, int $extension_id = null)
         try {
             $data = array();
             $updateString = array();
+            $isDeleteAction = false;
+
             if ($request->has('extension_id') && !empty($request->input('extension_id'))) {
                 $data = array('id' => $request->input('extension_id'), 'role' => 2);
 
@@ -1044,10 +1046,15 @@ public function extensionDetailList(Request $request, int $extension_id = null)
                     array_push($updateString, 'voicemail_send_to_email = :voicemail_send_to_email');
                     $data['voicemail_send_to_email'] = $request->input('voicemail_send_to_email');
                 }
-                if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
-                    array_push($updateString, 'is_deleted = :is_deleted');
-                    $data['is_deleted'] = $request->input('is_deleted');
+               if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
+                array_push($updateString, 'is_deleted = :is_deleted');
+                $data['is_deleted'] = $request->input('is_deleted');
+
+                if ((int)$request->input('is_deleted') === 1) {
+                    $isDeleteAction = true;
                 }
+}
+
                 if (!empty($updateString)) {
                     $query = "UPDATE " . $this->table . " set " . implode(" , ", $updateString) . " WHERE id = :id AND role = :role";
                     DB::connection('master')->update($query, $data);
@@ -1103,10 +1110,13 @@ public function extensionDetailList(Request $request, int $extension_id = null)
                         dispatch(new ExtensionNotificationJob($request->auth->parent_id, $notificationData))->onConnection("database");
                     }
 
-                    return array(
+                   return array(
                         'success' => 'true',
-                        'message' => 'Extension updated successfully'
+                        'message' => $isDeleteAction
+                            ? 'Extension deleted successfully'
+                            : 'Extension updated successfully'
                     );
+
                 } else {
                     return array(
                         'success' => 'false',

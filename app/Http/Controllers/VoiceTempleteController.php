@@ -67,33 +67,75 @@ class VoiceTempleteController extends Controller
      * )
      */
 
-    public function index(Request $request)
-    {
-        $templates = VoiceTemplate::on("mysql_" . $request->auth->parent_id)->get()->all();
+    // public function index(Request $request)
+    // {
+    //     $templates = VoiceTemplate::on("mysql_" . $request->auth->parent_id)->get()->all();
 
-        if ($request->has('start') && $request->has('limit')) {
-            $total_row = count($templates);
+    //     if ($request->has('start') && $request->has('limit')) {
+    //         $total_row = count($templates);
 
-            $start = (int) $request->input('start');  // Start index (0-based)
-            $limit = (int) $request->input('limit');  // Number of records to fetch
+    //         $start = (int) $request->input('start');  // Start index (0-based)
+    //         $limit = (int) $request->input('limit');  // Number of records to fetch
 
-            $templates = array_slice($templates, $start, $limit, false);
+    //         $templates = array_slice($templates, $start, $limit, false);
 
-            return $this->successResponse("Voice Template List", [
-                'start' => $start,
-                'limit' => $limit,
-                'total' => $total_row,
-                'data' => $templates
-            ]);
-        }
-        return $this->successResponse("Voice Template List", $templates);
+    //         return $this->successResponse("Voice Template List", [
+    //             'start' => $start,
+    //             'limit' => $limit,
+    //             'total' => $total_row,
+    //             'data' => $templates
+    //         ]);
+    //     }
+    //     return $this->successResponse("Voice Template List", $templates);
+    // }
+
+public function index(Request $request)
+{
+    $query = VoiceTemplate::on("mysql_" . $request->auth->parent_id);
+
+    // 🔍 Search
+    if ($request->has('search') && !empty($request->input('search'))) {
+        $search = $request->input('search');
+
+        $query->where(function ($q) use ($search) {
+            $q->where('templete_name', 'LIKE', '%' . $search . '%')
+              ->orWhere('templete_desc', 'LIKE', '%' . $search . '%');
+        });
     }
 
-    public function index_old_code(Request $request)
-    {
-        $templates = VoiceTemplate::on("mysql_" . $request->auth->parent_id)->get()->all();
-        return $this->successResponse("Voice Template List", $templates);
+    // Total rows AFTER search
+    $totalRows = $query->count();
+
+    // 📄 Pagination
+    if ($request->has('start') && $request->has('limit')) {
+        $start = (int) $request->input('start');
+        $limit = (int) $request->input('limit');
+
+        $templates = $query
+            ->offset($start)
+            ->limit($limit)
+            ->get()
+            ->toArray();
+
+        return $this->successResponse("Voice Template List", [
+            'start'       => $start,
+            'limit'       => $limit,
+            'total_rows'  => $totalRows,
+            'data'        => $templates
+        ]);
     }
+
+    // 📦 Without pagination
+    $templates = $query->get()->toArray();
+
+    return $this->successResponse("Voice Template List", [
+        'total_rows' => $totalRows,
+        'data'       => $templates
+    ]);
+}
+
+
+
     /*
      *Fetch extension details
      *@return json
