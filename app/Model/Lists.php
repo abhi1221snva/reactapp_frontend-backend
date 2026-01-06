@@ -423,9 +423,10 @@ public function getList($request)
                     campaign_list AS cl
                 LEFT JOIN list AS l ON l.id = cl.list_id
                 LEFT JOIN campaign AS c ON c.id = cl.campaign_id
-                WHERE cl.is_deleted = :is_deleted 
-                  AND list_id = :list_id 
-                  AND campaign_id = :campaign_id";
+                WHERE cl.is_deleted = :is_deleted
+                    AND cl.status = 1
+                    AND cl.list_id = :list_id
+                    AND cl.campaign_id = :campaign_id";
 
         $params = [
             'is_deleted' => 0,
@@ -475,7 +476,7 @@ public function getList($request)
                     campaign_list AS cl
                 LEFT JOIN list AS l ON l.id = cl.list_id
                 LEFT JOIN campaign AS c ON c.id = cl.campaign_id
-                WHERE cl.is_deleted = :is_deleted";
+                WHERE cl.is_deleted = :is_deleted  AND cl.status = 1";
 
         $params = ['is_deleted' => 0];
 
