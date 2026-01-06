@@ -409,30 +409,29 @@ public function getList($request)
         $request->has('list_id') && is_numeric($request->input('list_id')) &&
         $request->has('campaign_id') && is_numeric($request->input('campaign_id'))
     ) {
-      $sql = "SELECT
-            c.title AS campaign, 
-            l.title AS list, 
-            cl.campaign_id, 
-            cl.list_id, 
-            cl.updated_at, 
-            l.is_active,
-            l.lead_count,
-            l.is_dialing,
-            l.created_at
-        FROM campaign_list AS cl
-       INNER JOIN list AS l 
-    ON l.id = cl.list_id AND l.is_deleted = 0
-        LEFT JOIN campaign AS c ON c.id = cl.campaign_id
-        WHERE cl.is_deleted = :is_deleted
-          AND cl.list_id = :list_id
-          AND cl.campaign_id = :campaign_id";
+        $sql = "SELECT
+                    c.title AS campaign, 
+                    l.title AS list, 
+                    cl.campaign_id, 
+                    cl.list_id, 
+                    cl.updated_at, 
+                    l.is_active,
+                    l.lead_count,
+                      l.is_dialing,    -- ✅ Added this line
+                      l.created_at
+                FROM
+                    campaign_list AS cl
+                LEFT JOIN list AS l ON l.id = cl.list_id
+                LEFT JOIN campaign AS c ON c.id = cl.campaign_id
+                WHERE cl.is_deleted = :is_deleted 
+                  AND list_id = :list_id 
+                  AND campaign_id = :campaign_id";
 
-$params = [
-    'is_deleted'  => 0,
-    'list_id'     => $request->input('list_id'),
-    'campaign_id' => $request->input('campaign_id')
-];
-
+        $params = [
+            'is_deleted' => 0,
+            'list_id'    => $request->input('list_id'),
+            'campaign_id'=> $request->input('campaign_id')
+        ];
 
         if ($titleSearch) {
             $sql .= " AND l.title LIKE :title";
@@ -462,26 +461,23 @@ $params = [
 
     } else {
         // --- Case 2: all lists ---
-       $sql = "SELECT
-            c.title AS campaign, 
-            l.title AS list, 
-            cl.campaign_id, 
-            cl.list_id, 
-            cl.updated_at, 
-            l.is_active,
-            l.lead_count,
-            l.is_dialing,
-            l.created_at
-        FROM campaign_list AS cl
-        INNER JOIN list AS l 
-    ON l.id = cl.list_id AND l.is_deleted = 0
-        LEFT JOIN campaign AS c ON c.id = cl.campaign_id
-        WHERE cl.is_deleted = :is_deleted";
+        $sql = "SELECT
+                    c.title AS campaign, 
+                    l.title AS list, 
+                    cl.campaign_id, 
+                    cl.list_id, 
+                    cl.updated_at, 
+                    l.is_active,
+                    l.lead_count,
+                      l.is_dialing,    -- ✅ Added this line
+                      l.created_at
+                FROM
+                    campaign_list AS cl
+                LEFT JOIN list AS l ON l.id = cl.list_id
+                LEFT JOIN campaign AS c ON c.id = cl.campaign_id
+                WHERE cl.is_deleted = :is_deleted";
 
-$params = [
-    'is_deleted' => 0
-];
-
+        $params = ['is_deleted' => 0];
 
         if ($titleSearch) {
             $sql .= " AND l.title LIKE :title";
