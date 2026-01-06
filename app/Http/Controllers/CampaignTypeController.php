@@ -9,9 +9,10 @@ class CampaignTypeController extends Controller
 {
     public function index(Request $request)
     {
-        $CampaignType = CampaignTypes::on("mysql_" . $request->auth->parent_id)->get()->all();
+        $CampaignType = CampaignTypes::on("mysql_" . $request->auth->parent_id)->where('title_url', '!=', 'predictive_dial')->get()->all();
         return $this->successResponse("Campaign Type List", $CampaignType);
     }
+
 
     public function create(Request $request)
     {
