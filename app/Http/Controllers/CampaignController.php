@@ -930,13 +930,120 @@ class CampaignController extends Controller
 
 
 
+// public function assignLists(Request $request)
+// {
+//     // 1. Basic request validation (format only)
+//     $validator = Validator::make($request->all(), [
+//         'campaign_id'    => 'required|integer',
+//         'lead_list_ids'  => 'required|array|min:1',
+//         'lead_list_ids.*'=> 'integer',
+//     ]);
+
+//     if ($validator->fails()) {
+//         return response()->json([
+//             'success' => false,
+//             'errors'  => $validator->errors()
+//         ], 422);
+//     }
+
+//     $campaignId = $request->input('campaign_id');
+//     $leadListIds = $request->input('lead_list_ids');
+
+//     // 2. Check if campaign exists
+//     $campaignExists = DB::connection('mysql_' . $request->auth->parent_id)->table('campaign')->where('id', $campaignId)->exists();
+//     if (!$campaignExists) {
+//         return response()->json([
+//             'success' => false,
+//             'message' => "Campaign ID {$campaignId} does not exist."
+//         ], 404);
+//     }
+
+//     // 3. Check each lead list id exists
+//     $invalidLists = [];
+//     foreach ($leadListIds as $listId) {
+//         $exists = DB::connection('mysql_' . $request->auth->parent_id)->table('list')->where('id', $listId)->exists();
+//         if (!$exists) {
+//             $invalidLists[] = $listId;
+//         }
+//     }
+
+//     if (!empty($invalidLists)) {
+//         return response()->json([
+//             'success' => false,
+//             'message' => 'Some lead list IDs do not exist.',
+//             'invalid_list_ids' => $invalidLists
+//         ], 404);
+//     }
+//         // 4. Deactivate all existing assigned lists (DO NOT DELETE)
+//     DB::connection('mysql_' . $request->auth->parent_id)
+//         ->table('campaign_list')
+//         ->where('campaign_id', $campaignId)
+//         ->update([
+//             'status'     => '0',
+//             'updated_at' => Carbon::now()
+//         ]);
+
+//     // 4. Insert/update mapping
+//     foreach ($leadListIds as $listId) {
+//         DB::connection('mysql_' . $request->auth->parent_id)->table('campaign_list')->updateOrInsert(
+//             [
+//                 'campaign_id' => $campaignId,
+//                 'list_id'     => $listId,
+//             ],
+//             [
+//                 'is_deleted' => 0,
+//                 'status'     => '1',
+//                 'updated_at' => Carbon::now(),
+//             ]
+//         );
+//     }
+// // 5. Get all list IDs mapped to this campaign
+// $existingListIds = DB::connection('mysql_' . $request->auth->parent_id)
+//     ->table('campaign_list')
+//     ->where('campaign_id', $campaignId)
+//     ->pluck('list_id')
+//     ->toArray();
+
+// // 6. Find lists to soft delete
+// $listsToDelete = array_diff($existingListIds, $leadListIds);
+
+// // 7. Soft delete removed lists
+// if (!empty($listsToDelete)) {
+//     DB::connection('mysql_' . $request->auth->parent_id)
+//         ->table('list')
+//         ->whereIn('id', $listsToDelete)
+//         ->update([
+//             'is_deleted' => 1,
+//             'updated_at' => Carbon::now()
+//         ]);
+// }
+
+// // 8. Restore assigned lists (if previously deleted)
+// DB::connection('mysql_' . $request->auth->parent_id)
+//     ->table('list')
+//     ->whereIn('id', $leadListIds)
+//     ->update([
+//         'is_deleted' => 0,
+//         'updated_at' => Carbon::now()
+//     ]);
+
+
+//     return response()->json([
+//         'success'       => true,
+//         'message'       => 'Campaign assigned to lead lists successfully.',
+//         'campaign_id'   => $campaignId,
+//         'lead_list_ids' => $leadListIds,
+//     ]);
+// }
+
+
 public function assignLists(Request $request)
 {
     // 1. Basic request validation (format only)
     $validator = Validator::make($request->all(), [
-        'campaign_id'    => 'required|integer',
-        'lead_list_ids'  => 'required|array|min:1',
-        'lead_list_ids.*'=> 'integer',
+        'campaign_id'     => 'required|integer',
+        'lead_list_ids'   => 'required|array|min:1',
+        'lead_list_ids.*' => 'integer',
     ]);
 
     if ($validator->fails()) {
@@ -946,12 +1053,14 @@ public function assignLists(Request $request)
         ], 422);
     }
 
-    $campaignId = $request->input('campaign_id');
-    $leadListIds = $request->input('lead_list_ids');
+    $campaignId  = $request->input('campaign_id');
+    $leadListIds = array_unique($request->input('lead_list_ids'));
+
+    // DB connection
+    $db = DB::connection('mysql_' . $request->auth->parent_id);
 
     // 2. Check if campaign exists
-    $campaignExists = DB::connection('mysql_' . $request->auth->parent_id)->table('campaign')->where('id', $campaignId)->exists();
-    if (!$campaignExists) {
+    if (!$db->table('campaign')->where('id', $campaignId)->exists()) {
         return response()->json([
             'success' => false,
             'message' => "Campaign ID {$campaignId} does not exist."
@@ -959,54 +1068,96 @@ public function assignLists(Request $request)
     }
 
     // 3. Check each lead list id exists
-    $invalidLists = [];
-    foreach ($leadListIds as $listId) {
-        $exists = DB::connection('mysql_' . $request->auth->parent_id)->table('list')->where('id', $listId)->exists();
-        if (!$exists) {
-            $invalidLists[] = $listId;
-        }
-    }
+    $existingListCount = $db->table('list')
+        ->whereIn('id', $leadListIds)
+        ->count();
 
-    if (!empty($invalidLists)) {
+    if ($existingListCount !== count($leadListIds)) {
         return response()->json([
             'success' => false,
-            'message' => 'Some lead list IDs do not exist.',
-            'invalid_list_ids' => $invalidLists
+            'message' => 'Some lead list IDs do not exist.'
         ], 404);
     }
-        // 4. Deactivate all existing assigned lists (DO NOT DELETE)
-    DB::connection('mysql_' . $request->auth->parent_id)
-        ->table('campaign_list')
-        ->where('campaign_id', $campaignId)
-        ->update([
-            'status'     => '0',
-            'updated_at' => Carbon::now()
+
+    try {
+        $db->transaction(function () use ($db, $campaignId, $leadListIds) {
+
+            // 4. Deactivate all existing assigned lists (DO NOT DELETE)
+            $db->table('campaign_list')
+                ->where('campaign_id', $campaignId)
+                ->update([
+                    'status'     => '0',
+                    'updated_at' => Carbon::now()
+                ]);
+
+            // 5. Insert / Reactivate selected lists
+            foreach ($leadListIds as $listId) {
+                $db->table('campaign_list')->updateOrInsert(
+                    [
+                        'campaign_id' => $campaignId,
+                        'list_id'     => $listId,
+                    ],
+                    [
+                        'status'     => '1',
+                        'is_deleted' => 0,
+                        'updated_at' => Carbon::now(),
+                    ]
+                );
+            }
+
+            // 6. Get ACTIVE list IDs mapped to this campaign
+            $activeListIds = $db->table('campaign_list')
+                ->where('campaign_id', $campaignId)
+                ->where('is_deleted', 0)
+                ->pluck('list_id')
+                ->toArray();
+
+            // 7. Soft delete removed lists
+            $listsToDelete = array_diff($activeListIds, $leadListIds);
+
+            if (!empty($listsToDelete)) {
+                $db->table('list')
+                    ->whereIn('id', $listsToDelete)
+                    ->update([
+                        'is_deleted' => 1,
+                        'updated_at' => Carbon::now()
+                    ]);
+            }
+
+            // 8. Restore only lists assigned to THIS campaign
+            $db->table('list')
+                ->whereIn('id', function ($q) use ($campaignId) {
+                    $q->select('list_id')
+                      ->from('campaign_list')
+                      ->where('campaign_id', $campaignId)
+                      ->where('status', '1')
+                      ->where('is_deleted', 0);
+                })
+                ->update([
+                    'is_deleted' => 0,
+                    'updated_at' => Carbon::now()
+                ]);
+        });
+
+        return response()->json([
+            'success'       => true,
+            'message'       => 'Campaign assigned to lead lists successfully.',
+            'campaign_id'   => $campaignId,
+            'lead_list_ids' => $leadListIds,
         ]);
 
-    // 4. Insert/update mapping
-    foreach ($leadListIds as $listId) {
-        DB::connection('mysql_' . $request->auth->parent_id)->table('campaign_list')->updateOrInsert(
-            [
-                'campaign_id' => $campaignId,
-                'list_id'     => $listId,
-            ],
-            [
-                'is_deleted' => 0,
-                'status'     => '1',
-                'updated_at' => Carbon::now(),
-            ]
-        );
+    } catch (\Throwable $e) {
+        Log::error('assignLists failed', [
+            'campaign_id' => $campaignId,
+            'error'       => $e->getMessage()
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to assign lead lists. Please try again.'
+        ], 500);
     }
-
-    return response()->json([
-        'success'       => true,
-        'message'       => 'Campaign assigned to lead lists successfully.',
-        'campaign_id'   => $campaignId,
-        'lead_list_ids' => $leadListIds,
-    ]);
 }
-
-
 
 
 }
