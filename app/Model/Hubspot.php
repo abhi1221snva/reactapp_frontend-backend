@@ -321,60 +321,144 @@ class Hubspot extends Model {
     
 
 
-     function getCampaignAndListHubspot($request) {
+    //  function getCampaignAndListHubspot($request) {
 
-        try {
-            $data = array();
-            $searchStr = array();
-            if ($request->has('campaign_id') && is_numeric($request->input('campaign_id'))) {
-                $data['campaign_id'] = $request->input('campaign_id');
-                $data['is_deleted'] = $request->input('is_deleted');
-            }
+    //     try {
+    //         $data = array();
+    //         $searchStr = array();
+    //         if ($request->has('campaign_id') && is_numeric($request->input('campaign_id'))) {
+    //             $data['campaign_id'] = $request->input('campaign_id');
+    //             $data['is_deleted'] = $request->input('is_deleted');
+    //         }
 
-            $sql = "SELECT campaign_list.campaign_id,campaign_list.status,campaign_list.list_id,campaign_list.is_deleted,list.title as l_title,list.id,campaign.title,campaign.crm_title_url,list.size as rowListData FROM hubspot_campaign_list as campaign_list inner join hubspot_lists as list on campaign_list.list_id = list.list_id  inner join campaign on campaign_list.campaign_id = campaign.id WHERE campaign_list.campaign_id = '" . $request->input('campaign_id') . "' and campaign_list.is_deleted ='" . $request->input('is_deleted') . "'";
+    //         $sql = "SELECT campaign_list.campaign_id,campaign_list.status,campaign_list.list_id,campaign_list.is_deleted,list.title as l_title,list.id,campaign.title,campaign.crm_title_url,list.size as rowListData FROM hubspot_campaign_list as campaign_list inner join hubspot_lists as list on campaign_list.list_id = list.list_id  inner join campaign on campaign_list.campaign_id = campaign.id WHERE campaign_list.campaign_id = '" . $request->input('campaign_id') . "' and campaign_list.is_deleted ='" . $request->input('is_deleted') . "'";
 
-            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
-            $data = (array) $record;
+    //         $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+    //         $data = (array) $record;
 
-            foreach ($data as $key => $id) {
+    //         foreach ($data as $key => $id) {
 
-                $data1['campaign_id'] = $id->campaign_id;
-                $data1['list_id'] = $id->list_id;
+    //             $data1['campaign_id'] = $id->campaign_id;
+    //             $data1['list_id'] = $id->list_id;
 
-                $sql_count_lead_report = "SELECT count(1) as rowCountLearReport FROM lead_report WHERE campaign_id = :campaign_id  and list_id = :list_id";
-                $record_count_lead = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_count_lead_report, $data1);
-                $id->rowLeadReport = $record_count_lead->rowCountLearReport;
+    //             $sql_count_lead_report = "SELECT count(1) as rowCountLearReport FROM lead_report WHERE campaign_id = :campaign_id  and list_id = :list_id";
+    //             $record_count_lead = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_count_lead_report, $data1);
+    //             $id->rowLeadReport = $record_count_lead->rowCountLearReport;
 
-                $list_data['list_id'] = $id->list_id;
+    //             $list_data['list_id'] = $id->list_id;
 
 
-                /*$sql_count_list = "SELECT count(1) as rowCountList FROM list_data WHERE list_id=:list_id ";
-                $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_count_list, $list_data);
+    //             /*$sql_count_list = "SELECT count(1) as rowCountList FROM list_data WHERE list_id=:list_id ";
+    //             $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_count_list, $list_data);
 
-                //return $data = (array)$record_count_list;
-                //$id->rowList = $count;
-                $id->rowListData = $record_count_list[0]->rowCountList;*/
-            }
+    //             //return $data = (array)$record_count_list;
+    //             //$id->rowList = $count;
+    //             $id->rowListData = $record_count_list[0]->rowCountList;*/
+    //         }
 
-            //return $data;
-            if (!empty($data)) {
-                return array(
-                    'success' => 'true',
-                    'message' => 'Campaign List detail.',
-                    'data' => $data
-                );
-            }
-            return array(
+    //         //return $data;
+    //         if (!empty($data)) {
+    //             return array(
+    //                 'success' => 'true',
+    //                 'message' => 'Campaign List detail.',
+    //                 'data' => $data
+    //             );
+    //         }
+    //         return array(
+    //             'success' => 'false',
+    //             'message' => 'Campaign List Found.',
+    //             'data' => array()
+    //         );
+    //     } catch (Exception $e) {
+    //         echo $e->getMessage();
+    //     } catch (InvalidArgumentException $e) {
+    //         echo $e->getMessage();
+    //     }
+    // }
+function getCampaignAndListHubspot($request)
+{
+    try {
+
+        // -----------------------------
+        // VALIDATION
+        // -----------------------------
+        if (!$request->has('campaign_id') || !is_numeric($request->input('campaign_id'))) {
+            return [
                 'success' => 'false',
-                'message' => 'Campaign List Found.',
-                'data' => array()
-            );
-        } catch (Exception $e) {
-            echo $e->getMessage();
-        } catch (InvalidArgumentException $e) {
-            echo $e->getMessage();
+                'message' => 'Invalid campaign_id',
+                'data' => []
+            ];
         }
+
+        $campaignId = (int) $request->input('campaign_id');
+        $isDeleted  = ($request->has('is_deleted') && $request->input('is_deleted') !== '')
+            ? (int) $request->input('is_deleted')
+            : 0;
+
+        // -----------------------------
+        // SQL WITH PLACEHOLDERS
+        // -----------------------------
+        $sql = "
+            SELECT 
+                cl.campaign_id,
+                cl.status,
+                cl.list_id,
+                cl.is_deleted,
+                l.title AS l_title,
+                l.id,
+                c.title,
+                c.crm_title_url,
+                l.size AS rowListData
+            FROM hubspot_campaign_list cl
+            INNER JOIN hubspot_lists l ON cl.list_id = l.list_id
+            INNER JOIN campaign c ON cl.campaign_id = c.id
+            WHERE cl.campaign_id = :campaign_id
+              AND cl.is_deleted = :is_deleted
+        ";
+
+        // -----------------------------
+        // EXECUTE
+        // -----------------------------
+        $records = DB::connection('mysql_' . $request->auth->parent_id)
+            ->select($sql, [
+                'campaign_id' => $campaignId,
+                'is_deleted'  => $isDeleted
+            ]);
+
+        // -----------------------------
+        // ADD COUNTS
+        // -----------------------------
+        foreach ($records as $row) {
+
+            $leadCount = DB::connection('mysql_' . $request->auth->parent_id)
+                ->selectOne(
+                    "SELECT COUNT(1) AS total 
+                     FROM lead_report 
+                     WHERE campaign_id = :campaign_id 
+                       AND list_id = :list_id",
+                    [
+                        'campaign_id' => $row->campaign_id,
+                        'list_id'     => $row->list_id
+                    ]
+                );
+
+            $row->rowLeadReport = $leadCount->total ?? 0;
+        }
+
+        return [
+            'success' => 'true',
+            'message' => 'Campaign List detail.',
+            'data' => $records
+        ];
+
+    } catch (\Throwable $e) {
+        return [
+            'success' => 'false',
+            'message' => $e->getMessage(),
+            'data' => []
+        ];
     }
+}
 
     //close hubspot
 
