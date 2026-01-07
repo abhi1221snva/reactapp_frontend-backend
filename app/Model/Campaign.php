@@ -1222,6 +1222,27 @@ public function getCampaignAndList($request)
             if ($request->has('campaign_id') && is_numeric($request->input('campaign_id'))) {
                 $data['campaign_id'] = $request->input('campaign_id');
             }
+              $parentId   = $request->auth->parent_id;
+                $campaignId = (int) $request->input('campaign_id');
+                $listId     = (int) $request->input('list_id');
+
+        /**
+         * --------------------------------------------------
+         * ✅ STEP 1: Check campaign status before recycling
+         * --------------------------------------------------
+         */
+        $campaign = DB::connection('mysql_' . $parentId)
+            ->table('campaign')
+            ->where('id', $campaignId)
+            ->first();
+
+        if ($campaign && (int)$campaign->status === 0) {
+            // Activate campaign first
+            DB::connection('mysql_' . $parentId)
+                ->table('campaign')
+                ->where('id', $campaignId)
+                ->update(['status' => 1]);
+        }
 
             $disposition = $request->input('disposition');
             $select_id = $request->input('select_id');
@@ -1277,7 +1298,7 @@ public function getCampaignAndList($request)
 
 
 
-            $campaignId = $request->input('campaign_id');
+           // $campaignId = $request->input('campaign_id');
             dispatch(new RecycleDeletedNotificationJob($request->auth->parent_id, $campaignId, $recycle_data))->onConnection("database");
             //return $data;
             if (!empty($data)) {
