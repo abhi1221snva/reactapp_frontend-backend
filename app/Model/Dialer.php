@@ -750,10 +750,18 @@ $totalRows = count($campaign);
                             $request->auth->asterisk_server_id,
                             $request->auth->parent_id
                         );
-                        return array(
-                            'success' => $response["status"],
-                            'message' => 'You are logged in successfully. ' . $response["message"]
-                        );
+                       if ($response["status"] === false) {
+    return response()->json([
+        'success' => false,
+        'message' => $response["message"]
+    ], 402);
+}
+
+return response()->json([
+    'success' => true,
+    'message' => 'You are logged in successfully. ' . $response["message"]
+], 200);
+
                     } elseif ($count == 5) {
                         return array(
                             'success' => false,
@@ -802,11 +810,12 @@ $totalRows = count($campaign);
                 "file" => $e->getFile(),
                 "line" => $e->getLine()
             ]);
-            return array(
-                'success' => false,
-                'message' => $e->getMessage(),
-                'data' => []
-            );
+                return response()->json([
+            'success' => false,
+            'message' => $e->getMessage(),
+            'data' => []
+        ], 402);
+
         }
     }
 

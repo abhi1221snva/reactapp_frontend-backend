@@ -307,7 +307,19 @@ class DialerController extends Controller
             'campaign_id' => 'required|numeric'
         ]);
         $response = $this->model->extensionLogin($this->request);
-        return response()->json($response);
+            // ✅ Set HTTP status based on success
+   // ✅ Set HTTP status based on success (handles boolean & string)
+$statusCode = (
+    isset($response['success']) &&
+    filter_var($response['success'], FILTER_VALIDATE_BOOLEAN)
+)
+    ? 200
+    : 402;
+
+return response()->json($response, $statusCode);
+
+
+    return response()->json($response, $statusCode);
     }
 
     /*
