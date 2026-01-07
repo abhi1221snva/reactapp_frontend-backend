@@ -148,18 +148,32 @@ public function extensionDetail(Request $request, int $extension_id = null)
             $totalRows = $countResult->total ?? 0;
 
             // Data query
+            // $sql = "SELECT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
+            //         FROM users
+            //         LEFT JOIN user_extensions ON user_extensions.name = users.extension
+            //         WHERE users.id IN (
+            //             SELECT user_id FROM permissions WHERE client_id = ?
+            //         )
+            //         AND users.is_deleted = ?
+            //         AND users.status = ?
+            //         AND users.base_parent_id = ?
+            //         AND users.user_level < 9
+            //         $searchSql
+            //         ORDER BY $orderBy";
             $sql = "SELECT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
-                    FROM users
-                    LEFT JOIN user_extensions ON user_extensions.name = users.extension
-                    WHERE users.id IN (
-                        SELECT user_id FROM permissions WHERE client_id = ?
-                    )
-                    AND users.is_deleted = ?
-                    AND users.status = ?
-                    AND users.base_parent_id = ?
-                    AND users.user_level < 9
-                    $searchSql
-                    ORDER BY $orderBy";
+        FROM users
+        LEFT JOIN user_extensions ON user_extensions.name = users.extension
+        WHERE (
+            users.id IN (SELECT user_id FROM permissions WHERE client_id = ?)
+            OR users.id = ?
+        )
+        AND users.is_deleted = ?
+        AND users.status = ?
+        AND users.base_parent_id = ?
+        AND users.user_level < 9
+        $searchSql
+        ORDER BY $orderBy";
+
 
             // Add limit if present
             if ($request->has(['start', 'limit'])) {
