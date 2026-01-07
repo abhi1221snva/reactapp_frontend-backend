@@ -221,7 +221,8 @@ public function extensionDetailold(Request $request, int $extension_id = null)
     }
 }
 
-    public function extensionDetail(Request $request, int $extension_id = null)
+
+public function extensionDetail(Request $request, int $extension_id = null)
 {
     $parentId = $request->auth->parent_id;
 
@@ -244,37 +245,31 @@ public function extensionDetailold(Request $request, int $extension_id = null)
             $extension = $parentId . $extension;
         }
 
-        $extensionGroupSql = "
-            SELECT group_id 
-            FROM extension_group_map 
-            WHERE extension = :extension 
-              AND is_deleted = :is_deleted
-        ";
-
         $response['group'] = DB::connection('mysql_' . $parentId)->select(
-            $extensionGroupSql,
-            ['extension' => $extension, 'is_deleted' => 0]
+            "SELECT group_id 
+             FROM extension_group_map 
+             WHERE extension = :extension AND is_deleted = :is_deleted",
+            [
+                'extension'  => $extension,
+                'is_deleted' => 0
+            ]
         );
 
-        $serverSql = "
-            SELECT asterisk_server.id, host AS ip_address, detail, domain, title_name 
-            FROM client_server
-            LEFT JOIN asterisk_server ON asterisk_server.id = client_server.ip_address
-            WHERE client_server.client_id = :parent_id
-        ";
-
         $response['serverList'] = DB::connection('master')->select(
-            $serverSql,
+            "SELECT asterisk_server.id, host AS ip_address, detail, domain, title_name
+             FROM client_server
+             LEFT JOIN asterisk_server ON asterisk_server.id = client_server.ip_address
+             WHERE client_server.client_id = :parent_id",
             ['parent_id' => $parentId]
         );
 
         $response['didList'] = $didList;
 
         return [
-            'success' => true,
-            'message' => 'Extension detail.',
-            'data' => $response,
-            'total_rows' => 1
+            'success'    => true,
+            'message'    => 'Extension detail.',
+            'total_rows' => 1,
+            'data'       => $response
         ];
     }
 
@@ -285,11 +280,11 @@ public function extensionDetailold(Request $request, int $extension_id = null)
     $totalRows  = 0;
     $search     = trim($request->input('search', ''));
 
-    // ---------- SEARCH SQL ----------
+    // ---------- SEARCH ----------
     $searchSql = '';
     $searchBindings = [];
 
-    if (!empty($search)) {
+    if ($search !== '') {
         $searchSql = " AND (
             users.first_name LIKE ?
             OR users.last_name LIKE ?
@@ -297,12 +292,7 @@ public function extensionDetailold(Request $request, int $extension_id = null)
             OR users.extension LIKE ?
         )";
 
-        $searchBindings = [
-            "%$search%",
-            "%$search%",
-            "%$search%",
-            "%$search%"
-        ];
+        $searchBindings = array_fill(0, 4, "%{$search}%");
     }
 
     // ================= ADMIN =================
@@ -310,18 +300,9 @@ public function extensionDetailold(Request $request, int $extension_id = null)
 
         $orderBy = $request->get('orderBy', 'users.extension');
 
-        // -------- BASE BINDINGS (MATCH SQL ORDER) --------
-        $bindings = [
-            $parentId,              // permissions.client_id
-            $request->auth->id,     // logged-in user
-            $isDeleted,
-            $status,
-            $parentId
-        ];
-
-        // Count
+        // ---------- COUNT ----------
         $countSql = "
-            SELECT COUNT(*) AS total 
+            SELECT COUNT(*) AS total
             FROM users
             WHERE (
                 users.id IN (SELECT user_id FROM permissions WHERE client_id = ?)
@@ -334,14 +315,22 @@ public function extensionDetailold(Request $request, int $extension_id = null)
             $searchSql
         ";
 
+        $countBindings = [
+            $parentId,              // permissions.client_id
+            $request->auth->id,     // users.id
+            $isDeleted,             // users.is_deleted
+            $status,                // users.status
+            $parentId               // users.base_parent_id
+        ];
+
         $countResult = DB::connection('master')->selectOne(
             $countSql,
-            array_merge($bindings, $searchBindings)
+            array_merge($countBindings, $searchBindings)
         );
 
         $totalRows = $countResult->total ?? 0;
 
-        // Data
+        // ---------- DATA ----------
         $sql = "
             SELECT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
             FROM users
@@ -351,26 +340,34 @@ public function extensionDetailold(Request $request, int $extension_id = null)
                 OR users.id = ?
             )
             AND users.is_deleted = ?
-                        AND (
+            AND (
                 users.status = ?
                 OR users.id = ?
             )
-
             AND users.base_parent_id = ?
             AND users.user_level < 9
             $searchSql
-            ORDER BY $orderBy
+            ORDER BY {$orderBy}
         ";
 
-        $bindings = array_merge($bindings, $searchBindings);
+        $dataBindings = [
+            $parentId,              // permissions.client_id
+            $request->auth->id,     // users.id
+            $isDeleted,             // users.is_deleted
+            $status,                // users.status
+            $request->auth->id,     // status bypass
+            $parentId               // users.base_parent_id
+        ];
+
+        $dataBindings = array_merge($dataBindings, $searchBindings);
 
         if ($request->has(['start', 'limit'])) {
             $sql .= " LIMIT ?, ?";
-            $bindings[] = (int)$request->input('start');
-            $bindings[] = (int)$request->input('limit');
+            $dataBindings[] = (int) $request->input('start');
+            $dataBindings[] = (int) $request->input('limit');
         }
 
-    } 
+    }
     // ================= NON-ADMIN =================
     else {
 
@@ -383,7 +380,7 @@ public function extensionDetailold(Request $request, int $extension_id = null)
             WHERE users.parent_id = ?
               AND users.id = ?
               AND users.is_deleted = ?
-                            AND (
+              AND (
                     users.status = ?
                     OR users.id = ?
                 )
@@ -393,45 +390,43 @@ public function extensionDetailold(Request $request, int $extension_id = null)
             ORDER BY users.extension
         ";
 
-      $bindings = [
-    $parentId,              // permissions.client_id
-    $request->auth->id,     // OR users.id
-    $isDeleted,
-    $status,                // users.status
-    $request->auth->id,     // OR users.id (status bypass)
-    $parentId
-];
+        $dataBindings = [
+            $parentId,
+            $request->auth->id,
+            $isDeleted,
+            $status,
+            $request->auth->id,
+            $parentId
+        ];
 
-
-        $bindings = array_merge($bindings, $searchBindings);
+        $dataBindings = array_merge($dataBindings, $searchBindings);
     }
 
     // ================= EXECUTE =================
-    $record = DB::connection('master')->select($sql, $bindings);
+    $records = DB::connection('master')->select($sql, $dataBindings);
 
-    foreach ($record as $res) {
-        if ($res->id == $request->auth->id) {
-            $response[0] = $res;
+    foreach ($records as $row) {
+        if ($row->id == $request->auth->id) {
+            $response[0] = $row;
         } else {
-            $response[] = $res;
+            $response[] = $row;
         }
     }
 
     return !empty($response)
         ? [
-            'success' => true,
+            'success'    => true,
             'total_rows' => $totalRows,
-            'message' => 'Extension detail.',
-            'data' => $response
+            'message'    => 'Extension detail.',
+            'data'       => $response
         ]
         : [
-            'success' => false,
+            'success'    => false,
             'total_rows' => 0,
-            'message' => 'Extension not found',
-            'data' => []
+            'message'    => 'Extension not found',
+            'data'       => []
         ];
 }
-
 
   
 
