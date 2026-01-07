@@ -351,7 +351,11 @@ public function extensionDetailold(Request $request, int $extension_id = null)
                 OR users.id = ?
             )
             AND users.is_deleted = ?
-            AND users.status = ?
+                        AND (
+                users.status = ?
+                OR users.id = ?
+            )
+
             AND users.base_parent_id = ?
             AND users.user_level < 9
             $searchSql
@@ -379,20 +383,25 @@ public function extensionDetailold(Request $request, int $extension_id = null)
             WHERE users.parent_id = ?
               AND users.id = ?
               AND users.is_deleted = ?
-              AND users.status = ?
+                            AND (
+                    users.status = ?
+                    OR users.id = ?
+                )
               AND users.base_parent_id = ?
               AND users.user_level < 9
               $searchSql
             ORDER BY users.extension
         ";
 
-        $bindings = [
-            $parentId,
-            $request->auth->id,
-            $isDeleted,
-            $status,
-            $parentId
-        ];
+      $bindings = [
+    $parentId,              // permissions.client_id
+    $request->auth->id,     // OR users.id
+    $isDeleted,
+    $status,                // users.status
+    $request->auth->id,     // OR users.id (status bypass)
+    $parentId
+];
+
 
         $bindings = array_merge($bindings, $searchBindings);
     }
