@@ -311,7 +311,10 @@ public function extensionDetail(Request $request, int $extension_id = null)
             AND users.is_deleted = ?
             AND users.status = ?
             AND users.base_parent_id = ?
-            AND users.user_level < 9
+              AND (
+                users.user_level < 9
+                OR users.id = ?
+            )
             $searchSql
         ";
 
@@ -320,7 +323,9 @@ public function extensionDetail(Request $request, int $extension_id = null)
             $request->auth->id,     // users.id
             $isDeleted,             // users.is_deleted
             $status,                // users.status
-            $parentId               // users.base_parent_id
+            $parentId,              // users.base_parent_id
+            $request->auth->id,     // users.id
+
         ];
 
         $countResult = DB::connection('master')->selectOne(
@@ -345,7 +350,11 @@ public function extensionDetail(Request $request, int $extension_id = null)
                 OR users.id = ?
             )
             AND users.base_parent_id = ?
-            AND users.user_level < 9
+            AND (
+                users.user_level < 9
+                OR users.id = ?
+            )
+
             $searchSql
             ORDER BY {$orderBy}
         ";
@@ -356,7 +365,8 @@ public function extensionDetail(Request $request, int $extension_id = null)
             $isDeleted,             // users.is_deleted
             $status,                // users.status
             $request->auth->id,     // status bypass
-            $parentId               // users.base_parent_id
+            $parentId,          // users.base_parent_id
+             $request->auth->id
         ];
 
         $dataBindings = array_merge($dataBindings, $searchBindings);
@@ -385,7 +395,10 @@ public function extensionDetail(Request $request, int $extension_id = null)
                     OR users.id = ?
                 )
               AND users.base_parent_id = ?
-              AND users.user_level < 9
+                AND (
+                    users.user_level < 9
+                    OR users.id = ?
+                )
               $searchSql
             ORDER BY users.extension
         ";
@@ -396,7 +409,9 @@ public function extensionDetail(Request $request, int $extension_id = null)
             $isDeleted,
             $status,
             $request->auth->id,
-            $parentId
+            $parentId,
+            $request->auth->id,
+
         ];
 
         $dataBindings = array_merge($dataBindings, $searchBindings);

@@ -301,26 +301,45 @@ class DialerController extends Controller
      * )
      */
 
+    // public function extensionLogin()
+    // {
+    //     $this->validate($this->request, [
+    //         'campaign_id' => 'required|numeric'
+    //     ]);
+    //     $response = $this->model->extensionLogin($this->request);
+    //         // ✅ Set HTTP status based on success
+    //     // ✅ Set HTTP status based on success (handles boolean & string)
+    //     $statusCode = (
+    //         isset($response['success']) &&
+    //         filter_var($response['success'], FILTER_VALIDATE_BOOLEAN)
+    //     )
+    //         ? 200
+    //         : 402;
+
+    //     return response()->json($response, $statusCode);
+    // }
     public function extensionLogin()
-    {
-        $this->validate($this->request, [
-            'campaign_id' => 'required|numeric'
-        ]);
-        $response = $this->model->extensionLogin($this->request);
-            // ✅ Set HTTP status based on success
-   // ✅ Set HTTP status based on success (handles boolean & string)
-$statusCode = (
-    isset($response['success']) &&
-    filter_var($response['success'], FILTER_VALIDATE_BOOLEAN)
-)
-    ? 200
-    : 402;
+{
+    $this->validate($this->request, [
+        'campaign_id' => 'required|numeric'
+    ]);
 
-return response()->json($response, $statusCode);
+    $response = $this->model->extensionLogin($this->request);
 
+    // ✅ If model already returned a JsonResponse, return it directly
+    if ($response instanceof \Illuminate\Http\JsonResponse) {
+        return $response;
+    }
+
+    // ✅ Otherwise, handle array response safely
+    $statusCode = (
+        isset($response['success']) &&
+        filter_var($response['success'], FILTER_VALIDATE_BOOLEAN)
+    ) ? 200 : 402;
 
     return response()->json($response, $statusCode);
-    }
+}
+
 
     /*
      * dial number
