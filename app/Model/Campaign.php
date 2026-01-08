@@ -1394,7 +1394,7 @@ function campaignById($request)
     $campaignId = $request->campaign_id;
 
     $campaign = Campaign::on('mysql_' . $request->auth->parent_id)
-        ->where('id', $campaignId)
+        ->where('id', $campaignId)->where('status', 1)
         ->first();
 
     Log::info('campaign by id', ['campaign' => $campaign]);
@@ -1522,15 +1522,6 @@ function campaignById($request)
 
     $campaign->rowList = $count;
 
-    // $list_ids = "'" . implode("','", $id_list) . "'";
-    // if ($campaign->crm_title_url === 'hubspot') {
-    //     $sql_count_list = "SELECT sum(size) as rowCountList FROM hubspot_lists WHERE list_id IN ($list_ids)";
-    // } else {
-    //     $sql_count_list = "SELECT count(1) as rowCountList FROM list_data WHERE list_id IN ($list_ids)";
-    // }
-
-    // $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_count_list);
-    // $campaign->rowListData = $record_count_list[0]->rowCountList ?? 0;
 // === Total leads (same logic as campaignDetail) ===
 if (!empty($id_list)) {
 
@@ -1551,6 +1542,21 @@ if (!empty($id_list)) {
     }
 } else {
     $campaign->total_leads = 0;
+}
+// === Auto deactivate campaign if all leads are dialed ===
+if (
+    isset($campaign->total_leads) &&
+    isset($campaign->rowLeadReport) &&
+    $campaign->total_leads > 0 &&
+    $campaign->rowLeadReport >= $campaign->total_leads
+) {
+    // Update DB
+    Campaign::on('mysql_' . $request->auth->parent_id)
+        ->where('id', $campaign->id)
+        ->update(['status' => 0]); // 0 = inactive
+
+    // Update response object
+    $campaign->status = 0;
 }
 
     // === Lead temp count ===
@@ -1632,11 +1638,7 @@ if (!empty($campaign->updated)) {
 
     // return as collection for consistency
     return collect($campaign);
-//     return [
-//     'success' => true,
-//     'message' => 'Campaign fetched successfully.',
-//     'data' => $campaign
-// ];
+
 
 }
     function campaignByIdNew($request)
