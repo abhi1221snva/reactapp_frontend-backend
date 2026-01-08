@@ -733,7 +733,8 @@ class CampaignController extends Controller
     function campaignById()
     {
         $response = $this->model->campaignById($this->request);
-        return response()->json($response);
+
+        return $response;
     }
     /**
      * @OA\Post(

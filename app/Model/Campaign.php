@@ -1399,13 +1399,14 @@ function campaignById($request)
 
     Log::info('campaign by id', ['campaign' => $campaign]);
 
-    if (!$campaign) {
-        return [
-            'success' => 'false',
-            'message' => 'Campaign not found.',
-            'data' => []
-        ];
-    }
+if (!$campaign) {
+    return response()->json([
+        'success' => false,
+        'message' => 'Campaign not found.',
+        'data' => []
+    ], 402);
+}
+
     // === Predictive Dial logic ===
     if ($campaign->dial_mode == 'predictive_dial') {
         $campaign->call_ratio = $campaign->call_ratio;
@@ -1637,7 +1638,12 @@ if (!empty($campaign->updated)) {
 }
 
     // return as collection for consistency
-    return collect($campaign);
+    //return collect($campaign);
+    return response()->json([
+    'success' => true,
+    'message' => 'Campaign details fetched successfully.',
+    'data' => $campaign
+], 200);
 
 
 }
