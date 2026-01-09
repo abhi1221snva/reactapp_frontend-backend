@@ -392,48 +392,107 @@ public function excludeNumberUpdate($request)
      *@param object $request
      *@return array
      */
+    // public function addExcludeNumber($request)
+    // {
+    //     try
+    //     {
+    //         if($request->has('number') && is_numeric($request->input('number')) && $request->has('campaign_id') && is_numeric($request->input('campaign_id'))) {
+    //             $data['number'] = $request->input('number');
+    //             $data['campaign_id'] = $request->input('campaign_id');
+    //             $data['first_name'] = ($request->has('first_name') && !empty($request->input('first_name'))) ? $request->input('first_name') : "";
+    //             $data['last_name'] = ($request->has('last_name') && !empty($request->input('last_name'))) ? $request->input('last_name') : "";
+    //             $data['company_name'] = ($request->has('company_name') && !empty($request->input('company_name'))) ? $request->input('company_name') : "";
+    //             $query = "INSERT INTO ".$this->table." (number, campaign_id, first_name, last_name, company_name) VALUE (:number, :campaign_id, :first_name, :last_name, :company_name)";
+    //             $add =  DB::connection('mysql_'.$request->auth->parent_id)->update($query, $data);
+    //             if($add == 1)
+    //             {
+    //                 return array(
+    //                     'success'=> 'true',
+    //                     'message'=> 'Exclude Number added successfully.'
+    //                 );
+    //             }
+    //             else
+    //             {
+    //                 return array(
+    //                     'success'=> 'false',
+    //                     'message'=> 'Exclude Number are not added successfully.'
+    //                 );
+    //             }
+    //         }
+
+    //         return array(
+    //             'success'=> 'false',
+    //             'message'=> 'Exclude Number are not added successfully.'
+    //         );
+    //     }
+    //     catch (Exception $e)
+    //     {
+    //         Log::log($e->getMessage());
+    //     }
+    //     catch (InvalidArgumentException $e)
+    //     {
+    //         Log::log($e->getMessage());
+    //     }
+    // }
     public function addExcludeNumber($request)
-    {
-        try
-        {
-            if($request->has('number') && is_numeric($request->input('number')) && $request->has('campaign_id') && is_numeric($request->input('campaign_id'))) {
-                $data['number'] = $request->input('number');
-                $data['campaign_id'] = $request->input('campaign_id');
-                $data['first_name'] = ($request->has('first_name') && !empty($request->input('first_name'))) ? $request->input('first_name') : "";
-                $data['last_name'] = ($request->has('last_name') && !empty($request->input('last_name'))) ? $request->input('last_name') : "";
-                $data['company_name'] = ($request->has('company_name') && !empty($request->input('company_name'))) ? $request->input('company_name') : "";
-                $query = "INSERT INTO ".$this->table." (number, campaign_id, first_name, last_name, company_name) VALUE (:number, :campaign_id, :first_name, :last_name, :company_name)";
-                $add =  DB::connection('mysql_'.$request->auth->parent_id)->update($query, $data);
-                if($add == 1)
-                {
-                    return array(
-                        'success'=> 'true',
-                        'message'=> 'Exclude Number added successfully.'
-                    );
-                }
-                else
-                {
-                    return array(
-                        'success'=> 'false',
-                        'message'=> 'Exclude Number are not added successfully.'
-                    );
-                }
+{
+    try {
+
+        if (
+            $request->has('number') && is_numeric($request->input('number')) &&
+            $request->has('campaign_id') && is_numeric($request->input('campaign_id'))
+        ) {
+
+            $number = $request->input('number');
+            $campaignId = $request->input('campaign_id');
+
+            // ✅ CHECK DUPLICATE FIRST
+            $exists = DB::connection('mysql_'.$request->auth->parent_id)
+                ->table($this->table)
+                ->where('number', $number)
+                ->where('campaign_id', $campaignId)
+                ->exists();
+
+            if ($exists) {
+                return [
+                    'success' => 'false',
+                    'message' => 'This number is already excluded for this campaign.'
+                ];
             }
 
-            return array(
-                'success'=> 'false',
-                'message'=> 'Exclude Number are not added successfully.'
-            );
+            $data = [
+                'number' => $number,
+                'campaign_id' => $campaignId,
+                'first_name' => $request->input('first_name', ''),
+                'last_name' => $request->input('last_name', ''),
+                'company_name' => $request->input('company_name', '')
+            ];
+
+            DB::connection('mysql_'.$request->auth->parent_id)
+                ->table($this->table)
+                ->insert($data);
+
+            return [
+                'success' => 'true',
+                'message' => 'Exclude Number added successfully.'
+            ];
         }
-        catch (Exception $e)
-        {
-            Log::log($e->getMessage());
-        }
-        catch (InvalidArgumentException $e)
-        {
-            Log::log($e->getMessage());
-        }
+
+        return [
+            'success' => 'false',
+            'message' => 'Invalid input data.'
+        ];
+
+    } catch (\Exception $e) {
+        Log::error($e->getMessage());
+
+        return [
+            'success' => 'false',
+            'message' => 'Something went wrong.'
+        ];
     }
+}
+
     /*
      *Delete Exclude Number details
      *@param object $request
