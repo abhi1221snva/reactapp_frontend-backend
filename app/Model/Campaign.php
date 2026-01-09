@@ -1121,6 +1121,7 @@ public function getCampaignAndList($request)
                 );
 
             $record->rowLeadReport = $leadCount->total ?? 0;
+$record->dialed_leads = $record->rowLeadReport ?? 0;
 
             // List data count (non-hubspot only)
             if ($campaign->crm_title_url !== 'hubspot') {
