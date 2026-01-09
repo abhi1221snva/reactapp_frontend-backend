@@ -32,6 +32,7 @@ use Carbon\Carbon;
 
 use Illuminate\Validation\ValidationException;
 use Illuminate\Database\QueryException;
+use DB;
 
 class AuthenticationController extends Controller
 {
@@ -820,4 +821,73 @@ public function deleteCredential(Request $request)
         ]
     ], 200);
 }
+public function deleteUser(Request $request)
+{
+    try {
+
+        // 1️⃣ Validate headers
+        $easifyUserToken = $request->header('X-Easify-User-Token');
+        if (!$easifyUserToken) {
+            throw new \Exception('Missing X-Easify-User-Token', 401);
+        }
+
+        // $appKey = $request->header('X-Easify-App-Key');
+        // if ($appKey !== env('EASIFY_APP_KEY')) {
+        //     throw new \Exception('Invalid or missing X-Easify-App-Key', 401);
+        // }
+
+        // 2️⃣ Find user by UUID
+        $user = User::where('easify_user_uuid', $easifyUserToken)
+            ->where('is_deleted', 0)
+            ->first();
+
+        if (!$user) {
+            throw new \Exception('User not found', 404);
+        }
+
+        $parentId = $user->parent_id;
+
+        DB::beginTransaction();
+
+        // 3️⃣ Soft delete user
+        $user->is_deleted = 1;
+        $user->save();
+
+        // 4️⃣ Release client in MASTER DB
+        $client = Client::on('master')
+            ->where('id', $parentId)
+            ->first();
+
+        if (!$client) {
+            throw new \Exception('Client not found for user', 404);
+        }
+
+        $client->reserved = 1;
+        $client->save();
+
+        DB::commit();
+
+        return response()->json([
+            "message" => "User deleted successfully",
+            "data" => [
+                "user_id"   => $user->id,
+                "parent_id" => $parentId
+            ]
+        ], 200);
+
+    } catch (\Throwable $e) {
+
+        DB::rollBack();
+
+        $statusCode = in_array($e->getCode(), [400, 401, 404])
+            ? $e->getCode()
+            : 500;
+
+        return response()->json([
+            "message" => $e->getMessage(),
+            "errors"  => []
+        ], $statusCode);
+    }
+}
+
 }
