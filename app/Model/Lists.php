@@ -687,7 +687,7 @@ public function getListwithoutCampaign($request)
      * @return array
      */
 
-public function editList($request)
+public function editListold($request)
 {
     // Validate required inputs
     if (! $request->has('list_id') || ! is_numeric($request->input('list_id'))) {
@@ -861,293 +861,336 @@ public function editList($request)
     }
 }
 
+// public function editList($request)
+// {
+//     // ✅ Basic validation
+//     if (! $request->has('list_id') || ! is_numeric($request->input('list_id'))) {
+//         return ['success' => 'false', 'message' => 'Invalid or missing list_id'];
+//     }
 
-public function editListold($request)
+//     $listId = (int) $request->input('list_id');
+//     $parentConn = 'mysql_' . $request->auth->parent_id;
+
+//     DB::connection($parentConn)->beginTransaction();
+
+//     try {
+
+//         /**
+//          * 1️⃣ UPDATE LIST TITLE
+//          */
+//         if ($request->filled('title')) {
+//             DB::connection($parentConn)->update(
+//                 "UPDATE `list` SET title = ? WHERE id = ?",
+//                 [$request->input('title'), $listId]
+//             );
+//         }
+
+//         /**
+//          * 2️⃣ MOVE LIST TO NEW CAMPAIGN (NO DUPLICATE ENTRY)
+//          */
+//         if ($request->has('new_campaign_id') && is_numeric($request->input('new_campaign_id'))) {
+
+//             $newCampaignId = (int) $request->input('new_campaign_id');
+
+//             // 🔒 Check composite PK BEFORE insert/update
+//             $exists = DB::connection($parentConn)->selectOne(
+//                 "SELECT 1 FROM campaign_list
+//                  WHERE campaign_id = ? AND list_id = ? AND is_deleted = 0
+//                  LIMIT 1",
+//                 [$newCampaignId, $listId]
+//             );
+
+//             if ($exists) {
+//                 DB::connection($parentConn)->rollBack();
+//                 return [
+//                     'success' => 'false',
+//                     'message' => 'List already exists in selected campaign.'
+//                 ];
+//             }
+
+//             // Soft-delete old mapping
+//             DB::connection($parentConn)->update(
+//                 "UPDATE campaign_list SET is_deleted = 1 WHERE list_id = ?",
+//                 [$listId]
+//             );
+
+//             // Insert new mapping
+//             DB::connection($parentConn)->insert(
+//                 "INSERT INTO campaign_list (campaign_id, list_id, status)
+//                  VALUES (?, ?, 1)",
+//                 [$newCampaignId, $listId]
+//             );
+//         }
+
+//         /**
+//          * 3️⃣ UPDATE LIST_HEADER FLAGS
+//          */
+//         if (is_array($request->input('list_header'))) {
+//             foreach ($request->input('list_header') as $row) {
+//                 if (!empty($row['id']) && is_numeric($row['id'])) {
+//                     DB::connection($parentConn)->update(
+//                         "UPDATE list_header
+//                          SET is_search = ?,
+//                              is_dialing = ?,
+//                              is_visible = ?,
+//                              is_editable = ?,
+//                              label_id = ?
+//                          WHERE id = ?",
+//                         [
+//                             (int)($row['is_search'] ?? 0),
+//                             (int)($row['is_dialing'] ?? 0),
+//                             (int)($row['is_visible'] ?? 0),
+//                             (int)($row['is_editable'] ?? 0),
+//                             isset($row['label_id']) ? (int)$row['label_id'] : null,
+//                             (int)$row['id']
+//                         ]
+//                     );
+//                 }
+//             }
+//         }
+
+//         /**
+//          * 4️⃣ UPDATE LIST FLAGS
+//          */
+//         Lists::on($parentConn)->where('id', $listId)->update([
+//             'is_active'  => 1,
+//             'is_dialing' => (int)$request->input('is_dialing', 0)
+//         ]);
+
+//         /**
+//          * 5️⃣ DUPLICATE REMOVAL (HY093 FIXED)
+//          */
+//         if ((int)$request->input('duplicate_check') === 1) {
+
+//             $dialCol = DB::connection($parentConn)->selectOne(
+//                 "SELECT column_name
+//                  FROM list_header
+//                  WHERE list_id = ? AND is_dialing = 1
+//                  LIMIT 1",
+//                 [$listId]
+//             );
+
+//             if (!empty($dialCol->column_name)) {
+
+//                 $col = $dialCol->column_name;
+
+//                 DB::connection($parentConn)->statement(
+//                     "DELETE ld
+//                      FROM list_data ld
+//                      JOIN (
+//                         SELECT MIN(id) keep_id, `$col`
+//                         FROM list_data
+//                         WHERE list_id = ?
+//                         GROUP BY `$col`
+//                      ) t
+//                        ON ld.`$col` = t.`$col`
+//                       AND ld.id <> t.keep_id
+//                       AND ld.list_id = ?",
+//                     [$listId, $listId]
+//                 );
+//             }
+//         }
+
+//         DB::connection($parentConn)->commit();
+
+//         return [
+//             'success' => 'true',
+//             'message' => 'List updated successfully.'
+//         ];
+
+//     } catch (\Throwable $e) {
+
+//         DB::connection($parentConn)->rollBack();
+
+//         Log::error('editList.error', [
+//             'error' => $e->getMessage(),
+//             'list_id' => $listId
+//         ]);
+
+//         return [
+//             'success' => 'false',
+//             'message' => $e->getMessage()
+//         ];
+//     }
+// }
+
+public function editList($request)
 {
-    // Validate required inputs early
+    // 🔐 Validation
     if (! $request->has('list_id') || ! is_numeric($request->input('list_id'))) {
-        return ['success' => 'false', 'message' => 'Invalid or missing list_id'];
-    }
-    if (! $request->has('campaign_id') || ! is_numeric($request->input('campaign_id'))) {
-        return ['success' => 'false', 'message' => 'Invalid or missing campaign_id'];
+        return ['success' => 'false', 'message' => 'Invalid list_id'];
     }
 
-    $parentConn = 'mysql_' . $request->auth->parent_id;
     $listId = (int) $request->input('list_id');
-    $campaignId = (int) $request->input('campaign_id');
+    $parentConn = 'mysql_' . $request->auth->parent_id;
+
+    DB::connection($parentConn)->beginTransaction();
 
     try {
-        // 1) Ensure that the campaign_list entry exists for given list_id + campaign_id
-        $checkCampaignList = DB::connection($parentConn)->selectOne(
-            "SELECT COUNT(1) AS total FROM campaign_list WHERE list_id = :list_id AND campaign_id = :campaign_id",
-            ['list_id' => $listId, 'campaign_id' => $campaignId]
-        );
 
-        if (! $checkCampaignList || (int)$checkCampaignList->total === 0) {
-            return [
-                'success' => 'false',
-                'message' => 'The provided list_id is not assigned to this campaign_id.'
-            ];
-        }
-
-        // Start transaction on the specific connection
-        DB::connection($parentConn)->beginTransaction();
-
-        $saveRecord = true;
-        $updateClauses = [];
-        $updateBindings = [];
-
-        // 2) Update list title (if provided)
-        if ($request->has('title') && trim($request->input('title')) !== '') {
+        /**
+         * 1️⃣ UPDATE LIST TITLE
+         */
+        if ($request->filled('title')) {
             DB::connection($parentConn)->update(
-                "UPDATE `list` SET `title` = :title WHERE `id` = :id",
-                ['title' => $request->input('title'), 'id' => $listId]
+                "UPDATE `list` SET title = ? WHERE id = ?",
+                [$request->input('title'), $listId]
             );
         }
 
-        // 3) Prepare campaign_list update values (if any)
-        if ($request->has('new_campaign_id') && is_numeric($request->input('new_campaign_id'))) {
-            $updateClauses[] = "campaign_id = :new_campaign_id";
-            $updateBindings['new_campaign_id'] = (int) $request->input('new_campaign_id');
-        }
-        if ($request->has('status') && is_numeric($request->input('status'))) {
-            $updateClauses[] = "status = :status";
-            $updateBindings['status'] = (int) $request->input('status');
-        }
+        /**
+         * 2️⃣ UPDATE / MOVE CAMPAIGN (ONLY IF CHANGED)
+         */
+        if ($request->filled('new_campaign_id') && is_numeric($request->input('new_campaign_id'))) {
 
-        $isDeletedFlag = false;
-        if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
-            $updateClauses[] = "is_deleted = :is_deleted";
-            $updateBindings['is_deleted'] = (int) $request->input('is_deleted');
-            if ((int)$request->input('is_deleted') === 1) {
-                $isDeletedFlag = true;
+            $newCampaignId = (int) $request->input('new_campaign_id');
+
+            // 🔎 Get current active campaign
+            $current = DB::connection($parentConn)->selectOne(
+                "SELECT campaign_id
+                 FROM campaign_list
+                 WHERE list_id = ? AND is_deleted = 0
+                 LIMIT 1",
+                [$listId]
+            );
+
+            // 👉 Only proceed if campaign is ACTUALLY changed
+            if ($current && (int)$current->campaign_id !== $newCampaignId) {
+
+                // 🔒 Prevent duplicate entry
+                $exists = DB::connection($parentConn)->selectOne(
+                    "SELECT 1 FROM campaign_list
+                     WHERE campaign_id = ? AND list_id = ? AND is_deleted = 0
+                     LIMIT 1",
+                    [$newCampaignId, $listId]
+                );
+
+                if ($exists) {
+                    DB::connection($parentConn)->rollBack();
+                    return [
+                        'success' => 'false',
+                        'message' => 'List already exists in selected campaign.'
+                    ];
+                }
+
+                // Soft delete old mapping
+                DB::connection($parentConn)->update(
+                    "UPDATE campaign_list
+                     SET is_deleted = 1
+                     WHERE list_id = ? AND is_deleted = 0",
+                    [$listId]
+                );
+
+                // Insert new mapping
+                DB::connection($parentConn)->insert(
+                    "INSERT INTO campaign_list (campaign_id, list_id, status)
+                     VALUES (?, ?, 1)",
+                    [$newCampaignId, $listId]
+                );
             }
         }
 
-        // If there are campaign_list updates OR is_deleted true, process them
-        if (! empty($updateClauses)) {
-            // Always include the where parameters for update
-            $updateBindings['list_id'] = $listId;
-            $updateBindings['campaign_id'] = $campaignId;
+        /**
+         * 3️⃣ UPDATE LIST_HEADER FLAGS (ALL REQUIRED FIELDS)
+         */
+        if (is_array($request->input('list_header'))) {
+            foreach ($request->input('list_header') as $row) {
 
-            if ($isDeletedFlag) {
-                // ----- Deletion flow -----
-                // 1) Delete from campaign_list for this list_id (if present)
-                $recordCampaignList = DB::connection($parentConn)->selectOne(
-                    "SELECT COUNT(1) AS rowCountListCampaign FROM campaign_list WHERE list_id = :list_id",
-                    ['list_id' => $listId]
-                );
-                if ($recordCampaignList && (int)$recordCampaignList->rowCountListCampaign > 0) {
-                    // DB::connection($parentConn)->delete(
-                    //     "DELETE FROM campaign_list WHERE list_id = :list_id",
-                    //     ['list_id' => $listId]
-                    // );
+                if (!empty($row['id']) && is_numeric($row['id'])) {
+
                     DB::connection($parentConn)->update(
-                        "UPDATE campaign_list 
-                        SET is_deleted = 1 
-                        WHERE list_id = :list_id AND campaign_id = :campaign_id",
+                        "UPDATE list_header
+                         SET
+                            is_search   = ?,
+                            is_dialing  = ?,
+                            is_visible  = ?,
+                            is_editable = ?,
+                            label_id    = ?
+                         WHERE id = ? AND list_id = ?",
                         [
-                            'list_id' => $listId,
-                            'campaign_id' => $campaignId
+                            (int)($row['is_search'] ?? 0),
+                            (int)($row['is_dialing'] ?? 0),
+                            (int)($row['is_visible'] ?? 0),
+                            (int)($row['is_editable'] ?? 0),
+                            isset($row['label_id']) && is_numeric($row['label_id'])
+                                ? (int)$row['label_id']
+                                : null,
+                            (int)$row['id'],
+                            $listId
                         ]
                     );
-
-                }
-
-                // 2) Delete list_data rows for this list_id (if any)
-                $recordListData = DB::connection($parentConn)->selectOne(
-                    "SELECT COUNT(1) AS rowCountListData FROM list_data WHERE list_id = :list_id",
-                    ['list_id' => $listId]
-                );
-                if ($recordListData && (int)$recordListData->rowCountListData > 0) {
-                    DB::connection($parentConn)->delete(
-                        "DELETE FROM list_data WHERE list_id = :list_id",
-                        ['list_id' => $listId]
-                    );
-                }
-
-                // 3) Delete lead_report rows for this list_id (if any)
-                $recordLeadReport = DB::connection($parentConn)->selectOne(
-                    "SELECT COUNT(1) AS rowCountListLeadReport FROM lead_report WHERE list_id = :list_id",
-                    ['list_id' => $listId]
-                );
-                if ($recordLeadReport && (int)$recordLeadReport->rowCountListLeadReport > 0) {
-                    DB::connection($parentConn)->delete(
-                        "DELETE FROM lead_report WHERE list_id = :list_id",
-                        ['list_id' => $listId]
-                    );
-                }
-
-                // 4) Delete lead_temp rows for this list_id (if any)
-                $recordLeadTemp = DB::connection($parentConn)->selectOne(
-                    "SELECT COUNT(1) AS rowCountListLeadTemp FROM lead_temp WHERE list_id = :list_id",
-                    ['list_id' => $listId]
-                );
-                if ($recordLeadTemp && (int)$recordLeadTemp->rowCountListLeadTemp > 0) {
-                    DB::connection($parentConn)->delete(
-                        "DELETE FROM lead_temp WHERE list_id = :list_id",
-                        ['list_id' => $listId]
-                    );
-                }
-
-                // 5) Delete list_header rows for this list_id (if any)
-                $recordListHeader = DB::connection($parentConn)->selectOne(
-                    "SELECT COUNT(1) AS rowCountListHeader FROM list_header WHERE list_id = :list_id",
-                    ['list_id' => $listId]
-                );
-
-                // If the list_header record does not exist at all (unexpected), return a clear message
-                if ($recordListHeader === null) {
-                    DB::connection($parentConn)->rollBack();
-                    return [
-                        'success' => 'false',
-                        'message' => 'No records found in list_header for this list (unexpected).'
-                    ];
-                }
-
-                if ((int)$recordListHeader->rowCountListHeader > 0) {
-                    DB::connection($parentConn)->delete(
-                        "DELETE FROM list_header WHERE list_id = :list_id",
-                        ['list_id' => $listId]
-                    );
-                }
-
-                // 6) Load list model, validate active status, then delete list row
-                $listModel = Lists::on($parentConn)->find($listId);
-                if (! $listModel) {
-                    DB::connection($parentConn)->rollBack();
-                    return [
-                        'success' => 'false',
-                        'message' => 'List not found in lists table.'
-                    ];
-                }
-
-                // Use strict comparison for is_active
-                if ((int)$listModel->is_active === 0) {
-                    DB::connection($parentConn)->rollBack();
-                    return [
-                        'success' => 'false',
-                        'message' => 'This List is not active in lists table.'
-                    ];
-                }
-
-                $notificationData = [
-                    "action" => "List deleted",
-                    "listId" => $listId,
-                    "listName" => $listModel->title
-                ];
-
-                // delete the list record (soft or hard depending on model)
-                $listModel->delete();
-
-                // dispatch notification job (same connection as before)
-                dispatch(new ListAddedNotificationJob($request->auth->parent_id, $campaignId, $notificationData))
-                    ->onConnection("database");
-            } else {
-                // ----- Update campaign_list (non-delete) -----
-                // Use commas to separate SET clauses (not AND)
-                $updateSql = "UPDATE campaign_list SET " . implode(", ", $updateClauses) .
-                             " WHERE list_id = :list_id AND campaign_id = :campaign_id";
-                             
-                DB::connection($parentConn)->update($updateSql, $updateBindings);
-            }
-        }
-
-        // 4) Update list_header rows if provided in request
-        if (! empty($request->input('list_header')) && is_array($request->input('list_header'))) {
-            foreach ($request->input('list_header') as $value) {
-                if (! empty($value['id']) && is_numeric($value['id'])) {
-                    $updateParams = [
-                        'id' => (int)$value['id'],
-                        'is_search' => (! empty($value['is_search']) && is_numeric($value['is_search'])) ? (int)$value['is_search'] : 0,
-                        'is_dialing' => (! empty($value['is_dialing']) && is_numeric($value['is_dialing'])) ? (int)$value['is_dialing'] : 0,
-                        'is_visible' => (! empty($value['is_visible']) && is_numeric($value['is_visible'])) ? (int)$value['is_visible'] : 0,
-                        'is_editable' => (! empty($value['is_editable']) && is_numeric($value['is_editable'])) ? (int)$value['is_editable'] : 0,
-                        'label_id' => (! empty($value['label_id']) && is_numeric($value['label_id'])) ? (int)$value['label_id'] : null
-                    ];
-
-                    DB::connection($parentConn)->update(
-                        "UPDATE list_header SET is_search = :is_search, is_dialing = :is_dialing, is_visible = :is_visible, is_editable = :is_editable, label_id = :label_id WHERE id = :id",
-                        $updateParams
-                    );
                 }
             }
         }
 
-        // 5) Update Lists table flags (is_active and optional is_dialing)
-        $listUpdate = ['is_active' => 1];
-        if ($request->has('is_dialing')) {
-            $listUpdate['is_dialing'] = $request->input('is_dialing');
-        }
-        Lists::on($parentConn)->where('id', $listId)->update($listUpdate);
+        /**
+         * 4️⃣ UPDATE LIST FLAGS
+         */
+        DB::connection($parentConn)->update(
+            "UPDATE `list`
+             SET is_active = 1,
+                 is_dialing = ?
+             WHERE id = ?",
+            [(int)$request->input('is_dialing', 0), $listId]
+        );
 
-        // 6) Duplicate removal logic (only if duplicate_check requested)
-        if ($request->has('duplicate_check') && (int)$request->input('duplicate_check') === 1) {
-            // Find any dialing column for this list
-            $recordDial = DB::connection($parentConn)->selectOne(
-                "SELECT * FROM list_header WHERE list_id = :list_id AND is_dialing = 1",
-                ['list_id' => $listId]
+        /**
+         * 5️⃣ REMOVE DUPLICATES (HY093 SAFE)
+         */
+        if ((int)$request->input('duplicate_check') === 1) {
+
+            $dialCol = DB::connection($parentConn)->selectOne(
+                "SELECT column_name
+                 FROM list_header
+                 WHERE list_id = ? AND is_dialing = 1
+                 LIMIT 1",
+                [$listId]
             );
 
-            // If there is no dialing column, skip duplicate removal (this is normal for deleted lists)
-            if (! empty($recordDial) && ! empty($recordDial->column_name)) {
-                $columnName = $recordDial->column_name;
+            if (!empty($dialCol) && !empty($dialCol->column_name)) {
 
-                // Safely build and run delete duplicates SQL.
-                // Note: we must ensure the column name is an actual column (if your schema allows arbitrary column names, validate it)
-                $sqlDeleteDuplicates = "
-                    DELETE ld
-                    FROM list_data ld
-                    JOIN (
-                        SELECT MIN(id) AS keep_id, `$columnName` AS phone_number
+                $col = $dialCol->column_name;
+
+                DB::connection($parentConn)->statement(
+                    "DELETE ld
+                     FROM list_data ld
+                     JOIN (
+                        SELECT MIN(id) AS keep_id, `$col`
                         FROM list_data
-                        WHERE list_id = :list_id1
-                          AND `$columnName` IS NOT NULL
-                          AND `$columnName` != ''
-                        GROUP BY `$columnName`
-                    ) AS keep_rows
-                    ON ld.`$columnName` = keep_rows.phone_number
-                    AND ld.list_id = :list_id2
-                    AND ld.id <> keep_rows.keep_id
-                ";
-
-                DB::connection($parentConn)->statement($sqlDeleteDuplicates, [
-                    'list_id1' => $listId,
-                    'list_id2' => $listId
-                ]);
+                        WHERE list_id = ?
+                        GROUP BY `$col`
+                     ) t
+                       ON ld.`$col` = t.`$col`
+                      AND ld.id <> t.keep_id
+                      AND ld.list_id = ?",
+                    [$listId, $listId]
+                );
             }
         }
 
         DB::connection($parentConn)->commit();
 
-        // Final response
         return [
             'success' => 'true',
-            'message' => 'Lists updated successfully.'
+            'message' => 'List updated successfully.'
         ];
-    } catch (\Throwable $e) {
-        // Rollback if possible on the connection
-        try {
-            DB::connection($parentConn)->rollBack();
-        } catch (\Throwable $inner) {
-            // ignore rollback errors
-        }
 
-        Log::error("Lists.editList.error", [
-            "message" => $e->getMessage(),
-            "file" => $e->getFile(),
-            "line" => $e->getLine(),
-            "list_id" => $listId,
-            "campaign_id" => $campaignId,
-            "connection" => $parentConn
+    } catch (\Throwable $e) {
+
+        DB::connection($parentConn)->rollBack();
+
+        Log::error('editList.failed', [
+            'list_id' => $listId,
+            'error'   => $e->getMessage()
         ]);
 
         return [
             'success' => 'false',
-            'message' => $e->getMessage()
+            'message' => 'Something went wrong while updating the list.'
         ];
     }
 }
+
 
     /*
      * Add List
