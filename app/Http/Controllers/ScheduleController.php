@@ -305,7 +305,7 @@ public function index(Request $request)
 
 
             // Check if this is a new event or an edit
-            if (empty($requestData['id'])) {
+            if (empty($requestData['schedule_id'])) {
                 // For a new event, check if there is already an event scheduled with the same end date
                 $existingEvent = Schedule::on("mysql_$client_id")
                     ->where('end_datetime', $requestData['end_datetime'])
@@ -317,7 +317,7 @@ public function index(Request $request)
             } else {
                 // For an edit, exclude the current event being edited from the check
                 $existingEvent = Schedule::on("mysql_$client_id")
-                    ->where('id', '<>', $requestData['id']) // Exclude the current event being edited
+                    ->where('id', '<>', $requestData['schedule_id']) // Exclude the current event being edited
                     ->where('end_datetime', $requestData['end_datetime']) // Same end date
                     ->first();
 
@@ -328,11 +328,11 @@ public function index(Request $request)
 
 
             // Save or update the event
-            if (empty($requestData['id'])) {
+            if (empty($requestData['schedule_id'])) {
                 $schedule = new Schedule();
                 $schedule->setConnection("mysql_$client_id");
             } else {
-                $schedule = Schedule::on("mysql_$client_id")->findOrFail($requestData['id']);
+                $schedule = Schedule::on("mysql_$client_id")->findOrFail($requestData['schedule_id']);
             }
 
             $schedule->title = $requestData['title'];
