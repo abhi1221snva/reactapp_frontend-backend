@@ -31,7 +31,8 @@ $router->group([
 
   $router->post('/credential/create', 'AuthenticationController@createCredential');
   $router->post('/credential/delete', 'AuthenticationController@deleteCredential');
-  
+  $router->post('/delete-user', 'AuthenticationController@deleteUser');
+
   
 });
 $router->post('v2/login', 'AuthenticationController@loginv2');
@@ -1600,6 +1601,17 @@ $router->get('ai-coach-api', 'AiCoachController@index');
 
 
 #new apis for phonify
+// Route::prefix('gmail')->group(function () {
+
+//     Route::get('/mailbox', [GmailController::class, 'mailboxApi']);
+
+//     Route::post('/send', [GmailController::class, 'sendEmailApi']);
+
+//     Route::delete('/delete', [GmailController::class, 'deleteEmailApi']);
+
+//     Route::post('/star', [GmailController::class, 'starEmailApi']);
+//     Route::post('/unstar', [GmailController::class, 'unstarEmailApi']);
+// });
 
 // $router->post('/api/auth/create-user', 'AuthenticationController@createUser');
 
