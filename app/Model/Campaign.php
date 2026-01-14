@@ -149,7 +149,157 @@ public function campaignDetaillatest($request)
         ];
     }
 }
-   public function campaignDetail($request)
+public function campaignDetail($request)
+{
+    try {
+        $userTimezone = $request->auth->timezone ?? 'Asia/Kolkata';
+
+        $campaigns = self::allowedCampaigns(
+            $request->auth->parent_id,
+            $request->auth->level,
+            $request->auth->groups
+        );
+
+        // 🔍 Search by title
+        if ($request->has('title') && !empty($request->input('title'))) {
+            $searchTitle = strtolower($request->input('title'));
+            $campaigns = array_filter($campaigns, function ($c) use ($searchTitle) {
+                return strpos(strtolower($c->title), $searchTitle) !== false;
+            });
+        }
+
+        // 📄 Pagination
+        if ($request->has(['start', 'limit'])) {
+            $start = (int) $request->input('start');
+            $limit = (int) $request->input('limit');
+            $totalRows = count($campaigns);
+            $campaigns = array_slice($campaigns, $start, $limit, true);
+        } else {
+            $totalRows = count($campaigns);
+        }
+
+        $data_count = [];
+        $connection = 'mysql_' . $request->auth->parent_id;
+
+        foreach ($campaigns as $id) {
+
+            $params = ['campaign_id' => $id->id];
+
+            /* -------------------------------------------------
+             * 1️⃣ ACTIVE LIST IDS (single source of truth)
+             * ------------------------------------------------- */
+            if ($id->crm_title_url == 'hubspot') {
+                $sqlLists = "
+                    SELECT list_id
+                    FROM hubspot_campaign_list
+                    WHERE campaign_id = :campaign_id
+                      AND status = 1
+                      AND is_deleted = 0
+                ";
+            } else {
+                $sqlLists = "
+                    SELECT list_id
+                    FROM campaign_list
+                    WHERE campaign_id = :campaign_id
+                      AND status = 1
+                      AND is_deleted = 0
+                ";
+            }
+
+            $lists = DB::connection($connection)->select($sqlLists, $params);
+            $listIds = array_map(fn($l) => $l->list_id, $lists);
+
+            // ✅ lists_associated (FIXED)
+            $id->lists_associated = count($listIds);
+
+            /* -------------------------------------------------
+             * 2️⃣ TOTAL LEADS (ONLY ACTIVE LISTS)
+             * ------------------------------------------------- */
+            if (!empty($listIds)) {
+                $listIdsStr = implode(',', $listIds);
+
+                $sqlTotalLeads = "
+                    SELECT SUM(lead_count) AS total
+                    FROM list
+                    WHERE id IN ($listIdsStr)
+                ";
+
+                $totalLeads = DB::connection($connection)->selectOne($sqlTotalLeads);
+                $id->total_leads = $totalLeads->total ?? 0;
+            } else {
+                $id->total_leads = 0;
+            }
+
+            /* -------------------------------------------------
+             * 3️⃣ DIALED LEADS (ONLY ACTIVE LISTS)
+             * ------------------------------------------------- */
+            if (!empty($listIds)) {
+                $listIdsStr = implode(',', $listIds);
+
+                $sqlDialed = "
+                    SELECT COUNT(1) AS total
+                    FROM lead_report
+                    WHERE campaign_id = :campaign_id
+                      AND list_id IN ($listIdsStr)
+                ";
+
+                $dialed = DB::connection($connection)->selectOne($sqlDialed, $params);
+                $id->dialed_leads = $dialed->total ?? 0;
+                
+            } else {
+                $id->dialed_leads = 0;
+            }
+
+            /* -------------------------------------------------
+             * 4️⃣ HOPPER COUNT (UNCHANGED)
+             * ------------------------------------------------- */
+            $sqlHopper = "
+                SELECT COUNT(1) AS total
+                FROM lead_temp
+                WHERE campaign_id = :campaign_id
+            ";
+
+            $hopper = DB::connection($connection)->selectOne($sqlHopper, $params);
+            $id->hopper_count = $hopper->total ?? 0;
+
+            /* -------------------------------------------------
+             * 5️⃣ TIMEZONE CONVERSION (RESPONSE ONLY)
+             * ------------------------------------------------- */
+            if (!empty($id->created_at)) {
+                $id->created_at = convertToUserTimezone($id->created_at, $userTimezone);
+            }
+
+            if (!empty($id->updated)) {
+                $id->updated = convertToUserTimezone($id->updated, $userTimezone);
+            }
+
+            $data_count[] = (array) $id;
+        }
+
+        return [
+            'success'     => 'true',
+            'message'     => 'Campaign detail.',
+            'total_rows'  => $totalRows,
+            'data'        => array_reverse($data_count),
+        ];
+
+    } catch (\Throwable $e) {
+
+        Log::error("Campaign.campaignDetail", [
+            'message' => $e->getMessage(),
+            'file'    => $e->getFile(),
+            'line'    => $e->getLine()
+        ]);
+
+        return [
+            'success' => 'false',
+            'message' => 'Server error.',
+            'data'    => []
+        ];
+    }
+}
+
+   public function campaignDetailn($request)
 {
     try {
         $userTimezone = $request->auth->timezone ?? 'Asia/Kolkata';

@@ -356,19 +356,55 @@ class Dialer extends Model
                 //     AND c.status = 1
                 // ", $data);
                 $campaign = DB::connection($connection)->select("
-    SELECT c.*, ct.week_plan
-    FROM campaign c
-    LEFT JOIN call_timers ct ON ct.id = c.call_schedule_id
-    WHERE c.group_id IN (" . implode(' , ', $inStr) . ")
-    AND c.is_deleted = :is_deleted
-    AND c.status = 1
-", $data);
+                SELECT c.*, ct.week_plan
+                FROM campaign c
+                LEFT JOIN call_timers ct ON ct.id = c.call_schedule_id
+                WHERE c.group_id IN (" . implode(' , ', $inStr) . ")
+                AND c.is_deleted = :is_deleted
+                AND c.status = 1
+            ", $data);
 
                 Log::info('Campaign  Debug', [
                     'campaign' => $campaign
                 ]);
                 $filteredCampaign = [];
             foreach ($campaign as $row) {
+// 1️⃣ Dialed leads
+$dialed = DB::connection($connection)->selectOne(
+    "SELECT COUNT(1) AS total
+     FROM lead_report
+     WHERE campaign_id = :campaign_id",
+    ['campaign_id' => $row->id]
+);
+
+$dialedLeads = $dialed->total ?? 0;
+
+
+// 2️⃣ Total leads
+$total = DB::connection($connection)->selectOne(
+    "SELECT COUNT(1) AS total
+     FROM list_data
+     WHERE list_id IN (
+         SELECT list_id FROM campaign_list WHERE campaign_id = :campaign_id
+     )",
+    ['campaign_id' => $row->id]
+);
+
+$totalLeads = $total->total ?? 0;
+
+
+// 3️⃣ If exhausted → UPDATE campaign status = 0
+if ($totalLeads > 0 && $dialedLeads >= $totalLeads) {
+
+    DB::connection($connection)->update(
+        "UPDATE campaign
+         SET status = 0
+         WHERE id = :campaign_id",
+        ['campaign_id' => $row->id]
+    );
+
+    continue; // do not show this campaign
+}
 
                $weekPlan = json_decode($row->week_plan, true);
 
