@@ -189,9 +189,9 @@ public function campaignDetaillatest($request)
 
             // 2. campaign_list or hubspot_campaign_list
             if ($id->crm_title_url == 'hubspot') {
-                $sql = "SELECT * FROM hubspot_campaign_list WHERE " . implode(" AND ", $searchStr) . " AND is_deleted=0 AND status=1";
+                $sql = "SELECT * FROM hubspot_campaign_list WHERE " . implode(" AND ", $searchStr) . " AND is_deleted=0";
             } else {
-                $sql = "SELECT * FROM campaign_list WHERE " . implode(" AND ", $searchStr) . " AND is_deleted=0 AND status=1";
+                $sql = "SELECT * FROM campaign_list WHERE " . implode(" AND ", $searchStr) . " AND is_deleted=0";
             }
 
             $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data1);
@@ -210,7 +210,11 @@ public function campaignDetaillatest($request)
             // 3. rowListData: use lead_count from list table if exists, else fallback to existing logic
             if (!empty($id_list)) {
                 // Sum lead_count from list table
-                $sql_lead_count = "SELECT SUM(lead_count) as totalLeadCount FROM list WHERE id IN (" . $list_ids_str . ")";
+               // $sql_lead_count = "SELECT SUM(lead_count) as totalLeadCount FROM list WHERE id IN (" . $list_ids_str . ")";
+                $sql_lead_count = "SELECT SUM(lead_count) as totalLeadCount 
+                   FROM list 
+                   WHERE id IN (" . $list_ids_str . ")";
+
                 $lead_count_record = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_lead_count);
 
                 if (!empty($lead_count_record) && $lead_count_record->totalLeadCount > 0) {
@@ -1793,13 +1797,13 @@ if (!empty($campaign->updated)) {
         $saveRecord = Campaign::on('mysql_' . $request->auth->parent_id)
             ->where('id', $listId) // Use the actual listId received from the request
             ->update(array('status' => $status));
-        $saveRecordCampaignList = CampaignList::on('mysql_' . $request->auth->parent_id)
-            ->where('campaign_id', $listId)
-            ->update(array('status' => $status));
+        // $saveRecordCampaignList = CampaignList::on('mysql_' . $request->auth->parent_id)
+        //     ->where('campaign_id', $listId)
+        //     ->update(array('status' => $status));
 
         // Log::debug('Received listId: ', ['listId' => $listId]);
         // Log::debug('Number of updated rows: ', ['saveRecord' => $saveRecord]);
-        if ($saveRecord >= 0 && $saveRecordCampaignList >= 0) {
+        if ($saveRecord >= 0) {
             return response()->json([
                 'success' => 'true',
                 'status' => 'true',
