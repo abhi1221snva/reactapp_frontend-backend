@@ -1395,7 +1395,7 @@ function campaignById($request)
     $campaignId = $request->campaign_id;
 
     $campaign = Campaign::on('mysql_' . $request->auth->parent_id)
-        ->where('id', $campaignId)->where('status', 1)
+        ->where('id', $campaignId)
         ->first();
 
     Log::info('campaign by id', ['campaign' => $campaign]);
@@ -1545,21 +1545,7 @@ if (!empty($id_list)) {
 } else {
     $campaign->total_leads = 0;
 }
-// === Auto deactivate campaign if all leads are dialed ===
-if (
-    isset($campaign->total_leads) &&
-    isset($campaign->rowLeadReport) &&
-    $campaign->total_leads > 0 &&
-    $campaign->rowLeadReport >= $campaign->total_leads
-) {
-    // Update DB
-    Campaign::on('mysql_' . $request->auth->parent_id)
-        ->where('id', $campaign->id)
-        ->update(['status' => 0]); // 0 = inactive
 
-    // Update response object
-    $campaign->status = 0;
-}
 
     // === Lead temp count ===
     $sql_lead_temp = "SELECT count(1) as rowLeadTemp FROM lead_temp WHERE campaign_id = :campaign_id ";
