@@ -98,6 +98,8 @@ class Api extends Model
     public function apiDetail($request)
     {
          // ✅ User timezone (default fallback)
+         $search = $request->input('search');
+
         $userTimezone = $request->auth->timezone ?? 'Asia/Kolkata';
         if ($request->has('api_id') && is_numeric($request->input('api_id'))) {
             $sql = "SELECT a.*, c.title as campaign FROM " . $this->table . " as a LEFT JOIN campaign as c ON c.id = a.campaign_id WHERE a.is_deleted = :is_deleted AND a.id = :id";
@@ -117,8 +119,33 @@ class Api extends Model
             $data['updated_at'] = convertToUserTimezone($data['updated_at'], $userTimezone);
         }
         } else {
-            $sql = "SELECT a.*, c.title as campaign FROM " . $this->table . " as a LEFT JOIN campaign as c ON c.id = a.campaign_id  WHERE a.is_deleted = :is_deleted";
-            $record =  DB::connection('mysql_' . $request->auth->parent_id)->select($sql, array('is_deleted' => 0));
+            // $sql = "SELECT a.*, c.title as campaign FROM " . $this->table . " as a LEFT JOIN campaign as c ON c.id = a.campaign_id  WHERE a.is_deleted = :is_deleted";
+            $sql = "SELECT a.*, c.title as campaign 
+        FROM " . $this->table . " as a 
+        LEFT JOIN campaign as c ON c.id = a.campaign_id  
+        WHERE a.is_deleted = :is_deleted";
+
+$params = ['is_deleted' => 0];
+
+if (!empty($search)) {
+    $sql .= " AND (
+                a.title LIKE :search_title
+                OR a.url LIKE :search_url
+                OR a.method LIKE :search_method
+                OR c.title LIKE :search_campaign
+              )";
+
+    $params['search_title']    = '%' . $search . '%';
+    $params['search_url']      = '%' . $search . '%';
+    $params['search_method']   = '%' . $search . '%';
+    $params['search_campaign'] = '%' . $search . '%';
+}
+
+
+           // $record =  DB::connection('mysql_' . $request->auth->parent_id)->select($sql, array('is_deleted' => 0));
+            $record = DB::connection('mysql_' . $request->auth->parent_id)
+            ->select($sql, $params);
+
             $data = (array)$record;
             $totalRows = count($data);
              // ✅ Convert timestamps (multiple records)
