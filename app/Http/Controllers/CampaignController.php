@@ -789,7 +789,7 @@ class CampaignController extends Controller
         $deleted = $Campaign->update();
 
         if ($deleted) {
-            return $this->successResponse("Campaign List", $Campaign->toArray());
+            return $this->successResponse("Campaign Deleted Successfully", $Campaign->toArray());
         } else {
             return $this->failResponse("Failed to delete the Campaign ", [
                 "Unkown"
