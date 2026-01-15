@@ -374,10 +374,11 @@ class VoipConfigurationController extends Controller
             $name = str_replace(" ", "-", $request->name);
 
 
-            if (!empty($request->username))
-                $dt['username'] = $name;
-            else
-                $dt['username'] = $name;
+            // if (!empty($request->username))
+            //     $dt['username'] = $name;
+            // else
+            //     $dt['username'] = $name;
+            $dt['username']=$request->username;
             if (!empty($request->secret))
                 $dt['secret'] = $request->secret;
             else
