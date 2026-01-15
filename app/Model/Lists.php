@@ -1095,30 +1095,64 @@ public function editList($request)
         if (is_array($request->input('list_header'))) {
             foreach ($request->input('list_header') as $row) {
 
-                if (!empty($row['id']) && is_numeric($row['id'])) {
+                // if (!empty($row['id']) && is_numeric($row['id'])) {
 
-                    DB::connection($parentConn)->update(
-                        "UPDATE list_header
-                         SET
-                            is_search   = ?,
-                            is_dialing  = ?,
-                            is_visible  = ?,
-                            is_editable = ?,
-                            label_id    = ?
-                         WHERE id = ? AND list_id = ?",
-                        [
-                            (int)($row['is_search'] ?? 0),
-                            (int)($row['is_dialing'] ?? 0),
-                            (int)($row['is_visible'] ?? 0),
-                            (int)($row['is_editable'] ?? 0),
-                            isset($row['label_id']) && is_numeric($row['label_id'])
-                                ? (int)$row['label_id']
-                                : null,
-                            (int)$row['id'],
-                            $listId
-                        ]
-                    );
-                }
+                //     DB::connection($parentConn)->update(
+                //         "UPDATE list_header
+                //          SET
+                //             is_search   = ?,
+                //             is_dialing  = ?,
+                //             is_visible  = ?,
+                //             is_editable = ?,
+                //             label_id    = ?
+                //          WHERE id = ? AND list_id = ?",
+                //         [
+                //             (int)($row['is_search'] ?? 0),
+                //             (int)($row['is_dialing'] ?? 0),
+                //             (int)($row['is_visible'] ?? 0),
+                //             (int)($row['is_editable'] ?? 0),
+                //             isset($row['label_id']) && is_numeric($row['label_id'])
+                //                 ? (int)$row['label_id']
+                //                 : null,
+                //             (int)$row['id'],
+                //             $listId
+                //         ]
+                //     );
+                // }
+                
+        if (
+            isset($row['is_dialing']) &&
+            (int)$row['is_dialing'] === 1 &&
+            !empty($row['id']) &&
+            is_numeric($row['id'])
+        ) {
+
+            // Get column name
+            $header = DB::connection($parentConn)->selectOne(
+                "SELECT column_name
+                 FROM list_header
+                 WHERE id = ? AND list_id = ?",
+                [(int)$row['id'], $listId]
+            );
+
+            if (!$header) {
+                continue;
+            }
+
+            // ❌ If not valid phone column → reject request
+            if (!$this->isPhoneColumn(
+                $parentConn,
+                $listId,
+                $header->column_name
+            )) {
+                DB::connection($parentConn)->rollBack();
+
+                return [
+                    'success' => 'false',
+                    'message' => 'Select only valid dialing column (phone numbers only).'
+                ];
+            }
+        }
             }
         }
 
@@ -1188,6 +1222,27 @@ public function editList($request)
             'message' => 'Something went wrong while updating the list.'
         ];
     }
+}
+private function isPhoneColumn($conn, $listId, $column)
+{
+    $result = DB::connection($conn)->selectOne(
+        "SELECT COUNT(*) AS total,
+                SUM(
+                    CASE
+                        WHEN `$column` REGEXP '^[0-9]{7,15}$' THEN 1
+                        ELSE 0
+                    END
+                ) AS valid
+         FROM list_data
+         WHERE list_id = ?
+           AND `$column` IS NOT NULL
+           AND `$column` != ''",
+        [$listId]
+    );
+
+    return $result
+        && $result->total > 0
+        && ($result->valid / $result->total) >= 0.8;
 }
 
 
