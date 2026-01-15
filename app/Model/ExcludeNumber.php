@@ -367,6 +367,14 @@ public function excludeNumberUpdate($request)
                 'code' => 200
             ];
         }
+       // 3️⃣ Treat 0 as success
+        return [
+            'success' => true,
+            'message' => $save > 0
+                ? 'Exclude Number updated successfully.'
+                : 'Exclude Number updated successfully.',
+            'code' => 200
+        ];
 
         return [
             'success' => false,
