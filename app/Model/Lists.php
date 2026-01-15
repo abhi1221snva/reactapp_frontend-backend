@@ -1013,7 +1013,7 @@ public function editListold($request)
 //     }
 // }
 
-public function editList($request)
+public function editListn($request)
 {
     // 🔐 Validation
     if (! $request->has('list_id') || ! is_numeric($request->input('list_id'))) {
@@ -1223,6 +1223,216 @@ public function editList($request)
         ];
     }
 }
+public function editList($request)
+{
+    // 🔐 Validation
+    if (!$request->has('list_id') || !is_numeric($request->input('list_id'))) {
+        return ['success' => 'false', 'message' => 'Invalid list_id'];
+    }
+
+    $listId     = (int) $request->input('list_id');
+    $parentConn = 'mysql_' . $request->auth->parent_id;
+
+    DB::connection($parentConn)->beginTransaction();
+
+    try {
+
+        /**
+         * 1️⃣ UPDATE LIST TITLE
+         */
+        if ($request->filled('title')) {
+            DB::connection($parentConn)->update(
+                "UPDATE `list` SET title = ? WHERE id = ?",
+                [$request->input('title'), $listId]
+            );
+        }
+
+        /**
+         * 2️⃣ UPDATE / MOVE CAMPAIGN (ONLY IF CHANGED)
+         */
+        if ($request->filled('new_campaign_id') && is_numeric($request->input('new_campaign_id'))) {
+
+            $newCampaignId = (int) $request->input('new_campaign_id');
+
+            $current = DB::connection($parentConn)->selectOne(
+                "SELECT campaign_id
+                 FROM campaign_list
+                 WHERE list_id = ? AND is_deleted = 0
+                 LIMIT 1",
+                [$listId]
+            );
+
+            if ($current && (int) $current->campaign_id !== $newCampaignId) {
+
+                $exists = DB::connection($parentConn)->selectOne(
+                    "SELECT 1
+                     FROM campaign_list
+                     WHERE campaign_id = ? AND list_id = ? AND is_deleted = 0
+                     LIMIT 1",
+                    [$newCampaignId, $listId]
+                );
+
+                if ($exists) {
+                    DB::connection($parentConn)->rollBack();
+                    return [
+                        'success' => 'false',
+                        'message' => 'List already exists in selected campaign.'
+                    ];
+                }
+
+                DB::connection($parentConn)->update(
+                    "UPDATE campaign_list
+                     SET is_deleted = 1
+                     WHERE list_id = ? AND is_deleted = 0",
+                    [$listId]
+                );
+
+                DB::connection($parentConn)->insert(
+                    "INSERT INTO campaign_list (campaign_id, list_id, status, is_deleted)
+                     VALUES (?, ?, 1, 0)",
+                    [$newCampaignId, $listId]
+                );
+            }
+        }
+
+        /**
+         * 3️⃣ UPDATE LIST_HEADER (SINGLE DIALING COLUMN)
+         */
+        if (is_array($request->input('list_header'))) {
+
+            // Reset all dialing flags first
+            DB::connection($parentConn)->update(
+                "UPDATE list_header SET is_dialing = 0 WHERE list_id = ?",
+                [$listId]
+            );
+
+            foreach ($request->input('list_header') as $row) {
+
+                if (empty($row['id']) || !is_numeric($row['id'])) {
+                    continue;
+                }
+
+                $isDialing = (int) ($row['is_dialing'] ?? 0);
+
+                // Validate dialing column
+                if ($isDialing === 1) {
+
+                    $header = DB::connection($parentConn)->selectOne(
+                        "SELECT column_name
+                         FROM list_header
+                         WHERE id = ? AND list_id = ?",
+                        [(int) $row['id'], $listId]
+                    );
+
+                    if (
+                        !$header ||
+                        !$this->isPhoneColumn(
+                            $parentConn,
+                            $listId,
+                            $header->column_name
+                        )
+                    ) {
+                        DB::connection($parentConn)->rollBack();
+                        return [
+                            'success' => 'false',
+                            'message' => 'Select only valid dialing column (phone numbers only).'
+                        ];
+                    }
+                }
+
+                // Update header mapping
+                DB::connection($parentConn)->update(
+                    "UPDATE list_header
+                     SET
+                        is_search   = ?,
+                        is_dialing  = ?,
+                        is_visible  = ?,
+                        is_editable = ?,
+                        label_id    = ?
+                     WHERE id = ? AND list_id = ?",
+                    [
+                        (int) ($row['is_search'] ?? 0),
+                        $isDialing,
+                        (int) ($row['is_visible'] ?? 0),
+                        (int) ($row['is_editable'] ?? 0),
+                        isset($row['label_id']) && is_numeric($row['label_id'])
+                            ? (int) $row['label_id']
+                            : null,
+                        (int) $row['id'],
+                        $listId
+                    ]
+                );
+            }
+        }
+
+        /**
+         * 4️⃣ UPDATE LIST FLAGS
+         */
+        DB::connection($parentConn)->update(
+            "UPDATE `list`
+             SET is_active = 1,
+                 is_dialing = ?
+             WHERE id = ?",
+            [(int) $request->input('is_dialing', 0), $listId]
+        );
+
+        /**
+         * 5️⃣ REMOVE DUPLICATES
+         */
+        if ((int) $request->input('duplicate_check') === 1) {
+
+            $dialCol = DB::connection($parentConn)->selectOne(
+                "SELECT column_name
+                 FROM list_header
+                 WHERE list_id = ? AND is_dialing = 1
+                 LIMIT 1",
+                [$listId]
+            );
+
+            if (!empty($dialCol->column_name)) {
+
+                $col = $dialCol->column_name;
+
+                DB::connection($parentConn)->statement(
+                    "DELETE ld
+                     FROM list_data ld
+                     JOIN (
+                        SELECT MIN(id) AS keep_id, `$col`
+                        FROM list_data
+                        WHERE list_id = ?
+                        GROUP BY `$col`
+                     ) t
+                       ON ld.`$col` = t.`$col`
+                      AND ld.id <> t.keep_id
+                      AND ld.list_id = ?",
+                    [$listId, $listId]
+                );
+            }
+        }
+
+        DB::connection($parentConn)->commit();
+
+        return [
+            'success' => 'true',
+            'message' => 'List updated successfully.'
+        ];
+
+    } catch (\Throwable $e) {
+
+        DB::connection($parentConn)->rollBack();
+
+        Log::error('editList.failed', [
+            'list_id' => $listId,
+            'error'   => $e->getMessage()
+        ]);
+
+        return [
+            'success' => 'false',
+            'message' => 'Something went wrong while updating the list.'
+        ];
+    }
+}
+
 private function isPhoneColumn($conn, $listId, $column)
 {
     $result = DB::connection($conn)->selectOne(
