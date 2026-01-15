@@ -735,6 +735,27 @@ if (!$request->has('voicedrop_option_user_id') || empty($request->voicedrop_opti
 if (!$request->has('no_agent_dropdown_action') || empty($request->no_agent_dropdown_action)) {
     $request->merge(['no_agent_dropdown_action' => 0]);
 }
+if ($request->filled('title')) {
+
+    $title = trim($request->input('title'));
+
+    $exists = DB::connection('mysql_' . $request->auth->parent_id)
+        ->selectOne(
+            "SELECT id
+             FROM {$this->table}
+             WHERE LOWER(title) = ?
+               AND is_deleted = 0
+             LIMIT 1",
+            [strtolower($title)]
+        );
+
+    if ($exists) {
+        return [
+            'success' => 'false',
+            'message' => 'Campaign title already exists. Please use a different title.'
+        ];
+    }
+}
 
             if (!$request->has('api_id') || empty($request->api_id)) {
             $request->merge(['api_id' => 1]);
