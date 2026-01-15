@@ -820,14 +820,34 @@ if (!$request->has('no_agent_dropdown_action') || empty($request->no_agent_dropd
             array_push($string, 'time_based_calling = :time_based_calling');
             $data['time_based_calling'] = $request->input('time_based_calling');
         }
+        // if ($request->has('call_time_start') && !empty($request->input('call_time_start'))) {
+        //     array_push($string, 'call_time_start = :call_time_start');
+        //     $data['call_time_start'] = $request->input('call_time_start');
+        // }
+        // if ($request->has('call_time_end') && !empty($request->input('call_time_end'))) {
+        //     array_push($string, 'call_time_end = :call_time_end');
+        //     $data['call_time_end'] = $request->input('call_time_end');
+        // }
+        // Default call time range (12:00 AM – 11:59 PM)
+        $callTimeStart = '00:00:00';
+        $callTimeEnd   = '23:59:59';
+
+        // Override if request has values
         if ($request->has('call_time_start') && !empty($request->input('call_time_start'))) {
-            array_push($string, 'call_time_start = :call_time_start');
-            $data['call_time_start'] = $request->input('call_time_start');
+            $callTimeStart = $request->input('call_time_start');
         }
+
         if ($request->has('call_time_end') && !empty($request->input('call_time_end'))) {
-            array_push($string, 'call_time_end = :call_time_end');
-            $data['call_time_end'] = $request->input('call_time_end');
+            $callTimeEnd = $request->input('call_time_end');
         }
+
+        // Push conditions (always applied)
+        array_push($string, 'call_time_start = :call_time_start');
+        array_push($string, 'call_time_end = :call_time_end');
+
+        $data['call_time_start'] = $callTimeStart;
+        $data['call_time_end']   = $callTimeEnd;
+
         if ($request->has('dial_mode') && !empty($request->input('dial_mode')) && ($request->input('dial_mode') == 'preview_and_dial' || $request->input('dial_mode') == 'power_dial' || $request->input('dial_mode') == 'super_power_dial' || $request->input('dial_mode') == 'predictive_dial') || $request->input('dial_mode') == 'outbound_ai') {
             array_push($string, 'dial_mode = :dial_mode');
             $data['dial_mode'] = $request->input('dial_mode');
