@@ -1225,6 +1225,7 @@ public function editListn($request)
 }
 public function editList($request)
 {
+    
     // 🔐 Validation
     if (!$request->has('list_id') || !is_numeric($request->input('list_id'))) {
         return ['success' => 'false', 'message' => 'Invalid list_id'];
@@ -1236,6 +1237,64 @@ public function editList($request)
     DB::connection($parentConn)->beginTransaction();
 
     try {
+                /**
+ * 🔥 DELETE LIST LOGIC (APPLIED FROM EXISTING CODE)
+ */
+if ($request->input('is_deleted') == 1) {
+
+    $conn   = DB::connection($parentConn);
+    $listId = (int) $request->input('list_id');
+
+    // campaign_list
+    $conn->delete(
+        "DELETE FROM campaign_list WHERE list_id = :list_id",
+        ['list_id' => $listId]
+    );
+
+    // list_data
+    $conn->delete(
+        "DELETE FROM list_data WHERE list_id = :list_id",
+        ['list_id' => $listId]
+    );
+
+    // lead_report
+    $conn->delete(
+        "DELETE FROM lead_report WHERE list_id = :list_id",
+        ['list_id' => $listId]
+    );
+
+    // lead_temp
+    $conn->delete(
+        "DELETE FROM lead_temp WHERE list_id = :list_id",
+        ['list_id' => $listId]
+    );
+
+    // list_header
+    $conn->delete(
+        "DELETE FROM list_header WHERE list_id = :list_id",
+        ['list_id' => $listId]
+    );
+
+    // delete list (eloquent)
+    $listModel = Lists::on($parentConn)->findOrFail($listId);
+
+    $notificationData = [
+        "action"   => "List deleted",
+        "listId"   => $listId,
+        "listName" => $listModel->title
+    ];
+
+    $listModel->delete();
+
+  
+
+    DB::connection($parentConn)->commit();
+
+    return [
+        'success' => 'true',
+        'message' => 'List deleted successfully.'
+    ];
+}
 
         /**
          * 1️⃣ UPDATE LIST TITLE
@@ -1416,6 +1475,8 @@ public function editList($request)
             'success' => 'true',
             'message' => 'List updated successfully.'
         ];
+
+
 
     } catch (\Throwable $e) {
 
