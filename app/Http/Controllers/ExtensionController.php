@@ -15,6 +15,8 @@ use Illuminate\Support\Facades\Log;
 
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Hash;
 
 class ExtensionController extends Controller
 {
@@ -781,6 +783,40 @@ class ExtensionController extends Controller
      */
     function saveNewExtension()
     {
+// 🔑 Step 0: Check for X-application-Token
+$hasAppToken = $this->request->hasHeader('X-application-Token');
+
+if ($hasAppToken) {
+
+    // 🔐 Step 1: Validate Tokens
+    $tokenResponse = $this->validateRequestTokens($this->request);
+    if ($tokenResponse !== null) {
+        return $tokenResponse;
+    }
+
+    // 📋 Step 2: Validate Body
+    $validationResponse = $this->validateSubUserRequest($this->request);
+    if ($validationResponse !== null) {
+        return $validationResponse;
+    }
+    if ($validationResponse instanceof \Illuminate\Http\JsonResponse) {
+        return $validationResponse; // stop execution
+    }
+
+    // 👤 Step 3: Merge subuser info
+    $this->request->merge([
+        'user_type' => 'subuser',
+        'easify_user_uuid' => (string) Str::uuid(),
+        'owner_id' => $this->request->input('main_user_id')
+    ]);
+       // DEBUG LOG
+       Log::info('Merged subuser fields:', [
+        'user_type' => $this->request->input('user_type'),
+        'easify_user_uuid' => $this->request->input('easify_user_uuid'),
+        'owner_id' => $this->request->input('owner_id'),
+        'main_user_id' => $this->request->input('main_user_id'),
+    ]);
+}
         $call_forward = $this->request->call_forward;
         $twinning = $this->request->twinning;
         $follow_me = $this->request->follow_me;
@@ -1093,4 +1129,111 @@ class ExtensionController extends Controller
         // Return the success response with the roles array
         return $this->successResponse("Role", $rolesArray);
     }
+ 
+
+    private function validateRequestTokens(Request $request)
+    {
+        $appToken = $request->header('X-Application-Token');
+        $userToken = $request->header('X-Easify-User-Token');
+    
+        /**
+         * ✅ Validate Application Token
+         */
+        if (!$appToken || $appToken !== config('services.phonify.app_token')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid application token.'
+            ], 401);
+        }
+    
+        /**
+         * ✅ Validate Main User Token
+         */
+        if (!$userToken) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated.'
+            ], 401);
+        }
+    
+        $mainUser = \DB::table('master.users')
+            ->where('easify_user_uuid', $userToken)
+            ->first();
+    
+        if (!$mainUser) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated.'
+            ], 401);
+        }
+    
+        // Attach main user to request for later use
+        $request->merge(['main_user_id' => $mainUser->id]);
+       // 🔑 Attach owner id for later use
+
+        return null;
+    }
+    
+
+    
+    public function validateSubUserRequest(Request $request)
+    {
+        $rules = [
+            'email' => 'required|email|max:255|unique:master.users,email',
+            'password' => 'required|string|min:8',
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
+            'phone' => 'nullable|string|max:20|regex:/^\+\d{8,20}$/',
+        ];
+        
+        $messages = [
+            'email.unique' => 'Email Already in Use',
+            'phone.regex' => 'Invalid Phone Number',
+        ];
+        
+        try {
+            Validator::make($request->all(), $rules, $messages)->validate();
+        } catch (ValidationException $e) {
+            // Get the first error message to return in 'message'
+            $firstError = collect($e->errors())->flatten()->first();
+        
+            return response()->json([
+                'success' => false,
+                'message' => $firstError,
+            ], 422);
+        }
+        if ($request->has('main_user_id')) {
+
+            $maxUsers =  5; // or from plan table
+    
+            $currentCount = \DB::table('master.users')
+                ->where('owner_id', $request->main_user_id)
+                ->where('user_type', 'subuser')
+                ->count();
+    
+                if ($currentCount >= $maxUsers) {
+                    throw new \Illuminate\Validation\ValidationException(
+                        Validator::make([], []),
+                        response()->json([
+                            'success' => false,
+                            'message' => 'You have reached the maximum number of users. Please upgrade your plan to add more users.'
+                        ], 422)
+                    );
+                }
+                
+        }
+        if ($request->only_validate === true) {
+            return response()->json([
+                'success' => true,
+                'message' => 'User creation validated successfully',
+                'data' => [],
+            ], 200);
+        }
+    
+        return null;
+    }
+    
+    
 }
+
+

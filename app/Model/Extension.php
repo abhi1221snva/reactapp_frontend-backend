@@ -1739,7 +1739,7 @@ public function checkExtension($request)
     // Add new extension
     public function newExtensionSave(Request $request)
     {
-        Log::info('reached', [$request->timezone]);
+        Log::info('reached', [$request->all()]);
 
         $intGeneratedAltExtension = '';
         $intGeneratedAppExtension = '';
@@ -1870,6 +1870,9 @@ public function checkExtension($request)
         $data['allow_google_authenticator'] = $request->allow_google_authenticator;
         $data['two_factor_authentication'] = $request->two_factor_authentication;
         $data['allow_mobile_login'] = $request->allow_mobile_login;
+        $data['easify_user_uuid'] = $request->input('easify_user_uuid');
+        $data['user_type'] = $request->input('user_type');
+        $data['owner_id'] = $request->input('owner_id');
 
         //generate affiliate links
         $unique_token = $this->generateCode();
