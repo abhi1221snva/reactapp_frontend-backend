@@ -143,6 +143,8 @@ class_alias('Illuminate\Contracts\View\Factory', 'view');
 if ($app->environment() !== 'production') {
     $app->register(\Barryvdh\LaravelIdeHelper\IdeHelperServiceProvider::class);
 }
+$app->register(Laravel\Socialite\SocialiteServiceProvider::class);
+
 date_default_timezone_set(env('APP_TIMEZONE', 'UTC'));
 $app->withFacades();
 $app->configure('swagger-lume');
