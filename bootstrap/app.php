@@ -4,8 +4,14 @@ require_once __DIR__ . '/../vendor/autoload.php';
 /* For CRM WEBPHONE EXAMPLE*/
 
 header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: *');
-header('Access-Control-Allow-Headers: *');
+header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept');
+
+// Handle OPTIONS preflight requests immediately
+if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
 
 /*CLose*/
 
@@ -143,8 +149,6 @@ class_alias('Illuminate\Contracts\View\Factory', 'view');
 if ($app->environment() !== 'production') {
     $app->register(\Barryvdh\LaravelIdeHelper\IdeHelperServiceProvider::class);
 }
-$app->register(Laravel\Socialite\SocialiteServiceProvider::class);
-
 date_default_timezone_set(env('APP_TIMEZONE', 'UTC'));
 $app->withFacades();
 $app->configure('swagger-lume');

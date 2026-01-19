@@ -67,8 +67,8 @@ $router->POST('authentication_copy', 'AuthenticationController@authentication_co
 
 $router->POST('verify_google_otp', 'TwoFactorController@verify_google_otp');
 //$router->POST('authentication_copy', 'AuthenticationController@authentication_copy');
-// $router->get('auth/google/redirect', 'GoogleController@redirectToGoogle');
-// $router->post('auth/google/callback', 'GoogleController@handleGoogleCallback');
+$router->get('auth/google/redirect', 'GoogleController@redirectToGoogle');
+$router->post('auth/google/callback', 'GoogleController@handleGoogleCallback');
 $router->post('auth/twitter/callback', 'TwitterController@handleTwitterCallback');
 
 //cron job
@@ -197,7 +197,6 @@ $router->get('team-chat/widget/validate', 'TeamChatWidgetController@validateToke
 
 $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   // $router->post('auth/google/callback', 'UserMailController@googlecallback');
-
   //profile
   $router->get('profile', 'ProfileController@index');
   $router->post('/profile/update-two-factor', 'ProfileController@updateTwoFactor');
@@ -1602,36 +1601,42 @@ $router->get('ai-coach-api', 'AiCoachController@index');
 
 
 #new apis for phonify
-// Route::prefix('gmail')->group(function () {
+// Gmail OAuth callback (no auth required - user info from state parameter)
+$router->get('gmail/callback', 'GmailOAuthController@callbackNoAuth');
 
-//     Route::get('/mailbox', [GmailController::class, 'mailboxApi']);
+// Gmail routes (auth required)
+$router->group(['middleware' => 'jwt.auth', 'prefix' => 'gmail'], function () use ($router) {
+    // OAuth
+    $router->get('connect', 'GmailOAuthController@connect');
+    $router->post('disconnect', 'GmailOAuthController@disconnect');
+    $router->get('status', 'GmailOAuthController@status');
+    $router->post('refresh-token', 'GmailOAuthController@refreshToken');
 
-//     Route::post('/send', [GmailController::class, 'sendEmailApi']);
+    // Watch (push notifications)
+    $router->post('watch/setup', 'GmailOAuthController@setupWatch');
+    $router->post('watch/stop', 'GmailOAuthController@stopWatch');
+    $router->get('watch/status', 'GmailOAuthController@watchStatus');
 
-//     Route::delete('/delete', [GmailController::class, 'deleteEmailApi']);
+    // Notification Settings
+    $router->get('settings', 'GmailNotificationSettingsController@show');
+    $router->post('settings', 'GmailNotificationSettingsController@update');
+    $router->get('channels', 'GmailNotificationSettingsController@getChannels');
+    $router->post('test', 'GmailNotificationSettingsController@testNotification');
+    $router->get('logs', 'GmailNotificationSettingsController@getLogs');
 
-//     Route::post('/star', [GmailController::class, 'starEmailApi']);
-//     Route::post('/unstar', [GmailController::class, 'unstarEmailApi']);
-// });
+    // Mailbox
+    $router->get('mailbox', 'GmailMailboxController@list');
+    $router->get('mailbox/labels', 'GmailMailboxController@labels');
+    $router->get('mailbox/{messageId}', 'GmailMailboxController@show');
+    $router->post('mailbox/send', 'GmailMailboxController@send');
+    $router->post('mailbox/{messageId}/star', 'GmailMailboxController@star');
+    $router->post('mailbox/{messageId}/unstar', 'GmailMailboxController@unstar');
+    $router->post('mailbox/{messageId}/trash', 'GmailMailboxController@trash');
+    $router->delete('mailbox/{messageId}', 'GmailMailboxController@delete');
+    $router->post('mailbox/{messageId}/read', 'GmailMailboxController@markAsRead');
+    $router->post('mailbox/{messageId}/unread', 'GmailMailboxController@markAsUnread');
+});
 
 // $router->post('/api/auth/create-user', 'AuthenticationController@createUser');
-//Route::prefix('auth')->group(function () {
-  // Route::get('auth/google/redirect', 'GmailController@redirectToGoogle');
-  // Route::get('auth/google/callback', 'GmailController@handleGoogleCallback');
-//});
-// Route::get('/emails', 'GmailController@listEmails');
 
-// // Get single email detail
-// Route::get('/emails/{email_id}', 'GmailController@getEmail');
 
-// // Draft APIs
-// Route::post('/emails/draft', 'GmailController@saveDraft');
-// Route::put('/emails/draft/{draft_id}', 'GmailController@updateDraft');
-// Route::delete('/emails/draft/{draft_id}', 'GmailController@deleteDraft');
-
-// // Archive / Unarchive (Bulk)
-// Route::post('/emails/archive', 'GmailController@archiveEmails');
-// Route::post('/emails/unarchive', 'GmailController@unarchiveEmails');
-
-   // List emails by type'AiCoachController@index'
-  
