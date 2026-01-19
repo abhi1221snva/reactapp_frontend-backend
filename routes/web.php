@@ -383,7 +383,6 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->post('client_ip_list', 'ExtensionController@clientIpList');
   $router->post('new-extension-save', 'ExtensionController@saveNewExtension');
   $router->post('get-client-extension', 'ExtensionController@getClientExtensions');
-  $router->post('api/users/create', 'ExtensionController@validateSubUserRequest');
 
 
   //sms templete
