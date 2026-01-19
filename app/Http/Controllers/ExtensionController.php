@@ -786,13 +786,12 @@ class ExtensionController extends Controller
 /**
      * STEP 1 — Easify validation only (MANDATORY)
      */
-    Log::info('Easify VALIDATION API request started', [
-        'email' => $request->email
-    ]);
-    
+    Log::info('Easify VALIDATION API request started', ['email' => $request->email]);
+
     $validate = Http::withHeaders([
         'X-Application-Token' => $request->header('X-Application-Token'),
         'X-Easify-User-Token' => $request->header('X-Easify-User-Token'),
+        'Accept' => 'application/json', // Ensure JSON response
     ])->post('https://easify-auth.on-forge.com/api/users/create', [
         'email' => $request->email,
         'password' => $request->password,
@@ -802,13 +801,16 @@ class ExtensionController extends Controller
         'only_validate' => true,
     ]);
 
+    // Log validation response safely
+    Log::info('Easify VALIDATION API response', [
+        'status' => $validate->status(),
+        'body' => $validate->body() ?: 'empty', // raw body for debugging
+        'json' => $validate->json() ?: 'null', // decoded JSON, null-safe
+    ]);
+
     if (!$validate->successful()) {
         return response()->json($validate->json(), $validate->status());
     }
-    Log::info('Easify VALIDATION API response', [
-        'status' => $validate->status(),
-        'body' => $validate->json(),
-    ]);
         $call_forward = $this->request->call_forward;
         $twinning = $this->request->twinning;
         $follow_me = $this->request->follow_me;
@@ -858,15 +860,15 @@ class ExtensionController extends Controller
         ];
 
         try {
-            Validator::make($this->request->all(), $rules, $messages)->validate();
+            Validator::make($request->all(), $rules, $messages)->validate();
         } catch (ValidationException $e) {
             return response()->json([
                 'success' => false,
                 'errors' => $e->errors()
             ], 422);
         }
-
-        Log::info('Request data:', $this->request->all());
+    
+        Log::info('Request data before saving extension', $request->all());
         $response = $this->model->newExtensionSave($this->request);
         Log::info('Easify CREATE API request started', [
             'email' => $request->email
@@ -874,9 +876,12 @@ class ExtensionController extends Controller
   /**
      * STEP 4 — Easify user creation (MANDATORY)
      */
+    Log::info('Easify CREATE API request started', ['email' => $request->email]);
+
     $create = Http::withHeaders([
         'X-Application-Token' => $request->header('X-Application-Token'),
         'X-Easify-User-Token' => $request->header('X-Easify-User-Token'),
+        'Accept' => 'application/json', // Ensure JSON response
     ])->post('https://easify-auth.on-forge.com/api/users/create', [
         'email' => $request->email,
         'password' => $request->password,
@@ -886,14 +891,17 @@ class ExtensionController extends Controller
         'only_validate' => false,
     ]);
 
-    if (!$create->successful()) {
-        // OPTIONAL: rollback extension here
-        return response()->json($create->json(), $create->status());
-    }
+    // Log CREATE API response safely
     Log::info('Easify CREATE API response', [
         'status' => $create->status(),
-        'body' => $create->json(),
+        'body' => $create->body() ?: 'empty',
+        'json' => $create->json() ?: 'null',
     ]);
+
+    if (!$create->successful()) {
+        // OPTIONAL: rollback local extension if needed
+        return response()->json($create->json(), $create->status());
+    }
     /**
      * STEP 5 — Attach Easify UUID (CRITICAL)
      */
@@ -910,7 +918,8 @@ class ExtensionController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $response
+            // 'data' => $response,
+            'data'=> $create->json(),  // full Easify response
         ]);
     }
     function saveNewExtensionlatest()
