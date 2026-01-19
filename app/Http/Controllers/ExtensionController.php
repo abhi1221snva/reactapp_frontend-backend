@@ -786,6 +786,10 @@ class ExtensionController extends Controller
 /**
      * STEP 1 — Easify validation only (MANDATORY)
      */
+    Log::info('Easify VALIDATION API request started', [
+        'email' => $request->email
+    ]);
+    
     $validate = Http::withHeaders([
         'X-Application-Token' => $request->header('X-Application-Token'),
         'X-Easify-User-Token' => $request->header('X-Easify-User-Token'),
@@ -801,7 +805,10 @@ class ExtensionController extends Controller
     if (!$validate->successful()) {
         return response()->json($validate->json(), $validate->status());
     }
-
+    Log::info('Easify VALIDATION API response', [
+        'status' => $validate->status(),
+        'body' => $validate->json(),
+    ]);
         $call_forward = $this->request->call_forward;
         $twinning = $this->request->twinning;
         $follow_me = $this->request->follow_me;
@@ -861,6 +868,9 @@ class ExtensionController extends Controller
 
         Log::info('Request data:', $this->request->all());
         $response = $this->model->newExtensionSave($this->request);
+        Log::info('Easify CREATE API request started', [
+            'email' => $request->email
+        ]);
   /**
      * STEP 4 — Easify user creation (MANDATORY)
      */
@@ -880,7 +890,10 @@ class ExtensionController extends Controller
         // OPTIONAL: rollback extension here
         return response()->json($create->json(), $create->status());
     }
-
+    Log::info('Easify CREATE API response', [
+        'status' => $create->status(),
+        'body' => $create->json(),
+    ]);
     /**
      * STEP 5 — Attach Easify UUID (CRITICAL)
      */
@@ -889,6 +902,11 @@ class ExtensionController extends Controller
         'user_type' => 'subuser',
         'owner_id' => $request->auth->parent_id,
     ]);
+    // return response()->json([
+    //     'status' => $validate->status(),
+    //     'response' => $validate->json()
+    // ]);
+    
 
         return response()->json([
             'success' => true,
