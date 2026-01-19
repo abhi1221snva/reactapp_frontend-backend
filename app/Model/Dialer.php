@@ -370,8 +370,14 @@ class Dialer extends Model
                 $filteredCampaign = [];
             foreach ($campaign as $row) {
 // 1️⃣ Dialed leads
+// $dialed = DB::connection($connection)->selectOne(
+//     "SELECT COUNT(1) AS total
+//      FROM lead_report
+//      WHERE campaign_id = :campaign_id",
+//     ['campaign_id' => $row->id]
+// );
 $dialed = DB::connection($connection)->selectOne(
-    "SELECT COUNT(1) AS total
+    "SELECT COUNT(DISTINCT lead_id) AS total
      FROM lead_report
      WHERE campaign_id = :campaign_id",
     ['campaign_id' => $row->id]
@@ -381,11 +387,22 @@ $dialedLeads = $dialed->total ?? 0;
 
 
 // 2️⃣ Total leads
+// $total = DB::connection($connection)->selectOne(
+//     "SELECT COUNT(1) AS total
+//      FROM list_data
+//      WHERE list_id IN (
+//          SELECT list_id FROM campaign_list WHERE campaign_id = :campaign_id
+//      )",
+//     ['campaign_id' => $row->id]
+// );
 $total = DB::connection($connection)->selectOne(
     "SELECT COUNT(1) AS total
      FROM list_data
      WHERE list_id IN (
-         SELECT list_id FROM campaign_list WHERE campaign_id = :campaign_id
+         SELECT list_id
+         FROM campaign_list
+         WHERE campaign_id = :campaign_id
+           AND is_deleted = 0
      )",
     ['campaign_id' => $row->id]
 );

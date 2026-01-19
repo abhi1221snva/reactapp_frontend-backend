@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Hash;
-
+use Illuminate\Support\Facades\Http;
 class ExtensionController extends Controller
 {
 
@@ -781,42 +781,123 @@ class ExtensionController extends Controller
      *     )
      * )
      */
-    function saveNewExtension()
+    function saveNewExtension(Request $request)
     {
-// 🔑 Step 0: Check for X-application-Token
-$hasAppToken = $this->request->hasHeader('X-application-Token');
+/**
+     * STEP 1 — Easify validation only (MANDATORY)
+     */
+    $validate = Http::withHeaders([
+        'X-Application-Token' => $request->header('X-Application-Token'),
+        'X-Easify-User-Token' => $request->header('X-Easify-User-Token'),
+    ])->post('https://easify-auth.on-forge.com/api/users/create', [
+        'email' => $request->email,
+        'password' => $request->password,
+        'first_name' => $request->first_name,
+        'last_name' => $request->last_name,
+        'phone' => $request->phone,
+        'only_validate' => true,
+    ]);
 
-if ($hasAppToken) {
-
-    // 🔐 Step 1: Validate Tokens
-    $tokenResponse = $this->validateRequestTokens($this->request);
-    if ($tokenResponse !== null) {
-        return $tokenResponse;
+    if (!$validate->successful()) {
+        return response()->json($validate->json(), $validate->status());
     }
 
-    // 📋 Step 2: Validate Body
-    $validationResponse = $this->validateSubUserRequest($this->request);
-    if ($validationResponse !== null) {
-        return $validationResponse;
-    }
-    if ($validationResponse instanceof \Illuminate\Http\JsonResponse) {
-        return $validationResponse; // stop execution
+        $call_forward = $this->request->call_forward;
+        $twinning = $this->request->twinning;
+        $follow_me = $this->request->follow_me;
+        $country_code = $this->request->country_code;
+
+        $rules = [
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'string|min:1|max:255',
+            'email' => 'required|email|unique:master.users',
+            'password' => 'required|string|min:4',
+            'profile_pic' => ["sometimes", "required", "string", "min:1", "regex:/^.+\.(jpg|png)$/"],
+            'extension' => 'required|int|min:1000|max:9999',
+            'rpm' => 'sometimes|required|string|min:1|max:100',
+            'vm_pin' => 'sometimes|required|int',
+            'voicemail' => 'sometimes|required|int',
+            'voicemail_greeting' => 'sometimes|required|string|min:1|max:255',
+            'asterisk_server_id' => 'required|int',
+            'voicemail_send_to_email' => 'sometimes|required|int',
+            'follow_me' => 'sometimes|required|int',
+            'call_forward' => 'sometimes|required|int',
+            'dialpad' => 'sometimes|required|string|min:1|max:100',
+            'agent_voice_id' => 'sometimes|required|string|min:1|max:255',
+            'cli_setting' => 'sometimes|required|int',
+            'cli' => 'required_if:cli_setting,1|min:1|string|max:14',
+            'local_ip' => 'sometimes|required|ip',
+            'public_ip' => 'sometimes|required|ip',
+            'phone_status' => 'sometimes|required|string|min:1|max:255',
+            'status' => 'sometimes|required|int',
+            'is_deleted' => 'sometimes|required|int',
+            'allowed_ip' => 'sometimes|required|ip',
+            'twinning' => 'sometimes|required|string|min:1|max:3',
+            'directory_name' => 'sometimes|required|string|min:1|max:50',
+            'extension_type' => 'sometimes|required|string|min:1|max:3',
+            'vm_drop' => 'sometimes|required|int',
+            'vm_drop_location' => 'required_if:vm_drop,1|min:1|string|max:255',
+            'timezone' => 'required',
+            'mobile' => Rule::requiredIf(function () use ($call_forward, $twinning, $follow_me) {
+                return ($call_forward == 1 || $twinning == 1 || $follow_me == 1);
+            }),
+        ];
+
+        $messages = [
+            'email.required' => 'The email field is mandatory.',
+            'email.email' => 'Please enter a valid email address.',
+            'email.unique' => 'This email is already registered. Please use another.',
+            'extension.required' => "Extention already assigned"
+        ];
+
+        try {
+            Validator::make($this->request->all(), $rules, $messages)->validate();
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'errors' => $e->errors()
+            ], 422);
+        }
+
+        Log::info('Request data:', $this->request->all());
+        $response = $this->model->newExtensionSave($this->request);
+  /**
+     * STEP 4 — Easify user creation (MANDATORY)
+     */
+    $create = Http::withHeaders([
+        'X-Application-Token' => $request->header('X-Application-Token'),
+        'X-Easify-User-Token' => $request->header('X-Easify-User-Token'),
+    ])->post('https://easify-auth.on-forge.com/api/users/create', [
+        'email' => $request->email,
+        'password' => $request->password,
+        'first_name' => $request->first_name,
+        'last_name' => $request->last_name,
+        'phone' => $request->phone,
+        'only_validate' => false,
+    ]);
+
+    if (!$create->successful()) {
+        // OPTIONAL: rollback extension here
+        return response()->json($create->json(), $create->status());
     }
 
-    // 👤 Step 3: Merge subuser info
-    $this->request->merge([
+    /**
+     * STEP 5 — Attach Easify UUID (CRITICAL)
+     */
+    $request->merge([
+        'easify_user_uuid' => $create->json('data.uuid'),
         'user_type' => 'subuser',
-        'easify_user_uuid' => (string) Str::uuid(),
-        'owner_id' => $this->request->input('main_user_id')
+        'owner_id' => $request->auth->parent_id,
     ]);
-       // DEBUG LOG
-       Log::info('Merged subuser fields:', [
-        'user_type' => $this->request->input('user_type'),
-        'easify_user_uuid' => $this->request->input('easify_user_uuid'),
-        'owner_id' => $this->request->input('owner_id'),
-        'main_user_id' => $this->request->input('main_user_id'),
-    ]);
-}
+
+        return response()->json([
+            'success' => true,
+            'data' => $response
+        ]);
+    }
+    function saveNewExtensionlatest()
+    {
+
         $call_forward = $this->request->call_forward;
         $twinning = $this->request->twinning;
         $follow_me = $this->request->follow_me;
@@ -881,51 +962,6 @@ if ($hasAppToken) {
             'success' => true,
             'data' => $response
         ]);
-    }
-    function saveNewExtension_old()
-    {
-        $call_forward = $this->request->call_forward;
-        $twinning = $this->request->twinning;
-        $follow_me = $this->request->follow_me;
-        $country_code = $this->request->country_code;
-        $this->validate($this->request, [
-            'first_name' => 'required|string|max:255',
-            'last_name' => 'string|min:1|max:255',
-            'email' => 'required|email|unique:master.users',
-            'password' => 'required|string|min:4',
-            'profile_pic' => ["sometimes", "required", "string", "min:1", "regex:/^.+\.(jpg|png)$/"],
-            'extension' => 'required|int|min:1000|max:9999',
-            'rpm' => 'sometimes|required|string|min:1|max:100',
-            'vm_pin' => 'sometimes|required|int',
-            'voicemail' => 'sometimes|required|int',
-            'voicemail_greeting' => 'sometimes|required|string|min:1|max:255',
-            'asterisk_server_id' => 'required|int',
-            'voicemail_send_to_email' => 'sometimes|required|int',
-            'follow_me' => 'sometimes|required|int',
-            'call_forward' => 'sometimes|required|int',
-            'dialpad' => 'sometimes|required|string|min:1|max:100',
-            'agent_voice_id' => 'sometimes|required|string|min:1|max:255',
-            'cli_setting' => 'sometimes|required|int',
-            'cli' => 'required_if:cli_setting,1|min:1|string|max:14',
-            'local_ip' => 'sometimes|required|ip',
-            'public_ip' => 'sometimes|required|ip',
-            'phone_status' => 'sometimes|required|string|min:1|max:255',
-            'status' => 'sometimes|required|int',
-            'is_deleted' => 'sometimes|required|int',
-            'allowed_ip' => 'sometimes|required|ip',
-            'twinning' => 'sometimes|required|string|min:1|max:3',
-            'directory_name' => 'sometimes|required|string|min:1|max:50',
-            'extension_type' => 'sometimes|required|string|min:1|max:3',
-            'vm_drop' => 'sometimes|required|int',
-            'vm_drop_location' => 'required_if:vm_drop,1|min:1|string|max:255',
-            'timezone' => 'required',
-            'mobile' => Rule::requiredIf(function () use ($call_forward, $twinning, $follow_me) {
-                return ($call_forward == 1 || $twinning == 1 || $follow_me == 1);
-            })
-        ]);
-        Log::info('Request data:', $this->request->all());
-        $response = $this->model->newExtensionSave($this->request);
-        return response()->json($response);
     }
 
     /**
@@ -1131,107 +1167,107 @@ if ($hasAppToken) {
     }
  
 
-    private function validateRequestTokens(Request $request)
-    {
-        $appToken = $request->header('X-Application-Token');
-        $userToken = $request->header('X-Easify-User-Token');
+    // private function validateRequestTokens(Request $request)
+    // {
+    //     $appToken = $request->header('X-Application-Token');
+    //     $userToken = $request->header('X-Easify-User-Token');
     
-        /**
-         * ✅ Validate Application Token
-         */
-        if (!$appToken || $appToken !== config('services.phonify.app_token')) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Invalid application token.'
-            ], 401);
-        }
+    //     /**
+    //      * ✅ Validate Application Token
+    //      */
+    //     if (!$appToken || $appToken !== config('services.phonify.app_token')) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Invalid application token.'
+    //         ], 401);
+    //     }
     
-        /**
-         * ✅ Validate Main User Token
-         */
-        if (!$userToken) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthenticated.'
-            ], 401);
-        }
+    //     /**
+    //      * ✅ Validate Main User Token
+    //      */
+    //     if (!$userToken) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Unauthenticated.'
+    //         ], 401);
+    //     }
     
-        $mainUser = \DB::table('master.users')
-            ->where('easify_user_uuid', $userToken)
-            ->first();
+    //     $mainUser = \DB::table('master.users')
+    //         ->where('easify_user_uuid', $userToken)
+    //         ->first();
     
-        if (!$mainUser) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthenticated.'
-            ], 401);
-        }
+    //     if (!$mainUser) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Unauthenticated.'
+    //         ], 401);
+    //     }
     
-        // Attach main user to request for later use
-        $request->merge(['main_user_id' => $mainUser->id]);
-       // 🔑 Attach owner id for later use
+    //     // Attach main user to request for later use
+    //     $request->merge(['main_user_id' => $mainUser->id]);
+    //    // 🔑 Attach owner id for later use
 
-        return null;
-    }
+    //     return null;
+    // }
     
 
     
-    public function validateSubUserRequest(Request $request)
-    {
-        $rules = [
-            'email' => 'required|email|max:255|unique:master.users,email',
-            'password' => 'required|string|min:8',
-            'first_name' => 'required|string|max:255',
-            'last_name' => 'required|string|max:255',
-            'phone' => 'nullable|string|max:20|regex:/^\+\d{8,20}$/',
-        ];
+    // public function validateSubUserRequest(Request $request)
+    // {
+    //     $rules = [
+    //         'email' => 'required|email|max:255|unique:master.users,email',
+    //         'password' => 'required|string|min:8',
+    //         'first_name' => 'required|string|max:255',
+    //         'last_name' => 'required|string|max:255',
+    //         'phone' => 'nullable|string|max:20|regex:/^\+\d{8,20}$/',
+    //     ];
         
-        $messages = [
-            'email.unique' => 'Email Already in Use',
-            'phone.regex' => 'Invalid Phone Number',
-        ];
+    //     $messages = [
+    //         'email.unique' => 'Email Already in Use',
+    //         'phone.regex' => 'Invalid Phone Number',
+    //     ];
         
-        try {
-            Validator::make($request->all(), $rules, $messages)->validate();
-        } catch (ValidationException $e) {
-            // Get the first error message to return in 'message'
-            $firstError = collect($e->errors())->flatten()->first();
+    //     try {
+    //         Validator::make($request->all(), $rules, $messages)->validate();
+    //     } catch (ValidationException $e) {
+    //         // Get the first error message to return in 'message'
+    //         $firstError = collect($e->errors())->flatten()->first();
         
-            return response()->json([
-                'success' => false,
-                'message' => $firstError,
-            ], 422);
-        }
-        if ($request->has('main_user_id')) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => $firstError,
+    //         ], 422);
+    //     }
+    //     if ($request->has('main_user_id')) {
 
-            $maxUsers =  5; // or from plan table
+    //         $maxUsers =  5; // or from plan table
     
-            $currentCount = \DB::table('master.users')
-                ->where('owner_id', $request->main_user_id)
-                ->where('user_type', 'subuser')
-                ->count();
+    //         $currentCount = \DB::table('master.users')
+    //             ->where('owner_id', $request->main_user_id)
+    //             ->where('user_type', 'subuser')
+    //             ->count();
     
-                if ($currentCount >= $maxUsers) {
-                    throw new \Illuminate\Validation\ValidationException(
-                        Validator::make([], []),
-                        response()->json([
-                            'success' => false,
-                            'message' => 'You have reached the maximum number of users. Please upgrade your plan to add more users.'
-                        ], 422)
-                    );
-                }
+    //             if ($currentCount >= $maxUsers) {
+    //                 throw new \Illuminate\Validation\ValidationException(
+    //                     Validator::make([], []),
+    //                     response()->json([
+    //                         'success' => false,
+    //                         'message' => 'You have reached the maximum number of users. Please upgrade your plan to add more users.'
+    //                     ], 422)
+    //                 );
+    //             }
                 
-        }
-        if ($request->only_validate === true) {
-            return response()->json([
-                'success' => true,
-                'message' => 'User creation validated successfully',
-                'data' => [],
-            ], 200);
-        }
+    //     }
+    //     if ($request->only_validate === true) {
+    //         return response()->json([
+    //             'success' => true,
+    //             'message' => 'User creation validated successfully',
+    //             'data' => [],
+    //         ], 200);
+    //     }
     
-        return null;
-    }
+    //     return null;
+    // }
     
     
 }
