@@ -381,8 +381,12 @@ class CampaignController extends Controller
         } else {
             $response = $this->model->addCampaign($this->request);
         }
-
-        return response()->json($response);
+        if ($response instanceof \Illuminate\Http\JsonResponse) {
+            return $response; // already has correct status
+        }
+        
+        return response()->json($response, 200);
+        //return response()->json($response);
     }
     /*
      * Fetch campaign for agent
