@@ -749,12 +749,13 @@ if ($request->filled('title')) {
             [strtolower($title)]
         );
 
-    if ($exists) {
-        return [
-            'success' => 'false',
-            'message' => 'Campaign title already exists. Please use a different title.'
-        ];
-    }
+        if ($exists) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Campaign title already exists. Please use a different title.'
+            ], 409);
+        }
+        
 }
 
             if (!$request->has('api_id') || empty($request->api_id)) {
