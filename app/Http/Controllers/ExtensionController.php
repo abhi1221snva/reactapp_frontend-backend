@@ -792,8 +792,8 @@ class ExtensionController extends Controller
     $easifyUserToken = $loggedInUser->easify_user_uuid;
     $easifyAppToken =env('PHONIFY_APP_TOKEN');
     Log::info('Easify easifyUserToken', ['easifyUserToken' => $easifyUserToken]);
-    echo $easifyUserToken;
-    echo $easifyAppToken;
+    //echo $easifyUserToken;
+    //echo $easifyAppToken;
 
     if (empty($loggedInUser?->easify_user_uuid)) {
         return response()->json([
