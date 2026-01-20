@@ -2,10 +2,11 @@
 
 namespace App\Model;
 
-use App\Http\Helper\Log;
+//use App\Http\Helper\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Model;
 use Maatwebsite\Excel\Facades\Excel;
+use Illuminate\Support\Facades\Log;
 
 class Ivr extends Model
 {
@@ -21,7 +22,7 @@ class Ivr extends Model
      *@param integer $id
      *@return array
      */
-    public function ivrDetail($request)
+    public function ivrDetailold($request)
     {
         try {
 
@@ -82,45 +83,113 @@ class Ivr extends Model
         }
     }
 
-
-    public function ivrDetail_old_copy($request)
+    public function ivrDetail($request)
     {
         try {
-
-
-
-            $data = array();
-            $searchStr = array();
-            if ($request->has('auto_id') && is_numeric($request->input('auto_id'))) {
-                array_push($searchStr, 'id = :id');
-                $data['id'] = $request->input('auto_id');
+            $params = [];
+            $conditions = [];
+    
+            /**
+             * 🔍 Filter by auto_id
+             */
+            if ($request->filled('auto_id') && is_numeric($request->auto_id)) {
+                $conditions[] = 'id = :id';
+                $params['id'] = $request->auto_id;
             }
-
-            $str = !empty($searchStr) ? "  WHERE " . implode(" AND ", $searchStr) : '';
-
-            $sql = "SELECT * FROM " . $this->table . $str;
-
-            //$sql = "SELECT * FROM ".$this->table;
-            $record =  DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
-            $data = (array)$record;
+    
+            /**
+             * 🔍 Search across IVR fields
+             */
+            // if ($request->filled('search')) {
+            //     $conditions[] = '(
+            //         ivr_id LIKE :search OR
+            //         ann_id LIKE :search OR
+            //         ivr_desc LIKE :search OR
+            //         speech_text LIKE :search OR
+            //         language LIKE :search OR
+            //         voice_name LIKE :search OR
+            //         prompt_option LIKE :search
+            //     )';
+            //     $params['search'] = '%' . trim($request->search) . '%';
+            // }
+            if ($request->filled('search')) {
+                $conditions[] = '(
+                    ivr_id LIKE :s1 OR
+                    ann_id LIKE :s2 OR
+                    ivr_desc LIKE :s3 OR
+                    speech_text LIKE :s4 OR
+                    language LIKE :s5 OR
+                    voice_name LIKE :s6 OR
+                    prompt_option LIKE :s7
+                )';
+            
+                $search = '%' . trim($request->search) . '%';
+            
+                $params['s1'] = $search;
+                $params['s2'] = $search;
+                $params['s3'] = $search;
+                $params['s4'] = $search;
+                $params['s5'] = $search;
+                $params['s6'] = $search;
+                $params['s7'] = $search;
+            }
+            
+            /**
+             * 🧱 WHERE clause
+             */
+            $where = !empty($conditions)
+                ? ' WHERE ' . implode(' AND ', $conditions)
+                : '';
+    
+            /**
+             * 📄 Query
+             */
+            $sql = "SELECT * FROM {$this->table}{$where}";
+            $records = DB::connection('mysql_' . $request->auth->parent_id)
+                ->select($sql, $params);
+    
+            $data = (array) $records;
+            $totalRows = count($data);
+    
+            /**
+             * 📌 Pagination
+             */
+            if ($request->has('start') && $request->has('limit')) {
+                $start = (int) $request->start;
+                $limit = (int) $request->limit;
+                $data = array_slice($data, $start, $limit);
+            }
+    
+            /**
+             * ✅ Response
+             */
             if (!empty($data)) {
-                return array(
-                    'success' => 'true',
+                return [
+                    'success' => true,
                     'message' => 'IVR detail.',
-                    'data'   => $data
-                );
+                    'total_rows' => $totalRows,
+                    'data' => $data
+                ];
             }
-            return array(
-                'success' => 'false',
-                'message' => 'IVR not created.',
-                'data'   => array()
-            );
-        } catch (Exception $e) {
-            Log::log($e->getMessage());
-        } catch (InvalidArgumentException $e) {
-            Log::log($e->getMessage());
+    
+            return [
+                'success' => false,
+                'message' => 'IVR not found.',
+                'total_rows' => 0,
+                'data' => []
+            ];
+    
+        } catch (\Exception $e) {
+            Log::info('IVR detail error', ['error' => $e->getMessage()]);
+            return [
+                'success' => false,
+                'message' => 'Something went wrong.',
+                'data' => []
+            ];
         }
     }
+    
+ 
 
     /*
      *Update dnc details
