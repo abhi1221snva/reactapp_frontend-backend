@@ -787,10 +787,21 @@ class ExtensionController extends Controller
      * STEP 1 — Easify validation only (MANDATORY)
      */
     Log::info('Easify VALIDATION API request started', ['email' => $request->email]);
+    $loggedInUser = $request->auth; // or $request->auth if you use custom auth
 
+    $easifyUserToken = $loggedInUser->easify_user_uuid;
+    Log::info('Easify easifyUserToken', ['easifyUserToken' => $easifyUserToken]);
+
+    if (empty($loggedInUser?->easify_user_uuid)) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Easify user token not found for logged-in user'
+        ], 403);
+    }
+    
     $validate = Http::withHeaders([
-        'X-Application-Token' => $request->header('X-Application-Token'),
-        'X-Easify-User-Token' => $request->header('X-Easify-User-Token'),
+        'X-Application-Token' => env('PHONIFY_APP_TOKEN'),
+        'X-Easify-User-Token' => $easifyUserToken,
         'Accept' => 'application/json', // Ensure JSON response
     ])->post('https://easify-auth.on-forge.com/api/users/create', [
         'email' => $request->email,
@@ -869,18 +880,17 @@ class ExtensionController extends Controller
         }
     
         Log::info('Request data before saving extension', $request->all());
-        $response = $this->model->newExtensionSave($this->request);
         Log::info('Easify CREATE API request started', [
             'email' => $request->email
         ]);
   /**
      * STEP 4 — Easify user creation (MANDATORY)
      */
-    Log::info('Easify CREATE API request started', ['email' => $request->email]);
+    //Log::info('Easify CREATE API request started', ['email' => $request->email]);
 
     $create = Http::withHeaders([
-        'X-Application-Token' => $request->header('X-Application-Token'),
-        'X-Easify-User-Token' => $request->header('X-Easify-User-Token'),
+        'X-Application-Token' => env('PHONIFY_APP_TOKEN'),
+        'X-Easify-User-Token' => $easifyUserToken,
         'Accept' => 'application/json', // Ensure JSON response
     ])->post('https://easify-auth.on-forge.com/api/users/create', [
         'email' => $request->email,
@@ -910,6 +920,8 @@ class ExtensionController extends Controller
         'user_type' => 'subuser',
         'owner_id' => $request->auth->parent_id,
     ]);
+    $response = $this->model->newExtensionSave($this->request);
+
     // return response()->json([
     //     'status' => $validate->status(),
     //     'response' => $validate->json()
@@ -918,8 +930,8 @@ class ExtensionController extends Controller
 
         return response()->json([
             'success' => true,
-            // 'data' => $response,
-            'data'=> $create->json(),  // full Easify response
+            'data' => $response,
+            //'data'=> $create->json(),  // full Easify response
         ]);
     }
     function saveNewExtensionlatest()
