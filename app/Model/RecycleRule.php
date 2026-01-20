@@ -859,7 +859,7 @@ public function editRecycleRule1($request)
                 $data_lead['lead_id'] = $lead_id;
 
                 $sql = "SELECT count(*) as count_calls,lead_id FROM cdr  WHERE lead_id IN(" . $lead_id . ") group by lead_id";
-                $record =  DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data_lead);
+                $record =  DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
                 $data_lead_id = (array)$record;
 
                 $deleted_lead_id = 1;
