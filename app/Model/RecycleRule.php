@@ -845,14 +845,17 @@ public function deleteLeadRule($request)
  
             if (!empty($leadRecords)) {
                 $lead_id_arr = array();
- 
+                $campaignIds = [];
+
                 foreach ($leadRecords as $lead) {
                     $lead_id_arr[] = $lead->lead_id;
+                     $campaignIds[] = $lead->campaign_id;
                 }
  
                 // Remove duplicates to prevent SQL parameter binding issues
                 $lead_id_arr = array_values(array_unique($lead_id_arr));
- 
+                $campaignIds = array_values(array_unique($campaignIds));
+
                 if (empty($lead_id_arr)) {
                     return array(
                         'success' => 'false',
@@ -884,7 +887,19 @@ public function deleteLeadRule($request)
                         $deleted_lead_count++;
                     }
                 }
- 
+            if (!empty($campaignIds)) {
+                $placeholders = implode(',', array_fill(0, count($campaignIds), '?'));
+
+                $updateSql = "
+                    UPDATE campaign
+                    SET status = 1
+                    WHERE id IN ($placeholders)
+                    AND status = 0
+                ";
+
+                $connection->update($updateSql, $campaignIds);
+            }
+
                 return array(
                     'success' => 'true',
                     'message' => "Recycle rule executed successfully. {$deleted_lead_count} lead(s) recycled.",
