@@ -174,18 +174,38 @@ class IvrController extends Controller
      * )
      */
 
-    public function addIvr()
-    {
-        $this->validate($this->request, [
-            'ann_id' => 'string',
-            'ivr_id'   => 'string',
-            'ivr_desc'   => 'string',
+    // public function addIvr()
+    // {
+    //     $this->validate($this->request, [
+    //         'ann_id' => 'string',
+    //         'ivr_id'   => 'string',
+    //         'ivr_desc'   => 'string',
 
-            // 'id'        => 'required|numeric'
-        ]);
-        $response = $this->model->addIvr($this->request);
-        return response()->json($response);
+    //         // 'id'        => 'required|numeric'
+    //     ]);
+    //     $response = $this->model->addIvr($this->request);
+    //     return response()->json($response);
+    // }
+    public function addIvr()
+{
+    // ✅ Validation (auto 422)
+    $this->validate($this->request, [
+        'ivr_id'   => 'required|string',
+        'ann_id'   => 'required|string',
+        'ivr_desc' => 'required|string',
+    ]);
+
+    $response = $this->model->addIvr($this->request);
+
+    // ❌ Model-level failure
+    if ($response['success'] === false) {
+        return response()->json($response, 400);
     }
+
+    // ✅ Success
+    return response()->json($response, 201);
+}
+
     /*
      *Delete Dnc
      *@return json
