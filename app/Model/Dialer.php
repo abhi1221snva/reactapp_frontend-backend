@@ -98,7 +98,7 @@ class Dialer extends Model
             $response = $asterisk->outboundAIDial($request);
 
             $insertSql = "INSERT INTO lead_report (campaign_id, list_id, lead_id, disposition_id) VALUE (:campaign_id, :list_id, :lead_id, :disposition_id) ON DUPLICATE KEY UPDATE disposition_id = :disposition_id_1";
-            return DB::connection('mysql_' . $request['clientId'])->insert(
+             DB::connection('mysql_' . $request['clientId'])->insert(
                 $insertSql,
                 array(
                     'campaign_id' => $request['campaign_id'],
@@ -109,6 +109,24 @@ class Dialer extends Model
                 )
             );
 
+        // 🔥 Inactivate campaign when dialed leads >= total leads
+        DB::connection('mysql_' . $request['clientId'])->update(
+            "UPDATE campaign c
+            SET c.status = 0
+            WHERE c.id = :campaign_id
+            AND (
+                SELECT COUNT(DISTINCT lr.lead_id)
+                FROM lead_report lr
+                WHERE lr.campaign_id = c.id
+            ) >= (
+                SELECT COUNT(1)
+                FROM list_data ld
+                JOIN campaign_list cl ON cl.list_id = ld.list_id
+                WHERE cl.campaign_id = c.id
+                    AND cl.is_deleted = 0
+            )",
+            ['campaign_id' => $request['campaign_id']]
+        );
 
             if ($response == true) {
                 //$this->addToLeadReport('mysql_' . $clientId, $campaignId, $lead_id, $lead['lead_id'], 0);
