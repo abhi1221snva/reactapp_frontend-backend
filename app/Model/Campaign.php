@@ -249,6 +249,25 @@ public function campaignDetail($request)
             } else {
                 $id->dialed_leads = 0;
             }
+/* -------------------------------------------------
+ * 6️⃣ AUTO INACTIVATE CAMPAIGN (GUARDED)
+ * ------------------------------------------------- */
+if (
+    $id->total_leads > 0 &&
+    $id->dialed_leads >= $id->total_leads &&
+    (int) $id->status === 1
+) {
+    DB::connection($connection)->update(
+        "UPDATE campaign
+         SET status = 0
+         WHERE id = :campaign_id
+           AND status = 1",
+        ['campaign_id' => $id->id]
+    );
+
+    // reflect immediately in response
+    $id->status = 0;
+}
 
             /* -------------------------------------------------
              * 4️⃣ HOPPER COUNT (UNCHANGED)
