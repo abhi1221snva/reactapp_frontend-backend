@@ -279,9 +279,17 @@ class Ivr extends Model
      *@param object $request
      *@return array
      */
-    public function addIvr($request)
+    public function addIvrold($request)
     {
         try {
+            if (!$request->filled('ivr_id') || !$request->filled('ann_id')) {
+               return response()->json([
+                'success' => false,
+                'message' => 'ivr_id and ann_id are required'
+            ], 422);
+
+            }
+
             if ($request->has('ivr_id') && !empty($request->input('ivr_id'))) {
                 $data['ivr_id'] = $request->input('ivr_id');
                 $data['ann_id'] = $request->input('ann_id');
@@ -304,14 +312,14 @@ class Ivr extends Model
                 } else {
                     return array(
                         'success' => 'false',
-                        'message' => 'Ivr are not added successfully.'
+                        'message' => 'Ivr  not added.'
                     );
                 }
             }
 
             return array(
                 'success' => 'false',
-                'message' => 'Ivr are not added successfully.'
+                'message' => 'Ivr not added.'
             );
         } catch (Exception $e) {
             Log::log($e->getMessage());
@@ -319,6 +327,43 @@ class Ivr extends Model
             Log::log($e->getMessage());
         }
     }
+public function addIvr($request)
+{
+    try {
+        $data = [
+            'ivr_id'        => $request->ivr_id,
+            'ann_id'        => $request->ann_id,
+            'ivr_desc'      => $request->ivr_desc,
+            'language'      => $request->language,
+            'voice_name'    => $request->voice_name,
+            'speech_text'   => $request->speech_text,
+            'prompt_option' => $request->prompt_option,
+            'speed'         => $request->speed,
+            'pitch'         => $request->pitch,
+        ];
+
+        $query = "INSERT INTO {$this->table}
+            (ivr_id, ann_id, ivr_desc, language, voice_name, speech_text, prompt_option, speed, pitch)
+            VALUES
+            (:ivr_id, :ann_id, :ivr_desc, :language, :voice_name, :speech_text, :prompt_option, :speed, :pitch)";
+
+        DB::connection('mysql_' . $request->auth->parent_id)
+            ->insert($query, $data);
+
+        return [
+            'success' => true,
+            'message' => 'IVR added successfully'
+        ];
+
+    } catch (\Exception $e) {
+        Log::error($e);
+
+        return [
+            'success' => false,
+            'message' => 'Failed to add IVR'
+        ];
+    }
+}
 
     /*
      *Update dnc details
