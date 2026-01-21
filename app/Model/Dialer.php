@@ -411,17 +411,17 @@ $totalLeads = $total->total ?? 0;
 
 
 // 3️⃣ If exhausted → UPDATE campaign status = 0
-if ($totalLeads > 0 && $dialedLeads >= $totalLeads) {
+// if ($totalLeads > 0 && $dialedLeads >= $totalLeads) {
 
-    DB::connection($connection)->update(
-        "UPDATE campaign
-         SET status = 0
-         WHERE id = :campaign_id",
-        ['campaign_id' => $row->id]
-    );
+//     DB::connection($connection)->update(
+//         "UPDATE campaign
+//          SET status = 0
+//          WHERE id = :campaign_id",
+//         ['campaign_id' => $row->id]
+//     );
 
-    continue; // do not show this campaign
-}
+//     continue; // do not show this campaign
+// }
 
                $weekPlan = json_decode($row->week_plan, true);
 
@@ -1960,7 +1960,7 @@ public function getLead(int $parentId, int $extension)
      * Insert data in lead report
      * @return boolean
      */
-    public function addToLeadReport($db, $campaignId, $listId, $leadId, $dispositionId)
+    public function addToLeadReportold($db, $campaignId, $listId, $leadId, $dispositionId)
     {
         $insertSql = "INSERT INTO lead_report (campaign_id, list_id, lead_id, disposition_id) VALUE (:campaign_id, :list_id, :lead_id, :disposition_id) ON DUPLICATE KEY UPDATE disposition_id = :disposition_id_1";
         return DB::connection($db)->insert(
@@ -1974,7 +1974,44 @@ public function getLead(int $parentId, int $extension)
             )
         );
     }
-
+    public function addToLeadReport($db, $campaignId, $listId, $leadId, $dispositionId)
+    {
+        // ✅ 1. Insert / update lead report
+        DB::connection($db)->insert(
+            "INSERT INTO lead_report (campaign_id, list_id, lead_id, disposition_id)
+             VALUES (:campaign_id, :list_id, :lead_id, :disposition_id)
+             ON DUPLICATE KEY UPDATE disposition_id = :disposition_id_1",
+            [
+                'campaign_id' => $campaignId,
+                'list_id' => $listId,
+                'lead_id' => $leadId,
+                'disposition_id' => $dispositionId,
+                'disposition_id_1' => $dispositionId
+            ]
+        );
+    
+        // 🔥 2. ADD THIS BLOCK (INSTANT campaign inactivation)
+        DB::connection($db)->update(
+            "UPDATE campaign c
+             SET c.status = 0
+             WHERE c.id = :campaign_id
+             AND (
+                 SELECT COUNT(DISTINCT lr.lead_id)
+                 FROM lead_report lr
+                 WHERE lr.campaign_id = c.id
+             ) >= (
+                 SELECT COUNT(1)
+                 FROM list_data ld
+                 JOIN campaign_list cl ON cl.list_id = ld.list_id
+                 WHERE cl.campaign_id = c.id
+                   AND cl.is_deleted = 0
+             )",
+            ['campaign_id' => $campaignId]
+        );
+    
+        return true;
+    }
+    
     public function addToLeadTempTable($db, $campaignId, $listId, $leadId, $dispositionId)
     {
         $insertSql = "INSERT INTO lead_temp (campaign_id, list_id, lead_id) VALUE (:campaign_id, :list_id, :lead_id) ON DUPLICATE KEY UPDATE lead_id = :lead_id_1";
