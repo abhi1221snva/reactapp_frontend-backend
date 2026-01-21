@@ -98,7 +98,7 @@ class Dialer extends Model
             $response = $asterisk->outboundAIDial($request);
 
             $insertSql = "INSERT INTO lead_report (campaign_id, list_id, lead_id, disposition_id) VALUE (:campaign_id, :list_id, :lead_id, :disposition_id) ON DUPLICATE KEY UPDATE disposition_id = :disposition_id_1";
-             DB::connection('mysql_' . $request['clientId'])->insert(
+            return DB::connection('mysql_' . $request['clientId'])->insert(
                 $insertSql,
                 array(
                     'campaign_id' => $request['campaign_id'],
@@ -109,28 +109,6 @@ class Dialer extends Model
                 )
             );
 
-        // 🔥 Inactivate campaign when dialed leads >= total leads
-        DB::connection('mysql_' . $request['clientId'])->update(
-            "UPDATE campaign c
-SET c.status = 0
-WHERE c.id = :campaign_id
-AND NOT EXISTS (
-    SELECT 1
-    FROM list_data ld
-    JOIN campaign_list cl ON cl.list_id = ld.list_id
-    WHERE cl.campaign_id = c.id
-      AND cl.is_deleted = 0
-      AND NOT EXISTS (
-          SELECT 1
-          FROM lead_report lr
-          WHERE lr.campaign_id = c.id
-            AND lr.lead_id = ld.id
-      )
-);
-
-            )",
-            ['campaign_id' => $request['campaign_id']]
-        );
 
             if ($response == true) {
                 //$this->addToLeadReport('mysql_' . $clientId, $campaignId, $lead_id, $lead['lead_id'], 0);
@@ -433,17 +411,17 @@ $totalLeads = $total->total ?? 0;
 
 
 // 3️⃣ If exhausted → UPDATE campaign status = 0
-// if ($totalLeads > 0 && $dialedLeads >= $totalLeads) {
+if ($totalLeads > 0 && $dialedLeads >= $totalLeads) {
 
-//     DB::connection($connection)->update(
-//         "UPDATE campaign
-//          SET status = 0
-//          WHERE id = :campaign_id",
-//         ['campaign_id' => $row->id]
-//     );
+    DB::connection($connection)->update(
+        "UPDATE campaign
+         SET status = 0
+         WHERE id = :campaign_id",
+        ['campaign_id' => $row->id]
+    );
 
-//     continue; // do not show this campaign
-// }
+    continue; // do not show this campaign
+}
 
                $weekPlan = json_decode($row->week_plan, true);
 
@@ -1999,7 +1977,7 @@ public function getLead(int $parentId, int $extension)
     public function addToLeadReport($db, $campaignId, $listId, $leadId, $dispositionId)
     {
         // ✅ 1. Insert / update lead report
-        DB::connection($db)->insert(
+      DB::connection($db)->insert(
             "INSERT INTO lead_report (campaign_id, list_id, lead_id, disposition_id)
              VALUES (:campaign_id, :list_id, :lead_id, :disposition_id)
              ON DUPLICATE KEY UPDATE disposition_id = :disposition_id_1",
@@ -2010,29 +1988,6 @@ public function getLead(int $parentId, int $extension)
                 'disposition_id' => $dispositionId,
                 'disposition_id_1' => $dispositionId
             ]
-        );
-    
-        // 🔥 2. ADD THIS BLOCK (INSTANT campaign inactivation)
-        DB::connection($db)->update(
-            "UPDATE campaign c
-                SET c.status = 0
-                WHERE c.id = :campaign_id
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM list_data ld
-                    JOIN campaign_list cl ON cl.list_id = ld.list_id
-                    WHERE cl.campaign_id = c.id
-                    AND cl.is_deleted = 0
-                    AND NOT EXISTS (
-                        SELECT 1
-                        FROM lead_report lr
-                        WHERE lr.campaign_id = c.id
-                            AND lr.lead_id = ld.id
-                    )
-                );
-
-             )",
-            ['campaign_id' => $campaignId]
         );
     
         return true;
