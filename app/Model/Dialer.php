@@ -1944,7 +1944,7 @@ public function getLead(int $parentId, int $extension)
      * Insert data in lead report
      * @return boolean
      */
-    public function addToLeadReportold($db, $campaignId, $listId, $leadId, $dispositionId)
+    public function addToLeadReport($db, $campaignId, $listId, $leadId, $dispositionId)
     {
         $insertSql = "INSERT INTO lead_report (campaign_id, list_id, lead_id, disposition_id) VALUE (:campaign_id, :list_id, :lead_id, :disposition_id) ON DUPLICATE KEY UPDATE disposition_id = :disposition_id_1";
         return DB::connection($db)->insert(
@@ -1958,24 +1958,24 @@ public function getLead(int $parentId, int $extension)
             )
         );
     }
-    public function addToLeadReport($db, $campaignId, $listId, $leadId, $dispositionId)
-    {
-        // ✅ 1. Insert / update lead report
-      DB::connection($db)->insert(
-            "INSERT INTO lead_report (campaign_id, list_id, lead_id, disposition_id)
-             VALUES (:campaign_id, :list_id, :lead_id, :disposition_id)
-             ON DUPLICATE KEY UPDATE disposition_id = :disposition_id_1",
-            [
-                'campaign_id' => $campaignId,
-                'list_id' => $listId,
-                'lead_id' => $leadId,
-                'disposition_id' => $dispositionId,
-                'disposition_id_1' => $dispositionId
-            ]
-        );
+    // public function addToLeadReport($db, $campaignId, $listId, $leadId, $dispositionId)
+    // {
+    //     // ✅ 1. Insert / update lead report
+    //   DB::connection($db)->insert(
+    //         "INSERT INTO lead_report (campaign_id, list_id, lead_id, disposition_id)
+    //          VALUES (:campaign_id, :list_id, :lead_id, :disposition_id)
+    //          ON DUPLICATE KEY UPDATE disposition_id = :disposition_id_1",
+    //         [
+    //             'campaign_id' => $campaignId,
+    //             'list_id' => $listId,
+    //             'lead_id' => $leadId,
+    //             'disposition_id' => $dispositionId,
+    //             'disposition_id_1' => $dispositionId
+    //         ]
+    //     );
     
-        return true;
-    }
+    //     return true;
+    // }
     
     public function addToLeadTempTable($db, $campaignId, $listId, $leadId, $dispositionId)
     {
