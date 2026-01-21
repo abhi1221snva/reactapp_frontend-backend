@@ -369,42 +369,42 @@ class Dialer extends Model
                 ]);
                 $filteredCampaign = [];
             foreach ($campaign as $row) {
-$dialed = DB::connection($connection)->selectOne(
-    "SELECT COUNT(1) AS total
-     FROM lead_report
-     WHERE campaign_id = :campaign_id",
-    ['campaign_id' => $row->id]
-);
+// $dialed = DB::connection($connection)->selectOne(
+//     "SELECT COUNT(1) AS total
+//      FROM lead_report
+//      WHERE campaign_id = :campaign_id",
+//     ['campaign_id' => $row->id]
+// );
 
-$dialedLeads = $dialed->total ?? 0;
-Log::info('dialed leads',['dialedLeads'=>$dialedLeads]);
-$total = DB::connection($connection)->selectOne(
-    "SELECT COUNT(1) AS total
-     FROM list_data
-     WHERE list_id IN (
-         SELECT list_id
-         FROM campaign_list
-         WHERE campaign_id = :campaign_id
-           AND status = 1
-           AND is_deleted = 0
-     )",
-    ['campaign_id' => $row->id]
-);
+// $dialedLeads = $dialed->total ?? 0;
+// Log::info('dialed leads',['dialedLeads'=>$dialedLeads]);
+// $total = DB::connection($connection)->selectOne(
+//     "SELECT COUNT(1) AS total
+//      FROM list_data
+//      WHERE list_id IN (
+//          SELECT list_id
+//          FROM campaign_list
+//          WHERE campaign_id = :campaign_id
+//            AND status = 1
+//            AND is_deleted = 0
+//      )",
+//     ['campaign_id' => $row->id]
+// );
 
-$totalLeads = $total->total ?? 0;
-Log::info('total leads',['totalLeads'=>$totalLeads]);
+// $totalLeads = $total->total ?? 0;
+// Log::info('total leads',['totalLeads'=>$totalLeads]);
 
-if ($totalLeads > 0 && $dialedLeads >= $totalLeads) {
+// if ($totalLeads > 0 && $dialedLeads >= $totalLeads) {
 
-    DB::connection($connection)->update(
-        "UPDATE campaign
-         SET status = 0
-         WHERE id = :campaign_id",
-        ['campaign_id' => $row->id]
-    );
+//     DB::connection($connection)->update(
+//         "UPDATE campaign
+//          SET status = 0
+//          WHERE id = :campaign_id",
+//         ['campaign_id' => $row->id]
+//     );
 
-    continue;
-}
+//     continue;
+// }
 
 
                $weekPlan = json_decode($row->week_plan, true);
