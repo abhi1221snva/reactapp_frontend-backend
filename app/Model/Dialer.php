@@ -112,18 +112,22 @@ class Dialer extends Model
         // 🔥 Inactivate campaign when dialed leads >= total leads
         DB::connection('mysql_' . $request['clientId'])->update(
             "UPDATE campaign c
-            SET c.status = 0
-            WHERE c.id = :campaign_id
-            AND (
-                SELECT COUNT(DISTINCT lr.lead_id)
-                FROM lead_report lr
-                WHERE lr.campaign_id = c.id
-            ) >= (
-                SELECT COUNT(1)
-                FROM list_data ld
-                JOIN campaign_list cl ON cl.list_id = ld.list_id
-                WHERE cl.campaign_id = c.id
-                    AND cl.is_deleted = 0
+SET c.status = 0
+WHERE c.id = :campaign_id
+AND NOT EXISTS (
+    SELECT 1
+    FROM list_data ld
+    JOIN campaign_list cl ON cl.list_id = ld.list_id
+    WHERE cl.campaign_id = c.id
+      AND cl.is_deleted = 0
+      AND NOT EXISTS (
+          SELECT 1
+          FROM lead_report lr
+          WHERE lr.campaign_id = c.id
+            AND lr.lead_id = ld.id
+      )
+);
+
             )",
             ['campaign_id' => $request['campaign_id']]
         );
@@ -2011,18 +2015,22 @@ public function getLead(int $parentId, int $extension)
         // 🔥 2. ADD THIS BLOCK (INSTANT campaign inactivation)
         DB::connection($db)->update(
             "UPDATE campaign c
-             SET c.status = 0
-             WHERE c.id = :campaign_id
-             AND (
-                 SELECT COUNT(DISTINCT lr.lead_id)
-                 FROM lead_report lr
-                 WHERE lr.campaign_id = c.id
-             ) >= (
-                 SELECT COUNT(1)
-                 FROM list_data ld
-                 JOIN campaign_list cl ON cl.list_id = ld.list_id
-                 WHERE cl.campaign_id = c.id
-                   AND cl.is_deleted = 0
+                SET c.status = 0
+                WHERE c.id = :campaign_id
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM list_data ld
+                    JOIN campaign_list cl ON cl.list_id = ld.list_id
+                    WHERE cl.campaign_id = c.id
+                    AND cl.is_deleted = 0
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM lead_report lr
+                        WHERE lr.campaign_id = c.id
+                            AND lr.lead_id = ld.id
+                    )
+                );
+
              )",
             ['campaign_id' => $campaignId]
         );
