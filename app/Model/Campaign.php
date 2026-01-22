@@ -1711,10 +1711,10 @@ if (!$campaign) {
     }
 
     // === Lead report count ===
-    $data1['campaign_id'] = $campaign->id;
-    $sql_count_lead_report = "SELECT count(1) as rowCountLeadReport FROM lead_report WHERE campaign_id = :campaign_id ";
-    $record_count_lead = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_count_lead_report, $data1);
-    $campaign->rowLeadReport = $record_count_lead->rowCountLeadReport ?? 0;
+     $data1['campaign_id'] = $campaign->id;
+    // $sql_count_lead_report = "SELECT count(1) as rowCountLeadReport FROM lead_report WHERE campaign_id = :campaign_id ";
+    // $record_count_lead = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_count_lead_report, $data1);
+    // $campaign->rowLeadReport = $record_count_lead->rowCountLeadReport ?? 0;
 
     // === Campaign list ===
     $searchStr = [];
@@ -1742,24 +1742,46 @@ if (!$campaign) {
 // === Total leads (same logic as campaignDetail) ===
 if (!empty($id_list)) {
 
-    $sql_lead_count = "SELECT SUM(lead_count) as totalLeadCount FROM list WHERE id IN (" . implode(',', $id_list) . ")";
-    $lead_count_record = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_lead_count);
+   // === TOTAL LEADS (MATCH campaignDetail) ===
+if (!empty($id_list)) {
 
-    if (!empty($lead_count_record) && $lead_count_record->totalLeadCount > 0) {
-        $campaign->total_leads = (int) $lead_count_record->totalLeadCount;
-    } else {
-        if ($campaign->crm_title_url == 'hubspot') {
-            $sql = "SELECT SUM(size) as total FROM hubspot_lists WHERE list_id IN ('" . implode("','", $id_list) . "')";
-        } else {
-            $sql = "SELECT COUNT(*) as total FROM list_data WHERE list_id IN ('" . implode("','", $id_list) . "')";
-        }
+    $sqlTotalLeads = "
+        SELECT SUM(lead_count) AS total
+        FROM list
+        WHERE id IN (" . implode(',', $id_list) . ")
+    ";
 
-        $record = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql);
-        $campaign->total_leads = (int) ($record->total ?? 0);
-    }
+    $total = DB::connection('mysql_' . $request->auth->parent_id)
+        ->selectOne($sqlTotalLeads);
+
+    $campaign->total_leads = (int) ($total->total ?? 0);
+
 } else {
     $campaign->total_leads = 0;
 }
+
+}
+// === DIALED LEADS (MATCH campaignDetail) ===
+if (!empty($id_list)) {
+
+    $sqlDialed = "
+        SELECT COUNT(1) AS total
+        FROM lead_report
+        WHERE campaign_id = :campaign_id
+          AND list_id IN (" . implode(',', $id_list) . ")
+    ";
+
+    $dialed = DB::connection('mysql_' . $request->auth->parent_id)
+        ->selectOne($sqlDialed, [
+            'campaign_id' => $campaign->id
+        ]);
+
+    $campaign->dialed_leads = (int) ($dialed->total ?? 0);
+
+} else {
+    $campaign->dialed_leads = 0;
+}
+
 
 
     // === Lead temp count ===
@@ -1815,7 +1837,7 @@ if (!empty($id_list)) {
     }
     // === Rename / Map columns for API output ===
 //$campaign->setAttribute('total_leads', $campaign->rowLeadReport ?? 0);
-$campaign->setAttribute('dialed_leads', $campaign->rowLeadReport ?? 0);
+//$campaign->setAttribute('dialed_leads', $campaign->rowLeadReport ?? 0);
 //$campaign->setAttribute('created_date', $campaign->updated ?? null);
 
 // Optionally remove old keys to clean response
@@ -2004,6 +2026,76 @@ if (!empty($campaign->updated)) {
         $listId = $request->input('listId');
         $status = $request->input('status');
         Log::debug('Received status: ', ['status' => $status]);
+         $connection = 'mysql_' . $request->auth->parent_id;
+    /**
+     * 🚫 BLOCK ACTIVATION IF LEADS ARE EXHAUSTED
+     */
+    if ($status === 1) {
+
+        /* -------------------------------------------------
+         * 1️⃣ ACTIVE LIST IDS
+         * ------------------------------------------------- */
+        $sqlLists = "
+            SELECT list_id
+            FROM campaign_list
+            WHERE campaign_id = :campaign_id
+              AND status = 1
+              AND is_deleted = 0
+        ";
+
+        $lists = DB::connection($connection)->select($sqlLists, [
+            'campaign_id' => $listId
+        ]);
+
+        $listIds = array_map(fn($l) => $l->list_id, $lists);
+
+        $totalLeads = 0;
+        $dialedLeads = 0;
+
+        if (!empty($listIds)) {
+
+            $listIdsStr = implode(',', $listIds);
+
+            /* -------------------------------------------------
+             * 2️⃣ TOTAL LEADS
+             * ------------------------------------------------- */
+            $sqlTotalLeads = "
+                SELECT SUM(lead_count) AS total
+                FROM list
+                WHERE id IN ($listIdsStr)
+            ";
+
+            $total = DB::connection($connection)->selectOne($sqlTotalLeads);
+            $totalLeads = $total->total ?? 0;
+
+            /* -------------------------------------------------
+             * 3️⃣ DIALED LEADS
+             * ------------------------------------------------- */
+            $sqlDialed = "
+                SELECT COUNT(1) AS total
+                FROM lead_report
+                WHERE campaign_id = :campaign_id
+                  AND list_id IN ($listIdsStr)
+            ";
+
+            $dialed = DB::connection($connection)->selectOne($sqlDialed, [
+                'campaign_id' => $listId
+            ]);
+
+            $dialedLeads = $dialed->total ?? 0;
+        }
+
+        /* -------------------------------------------------
+         * ❌ VALIDATION
+         * ------------------------------------------------- */
+        if ($totalLeads > 0 && $dialedLeads >= $totalLeads) {
+            return response()->json([
+                'success' => 'false',
+                'status'  => 'false',
+                'message' => 'Campaign cannot be activated. All leads are already dialed. Please add more leads.'
+            ], 422);
+        }
+    }
 
         $saveRecord = Campaign::on('mysql_' . $request->auth->parent_id)
             ->where('id', $listId) // Use the actual listId received from the request
