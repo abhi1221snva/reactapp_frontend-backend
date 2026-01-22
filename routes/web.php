@@ -67,8 +67,8 @@ $router->POST('authentication_copy', 'AuthenticationController@authentication_co
 
 $router->POST('verify_google_otp', 'TwoFactorController@verify_google_otp');
 //$router->POST('authentication_copy', 'AuthenticationController@authentication_copy');
-$router->get('auth/google/redirect', 'GoogleController@redirectToGoogle');
-$router->post('auth/google/callback', 'GoogleController@handleGoogleCallback');
+// $router->get('auth/google/redirect', 'GoogleController@redirectToGoogle');
+// $router->post('auth/google/callback', 'GoogleController@handleGoogleCallback');
 $router->post('auth/twitter/callback', 'TwitterController@handleTwitterCallback');
 
 //cron job
@@ -130,9 +130,24 @@ $router->group(['middleware' => ['jwt.auth', 'auth.superadmin']], function () us
   $router->post('rate/{id}', 'ModuleController@updateRate');
 });
 
-
+Route::get('auth/google/redirect', 'GmailController@redirectToGoogle');
+  Route::get('auth/google/callback', 'GmailController@handleGoogleCallback');
 #Routes with admin rights should be added here
 $router->group(['middleware' => ['jwt.auth']], function () use ($router) {
+ 
+Route::get('/api/emails', 'GmailController@listEmails');
+
+// Get single email detail
+Route::get('/api/emails/{messageId}', 'GmailController@getEmail');
+
+// Draft APIs
+Route::post('/api/emails/draft', 'GmailController@saveDraft');
+Route::put('/api/emails/draft/{draftId}', 'GmailController@updateDraft');
+Route::delete('/api/emails/draft/{draftId}', 'GmailController@deleteDraft');
+
+// Archive / Unarchive (Bulk)
+Route::post('/api/emails/archive', 'GmailController@archiveEmails');
+Route::post('/api/emails/unarchive', 'GmailController@unarchiveEmails');
   #create user
   $router->put('user', 'ExtensionController@saveNewExtension');
 
@@ -1636,6 +1651,7 @@ $router->group(['middleware' => 'jwt.auth', 'prefix' => 'gmail'], function () us
     $router->post('mailbox/{messageId}/read', 'GmailMailboxController@markAsRead');
     $router->post('mailbox/{messageId}/unread', 'GmailMailboxController@markAsUnread');
 });
+
 
 // $router->post('/api/auth/create-user', 'AuthenticationController@createUser');
 
