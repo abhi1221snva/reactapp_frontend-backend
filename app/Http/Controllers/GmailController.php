@@ -37,15 +37,15 @@ class GmailController extends Controller
                 throw new \Exception('Google did not return access token');
             }
     
-            $user = User::where('email', $googleUser->getEmail())->first();
-    
-            if (!$user) {
-                $user = User::create([
-                    'first_name' => $googleUser->getName(),
-                    'email' => $googleUser->getEmail(),
-                    'google_id' => $googleUser->getId(),
-                ]);
-            }
+                   // 🔒 Only allow login for existing users
+        $user = User::where('email', $googleUser->getEmail())->first();
+
+        if (!$user) {
+            // If email not found, reject login instead of creating a new user
+            return response()->json([
+                'error' => 'Unauthorized: This email is not registered'
+            ], 401);
+        }
     
             // ✅ SAVE GOOGLE TOKENS
             $user->google_access_token = $googleUser->token;
