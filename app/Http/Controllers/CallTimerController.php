@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Model\CallTimer;
 use Illuminate\Http\Request;
+use App\Model\Client\Campaign;
 
 class CallTimerController extends Controller
 {
@@ -221,6 +222,16 @@ public function update(Request $request, $id)
         if (!$timer) {
             return response()->json(['message' => 'Timer not found'], 404);
         }
+          // Check if any campaign is using this timer
+    $isAssigned = Campaign::on($connection)
+        ->where('call_schedule_id', $id)
+        ->exists();
+
+    if ($isAssigned) {
+        return response()->json([
+            'message' => 'Cannot delete timer. It is assigned to a campaign.'
+        ], 400); // 400 Bad Request
+    }
 
         $timer->delete();
 
