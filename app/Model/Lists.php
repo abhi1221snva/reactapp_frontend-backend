@@ -1828,7 +1828,7 @@ private function isPhoneColumn($conn, $listId, $column)
 
         //     $rowData['option_' . $colIndex] = $cell;
         // }
-        foreach ($row as $cell) {
+ foreach ($row as $cell) {
     $colIndex++;
     if ($colIndex > 30) continue;
 
@@ -1837,19 +1837,17 @@ private function isPhoneColumn($conn, $listId, $column)
         $cell = date("Y-m-d", (($cell - 25569) * 86400));
         $cell = date('Y-m-d', strtotime('+1 day', strtotime($cell)));
     }
-    else {
-        // 🔥 FIX: handle scientific notation & junk chars
+    // 🔥 APPLY FIX ONLY FOR PHONE COLUMN
+    else if ($colIndex === 3) {   // phone column
         if (is_numeric($cell)) {
-            // converts 8.88E+09 → 8880000000
             $cell = number_format($cell, 0, '', '');
         }
-
-        // keep digits only (phone-safe)
         $cell = preg_replace('/[^0-9]/', '', (string) $cell);
     }
 
     $rowData['option_' . $colIndex] = $cell;
 }
+
 
 
         $query_1[] = $rowData;
