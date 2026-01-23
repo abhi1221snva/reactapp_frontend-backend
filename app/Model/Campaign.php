@@ -159,6 +159,10 @@ public function campaignDetail($request)
             $request->auth->level,
             $request->auth->groups
         );
+// 🔽 Sort campaigns in DESC order by ID
+usort($campaigns, function ($a, $b) {
+    return $b->id <=> $a->id;
+});
 
         // 🔍 Search by title
         if ($request->has('title') && !empty($request->input('title'))) {
@@ -299,7 +303,7 @@ if (
             'success'     => 'true',
             'message'     => 'Campaign detail.',
             'total_rows'  => $totalRows,
-            'data'        => array_reverse($data_count),
+            'data'        => $data_count,
         ];
 
     } catch (\Throwable $e) {
