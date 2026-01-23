@@ -1816,18 +1816,41 @@ private function isPhoneColumn($conn, $listId, $column)
         $rowData = ['list_id' => $list_id];
         $colIndex = 0;
 
+        // foreach ($row as $cell) {
+        //     $colIndex++;
+        //     if ($colIndex > 30) continue;
+
+        //     // Date conversion
+        //     if (isset($date_array[$colIndex]) && is_numeric($cell)) {
+        //         $cell = date("Y-m-d", (($cell - 25569) * 86400));
+        //         $cell = date('Y-m-d', strtotime('+1 day', strtotime($cell)));
+        //     }
+
+        //     $rowData['option_' . $colIndex] = $cell;
+        // }
         foreach ($row as $cell) {
-            $colIndex++;
-            if ($colIndex > 30) continue;
+    $colIndex++;
+    if ($colIndex > 30) continue;
 
-            // Date conversion
-            if (isset($date_array[$colIndex]) && is_numeric($cell)) {
-                $cell = date("Y-m-d", (($cell - 25569) * 86400));
-                $cell = date('Y-m-d', strtotime('+1 day', strtotime($cell)));
-            }
-
-            $rowData['option_' . $colIndex] = $cell;
+    // Date conversion
+    if (isset($date_array[$colIndex]) && is_numeric($cell)) {
+        $cell = date("Y-m-d", (($cell - 25569) * 86400));
+        $cell = date('Y-m-d', strtotime('+1 day', strtotime($cell)));
+    }
+    else {
+        // 🔥 FIX: handle scientific notation & junk chars
+        if (is_numeric($cell)) {
+            // converts 8.88E+09 → 8880000000
+            $cell = number_format($cell, 0, '', '');
         }
+
+        // keep digits only (phone-safe)
+        $cell = preg_replace('/[^0-9]/', '', (string) $cell);
+    }
+
+    $rowData['option_' . $colIndex] = $cell;
+}
+
 
         $query_1[] = $rowData;
     }
