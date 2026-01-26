@@ -130,24 +130,23 @@ $router->group(['middleware' => ['jwt.auth', 'auth.superadmin']], function () us
   $router->post('rate/{id}', 'ModuleController@updateRate');
 });
 
-Route::get('auth/google/redirect', 'GmailController@redirectToGoogle');
-  Route::get('auth/google/callback', 'GmailController@handleGoogleCallback');
+
 #Routes with admin rights should be added here
 $router->group(['middleware' => ['jwt.auth']], function () use ($router) {
- 
-Route::get('/api/emails', 'GmailController@listEmails');
+
+Route::get('/api/emails', 'EmailController@index');
 
 // Get single email detail
-Route::get('/api/emails/{messageId}', 'GmailController@getEmail');
+Route::get('/api/emails/{id}', 'EmailController@show');
 
 // Draft APIs
-Route::post('/api/emails/draft', 'GmailController@saveDraft');
-Route::put('/api/emails/draft/{draftId}', 'GmailController@updateDraft');
-Route::delete('/api/emails/draft/{draftId}', 'GmailController@deleteDraft');
+Route::post('/api/emails/draft', 'EmailController@storeDraft');
+Route::put('/api/emails/draft/{id}', 'EmailController@updateDraft');
+Route::delete('/api/emails/draft/{id}', 'EmailController@deleteDraft');
 
 // Archive / Unarchive (Bulk)
-Route::post('/api/emails/archive', 'GmailController@archiveEmails');
-Route::post('/api/emails/unarchive', 'GmailController@unarchiveEmails');
+Route::post('/api/emails/archive', 'EmailController@archive');
+Route::post('/api/emails/unarchive', 'EmailController@unarchive');
   #create user
   $router->put('user', 'ExtensionController@saveNewExtension');
 
