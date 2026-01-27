@@ -377,6 +377,8 @@ public function dispositionUpdate($request)
                 'message' => "Disposition doesn't exist."
             ];
         }
+        // Title (must be unique)
+     
 
         $dispositionId = $request->input('disposition_id');
         $clientDb = 'mysql_' . $request->auth->parent_id;
@@ -385,7 +387,26 @@ public function dispositionUpdate($request)
         $data = [];
 
         // Title
-        if ($request->has('title') && !empty($request->input('title'))) {
+        // if ($request->has('title') && !empty($request->input('title'))) {
+        //     $updateString[] = 'title = :title';
+        //     $data['title'] = $request->input('title');
+        // }
+           if ($request->has('title') && !empty($request->input('title'))) {
+
+            $exists = DB::connection($clientDb)
+                ->table('disposition')
+                ->where('title', $request->input('title'))
+                ->where('id', '!=', $dispositionId)
+                ->where('is_deleted', 0)
+                ->exists();
+
+            if ($exists) {
+                return [
+                    'success' => 'false',
+                    'message' => 'Disposition title already exists.'
+                ];
+            }
+
             $updateString[] = 'title = :title';
             $data['title'] = $request->input('title');
         }
@@ -480,6 +501,18 @@ public function dispositionUpdate($request)
         try
         {
             if($request->has('title') && !empty($request->input('title'))) {
+
+            $exists = DB::connection('mysql_'.$request->auth->parent_id)
+                ->table('disposition')
+                ->where('title', $request->input('title'))
+                ->exists();
+
+            if ($exists) {
+                return [
+                    'success' => false,
+                    'message' => 'Disposition title already exists.'
+                ];
+            }
                 $data['title'] = $request->input('title');
                 $data['d_type'] = $request->input('d_type');
                 $data['enable_sms'] = $request->input('enable_sms');
