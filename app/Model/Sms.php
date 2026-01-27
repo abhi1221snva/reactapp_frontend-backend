@@ -857,12 +857,16 @@ try {
     $errorCode = $e->getCode();     // Twilio-specific error code (ex: 20003)
 
     // Authentication errors → 401 or code 20003
-    if ($status == 401 || $errorCode == 20003) {
-        return [
-            'success' => false,
-            'message' => "Authentication failed for Twilio! Please verify your Account SID and Auth Token."
-        ];
-    }
+    // if ($status == 401 || $errorCode == 20003) {
+    //     return [
+    //         'success' => false,
+    //         'message' => "Authentication failed for Twilio! Please verify your Account SID and Auth Token."
+    //     ];
+    // }
+return response()->json([
+    'success' => false,
+    'message' => "Authentication failed for Twilio! Please verify your Account SID and Auth Token."
+], 402);
 
     // Invalid number
     if ($errorCode == 21608) {

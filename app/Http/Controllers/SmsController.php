@@ -15,6 +15,7 @@ use App\Services\MailService;
 use App\Services\SmsService;
 use Illuminate\Support\Facades\Log;
 use Plivo\RestClient;
+use Illuminate\Http\JsonResponse;
 
 
 
@@ -231,17 +232,37 @@ class SmsController extends Controller
      *      )
      * )
      */
-    public function sendSms()
-    {
-        $this->validate($this->request, [
-            'to' => 'required|numeric',
-            'from' => 'required|numeric',
-            'date' => 'required',
+    // public function sendSms()
+    // {
+    //     $this->validate($this->request, [
+    //         'to' => 'required|numeric',
+    //         'from' => 'required|numeric',
+    //         'date' => 'required',
 
-        ]);
-        $response = $this->model->sendSms($this->request);
-        return response()->json($response);
+    //     ]);
+    //     $response = $this->model->sendSms($this->request);
+    //     return response()->json($response);
+    // }
+
+public function sendSms()
+{
+    $this->validate($this->request, [
+        'to' => 'required|numeric',
+        'from' => 'required|numeric',
+        'date' => 'required',
+    ]);
+
+    $response = $this->model->sendSms($this->request);
+
+    // If model already returned a JsonResponse, return it directly
+    if ($response instanceof JsonResponse) {
+        return $response;
     }
+
+    // Otherwise, convert array to JSON
+    return response()->json($response);
+}
+
 
     public function getSmsCountDetails()
     {
