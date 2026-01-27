@@ -404,7 +404,7 @@ public function dispositionUpdate($request)
                 return response()->json([
                     'success' => false,
                     'message' => "Disposition title already exists."
-                ], 402);
+                ], 409);
             }
 
             $updateString[] = 'title = :title';
@@ -512,7 +512,7 @@ public function dispositionUpdate($request)
                 return response()->json([
                     'success' => false,
                     'message' => "Disposition title already exists."
-                ], 402);
+                ], 409);
 
             }
                 $data['title'] = $request->input('title');
