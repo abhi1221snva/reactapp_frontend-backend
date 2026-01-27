@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Model\Disposition;
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
 
 class DispositionController extends Controller
 {
@@ -147,6 +148,9 @@ class DispositionController extends Controller
             // 'id'                => 'required|numeric'
         ]);
         $response = $this->model->dispositionUpdate($this->request);
+               if ($response instanceof JsonResponse) {
+        return $response;
+    }
         return response()->json($response);
     }
     /*
@@ -197,7 +201,12 @@ class DispositionController extends Controller
             'title'     => 'required|string|max:255',
         ]);
         $response = $this->model->addDisposition($this->request);
-        return response()->json($response);
+            if ($response instanceof JsonResponse) {
+        return $response;
+    }
+
+    // Otherwise, convert array to JSON
+    return response()->json($response);
     }
     /*
      *Fetch Campaign Disposition Detail

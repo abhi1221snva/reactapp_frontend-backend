@@ -401,10 +401,10 @@ public function dispositionUpdate($request)
                 ->exists();
 
             if ($exists) {
-                return [
-                    'success' => 'false',
-                    'message' => 'Disposition title already exists.'
-                ];
+                return response()->json([
+                    'success' => false,
+                    'message' => "Disposition title already exists."
+                ], 402);
             }
 
             $updateString[] = 'title = :title';
@@ -508,10 +508,12 @@ public function dispositionUpdate($request)
                 ->exists();
 
             if ($exists) {
-                return [
+             
+                return response()->json([
                     'success' => false,
-                    'message' => 'Disposition title already exists.'
-                ];
+                    'message' => "Disposition title already exists."
+                ], 402);
+
             }
                 $data['title'] = $request->input('title');
                 $data['d_type'] = $request->input('d_type');
