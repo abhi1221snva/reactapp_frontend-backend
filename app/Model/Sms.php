@@ -589,7 +589,10 @@ Log::info('result reached',['res'=>$res]);
                 $client = new RestClient($auth_id,$api_key);
 
                // Check if mms_url is provided
-                if ($request->has('mms_url')) {
+                //if ($request->has('mms_url')) {
+                    // Check if MMS was uploaded or generated
+                if (!empty($data_array['mms_url'])) {
+
                     // Send MMS if mms_url is provided
                     $result = $client->messages->create([
                         "src" => $data_array['from'],                 // Sender's phone number
@@ -598,6 +601,8 @@ Log::info('result reached',['res'=>$res]);
                         "type" => "mms",                              // Explicitly set to MMS
                         "media_urls" => [$data_array['mms_url']]      // Use provided media URL
                     ]);
+                   // $response_id = $result->messageUuid[0] ?? true;
+
                 } else {
                     // Send SMS if mms_url is not provided
                     $result = $client->messages->create([
@@ -605,6 +610,8 @@ Log::info('result reached',['res'=>$res]);
                         "dst" => $data_array['to'],                   // Recipient's phone number
                         "text" => $data_array['text']                 // Text content
                     ]);
+                   // $response_id = $result->messageUuid[0] ?? true;
+
 }
            
 Log::info('result reached',['result'=>$result]);
@@ -654,7 +661,7 @@ Log::info('result reached',['result'=>$result]);
                 $smsObj->type       = 'outgoing';
                 $smsObj->date       = $request->date;
                 $smsObj->extension  = $request->auth->id;
-                if(!empty($$clientPackageId))
+                if(!empty($clientPackageId))
                 $smsObj->currency_code = $clientPackageId;
                 else
                 $smsObj->currency_code = 'USD';
@@ -670,6 +677,14 @@ Log::info('result reached',['result'=>$result]);
                         );
                     }
                 }
+  return [
+    'success' => false,
+    'message' => $result->error 
+        ?? $result->_message 
+        ?? 'Plivo SMS request failed'
+];
+
+
 
                  }
 

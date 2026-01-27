@@ -232,24 +232,12 @@ class SmsController extends Controller
      *      )
      * )
      */
-    // public function sendSms()
-    // {
-    //     $this->validate($this->request, [
-    //         'to' => 'required|numeric',
-    //         'from' => 'required|numeric',
-    //         'date' => 'required',
-
-    //     ]);
-    //     $response = $this->model->sendSms($this->request);
-    //     return response()->json($response);
-    // }
-
 public function sendSms()
 {
     $this->validate($this->request, [
-        'to' => 'required|numeric',
-        'from' => 'required|numeric',
-        'date' => 'required',
+        'to'   => 'required|numeric',
+        'from'=> 'required|numeric',
+        'date'=> 'required',
     ]);
 
     $response = $this->model->sendSms($this->request);
@@ -259,9 +247,34 @@ public function sendSms()
         return $response;
     }
 
-    // Otherwise, convert array to JSON
-    return response()->json($response);
+    // Set HTTP status based on success
+    $statusCode = 200;
+    if (isset($response['success']) && $response['success'] === false) {
+        $statusCode = 400;
+    }
+
+    return response()->json($response, $statusCode);
 }
+
+
+// public function sendSms()
+// {
+//     $this->validate($this->request, [
+//         'to' => 'required|numeric',
+//         'from' => 'required|numeric',
+//         'date' => 'required',
+//     ]);
+
+//     $response = $this->model->sendSms($this->request);
+
+//     // If model already returned a JsonResponse, return it directly
+//     if ($response instanceof JsonResponse) {
+//         return $response;
+//     }
+
+//     // Otherwise, convert array to JSON
+//     return response()->json($response);
+// }
 
 
     public function getSmsCountDetails()
