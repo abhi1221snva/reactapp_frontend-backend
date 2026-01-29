@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
+use App\Services\PusherService;
 
 class CampaignController extends Controller
 {
@@ -381,11 +382,19 @@ class CampaignController extends Controller
         } else {
             $response = $this->model->addCampaign($this->request);
         }
+        
         if ($response instanceof \Illuminate\Http\JsonResponse) {
             return $response; // already has correct status
         }
-        
+      // ✅ PUSHER TRIGGER (CORRECT PLACE)
+        PusherService::notify($request, [
+            'module'  => 'campaign',
+              'message' => $response->message
+        ?? $response['message']
+        ?? 'Campaign added successfully',
+        ]);
         return response()->json($response, 200);
+
         //return response()->json($response);
     }
     /*

@@ -16,6 +16,7 @@ use App\Services\SmsService;
 use Illuminate\Support\Facades\Log;
 use Plivo\RestClient;
 use Illuminate\Http\JsonResponse;
+use App\Services\PusherService;
 
 
 
@@ -372,6 +373,7 @@ public function sendSms()
         ]);
 
 
+
         //fetch package details
         $isFree = $intCharge = $currencyCode = $clientPackageId = NULL;
         $clientId = $request->get('client_id');
@@ -426,6 +428,16 @@ public function sendSms()
             $smsObj->charge = $intCharge;
             $smsObj->isFree = $isFree;
             $smsObj->save();
+            // 👇 ADD THIS
+            $request->merge([
+                'parent_id' => $request->get('client_id')
+            ]);
+
+            PusherService::notify($request, [
+                'module'  => 'sms',
+                'message' => 'New SMS from ' . $request->get('from'),
+                  
+            ]);
 
             //email sender
 
