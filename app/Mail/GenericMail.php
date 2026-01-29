@@ -1,23 +1,12 @@
 <?php
 
 namespace App\Mail;
-
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Mail\Mailable;
-use Illuminate\Queue\SerializesModels;
-
-class GenericMail extends Mailable
+class GenericMail
 {
-    use Queueable, SerializesModels;
+    public $subject;
+    public $from;
+    public $body;
 
-    private $body;
-
-    /**
-     * Create a new message instance.
-     *
-     * @return void
-     */
     public function __construct(string $subject, array $from, string $body)
     {
         $this->subject = $subject;
@@ -25,18 +14,13 @@ class GenericMail extends Mailable
         $this->body = $body;
     }
 
-    /**
-     * Build the message.
-     *
-     * @return $this
-     */
-    public function build()
+    public function render(): string
     {
-        return $this->from($this->from["address"], $this->from["name"])
-            ->subject($this->subject)
-            ->view('emails.generic')->with([
-                "subject" => $this->subject,
-                "body" => $this->body,
-            ]);
+        // Render body manually or load a view:
+        return view('emails.generic', [
+            'subject' => $this->subject,
+            'body' => $this->body,
+        ])->render();
     }
 }
+
