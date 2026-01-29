@@ -71,21 +71,40 @@ class MailService
 
 
 
-	function sendEmailWithAttachment($to,$attachment){
-		$config = [
-            'driver' => $this->smtpSetting->mail_driver,
-            'host' => $this->smtpSetting->mail_host,
-            'port' => $this->smtpSetting->mail_port,
-            'encryption' => $this->smtpSetting->mail_encryption,
-            'username' => $this->smtpSetting->mail_username,
-            'password' => $this->smtpSetting->mail_password,
-            'sendmail' => '/usr/sbin/sendmail -bs',
-            'pretend' => false
-        ];
-        Config::set('mail', $config);
 
+    function sendEmailWithAttachment($to, $attachmentPath)
+{
+    try {
+        $smtp = $this->smtpSetting;
 
+        $dsn = sprintf(
+            'smtp://%s:%s@%s:%d?encryption=%s',
+            urlencode($smtp->mail_username),
+            urlencode($smtp->mail_password),
+            $smtp->mail_host,
+            $smtp->mail_port,
+            $smtp->mail_encryption ?? 'tls'
+        );
 
-        return Mail::to($to)->send($this->mailable);
-	}
+        $transport = Transport::fromDsn($dsn);
+        $mailer = new Mailer($transport);
+
+        $email = (new Email())
+            ->from(sprintf('%s <%s>', $smtp->from_name, $smtp->from_email))
+            ->to($to)
+            ->subject($this->mailable->subject)
+            ->html($this->mailable->render())
+            ->attachFromPath($attachmentPath);
+
+        $mailer->send($email);
+
+        return true;
+
+    } catch (\Throwable $e) {
+        Log::error('sendEmailWithAttachment error', [
+            'msg' => $e->getMessage()
+        ]);
+        throw $e;
+    }
+}
 }
