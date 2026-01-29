@@ -293,7 +293,7 @@ public function unarchive(Request $request)
     $unarchivedCount = DB::connection($connection)
         ->table('email_logs')
         ->whereIn('id', $request->email_ids)
-        ->update(['folder' => 'inbox']);
+        ->update(['folder' => 'sent']);
 
     return response()->json([
         'status' => true,
