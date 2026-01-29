@@ -59,7 +59,7 @@ public function index(Request $request)
                 'from' => $email->from,
                 'to' => $email->to,
                 'subject' => $email->subject,
-                'snippet' => substr(strip_tags($email->body), 0, 80),
+                'snippet' => $email->body,
                 'type' => $email->folder,
                 'created_at' => gmdate('c', strtotime($email->created_at)),
                 'has_attachments' => false // future-ready
