@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Model\Client\SmtpSetting;
-use Illuminate\Mail\Mailable;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Mail;
 use Symfony\Component\Mailer\Mailer;
@@ -18,7 +17,7 @@ class MailService
 
     private $smtpSetting;
 
-    public function __construct(int $clientId, Mailable $mailable, SmtpSetting $smtpSetting)
+    public function __construct(int $clientId, $mailable, SmtpSetting $smtpSetting)
     {
         $this->connection = ($clientId === 0 ? "master" : "mysql_$clientId");
         $this->mailable = $mailable;
