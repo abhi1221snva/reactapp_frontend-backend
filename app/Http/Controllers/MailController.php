@@ -172,7 +172,8 @@ class MailController extends Controller
             return response()->json([
                 "success" => false,
                 "message" => $exception->getMessage()
-            ]);
+            ], 500); // <-- explicitly set status code
+
         }
     }
 

@@ -66,7 +66,8 @@ class MailService
             'file' => $e->getFile(),
             'line' => $e->getLine(),
         ]);
-        return false;
+        //return false;
+         throw $e; // ✅ re-throw
     }
 }
 
