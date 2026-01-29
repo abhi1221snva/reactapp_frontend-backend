@@ -263,8 +263,8 @@ public function archive(Request $request)
     $archivedCount = DB::connection($connection)
         ->table('email_logs')
         ->whereIn('id', $request->email_ids)
-        ->where('folder', '!=', 'archive') // ✅ ignore already archived emails
-        ->update(['folder' => 'archive']);
+        ->where('folder', '!=', 'archived') // ✅ ignore already archived emails
+        ->update(['folder' => 'archived']);
 
     return response()->json([
         'status' => true,
