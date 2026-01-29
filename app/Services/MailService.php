@@ -7,7 +7,6 @@ use Illuminate\Mail\Mailable;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Mail;
 use Symfony\Component\Mailer\Mailer;
-use Symfony\Component\Mailer\Transport;
 use Symfony\Component\Mime\Email;
 use Illuminate\Support\Facades\Log;
 class MailService
@@ -41,7 +40,7 @@ class MailService
         );
 
         // Create Symfony mail transport + mailer
-        $transport = Transport::fromDsn($dsn);
+        $transport = \Symfony\Component\Mailer\Transport::fromDsn($dsn);
         $mailer = new Mailer($transport);
 
         // Sender details
@@ -71,22 +70,7 @@ class MailService
     }
 }
 
-    // function sendEmail($to)
-    // {
-    //     $transport = new \Swift_SmtpTransport($this->smtpSetting->mail_host, $this->smtpSetting->mail_port);
-    //     $transport->setUsername($this->smtpSetting->mail_username);
-    //     $transport->setPassword($this->smtpSetting->mail_password);
-    //     $transport->setEncryption($this->smtpSetting->mail_encryption);
 
-    //     $swift_mailer = new \Swift_Mailer($transport);
-    //     $mailer = new Mailer("swift-mailer", view(), $swift_mailer);
-    //     $from_email = empty($this->smtpSetting->from_email) ? env('DEFAULT_EMAIL') : $this->smtpSetting->from_email;
-    //     $from_name = empty($this->smtpSetting->from_name) ? env('DEFAULT_NAME') : $this->smtpSetting->from_name;
-
-    //     $mailer->alwaysFrom($from_email, $from_name);
-    //     $mailer->alwaysReplyTo($from_email, $from_name);
-    //     return $mailer->to($to)->send($this->mailable);
-    // }
 
 	function sendEmailWithAttachment($to,$attachment){
 		$config = [
