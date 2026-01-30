@@ -2,10 +2,10 @@
 
 namespace App\Model;
 
-use App\Http\Helper\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Model;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class RecycleRule extends Model
 {
@@ -813,7 +813,7 @@ public function editRecycleRule1($request)
         ];
     }
 }
-public function deleteLeadRule($request)
+    public function deleteLeadRule($request)
     {
         try {
             $data = array();
@@ -838,7 +838,22 @@ public function deleteLeadRule($request)
             }
  
             $connection = DB::connection('mysql_' . $request->auth->parent_id);
- 
+            $rule = $connection->selectOne(
+                "SELECT call_time FROM recycle_rule WHERE list_id = :list_id",
+                ['list_id' => $request->list_id]
+            );
+
+            if (!$rule) {
+                return [
+                    'success' => 'false',
+                    'message' => 'Invalid recycle rule selected.',
+                    'data' => []
+                ];
+            }
+
+            $maxAllowedCalls = (int) $rule->call_time;
+            Log::info('reached max calls',['maxAllowedCalls'=>$maxAllowedCalls]);
+
             $sql = "SELECT * FROM lead_report WHERE " . implode(" AND ", $searchStr);
             $record = $connection->select($sql, $data);
             $leadRecords = (array)$record;
@@ -880,8 +895,9 @@ public function deleteLeadRule($request)
                 // Process ALL leads - those in CDR with < 15 calls AND those not in CDR (0 calls)
                 foreach ($lead_id_arr as $leadId) {
                     $callCount = $callCountMap[$leadId] ?? 0; // Default to 0 if not in CDR
- 
-                    if ($callCount < 15) {
+            Log::info('reached call count',['callCount'=>$callCount]);
+
+                    if ($callCount >= $maxAllowedCalls) {
                         $query = "DELETE FROM lead_report WHERE lead_id = :lead_id";
                         $connection->delete($query, ['lead_id' => $leadId]);
                         $deleted_lead_count++;
