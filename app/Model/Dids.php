@@ -566,16 +566,17 @@ public function getList($request)
                 $data['forward_number_ooh']     =  $request->input('dest_type_ooh') == 4 ? $request->input('forward_number_ooh') : '';
                 $data['conf_id_ooh']            =  $request->input('dest_type_ooh') == 5 ? $request->input('conf_id_ooh') : '';
                 $data['ingroup_ooh']            =  $request->input('dest_type_ooh') == 8 ? $request->input('ingroup_ooh') : '';
+                $data['phone_number_sid']          =  $request->input('phone_number_sid');
 
                 $query = "INSERT INTO did (cli,cnam,area_code,dest_type,ivr_id,extension,voicemail_id,"
                     . "forward_number,country_code,conf_id,ingroup,operator,default_did,voice,fax,voip_provider,sms,sms_phone,sms_email,"
                     . "call_time_department_id, call_time_holiday, dest_type_ooh, ivr_id_ooh, extension_ooh, "
-                    . "voicemail_id_ooh, forward_number_ooh, conf_id_ooh, ingroup_ooh,set_exclusive_for_user,call_screening_status,call_screening_ivr_id,language,voice_name,ivr_audio_option,speech_text,prompt_option,redirect_last_agent,sms_type) "
+                    . "voicemail_id_ooh, forward_number_ooh, conf_id_ooh, ingroup_ooh,set_exclusive_for_user,call_screening_status,call_screening_ivr_id,language,voice_name,ivr_audio_option,speech_text,prompt_option,redirect_last_agent,sms_type,phone_number_sid) "
                     . "VALUE "
                     . "(:cli,:cnam,:area_code,:dest_type,:ivr_id,:extension,:voicemail_id,:forward_number,:country_code,:conf_id,"
                     . ":ingroup,:operator,:default_did,:voice,:fax,:voip_provider,:sms,:sms_phone,:sms_email,"
                     . ":call_time_department_id, :call_time_holiday, :dest_type_ooh, :ivr_id_ooh, :extension_ooh, "
-                    . ":voicemail_id_ooh, :forward_number_ooh, :conf_id_ooh, :ingroup_ooh ,:set_exclusive_for_user,:call_screening_status,:call_screening_ivr_id,:language,:voice_name,:ivr_audio_option,:speech_text,:prompt_option,:redirect_last_agent,:sms_type"
+                    . ":voicemail_id_ooh, :forward_number_ooh, :conf_id_ooh, :ingroup_ooh ,:set_exclusive_for_user,:call_screening_status,:call_screening_ivr_id,:language,:voice_name,:ivr_audio_option,:speech_text,:prompt_option,:redirect_last_agent,:sms_type,:phone_number_sid"
                     . ")";
 
                 $add = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
