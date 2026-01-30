@@ -437,37 +437,37 @@ public function smsDetailsByDidold($request)
             $data_array['from'] =  $request->from;
             $data_array['text'] = $request->message;
            // $data_array['mms_url'] = $request->mms_url;
-// Handle image file upload if exists
- $mms_url = null;
+           // Handle image file upload if exists
+           $mms_url = null;
 
 
-if ($request->hasFile('mms_file')) {
-    $file = $request->file('mms_file');
+            if ($request->hasFile('mms_file')) {
+                $file = $request->file('mms_file');
 
-    // CLEAN the original name
-    $original = $file->getClientOriginalName();
+                // CLEAN the original name
+                $original = $file->getClientOriginalName();
 
-    // Remove spaces & unsafe characters
-    $cleanName = preg_replace('/[^A-Za-z0-9_\-\.]/', '_', $original);
+                // Remove spaces & unsafe characters
+                $cleanName = preg_replace('/[^A-Za-z0-9_\-\.]/', '_', $original);
 
-    // Final stored filename
-    $fileName = time() . '_' . $cleanName;
+                // Final stored filename
+                $fileName = time() . '_' . $cleanName;
 
-    // Save to public folder
-    $uploadPath = base_path('public/uploads/mms');
-    $file->move($uploadPath, $fileName);
+                // Save to public folder
+                $uploadPath = base_path('public/uploads/mms');
+                $file->move($uploadPath, $fileName);
 
-    // Build URL for Twilio
-    $mms_url = env('APP_URL') . '/uploads/mms/' . $fileName;
-    //    $mms_url="https://api.phonify.app/uploads/mms/1763546502_image%20 (5).png";
-}
+                // Build URL for Twilio
+                $mms_url = env('APP_URL') . '/uploads/mms/' . $fileName;
+                //    $mms_url="https://api.phonify.app/uploads/mms/1763546502_image%20 (5).png";
+            }
 
 
-Log::info('mms url',['mms_url'=>$mms_url]);
+            Log::info('mms url',['mms_url'=>$mms_url]);
 
-$data_array['mms_url'] = $mms_url ?? $request->mms_url;
+            $data_array['mms_url'] = $mms_url ?? $request->mms_url;
 
-Log::info('reached backend from',['from'=>$request->from]);
+            Log::info('reached backend from',['from'=>$request->from]);
             $get_provider = Dids::on("mysql_$clientId")->where("cli",$request->from)->get()->first();
             if (!$get_provider) {
                         return array(
@@ -481,7 +481,11 @@ Log::info('reached backend from',['from'=>$request->from]);
                         );
                     } 
 
-            $voip_provider = $get_provider->voip_provider;
+            //$voip_provider = $get_provider->voip_provider;
+            $voip_provider = strtolower(trim($get_provider->voip_provider));
+
+            Log::info('reached twilio',['voip_provider'=>$voip_provider]);
+
 
             if($voip_provider == 'didforsale')
             {
@@ -502,7 +506,7 @@ Log::info('reached backend from',['from'=>$request->from]);
                 curl_setopt($ch, CURLOPT_HTTPHEADER, array("Content-Type: application/json", "Authorization: Basic " . base64_encode("$auth_id:$api_key")));
                 $result = curl_exec($ch);
                 $res = json_decode($result);
-Log::info('result reached',['res'=>$res]);
+                Log::info('result reached',['res'=>$res]);
                  if ($res->status == 'true') {
 
                 //Billing part
@@ -818,6 +822,8 @@ Log::info('result reached',['result'=>$result]);
             else
             if($voip_provider == 'twilio')
             {
+                    Log::info('reached twilio');
+
 
                 // if (app()->environment() == "local") 
                 // {
