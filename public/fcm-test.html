@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>FCM Token Fetcher</title>
+    <style>
+        body { background: #000; color: #0f0; font-family: monospace; padding: 20px; word-break: break-all; }
+        .error { color: #f00; }
+    </style>
+</head>
+<body>
+    <div id="output">Fetching FCM Token...</div>
+    <div id="messages" style="margin-top:20px; border-top:1px solid #333; padding-top:20px;"></div>
+    <button id="reset-btn" style="position:fixed; bottom:20px; right:20px; background:#333; color:#fff; border:1px solid #555; padding:10px; cursor:pointer; font-family:monospace;">RESET & GET NEW TOKEN</button>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js";
+        import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-messaging.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAEcO9dgmtSKCYupxlFyaPoCI_4ktzk6eQ",
+            authDomain: "dialer-phonify-app.firebaseapp.com",
+            projectId: "dialer-phonify-app",
+            storageBucket: "dialer-phonify-app.firebasestorage.app",
+            messagingSenderId: "984571065396",
+            appId: "1:984571065396:web:835c27fbe50614499cc661",
+            measurementId: "G-C6NKCY623V"
+        };
+
+        const vapidKey = "BD91ljvvaDwT_NJSTecj8TTZ6_OG9WJm_gFmBtThaW0SMPK6gnir5YLFiRQTc0iN_qSFQTLpaI8Muw7XkS4FoXE";
+
+        const output = document.getElementById('output');
+        const messages = document.getElementById('messages');
+
+        async function fetchToken() {
+            try {
+                const app = initializeApp(firebaseConfig);
+                const messaging = getMessaging(app);
+
+                const permission = await Notification.requestPermission();
+                if (permission === 'granted') {
+                    const registration = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
+                    const token = await getToken(messaging, { 
+                        vapidKey: vapidKey,
+                        serviceWorkerRegistration: registration
+                    });
+                    if (token) {
+                        output.innerText = token;
+                        
+                        onMessage(messaging, (payload) => {
+                            const entry = document.createElement('div');
+                            entry.style.color = '#fff';
+                            entry.style.marginBottom = '10px';
+                            entry.innerHTML = `> ${new Date().toLocaleTimeString()} - <b>${payload.notification.title}</b>: ${payload.notification.body}`;
+                            messages.prepend(entry);
+                        });
+                    } else {
+                        output.innerHTML = '<span class="error">Error: No token received. Check VAPID key.</span>';
+                    }
+                } else {
+                    output.innerHTML = '<span class="error">Error: Permission denied.</span>';
+                }
+            } catch (e) {
+                output.innerHTML = '<span class="error">Error: ' + e.message + '</span>';
+            }
+        }
+
+        document.getElementById('reset-btn').onclick = async () => {
+            if (window.confirm('This will clear your local FCM data and unregister service workers. Continue?')) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for(let registration of registrations) {
+                    await registration.unregister();
+                }
+                localStorage.clear();
+                indexedDB.deleteDatabase('firebase-messaging-database');
+                window.location.reload();
+            }
+        };
+
+        fetchToken();
+    </script>
+</body>
+</html>
