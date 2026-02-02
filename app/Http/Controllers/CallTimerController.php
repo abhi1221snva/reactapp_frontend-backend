@@ -81,17 +81,40 @@ public function index(Request $request)
     $userTimezone = $request->auth->timezone ?? 'Asia/Kolkata';
 
     // ✅ Convert created_at & updated_at for response
-    $timers->transform(function ($timer) use ($userTimezone) {
-        if (!empty($timer->created_at)) {
-            $timer->created_at = convertToUserTimezone($timer->created_at, $userTimezone);
-        }
+$timers = $timers->map(function ($timer) use ($userTimezone) {
 
-        if (!empty($timer->updated_at)) {
-            $timer->updated_at = convertToUserTimezone($timer->updated_at, $userTimezone);
-        }
+    $dayMap = [
+        'monday'    => 1,
+        'tuesday'   => 2,
+        'wednesday' => 3,
+        'thursday'  => 4,
+        'friday'    => 5,
+        'saturday'  => 6,
+        'sunday'    => 7,
+    ];
 
-        return $timer;
-    });
+    $day = null;
+
+    if (!empty($timer->week_plan) && is_array($timer->week_plan)) {
+        foreach ($timer->week_plan as $dayName => $time) {
+            if (isset($dayMap[strtolower($dayName)])) {
+                $day = $dayMap[strtolower($dayName)];
+                break;
+            }
+        }
+    }
+
+    return [
+        'id'          => $timer->id,
+        'title'       => $timer->title,
+        'day'         => $day,              // 👈 BEFORE description
+        'description' => $timer->description,
+        'week_plan'   => $timer->week_plan,
+        'created_at'  => convertToUserTimezone($timer->created_at, $userTimezone),
+        'updated_at'  => convertToUserTimezone($timer->updated_at, $userTimezone),
+    ];
+});
+
     return $this->successResponse("Call Timers", [
         "total_rows"   => $totalRows,
         "start"        => $start,
