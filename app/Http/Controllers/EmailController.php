@@ -113,7 +113,7 @@ public function show(Request $request, $id)
 public function storeDraft(Request $request)
 {
     $validator = Validator::make($request->all(), [
-        'to' => 'required|array',
+        'to' => 'required',
         'subject' => 'nullable|string',
         'body' => 'nullable|string',
         'cc' => 'nullable|array',
@@ -160,7 +160,7 @@ public function updateDraft(Request $request, $id)
 {
     // ✅ Validate request
     $validator = Validator::make($request->all(), [
-        'to' => 'required|array|min:1',
+        'to' => 'required|min:1',
         'to.*' => 'email',
         'cc' => 'nullable|array',
         'cc.*' => 'email',
@@ -200,7 +200,7 @@ public function updateDraft(Request $request, $id)
         ->update([
             'senderType' => 'user',
              'user_id' => $request->auth->id,
-            'to' => ($request->to),
+            'to' => implode(',', $request->to),
             'cc' => json_encode($request->cc ?? []),
             'bcc' => json_encode($request->bcc ?? []),
             'subject' => $request->subject,
