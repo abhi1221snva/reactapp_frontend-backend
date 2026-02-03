@@ -18,6 +18,8 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\DB;
+
 class ExtensionController extends Controller
 {
 
@@ -923,6 +925,19 @@ class ExtensionController extends Controller
         'user_type' => 'subuser',
         'owner_id' => $request->auth->parent_id,
     ]);
+    $extensionKey = $request->auth->parent_id . $request->extension;
+
+    $exists = DB::table('user_extensions')
+        ->where('name', $extensionKey)
+        ->exists();
+
+    if ($exists) {
+        return response()->json([
+            'success' => false,
+            'message' => 'This extension is already assigned for this account.'
+        ], 422);
+    }
+
     $response = $this->model->newExtensionSave($this->request);
 
     // return response()->json([
