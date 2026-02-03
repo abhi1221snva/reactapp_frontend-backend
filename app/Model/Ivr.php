@@ -262,7 +262,7 @@ class Ivr extends Model
 
 
                     return array(
-                        'success' => 'true',
+                        'success' => true,
                         'message' => 'Ivr updated successfully.'
                     );
                 }

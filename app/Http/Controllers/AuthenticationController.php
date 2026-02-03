@@ -33,6 +33,7 @@ use Carbon\Carbon;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Database\QueryException;
 use DB;
+use App\Model\Client\Did;
 
 class AuthenticationController extends Controller
 {
@@ -890,4 +891,153 @@ public function deleteUser(Request $request)
     }
 }
 
+
+
+
+
+    public function createPhoneNumber(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'uuid'             => 'required|uuid',
+            'credential_uuid'  => 'required|uuid',
+            'phone_number'     => 'required|string',
+            'sid'              => 'required|string',
+            'type'             => 'required|string',
+            'active'           => 'required|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+  // 2️⃣ Get user & DB
+    $user_uuid = $request->header('X-Easify-User-Token');
+    $parent_id = User::where('easify_user_uuid', $user_uuid)->value('parent_id');
+
+    if (!$parent_id) {
+        return response()->json([
+            'message' => 'Invalid user'
+        ], 401);
+    }
+$phone = preg_replace('/\D/', '', $request->phone_number);
+
+    $connection = "mysql_" . $parent_id;
+        $phone = Did::on($connection)->updateOrCreate(
+            ['uuid' => $request->uuid],
+            [
+                'credential_uuid' => $request->credential_uuid,
+                'cli'          => $phone,
+                'phone_number_sid'=> $request->sid,
+                'type'            => $request->type,
+                'status'          => $request->active,
+            ]
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Phone number saved successfully',
+            'data'    => [
+                'phonify_id' => $phone->uuid,
+            ],
+        ]);
+    }
+
+    /**
+     * POST /phone-number/update
+     */
+    public function updatePhoneNumber(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'uuid'   => 'required|uuid',
+            'active' => 'required|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+  // 2️⃣ Get user & DB
+    $user_uuid = $request->header('X-Easify-User-Token');
+    $parent_id = User::where('easify_user_uuid', $user_uuid)->value('parent_id');
+
+    if (!$parent_id) {
+        return response()->json([
+            'message' => 'Invalid user'
+        ], 401);
+    }
+
+    $connection = "mysql_" . $parent_id;
+        $phone = Did::on($connection)->where('uuid', $request->uuid)->first();
+
+        if (!$phone) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Phone number not found',
+                'errors'  => [],
+            ], 404);
+        }
+
+        $phone->update([
+            'status' => $request->active,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Phone number updated successfully',
+        ]);
+    }
+
+    /**
+     * POST /phone-number/delete
+     */
+    public function deletePhoneNumber(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'uuid' => 'required|uuid',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+  // 2️⃣ Get user & DB
+    $user_uuid = $request->header('X-Easify-User-Token');
+    $parent_id = User::where('easify_user_uuid', $user_uuid)->value('parent_id');
+
+    if (!$parent_id) {
+        return response()->json([
+            'message' => 'Invalid user'
+        ], 401);
+    }
+
+    $connection = "mysql_" . $parent_id;
+        $phone = Did::on($connection)->where('uuid', $request->uuid)->first();
+
+        if (!$phone) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Phone number not found',
+                'errors'  => [],
+            ], 404);
+        }
+
+        $phone->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Phone number deleted successfully',
+        ]);
+    }
 }
+
+
+
