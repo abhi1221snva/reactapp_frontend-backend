@@ -32,6 +32,10 @@ $router->group([
   $router->post('/credential/create', 'AuthenticationController@createCredential');
   $router->post('/credential/delete', 'AuthenticationController@deleteCredential');
   $router->post('/delete-user', 'AuthenticationController@deleteUser');
+  $router->post('/phone-number/create', 'AuthenticationController@createPhoneNumber');
+  $router->post('/phone-number/update', 'AuthenticationController@updatePhoneNumber');
+  $router->post('/phone-number/delete', 'AuthenticationController@deletePhoneNumber');
+
 
   
 });
@@ -1383,7 +1387,8 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
 
   $router->get('lender-label-api-setting', 'LenderApiLabelController@index');
   $router->post('lender-label-api-setting', 'LenderApiLabelController@save');
-
+#pusher
+//$router->get('/pusher-test', 'TestController@test');
 
   #pdf reader
   $router->get('pdf-reader-setting', 'PdfReaderController@index');

@@ -13,6 +13,7 @@ use App\Model\Client\SmtpSetting;
 use App\Mail\GenericMail;
 use App\Services\MailService;
 use App\Services\SmsService;
+use App\Services\EasifyCreditService;
 use Illuminate\Support\Facades\Log;
 use Plivo\RestClient;
 use Illuminate\Http\JsonResponse;
@@ -240,8 +241,56 @@ public function sendSms()
         'from'=> 'required|numeric',
         'date'=> 'required',
     ]);
+      // 🔹 Step 1: CHECK CREDITS
+       $to = $this->request->to;
+       $segments = ceil(strlen($this->request->message) / 160);
+       $count = $segments;
+
+    $creditService = new EasifyCreditService();
+
+  $user = $this->request->auth; // or auth()->user()
+
+// CHECK
+$creditCheck = $creditService->checkCredits(
+    $user->id,
+    $user->easify_user_uuid,
+    'outgoing_sms',
+    $this->request->to,
+    $count
+);
+
+// 🔴 Easify failed (like phone not found)
+if (
+    empty($creditCheck) ||
+    ($creditCheck['status'] ?? false) === false
+) {
+    Log::warning('Easify credit check failed', [
+        'user_id' => $user->id,
+        'action'  => 'outgoing_sms',
+        'to'      => $this->request->to,
+        'response'=> $creditCheck
+    ]);
+
+    return response()->json([
+        'success' => false,
+        'message' => $creditCheck['message'] ?? 'Credit check failed'
+    ], 400);
+}
+
+// 🟡 Credit exists but insufficient
+$hasCredits = $creditCheck['data']['has_sufficient_credits'] ?? false;
+
+if ($hasCredits === false) {
+    return response()->json([
+        'success' => false,
+        'message' => 'Insufficient credits to send SMS'
+    ], 402);
+}
+
+
 
     $response = $this->model->sendSms($this->request);
+
 
     // If model already returned a JsonResponse, return it directly
     if ($response instanceof JsonResponse) {
@@ -253,7 +302,15 @@ public function sendSms()
     if (isset($response['success']) && $response['success'] === false) {
         $statusCode = 400;
     }
+        // 🔹 Step 3: DEDUCT CREDITS (after successful SMS)
 
+ $creditService->deductCredits(
+    $user->id,
+    $user->easify_user_uuid,
+    'outgoing_sms',
+    $this->request->to,
+    $count
+);
     return response()->json($response, $statusCode);
 }
 
@@ -382,6 +439,46 @@ public function sendSms()
         $user->id = $request->get('user_id');
         $user->parent_id = $clientId;
         $package = $user->getAssignedUserPackage(true);
+   
+        $creditService = new EasifyCreditService();
+
+        $segments = ceil(strlen($request->get('message')) / 160);
+        $count = $segments;
+        $userDetails=User::where('id',$request->user_id)->first();
+        $easify_user_uuid=$userDetails->easify_user_uuid;
+        $creditCheck = $creditService->checkCredits(
+            $request->get('user_id'),
+            $easify_user_uuid ?? null,
+            'incoming_sms',
+            $request->get('from'),
+            $count
+        );
+
+        // Easify failed (eg. phone not found)
+        if (
+            empty($creditCheck) ||
+            ($creditCheck['status'] ?? false) === false
+        ) {
+            Log::warning('Easify credit check failed (incoming sms)', [
+                'user_id' => $request->get('user_id'),
+                'action'  => 'incoming_sms',
+                'from'    => $request->get('from'),
+                'response'=> $creditCheck
+            ]);
+
+            return [
+                'success' => false,
+                'message' => $creditCheck['message'] ?? 'Credit check failed'
+            ];
+        }
+
+        // Insufficient Easify credits
+        if (($creditCheck['data']['has_sufficient_credits'] ?? false) === false) {
+            return [
+                'success' => false,
+                'message' => 'Insufficient credits to receive SMS'
+            ];
+        }
 
         try {
             if (empty($package)) {
@@ -428,6 +525,16 @@ public function sendSms()
             $smsObj->charge = $intCharge;
             $smsObj->isFree = $isFree;
             $smsObj->save();
+                    /* =======================
+                * 🔹 EASIFY CREDIT DEDUCT
+                * ======================= */
+                $creditService->deductCredits(
+                    $request->get('user_id'),
+                    $easify_user_uuid ?? null,
+                    'incoming_sms',
+                    $request->get('from'),
+                    $count
+                );
             // 👇 ADD THIS
             $request->merge([
                 'parent_id' => $request->get('client_id')

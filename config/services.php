@@ -7,6 +7,7 @@ return [
     ],
     'phonify' => [
         'app_token' => env('PHONIFY_APP_TOKEN'),
+        'easify_url'=>env('EASIFY_URL')
     ],
      'google' =>[
         'client_id' => env('GOOGLE_CLIENT_ID'),
