@@ -2,8 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Model\UserFcmToken;
+use App\Services\FirebaseService;
 use App\Model\Client\SystemNotification;
 use App\Model\Master\SystemNotificationType;
+use Carbon\Carbon;
+use DateTime;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -18,8 +22,7 @@ use App\Model\Client\CrmEmailTemplate;
 use App\Model\Master\AreaCodeList;
 use App\Model\Client\SystemSetting;
 
-use Carbon\Carbon;
-use DateTime;
+
 
 
 
@@ -342,6 +345,19 @@ class NotificationController extends Controller
             $to =  $finalEmail; //array('abhi4mca@gmail.com','mailme@rohitwanchoo.com');//env('SYSTEM_ADMIN_EMAIL'); //,'mailme@rohitwanchoo.com'
 
             $mailService->sendEmail($to);
+
+            // Send Push Notification
+            try {
+                $fcmTokens = UserFcmToken::whereIn('user_id', User::whereIn('email', $finalEmail)->pluck('id'))->pluck('device_token')->toArray();
+                if (!empty($fcmTokens)) {
+                    FirebaseService::sendNotification($fcmTokens, $subject, strip_tags($message), [
+                        'lead_id' => $requestData['user']['lead_id'],
+                        'type' => 'crm_notification'
+                    ]);
+                }
+            } catch (\Exception $e) {
+                Log::error('FCM CRM Notification failed', ['error' => $e->getMessage()]);
+            }
         } else
         if ($requestData['action'] == 'lenders_submission') {
             $data = array('subject' => $requestData['user']['subject'], 'content' => $requestData['user']['message']);
@@ -874,5 +890,45 @@ class NotificationController extends Controller
     {
         $d = DateTime::createFromFormat('Y-m-d', $value);
         return $d && $d->format('Y-m-d') === $value;
+    }
+
+    /**
+     * @OA\Post(
+     *     path="/device/token",
+     *     summary="Save or update device token for FCM",
+     *     tags={"Notification"},
+     *     security={{"Bearer": {}}},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             @OA\Property(property="device_token", type="string", example="fcm_token_here"),
+     *             @OA\Property(property="device_type", type="string", enum={"web", "android", "ios"}, example="web")
+     *         )
+     *     ),
+     *     @OA\Response(response=200, description="Token saved successfully")
+     * )
+     */
+    public function saveDeviceToken(Request $request)
+    {
+        $this->validate($request, [
+            'device_token' => 'required|string',
+            'device_type' => 'nullable|in:web,android,ios'
+        ]);
+
+        try {
+            $user = $request->user();
+            UserFcmToken::updateOrCreate(
+                ['device_token' => $request->device_token],
+                [
+                    'user_id' => $user->id,
+                    'device_type' => $request->device_type ?? 'web',
+                    'last_used_at' => Carbon::now()
+                ]
+            );
+
+            return $this->successResponse("Device token saved successfully", []);
+        } catch (\Exception $e) {
+            return $this->failResponse("Failed to save device token", [$e->getMessage()], $e);
+        }
     }
 }

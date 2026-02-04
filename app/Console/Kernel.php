@@ -76,6 +76,7 @@ class Kernel extends ConsoleKernel
         DripCampaignScheduleStatus::class,
         DripCampaignRunProcess::class,
         SendScheduledReminders::class,
+        \App\Console\Commands\SendTestFcm::class,
 
 
     ];
