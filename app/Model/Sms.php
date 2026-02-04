@@ -194,31 +194,9 @@ $users = DB::connection("master")
 
 
 // --- Attach user_name to each SMS record ---
-// foreach ($pagedData as &$row) {
-//     $row->user_name = $users[$row->user_id] ?? null;
-// }
-$newPagedData = [];
-
-foreach ($pagedData as $row) {
-
-    $orderedRow = [
-        'id' => $row->id,
-        'conversation_id' => $row->id,   // ✅ right after id
-    ];
-
-    // add remaining fields dynamically (except id)
-    foreach ($row as $key => $value) {
-        if ($key !== 'id') {
-            $orderedRow[$key] = $value;
-        }
-    }
-
-    // attach user_name if not already
-    $orderedRow['user_name'] = $users[$row->user_id] ?? null;
-
-    $newPagedData[] = $orderedRow;
+foreach ($pagedData as &$row) {
+    $row->user_name = $users[$row->user_id] ?? null;
 }
-
     // ✅ Return response
     return [
         'success' => true,
@@ -226,7 +204,7 @@ foreach ($pagedData as $row) {
         'start' => $start,
         'limit' => $limit,
         'total' => $total,
-        'data' => $newPagedData,
+        'data' => array_values($pagedData),
     ];
 }
 
@@ -324,11 +302,31 @@ public function smsDetailsByDid($request)
     $records = DB::connection("mysql_$clientId")->select($sql, $data);
 
     // ✅ Ensure message & voip_provider are always included
+    // $records = collect($records)->map(function ($r) {
+    //     $r->message = $r->message ?? '';
+    //     $r->voip_provider = $r->voip_provider ?? '';
+    //     return $r;
+    // })->toArray();
     $records = collect($records)->map(function ($r) {
-        $r->message = $r->message ?? '';
-        $r->voip_provider = $r->voip_provider ?? '';
-        return $r;
-    })->toArray();
+
+    $ordered = [
+        'id' => $r->id,
+        'conversation_id' => $r->id, // ✅ same value, right after id
+    ];
+
+    foreach ($r as $key => $value) {
+        if ($key !== 'id') {
+            $ordered[$key] = $value ?? '';
+        }
+    }
+
+    // safety defaults
+    $ordered['message'] = $ordered['message'] ?? '';
+    $ordered['voip_provider'] = $ordered['voip_provider'] ?? '';
+
+    return $ordered;
+})->toArray();
+
 
     // ✅ Return final response
     return [
