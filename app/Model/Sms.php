@@ -18,7 +18,8 @@ use Plivo\RestClient;
 use Twilio\Rest\Client;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
-
+use App\Model\UserFcmToken;
+use App\Services\FirebaseService;
 class Sms extends Model {
 
     /**
@@ -307,11 +308,14 @@ public function smsDetailsByDid($request)
     //     $r->voip_provider = $r->voip_provider ?? '';
     //     return $r;
     // })->toArray();
-    $records = collect($records)->map(function ($r) {
+    // ✅ conversation_id = latest SMS id (first record, since ORDER BY s.id DESC)
+$conversationId = !empty($records) ? (string) $records[0]->id : null;
+
+$records = collect($records)->map(function ($r) use ($conversationId) {
 
     $ordered = [
         'id' => $r->id,
-        'conversation_id' => $r->id, // ✅ same value, right after id
+        'conversation_id' => $conversationId, // ✅ SAME for all
     ];
 
     foreach ($r as $key => $value) {
@@ -320,13 +324,36 @@ public function smsDetailsByDid($request)
         }
     }
 
-    // safety defaults
-    $ordered['message'] = $ordered['message'] ?? '';
-    $ordered['voip_provider'] = $ordered['voip_provider'] ?? '';
-
     return $ordered;
 })->toArray();
 
+
+    /* ============================
+       🔔 SEND PUSH NOTIFICATION
+       ============================ */
+
+    try {
+        // Example: notify the logged-in user
+        $fcmTokens = UserFcmToken::where('user_id', $request->auth->id)
+            ->pluck('device_token')
+            ->toArray();
+
+        if (!empty($fcmTokens)) {
+            FirebaseService::sendNotification(
+                $fcmTokens,
+                'SMS Opened',
+                'Conversation viewed',
+                [
+                    'conversation_id' => $conversationId,
+                    'type' => 'sms_chat'
+                ]
+            );
+        }
+    } catch (\Exception $e) {
+        Log::error('FCM SMS Notification failed', [
+            'error' => $e->getMessage()
+        ]);
+    }
 
     // ✅ Return final response
     return [
@@ -339,7 +366,7 @@ public function smsDetailsByDid($request)
         ],
         'data' => $records,
     ];
-}
+}  
 
     // public function smsDetailsByDid($request) {
     //     $data = array();

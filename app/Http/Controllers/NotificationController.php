@@ -26,7 +26,6 @@ use App\Model\Client\SystemSetting;
 
 
 
-
 class NotificationController extends Controller
 {
     /**
@@ -121,7 +120,7 @@ class NotificationController extends Controller
     $clientId = $request->auth->parent_id;
     $notifications = SystemNotificationType::all()->sortBy("display_order");
     $types = $notifications->toArray();
-
+    $userId=$request->auth->id;
     $result = [];
 
     foreach ($types as $key => $type) {
@@ -141,7 +140,31 @@ class NotificationController extends Controller
             'subscribers'  => $subscriptions ? $subscriptions->subscribers : [],
         ];
     }
+   /* =========================
+       🔔 SEND PUSH NOTIFICATION
+       ========================= */
+    try {
+        $fcmTokens = UserFcmToken::where('user_id', $userId)
+            ->pluck('device_token')
+            ->toArray();
 
+        if (!empty($fcmTokens)) {
+            FirebaseService::sendNotification(
+                $fcmTokens,
+                'Notification Settings',
+                'Notification settings viewed',
+                [
+                    'type' => 'notification_settings',
+                    'user_id' => $userId
+                ]
+            );
+        }
+    } catch (\Exception $e) {
+        Log::error('FCM Notification Settings failed', [
+            'error' => $e->getMessage(),
+            'user_id' => $userId
+        ]);
+    }
     // pagination logic
     if ($request->has('start') && $request->has('limit')) {
         $total_row = count($result);
