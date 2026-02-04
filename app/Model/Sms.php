@@ -194,9 +194,31 @@ $users = DB::connection("master")
 
 
 // --- Attach user_name to each SMS record ---
-foreach ($pagedData as &$row) {
-    $row->user_name = $users[$row->user_id] ?? null;
+// foreach ($pagedData as &$row) {
+//     $row->user_name = $users[$row->user_id] ?? null;
+// }
+$newPagedData = [];
+
+foreach ($pagedData as $row) {
+
+    $orderedRow = [
+        'id' => $row->id,
+        'conversation_id' => $row->id,   // ✅ right after id
+    ];
+
+    // add remaining fields dynamically (except id)
+    foreach ($row as $key => $value) {
+        if ($key !== 'id') {
+            $orderedRow[$key] = $value;
+        }
+    }
+
+    // attach user_name if not already
+    $orderedRow['user_name'] = $users[$row->user_id] ?? null;
+
+    $newPagedData[] = $orderedRow;
 }
+
     // ✅ Return response
     return [
         'success' => true,
@@ -204,7 +226,7 @@ foreach ($pagedData as &$row) {
         'start' => $start,
         'limit' => $limit,
         'total' => $total,
-        'data' => array_values($pagedData),
+        'data' => $newPagedData,
     ];
 }
 
