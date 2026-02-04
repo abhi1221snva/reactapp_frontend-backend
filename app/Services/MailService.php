@@ -23,7 +23,7 @@ class MailService
         $this->mailable = $mailable;
         $this->smtpSetting = $smtpSetting;
     }
-    function sendEmail($to)
+    function sendEmail($to,array $cc = [], array $bcc = [])
 {
     try {
         $smtp = $this->smtpSetting;
@@ -52,7 +52,15 @@ class MailService
             ->to($to)
             ->subject($this->mailable->subject ?? '(No Subject)')
             ->html($this->mailable->render());
+  // ✅ Add CC
+        if (!empty($cc)) {
+            $email->cc(...$cc); // spread operator
+        }
 
+        // ✅ Add BCC
+        if (!empty($bcc)) {
+            $email->bcc(...$bcc);
+        }
         // Send
         $mailer->send($email);
 
