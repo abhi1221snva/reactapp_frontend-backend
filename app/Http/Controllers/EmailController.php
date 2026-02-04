@@ -35,7 +35,7 @@ public function index(Request $request)
 
     $query = DB::connection($connection)
         ->table('email_logs')
-        ->where('folder', $request->type)
+        ->where('folder', $request->type)->where('user_id',$request->auth->id)
         ->orderBy('created_at', 'desc');
 
     if ($request->filled('search')) {
@@ -58,6 +58,16 @@ public function index(Request $request)
                 'id' => $email->id,
                 'from' => $email->from,
                 'to' => $email->to,
+                // 'cc'  => $email->cc  ? json_decode($email->cc, true)  : [],
+                // 'bcc' => $email->bcc ? json_decode($email->bcc, true) : [],
+                'cc' => $email->cc 
+                    ? implode(', ', json_decode($email->cc, true)) 
+                    : '',
+
+                'bcc' => $email->bcc 
+                    ? implode(', ', json_decode($email->bcc, true)) 
+                    : '',
+
                 'subject' => $email->subject,
                 'snippet' => $email->body,
                 'type' => $email->folder,
@@ -83,7 +93,7 @@ public function show(Request $request, $id)
 
     // ✅ Fetch email
     $email = DB::connection($connection)
-        ->table('email_logs')
+        ->table('email_logs')->where('user_id',$request->auth->id)
         ->where('id', $id)
         ->first();
 
@@ -98,9 +108,14 @@ public function show(Request $request, $id)
     $response = [
         'id' => $email->id,
         'from' => $email->from,
-        'to' => array_filter(array_map('trim', explode(',', $email->to))),
-        'cc' => [],   // future ready
-        'bcc' => [],  // future ready
+        'to' => $email->to,
+        'cc' => $email->cc 
+                    ? implode(', ', json_decode($email->cc, true)) 
+                    : '',
+
+         'bcc' => $email->bcc 
+                    ? implode(', ', json_decode($email->bcc, true)) 
+                    : '',
         'subject' => $email->subject,
         'body' => $email->body,
         'type' => $email->folder,
@@ -136,8 +151,8 @@ public function storeDraft(Request $request)
             'senderType' => 'user',
              'user_id' => $request->auth->id,
             'to' => implode(',', $request->to),
-            'cc' => json_encode($request->cc ?? []),
-             'bcc' => json_encode($request->bcc ?? []),
+            'cc'         => !empty($request->cc)  ? json_encode($request->cc)  : null,
+            'bcc'        => !empty($request->bcc) ? json_encode($request->bcc) : null,
             'subject' => $request->subject,
             'body' => $request->body,
             'folder' => 'draft',
@@ -181,7 +196,7 @@ public function updateDraft(Request $request, $id)
 
     // 🔍 Check if draft exists
     $draft = DB::connection($connection)
-        ->table('email_logs')
+        ->table('email_logs')->where('user_id',$request->auth->id)
         ->where('id', $id)
         ->where('folder', 'draft')
         ->first();
@@ -201,8 +216,8 @@ public function updateDraft(Request $request, $id)
             'senderType' => 'user',
              'user_id' => $request->auth->id,
             'to' => implode(',', $request->to),
-            'cc' => json_encode($request->cc ?? []),
-            'bcc' => json_encode($request->bcc ?? []),
+            'cc'         => !empty($request->cc)  ? json_encode($request->cc)  : null,
+            'bcc'        => !empty($request->bcc) ? json_encode($request->bcc) : null,
             'subject' => $request->subject,
             'body' => $request->body,
         ]);
@@ -220,7 +235,7 @@ public function deleteDraft(Request $request, $id)
     // 🔍 Check if draft exists
     $draft = DB::connection($connection)
         ->table('email_logs')
-        ->where('id', $id)
+        ->where('id', $id)->where('user_id',$request->auth->id)
         ->where('folder', 'draft')
         ->first();
 
@@ -262,7 +277,7 @@ public function archive(Request $request)
     // 🔄 Update folder to "archive" only if it's not already archived
     $archivedCount = DB::connection($connection)
         ->table('email_logs')
-        ->whereIn('id', $request->email_ids)
+        ->whereIn('id', $request->email_ids)->where('user_id',$request->auth->id)
         ->where('folder', '!=', 'archived') // ✅ ignore already archived emails
         ->update(['folder' => 'archived']);
 

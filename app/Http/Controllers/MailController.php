@@ -109,10 +109,11 @@ class MailController extends Controller
                 $from,
                 $request->input("body")
             );
-
+         $cc  = $request->input('cc', []);
+         $bcc = $request->input('bcc', []);
             //send email
             $mailService = new MailService($request->auth->parent_id, $genericMail, $smtpSetting);
-            $mailService->sendEmail($request->input("to"));
+            $mailService->sendEmail($request->input("to"),$cc,$bcc);
 
             //Billing part for Email from "Start Dialing"
             $isFree = $intCharge = NULL;
@@ -160,7 +161,44 @@ class MailController extends Controller
             $emailLog->client_package_id = $clientPackageId;
             $emailLog->isFree = $isFree;
             $emailLog->currency_code = $currencyCode;
+            $emailLog->cc  = json_encode($cc);
+            $emailLog->bcc = json_encode($bcc);
+
             $emailLog->saveOrFail();
+            $recipients = array_merge(
+                [$request->input('to')],
+                $cc
+            );
+
+            $receiverUser = User::where('email', $request->input('to'))
+                ->where('parent_id', $request->auth->parent_id)
+                ->first();
+            foreach ($recipients as $email) {
+        $receiverUser = User::where('email', $email)
+        ->where('parent_id', $request->auth->parent_id)
+        ->first();
+
+    if (!$receiverUser) {
+        continue;
+    }
+
+    $emailLogInbox = new EmailLog();
+    $emailLogInbox->setConnection("mysql_" . $request->auth->parent_id);
+    $emailLogInbox->senderType = $senderType;
+    $emailLogInbox->user_id = $receiverUser->id;
+    $emailLogInbox->campaign_id = $request->input("campaign_id");
+    $emailLogInbox->from = $smtpSetting->from_email;
+    $emailLogInbox->to = $email;
+    $emailLogInbox->subject = $request->input("subject");
+    $emailLogInbox->body = $request->input("body");
+    $emailLogInbox->cc = json_encode($cc);
+    $emailLogInbox->bcc = null; // ❌ never show BCC
+    $emailLogInbox->charge = 0;
+    $emailLogInbox->isFree = 1;
+    $emailLogInbox->folder = 'inbox';
+    $emailLogInbox->saveOrFail();
+}
+
 
             return response()->json(["success" => true]);
         } catch (\Throwable $exception) {
