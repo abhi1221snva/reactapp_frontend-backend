@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Model\CallTimer;
 use Illuminate\Http\Request;
 use App\Model\Client\Campaign;
+use Carbon\Carbon;
 
 class CallTimerController extends Controller
 {
@@ -83,26 +84,37 @@ public function index(Request $request)
     // ✅ Convert created_at & updated_at for response
 $timers = $timers->map(function ($timer) use ($userTimezone) {
 
-    $dayMap = [
-        'monday'    => 1,
-        'tuesday'   => 2,
-        'wednesday' => 3,
-        'thursday'  => 4,
-        'friday'    => 5,
-        'saturday'  => 6,
-        'sunday'    => 7,
-    ];
+   $dayMap = [
+    'monday'    => 1,
+    'tuesday'   => 2,
+    'wednesday' => 3,
+    'thursday'  => 4,
+    'friday'    => 5,
+    'saturday'  => 6,
+    'sunday'    => 7,
+];
 
-    $day = null;
+// ✅ get today's day name
+$todayName = strtolower(Carbon::now()->format('l')); // e.g. "wednesday"
+$day = null;
 
-    if (!empty($timer->week_plan) && is_array($timer->week_plan)) {
+if (!empty($timer->week_plan) && is_array($timer->week_plan)) {
+
+    // ✅ If today exists in week_plan, use today
+    if (isset($timer->week_plan[$todayName]) && isset($dayMap[$todayName])) {
+        $day = $dayMap[$todayName];
+    } else {
+        // ✅ fallback: first available valid day
         foreach ($timer->week_plan as $dayName => $time) {
-            if (isset($dayMap[strtolower($dayName)])) {
-                $day = $dayMap[strtolower($dayName)];
+            $dayName = strtolower($dayName);
+            if (isset($dayMap[$dayName])) {
+                $day = $dayMap[$dayName];
                 break;
             }
         }
     }
+}
+
 
     return [
         'id'          => $timer->id,
