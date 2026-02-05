@@ -13,6 +13,8 @@ use Plivo\RestClient;
 use Plivo\Exceptions\PlivoRestException;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Validator;
+use Twilio\Rest\Client;
+use Twilio\Exceptions\TwilioException;
 
 class Dids extends Model
 {
@@ -546,7 +548,8 @@ public function getList($request)
                 $data['prompt_option'] = $request->input('prompt_option');
                 $data['redirect_last_agent'] = $request->input('redirect_last_agent');
                 $data['sms_type'] = $request->input('sms_type');
-                $data['voip_provider'] = $request->input('voip_provider');
+               // $data['voip_provider'] = $request->input('voip_provider');
+               $data['voip_provider'] = strtolower($request->input('voip_provider'));
 
                 if ($data['sms']) //Active and forward SMS for did
                 {
@@ -567,16 +570,17 @@ public function getList($request)
                 $data['conf_id_ooh']            =  $request->input('dest_type_ooh') == 5 ? $request->input('conf_id_ooh') : '';
                 $data['ingroup_ooh']            =  $request->input('dest_type_ooh') == 8 ? $request->input('ingroup_ooh') : '';
                 $data['phone_number_sid']          =  $request->input('phone_number_sid');
+                $data['sip_trunk_id']          =  $request->input('sip_trunk_id');
 
                 $query = "INSERT INTO did (cli,cnam,area_code,dest_type,ivr_id,extension,voicemail_id,"
                     . "forward_number,country_code,conf_id,ingroup,operator,default_did,voice,fax,voip_provider,sms,sms_phone,sms_email,"
                     . "call_time_department_id, call_time_holiday, dest_type_ooh, ivr_id_ooh, extension_ooh, "
-                    . "voicemail_id_ooh, forward_number_ooh, conf_id_ooh, ingroup_ooh,set_exclusive_for_user,call_screening_status,call_screening_ivr_id,language,voice_name,ivr_audio_option,speech_text,prompt_option,redirect_last_agent,sms_type,phone_number_sid) "
+                    . "voicemail_id_ooh, forward_number_ooh, conf_id_ooh, ingroup_ooh,set_exclusive_for_user,call_screening_status,call_screening_ivr_id,language,voice_name,ivr_audio_option,speech_text,prompt_option,redirect_last_agent,sms_type,phone_number_sid,sip_trunk_id) "
                     . "VALUE "
                     . "(:cli,:cnam,:area_code,:dest_type,:ivr_id,:extension,:voicemail_id,:forward_number,:country_code,:conf_id,"
                     . ":ingroup,:operator,:default_did,:voice,:fax,:voip_provider,:sms,:sms_phone,:sms_email,"
                     . ":call_time_department_id, :call_time_holiday, :dest_type_ooh, :ivr_id_ooh, :extension_ooh, "
-                    . ":voicemail_id_ooh, :forward_number_ooh, :conf_id_ooh, :ingroup_ooh ,:set_exclusive_for_user,:call_screening_status,:call_screening_ivr_id,:language,:voice_name,:ivr_audio_option,:speech_text,:prompt_option,:redirect_last_agent,:sms_type,:phone_number_sid"
+                    . ":voicemail_id_ooh, :forward_number_ooh, :conf_id_ooh, :ingroup_ooh ,:set_exclusive_for_user,:call_screening_status,:call_screening_ivr_id,:language,:voice_name,:ivr_audio_option,:speech_text,:prompt_option,:redirect_last_agent,:sms_type,:phone_number_sid,:sip_trunk_id"
                     . ")";
 
                 $add = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
@@ -615,7 +619,48 @@ public function getList($request)
                         $query_default = "UPDATE did set default_did='' WHERE id != :id";
                         DB::connection('mysql_' . $request->auth->parent_id)->update($query_default, $data_default);
                     }
+    // ----------------------------------------
+    // TWILIO SIP TRUNK (SAFE - NON BLOCKING)
+    // ----------------------------------------
+    if ($data['voip_provider'] === 'twilio'
+        && !empty($request->sip_trunk_id)
+        && !empty($request->phone_number_sid)
+    ) {
 
+        try {
+
+            $twilio = DB::connection('mysql_' . $request->auth->parent_id)
+                ->table('sms_providers')
+                ->where('provider', 'twilio')
+                ->where('status', 1)
+                ->whereNull('deleted_at')
+                ->first();
+
+            if ($twilio) {
+                $client = new Client($twilio->auth_id, $twilio->api_key);
+
+                $client->trunking
+                    ->v1
+                    ->trunks($request->sip_trunk_id)
+                    ->phoneNumbers
+                    ->create($request->phone_number_sid);
+
+                Log::info('Twilio SIP trunk updated successfully', [
+                    'trunk_sid' => $request->sip_trunk_id,
+                    'phone_sid' => $request->phone_number_sid
+                ]);
+            }
+
+        } catch (TwilioException $e) {
+
+            // IMPORTANT: Only log — DO NOT return or throw
+            Log::error('Twilio SIP trunk update failed', [
+                'error' => $e->getMessage(),
+                'trunk_sid' => $request->sip_trunk_id,
+                'phone_sid' => $request->phone_number_sid
+            ]);
+        }
+    }
                     return array(
                         'success' => 'true',
                         'message' => 'Did added successfully.',
