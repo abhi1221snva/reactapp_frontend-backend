@@ -37,10 +37,10 @@ use App\Services\MailService;
 use App\Model\Client\SmtpSetting;
 use App\Model\Client\SmsProviders;
 use Illuminate\Support\Facades\DB;
-
-
 use App\Mail\SystemNotificationMail;
-
+use Twilio\Rest\Client as TwilioClient;
+use Twilio\Exceptions\TwilioException;
+use Illuminate\Support\Str;
 
 class ClientController extends Controller
 {
@@ -907,6 +907,57 @@ class ClientController extends Controller
                 $clients->update($new_input);
             }
 
+    // 🔥 TWILIO SHOULD RUN HERE
+    if (strtolower(trim($clients->provider)) === 'twilio') {
+
+        Log::info('Twilio update flow reached', [
+            'provider_id' => $clients->id
+        ]);
+
+        $accountSid = $clients->auth_id;
+        $authToken  = $clients->api_key;
+
+        if ($accountSid && $authToken && empty($clients->twilio_trunk_sid)) {
+            try {
+                $sipUrl = env('TWILIO_SIP_URL');
+
+                $twilioClient = new \Twilio\Rest\Client($accountSid, $authToken);
+
+                $friendlyName = 'phonify-demo-crm-iocod-'
+                    . $id . '-'
+                    . Carbon::now()->timestamp;
+
+                $trunk = $twilioClient->trunking
+                    ->v1
+                    ->trunks
+                    ->create(['friendlyName' => $friendlyName]);
+
+                $twilioClient->trunking
+                    ->v1
+                    ->trunks($trunk->sid)
+                    ->originationUrls
+                    ->create(10, 10, true, $friendlyName, $sipUrl);
+
+                $clients->update([
+                    'twilio_trunk_sid' => $trunk->sid
+                ]);
+
+                Log::info('Twilio SIP trunk created on update', [
+                    'provider_id' => $clients->id,
+                    'trunk_sid'   => $trunk->sid
+                ]);
+
+            } catch (\Twilio\Exceptions\TwilioException $e) {
+                Log::error('Twilio SIP trunk failed on update', [
+                    'provider_id' => $clients->id,
+                    'error'       => $e->getMessage()
+                ]);
+            }
+        }
+    }
+
+
+
             return $this->successResponse("SMS Provider Updated", $clients->toArray());
         } else {
 
@@ -942,6 +993,55 @@ class ClientController extends Controller
 
             /** @var Client $client */
             $client = SmsProviders::on("mysql_" . $id)->create($attributes);
+ 
+if (strtolower(trim($client->provider)) === 'twilio') {
+
+    Log::info('Twilio create flow reached', [
+        'provider_id' => $client->id
+    ]);
+
+    $accountSid = $client->auth_id;
+    $authToken  = $client->api_key;
+
+    if ($accountSid && $authToken && empty($client->twilio_trunk_sid)) {
+        try {
+            $sipUrl = env('TWILIO_SIP_URL');
+
+            $twilioClient = new \Twilio\Rest\Client($accountSid, $authToken);
+
+            $friendlyName = 'phonify-demo-crm-iocod-'
+                . $id . '-'
+                . Carbon::now()->timestamp;
+
+            $trunk = $twilioClient->trunking
+                ->v1
+                ->trunks
+                ->create(['friendlyName' => $friendlyName]);
+
+            $twilioClient->trunking
+                ->v1
+                ->trunks($trunk->sid)
+                ->originationUrls
+                ->create(10, 10, true, $friendlyName, $sipUrl);
+
+            $client->update([
+                'twilio_trunk_sid' => $trunk->sid
+            ]);
+
+            Log::info('Twilio SIP trunk created on create', [
+                'provider_id' => $client->id,
+                'trunk_sid'   => $trunk->sid
+            ]);
+
+        } catch (\Twilio\Exceptions\TwilioException $e) {
+            Log::error('Twilio SIP trunk failed on create', [
+                'provider_id' => $client->id,
+                'error'       => $e->getMessage()
+            ]);
+        }
+    }
+}
+
             return $this->successResponse("SMS Provider created", $client->toArray());
         }
     }
