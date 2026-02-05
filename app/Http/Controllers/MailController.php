@@ -109,8 +109,8 @@ class MailController extends Controller
                 $from,
                 $request->input("body")
             );
-         $cc  = $request->input('cc', []);
-         $bcc = $request->input('bcc', []);
+            $cc  = $request->input('cc', []);
+            $bcc = $request->input('bcc', []);
             //send email
             $mailService = new MailService($request->auth->parent_id, $genericMail, $smtpSetting);
             $mailService->sendEmail($request->input("to"),$cc,$bcc);
@@ -146,6 +146,16 @@ class MailController extends Controller
                 $currencyCode = $package->currency_code;
                 $clientPackageId = $package->id;
             }
+            $draftId = $request->input('draft_id');
+
+            if ($draftId) {
+                EmailLog::on("mysql_" . $request->auth->parent_id)
+                    ->where('id', $draftId)
+                    ->where('folder', 'draft')
+                    ->where('user_id', $request->auth->id)
+                    ->delete();
+            }
+
 
             //entry into client_xxx.email_logs
             $emailLog = new EmailLog();
@@ -170,9 +180,10 @@ class MailController extends Controller
                 $cc
             );
 
-            $receiverUser = User::where('email', $request->input('to'))
-                ->where('parent_id', $request->auth->parent_id)
-                ->first();
+
+            // $receiverUser = User::where('email', $request->input('to'))
+            //     ->where('parent_id', $request->auth->parent_id)
+            //     ->first();
             foreach ($recipients as $email) {
         $receiverUser = User::where('email', $email)
         ->where('parent_id', $request->auth->parent_id)
