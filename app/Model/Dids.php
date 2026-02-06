@@ -776,7 +776,7 @@ $didObj->fax            = (empty($request->option_1)) ? 1 : 0;
 $didObj->sms            = (!empty($request->sms)) ? 1 : 0;
 $didObj->sms_phone      = (!empty($request->sms)) ? $request->sms_phone : '';
 $didObj->sms_email      = (!empty($request->sms)) ? $request->sms_email : '';
-$didObj->enable_sms_ai  = $request->input('enable_sms_ai'); // Added enable_sms_ai
+//$didObj->enable_sms_ai  = $request->input('enable_sms_ai'); // Added enable_sms_ai
 
                 //$didObj->fax_did            =   $request->input('fax_did;
                 $didObj->set_exclusive_for_user = $request->input('set_exclusive_for_user');
