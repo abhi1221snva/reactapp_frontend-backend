@@ -560,4 +560,47 @@ class RedisCacheController extends Controller
             ], 500);
         }
     }
+    /**
+     * Test Redis connection and return diagnostics
+     * 
+     * @return JsonResponse
+     */
+    public function testConnection(): JsonResponse
+    {
+        try {
+            // Start timer
+            $start = microtime(true);
+            
+            // Check connection
+            $ping = Redis::ping();
+            $connectionTime = round((microtime(true) - $start) * 1000, 2);
+            
+            // Get connection info
+            $config = config('database.redis.default');
+            
+            // Mask password
+            if (isset($config['password']) && $config['password']) {
+                $config['password'] = '******';
+            }
+            if (isset($config['url'])) {
+                $config['url'] = preg_replace('/:[^:@]+@/', ':******@', $config['url']);
+            }
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Redis connection successful',
+                'ping_response' => $ping,
+                'latency_ms' => $connectionTime,
+                'client' => Redis::client(),
+                'connection_config' => $config
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Redis connection failed',
+                'error' => $e->getMessage(),
+                'trace' => explode("\n", $e->getTraceAsString())[0]
+            ], 500);
+        }
+    }
 }
