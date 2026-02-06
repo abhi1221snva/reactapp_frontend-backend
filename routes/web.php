@@ -16,6 +16,7 @@ $router->get('/cache-detail/{key}', 'RedisCacheController@getCacheDetail');
 $router->post('/delete-cache', 'RedisCacheController@deleteCache');
 $router->delete('/delete-cache', 'RedisCacheController@deleteCache');
 $router->post('/delete-cache-by-age', 'RedisCacheController@deleteCacheByAge');
+$router->get('/test-redis', 'RedisCacheController@testConnection');
 
 
 $router->POST('authentication', 'AuthenticationController@authentication');
