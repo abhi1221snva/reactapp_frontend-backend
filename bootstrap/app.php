@@ -128,7 +128,7 @@ $app->register(Sichikawa\LaravelSendgridDriver\MailServiceProvider::class);
 $app->register(Maatwebsite\Excel\ExcelServiceProvider::class);
 //$app->register(\SwaggerLume\ServiceProvider::class);
 //$app->register(\Torann\GeoIP\GeoIPServiceProvider::class);
-//$app->register(Illuminate\Redis\RedisServiceProvider::class);
+$app->register(Illuminate\Redis\RedisServiceProvider::class);
 
 $app->routeMiddleware([
     'jwt.auth' => App\Http\Middleware\JwtMiddleware::class,
