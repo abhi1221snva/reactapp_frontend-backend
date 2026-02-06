@@ -1687,6 +1687,18 @@ public function deleteDispositionAndList($request)
 
         DB::commit();
 
+/**
+ * ✅ Update campaign status if leads were deleted
+ */
+if ($count_deletedLeads > 0) {
+    DB::connection('mysql_' . $parentId)
+        ->table('campaign')
+        ->where('id', $campaignId)
+        ->update([
+            'status' => 1// or whatever "active / recycled" means in your system
+        ]);
+}
+
         dispatch(
             new RecycleDeletedNotificationJob(
                 $parentId,
