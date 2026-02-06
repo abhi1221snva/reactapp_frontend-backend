@@ -59,18 +59,39 @@ function buildPrevious(\Throwable $throwable, array &$context, $index = 0)
     }
 }
 
+
+if (!function_exists('redisDebugLog')) {
+    function redisDebugLog($message, $data = [])
+    {
+        try {
+            $logPath = storage_path('logs/redis_debug.log');
+            $timestamp = date('Y-m-d H:i:s');
+            $dataStr = !empty($data) ? json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '';
+            $logEntry = "[{$timestamp}] {$message} {$dataStr}" . PHP_EOL;
+            file_put_contents($logPath, $logEntry, FILE_APPEND);
+        } catch (\Exception $e) {
+            // Silently fail if logging fails to avoid breaking main flow
+        }
+    }
+}
+
 if (!function_exists('externalRedisCacheSet')) {
     function externalRedisCacheSet($client_id, $prompt_id): bool
     {
+        redisDebugLog('externalRedisCacheSet: Start', ['client_id' => $client_id, 'prompt_id' => $prompt_id]);
+
         if (empty($client_id) || empty($prompt_id)) {
-            Log::error('Missing required parameters for external Redis cache set', [
+            $error = 'Missing required parameters for external Redis cache set';
+            Log::error($error, [
                 'client_id' => $client_id ?? 'null',
                 'prompt_id' => $prompt_id ?? 'null'
             ]);
+            redisDebugLog('externalRedisCacheSet: Failed - ' . $error);
             return false;
         }
 
         $key = "{$client_id}_{$prompt_id}";
+
 
         try {
             $prompt = Prompt::on("mysql_" . $client_id)
@@ -197,12 +218,14 @@ if (!function_exists('externalRedisCacheSet')) {
             $success = (bool) Redis::set($key, $value);
             Redis::persist($key);
 
+            redisDebugLog('externalRedisCacheSet: Success', ['key' => $key, 'success' => $success, 'value_length' => strlen($value)]);
             return $success;
         } catch (Exception $e) {
             Log::error('External Redis cache set failed', [
                 'key'   => "{$client_id}_{$prompt_id}",
                 'error' => $e->getMessage()
             ]);
+            redisDebugLog('externalRedisCacheSet: Exception', ['error' => $e->getMessage()]);
             return false;
         }
     }
@@ -263,14 +286,18 @@ if (!function_exists('externalRedisCacheList')) {
 if (!function_exists('clientCampaignLeadPromptRedisCacheSet_old')) {
     function clientCampaignLeadPromptRedisCacheSet_old($client_id, $campaign_id, $lead_id, $list_id, $prompt_id, bool $dynamic = false, Request $request = null): bool
     {
+        redisDebugLog('clientCampaignLeadPromptRedisCacheSet_old: Start', ['client_id' => $client_id, 'campaign_id' => $campaign_id, 'lead_id' => $lead_id, 'prompt_id' => $prompt_id]);
+
         if (empty($client_id) || empty($campaign_id) || empty($lead_id) || empty($list_id) || empty($prompt_id)) {
-            Log::error('Missing required parameters for Redis cache set', [
+            $error = 'Missing required parameters for Redis cache set';
+            Log::error($error, [
                 'client_id'   => $client_id ?? 'null',
                 'campaign_id' => $campaign_id ?? 'null',
                 'lead_id'     => $lead_id ?? 'null',
                 'list_id'     => $list_id ?? 'null',
                 'prompt_id'   => $prompt_id ?? 'null'
             ]);
+            redisDebugLog('clientCampaignLeadPromptRedisCacheSet_old: Failed - ' . $error);
             return false;
         }
 
@@ -535,6 +562,8 @@ if (!function_exists('clientCampaignLeadPromptRedisCacheSet_old')) {
                 'dynamic' => $dynamic
             ]);
 
+            redisDebugLog('clientCampaignLeadPromptRedisCacheSet_old: Success', ['key' => $key, 'success' => $success, 'value_length' => strlen($value)]);
+
             //echo $value;die;
 
             return $success;
@@ -543,6 +572,7 @@ if (!function_exists('clientCampaignLeadPromptRedisCacheSet_old')) {
                 'key'   => $key,
                 'error' => $e->getMessage()
             ]);
+            redisDebugLog('clientCampaignLeadPromptRedisCacheSet_old: Exception', ['error' => $e->getMessage()]);
             return false;
         }
     }
@@ -551,14 +581,18 @@ if (!function_exists('clientCampaignLeadPromptRedisCacheSet_old')) {
 if (!function_exists('clientCampaignLeadPromptRedisCacheSet_success')) {
     function clientCampaignLeadPromptRedisCacheSet_success($client_id, $campaign_id, $lead_id, $list_id, $prompt_id, bool $dynamic = false, Request $request = null): bool
     {
+        redisDebugLog('clientCampaignLeadPromptRedisCacheSet_success: Start', ['client_id' => $client_id, 'campaign_id' => $campaign_id, 'lead_id' => $lead_id, 'prompt_id' => $prompt_id]);
+
         if (empty($client_id) || empty($campaign_id) || empty($lead_id) || empty($list_id) || empty($prompt_id)) {
-            Log::error('Missing required parameters for Redis cache set', [
+            $error = 'Missing required parameters for Redis cache set';
+            Log::error($error, [
                 'client_id'   => $client_id ?? 'null',
                 'campaign_id' => $campaign_id ?? 'null',
                 'lead_id'     => $lead_id ?? 'null',
                 'list_id'     => $list_id ?? 'null',
                 'prompt_id'   => $prompt_id ?? 'null'
             ]);
+            redisDebugLog('clientCampaignLeadPromptRedisCacheSet_success: Failed - ' . $error);
             return false;
         }
 
@@ -858,6 +892,8 @@ if (!function_exists('clientCampaignLeadPromptRedisCacheSet_success')) {
                 'dynamic' => $dynamic
             ]);
 
+            redisDebugLog('clientCampaignLeadPromptRedisCacheSet_success: Success', ['key' => $key, 'success' => $success, 'value_length' => strlen($value)]);
+
             //echo $value;die;
 
             return $success;
@@ -866,6 +902,7 @@ if (!function_exists('clientCampaignLeadPromptRedisCacheSet_success')) {
                 'key'   => $key,
                 'error' => $e->getMessage()
             ]);
+            redisDebugLog('clientCampaignLeadPromptRedisCacheSet_success: Exception', ['error' => $e->getMessage()]);
             return false;
         }
     }
