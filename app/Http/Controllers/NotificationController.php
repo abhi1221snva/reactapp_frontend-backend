@@ -940,11 +940,18 @@ class NotificationController extends Controller
 
         try {
             $user = $request->user();
+            $deviceType = $request->device_type ?? 'web';
+
+            // We look up by (user_id, device_type). If found, we update that row's token.
+            // If not found, we create a new row.
+            // This allows User A and User B to have the same device_token if they use the same device.
             UserFcmToken::updateOrCreate(
-                ['device_token' => $request->device_token],
                 [
                     'user_id' => $user->id,
-                    'device_type' => $request->device_type ?? 'web',
+                    'device_type' => $deviceType
+                ],
+                [
+                    'device_token' => $request->device_token,
                     'last_used_at' => Carbon::now()
                 ]
             );
