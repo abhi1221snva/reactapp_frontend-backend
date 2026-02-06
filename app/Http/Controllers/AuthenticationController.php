@@ -654,6 +654,8 @@ public function createUser(Request $request)
         $user->password         = Hash::make($request->password);
         $user->easify_user_uuid = $easifyUserToken;
         $user->timezone = $request->timezone ?? 'Asia/Kolkata';
+        $user->is_deleted = 0;
+        $user->status = 1; // if you have status column
 
         $user->save();
 
