@@ -10,16 +10,12 @@
   | and give it the Closure to call when that URI is requested.
   |
  */
-$router->get('/list-all-cache', function () {
-    $allCache = externalRedisCacheList();  // No args = all caches, no filter
-
-    return response()->json([
-        'success' => true,
-        'message' => 'All cached entries retrieved',
-        'count' => count($allCache),
-        'data' => $allCache  // e.g., ['123_456' => 'Some description', '789_101' => 'Another one']
-    ]);
-});
+$router->get('/list-all-cache', 'RedisCacheController@listAllCache');
+$router->get('/cache-detail', 'RedisCacheController@getCacheDetail');
+$router->get('/cache-detail/{key}', 'RedisCacheController@getCacheDetail');
+$router->post('/delete-cache', 'RedisCacheController@deleteCache');
+$router->delete('/delete-cache', 'RedisCacheController@deleteCache');
+$router->post('/delete-cache-by-age', 'RedisCacheController@deleteCacheByAge');
 
 
 $router->POST('authentication', 'AuthenticationController@authentication');

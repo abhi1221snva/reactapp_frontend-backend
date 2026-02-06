@@ -256,6 +256,15 @@ class OutboundUpdateCron extends Command
                         {
                             $file_name = $redirect_to_dropdown.'.wav';
                         }
+                        // else
+                        // if($redirect_to == 6) //voice ai
+                        // {
+                        //     $file_name = $redirect_to_dropdown;
+                        //     clientCampaignLeadPromptRedisCacheSet($clientId, $campaign_id,  $requestData['lead_id'],  $requestData['list_id'], $redirect_to_dropdown,true);
+
+                        //     //clientCampaignLeadPromptRedisCacheSet_2($clientId, $campaign_id,  $requestData['lead_id'],  $requestData['list_id'], $redirect_to_dropdown,true);
+
+                        // }
 
                         $requestData['file_name'] = $file_name;
                         $requestData['amd_drop_action'] = $amd_drop_action;
