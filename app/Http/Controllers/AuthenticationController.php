@@ -468,6 +468,10 @@ public function checkEmail(Request $request)
 {
     
     try {
+        $this->validate($this->request, [
+            'device'   => 'required' // mobile_app, desktop_app
+        ]);
+
         $appKey = $this->request->header('X-Easify-App-Key');
         if ($appKey !== env('EASIFY_APP_KEY')) {
             throw new \Exception('Invalid or missing X-Easify-App-Key', 401);
@@ -490,13 +494,24 @@ public function checkEmail(Request $request)
         if ($user->is_deleted == 1) {
             throw new RenderableException('Account de-activated', [], 401);
         }
+$device = $this->request->input('device');
 
         // 🔐 Use same response-building logic
         // Reuse existing authentication service
         $data = $authentication->loginByUserId($user->id);
+
         if (empty($data) || !is_array($data)) {
             throw new RenderableException('Login failed', [], 401);
         }
+if ($device === 'mobile_app') {
+    if (empty($data['app_status']) || $data['app_status'] == 0) {
+        throw new RenderableException(
+            'Unauthorised For Mobile App Access',
+            [],
+            401
+        );
+    }
+}
 
         // ---------- SAME CHECKS AS authentication() ----------
         $clientIp = $this->request->ip();
