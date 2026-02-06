@@ -13,16 +13,18 @@ class CreateUserFcmTokensTable extends Migration
      */
     public function up()
     {
-        Schema::connection('master')->create('user_fcm_tokens', function (Blueprint $table) {
-            $table->id();
-            $table->unsignedBigInteger('user_id')->index();
-            $table->string('device_token')->unique();
-            $table->enum('device_type', ['web', 'android', 'ios'])->default('web');
-            $table->timestamp('last_used_at')->nullable();
-            $table->timestamps();
+        if (!Schema::connection('master')->hasTable('user_fcm_tokens')) {
+            Schema::connection('master')->create('user_fcm_tokens', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('user_id')->index();
+                $table->string('device_token')->unique();
+                $table->enum('device_type', ['web', 'android', 'ios'])->default('web');
+                $table->timestamp('last_used_at')->nullable();
+                $table->timestamps();
 
-            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
-        });
+                $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
+            });
+        }
     }
 
     /**
