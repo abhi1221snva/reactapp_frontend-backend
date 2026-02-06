@@ -25,7 +25,7 @@ class RecreateUserFcmTokensTable extends Migration
         // Create it fresh
         Schema::connection('master')->create('user_fcm_tokens', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('user_id')->index();
+            $table->unsignedInteger('user_id')->index();
             $table->string('device_token');
             $table->enum('device_type', ['web', 'android', 'ios'])->default('web');
             $table->timestamp('last_used_at')->nullable();
