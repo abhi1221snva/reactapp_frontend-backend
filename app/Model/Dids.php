@@ -765,6 +765,7 @@ $didObj->forward_number = ($request->dest_type == 4) ? $request->forward_number 
 $didObj->country_code   = ($request->dest_type == 4) ? $request->country_code : '';
 $didObj->conf_id        = ($request->dest_type == 5) ? $request->conf_id : '';
 $didObj->ingroup        = ($request->dest_type == 8) ? $request->ingroup : '';
+$didObj->voice_ai       = ($request->dest_type == 12) ? $request->voice_ai : '';
 
 $didObj->operator       = (!empty($request->operator_check)) ? $request->operator : '';
 $didObj->default_did    = $request->default_did ?? 0;
@@ -775,6 +776,7 @@ $didObj->fax            = (empty($request->option_1)) ? 1 : 0;
 $didObj->sms            = (!empty($request->sms)) ? 1 : 0;
 $didObj->sms_phone      = (!empty($request->sms)) ? $request->sms_phone : '';
 $didObj->sms_email      = (!empty($request->sms)) ? $request->sms_email : '';
+$didObj->enable_sms_ai  = $request->input('enable_sms_ai'); // Added enable_sms_ai
 
                 //$didObj->fax_did            =   $request->input('fax_did;
                 $didObj->set_exclusive_for_user = $request->input('set_exclusive_for_user');
@@ -822,6 +824,7 @@ $didObj->sms_email      = (!empty($request->sms)) ? $request->sms_email : '';
 
                 $didObj->conf_id_ooh            =  $request->dest_type_ooh == 5 ? $request->conf_id_ooh : '';
                 $didObj->ingroup_ooh            =  $request->dest_type_ooh == 8 ? $request->ingroup_ooh : '';
+                $didObj->voice_ai_ooh           =  $request->dest_type_ooh == 12 ? $request->voice_ai_ooh : '';
 
                 $editRecord = $didObj->save();
 
