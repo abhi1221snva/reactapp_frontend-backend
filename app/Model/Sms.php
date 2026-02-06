@@ -471,6 +471,7 @@ public function smsDetailsByDidold($request)
     ];
 }
 
+
     public function sendSms(Request $request) {
         Log::info('reached backend sms data',[$request->all()]);
         try {
