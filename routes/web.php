@@ -816,6 +816,7 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->get("notifications", "NotificationController@index");
   $router->post("notifications", "NotificationController@saveSubscriptions");
   $router->post("device/token", "NotificationController@saveDeviceToken");
+  $router->post("notifications/send-direct", "NotificationController@sendDirectNotification");
 
   #CDR
   $router->post("active-extension-group-list", "ReportController@getActiveExtensionByGroup");

@@ -28,6 +28,10 @@ use App\Model\Client\SystemSetting;
 
 class NotificationController extends Controller
 {
+    public $clientId;
+    public $data;
+    public $emailType;
+
     /**
      * @OA\Get(
      *     path="/notifications",
@@ -959,6 +963,56 @@ class NotificationController extends Controller
             return $this->successResponse("Device token saved successfully", []);
         } catch (\Exception $e) {
             return $this->failResponse("Failed to save device token", [$e->getMessage()], $e);
+        }
+    }
+
+    /**
+     * @OA\Post(
+     *     path="/notifications/send-direct",
+     *     summary="Send direct push notification to specific users",
+     *     tags={"Notification"},
+     *     security={{"Bearer": {}}},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             @OA\Property(property="user_ids", type="array", @OA\Items(type="integer"), example={1, 2}),
+     *             @OA\Property(property="title", type="string", example="Hello"),
+     *             @OA\Property(property="body", type="string", example="This is a test notification"),
+     *             @OA\Property(property="data", type="object", example={"key": "value"})
+     *         )
+     *     ),
+     *     @OA\Response(response=200, description="Notification sent successfully")
+     * )
+     */
+    public function sendDirectNotification(Request $request)
+    {
+        $this->validate($request, [
+            'user_ids' => 'required|array',
+            'user_ids.*' => 'exists:master.users,id',
+            'title' => 'required|string',
+            'body' => 'required|string',
+            'data' => 'nullable|array'
+        ]);
+
+        try {
+            $fcmTokens = UserFcmToken::whereIn('user_id', $request->user_ids)
+                ->pluck('device_token')
+                ->toArray();
+
+            if (empty($fcmTokens)) {
+                return $this->failResponse("No device tokens found for the specified users", [], null, 404);
+            }
+
+            $results = FirebaseService::sendNotification(
+                $fcmTokens,
+                $request->title,
+                $request->body,
+                $request->data ?? []
+            );
+
+            return $this->successResponse("Notification sent successfully", ['results' => $results]);
+        } catch (\Exception $e) {
+            return $this->failResponse("Failed to send direct notification", [$e->getMessage()], $e);
         }
     }
 }

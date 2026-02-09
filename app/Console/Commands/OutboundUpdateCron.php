@@ -27,6 +27,9 @@ use App\Model\SmsTemplete;
 
 use App\Model\Client\ListHeader;
 use App\Model\Cron;
+use App\Model\User;
+use App\Services\EasifyCreditService;
+use Illuminate\Support\Facades\Log;
 
 class OutboundUpdateCron extends Command
 {
@@ -77,6 +80,9 @@ class OutboundUpdateCron extends Command
 
                 date_default_timezone_set('US/Eastern');
                 $last_time_cron_run = date('Y-m-d H:i:s');
+
+                // Find the billing admin for this client
+                $adminUser = User::where('parent_id', $clientId)->where('role', 1)->first();
 
 
 
@@ -177,6 +183,32 @@ class OutboundUpdateCron extends Command
                         $amd_drop_action = 0;
                         $amd_drop_message_output = 0;
 
+                    }
+
+                    /* =======================
+                     * 🔹 EASIFY CREDIT CHECK
+                     * ======================= */
+                    if ($adminUser && !empty($adminUser->easify_user_uuid)) {
+                        $creditService = new EasifyCreditService();
+                        $creditCheck = $creditService->checkCredits(
+                            $adminUser->id,
+                            $adminUser->easify_user_uuid,
+                            'outgoing_call',
+                            'outbound_ai_batch', // placeholder resource
+                            $call_ratio
+                        );
+
+                        //  Skip if credit check fails or insufficient balance
+                        if (
+                            empty($creditCheck) || 
+                            ($creditCheck['status'] ?? false) === false ||
+                            ($creditCheck['data']['has_sufficient_credits'] ?? false) === false
+                        ) {
+                            Log::warning("Easify: Skipping outbound batch for client $clientId campaign $campaign_id due to credit check failure or insufficient balance", [
+                                'response' => $creditCheck
+                            ]);
+                            continue; // Skip this campaign for now
+                        }
                     }
 
                     $requestData = array (
@@ -284,7 +316,7 @@ class OutboundUpdateCron extends Command
         }
         }
 
-        catch(Exception $e)
+        catch(\Exception $e)
         {
             echo $e->getMessage();
         }
