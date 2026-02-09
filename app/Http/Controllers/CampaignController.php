@@ -386,13 +386,19 @@ class CampaignController extends Controller
         if ($response instanceof \Illuminate\Http\JsonResponse) {
             return $response; // already has correct status
         }
-      // ✅ PUSHER TRIGGER (CORRECT PLACE)
-        PusherService::notify($request, [
-            'module'  => 'campaign',
-              'message' => $response->message
-        ?? $response['message']
-        ?? 'Campaign added successfully',
-        ]);
+        // ✅ PUSHER TRIGGER (CORRECT PLACE)
+        try {
+            PusherService::notify($request, [
+                'module'  => 'campaign',
+                'message' => $response->message
+                    ?? $response['message']
+                    ?? 'Campaign added successfully',
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Pusher notification failed in addCampaign', [
+                'error' => $e->getMessage()
+            ]);
+        }
         return response()->json($response, 200);
 
         //return response()->json($response);
