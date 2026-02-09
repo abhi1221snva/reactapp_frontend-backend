@@ -38,7 +38,7 @@ class PusherService
                 'dashboard-notification',
                 $data
             );
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('Pusher notify failed', [
                 'error'   => $e->getMessage(),
                 'channel' => $channel ?? null,

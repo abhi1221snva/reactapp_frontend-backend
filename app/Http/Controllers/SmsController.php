@@ -540,11 +540,17 @@ if ($hasCredits === false) {
                 'parent_id' => $request->get('client_id')
             ]);
 
-            PusherService::notify($request, [
-                'module'  => 'sms',
-                'message' => 'New SMS from ' . $request->get('from'),
-                  
-            ]);
+            try {
+                PusherService::notify($request, [
+                    'module'  => 'sms',
+                    'message' => 'New SMS from ' . $request->get('from'),
+
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('Pusher notification failed in smsResponse', [
+                    'error' => $e->getMessage()
+                ]);
+            }
 
             //email sender
 
