@@ -387,7 +387,7 @@ class CampaignController extends Controller
             return $response; // already has correct status
         }
         // ✅ PUSHER TRIGGER (CORRECT PLACE)
-        try {
+        /*try {
             PusherService::notify($request, [
                 'module'  => 'campaign',
                 'message' => $response->message
@@ -398,7 +398,7 @@ class CampaignController extends Controller
             Log::error('Pusher notification failed in addCampaign', [
                 'error' => $e->getMessage()
             ]);
-        }
+        }*/
         return response()->json($response, 200);
 
         //return response()->json($response);
