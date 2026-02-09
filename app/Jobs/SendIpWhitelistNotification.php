@@ -11,6 +11,8 @@ use App\Services\MailService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use App\Services\SmsService;
+use App\Services\FirebaseService;
+use App\Model\UserFcmToken;
 use App\Model\Master\Client;
 use Plivo\RestClient;
 
@@ -51,7 +53,7 @@ class SendIpWhitelistNotification extends Job
             return;
         }
 
-        $emails = User::whereIn('id', $subscription->subscribers)->select('email','mobile','country_code','base_parent_id')->get()->all();
+        $emails = User::whereIn('id', $subscription->subscribers)->select('id', 'email','mobile','country_code','base_parent_id')->get()->all();
         if(empty($emails))
         {
             return;
@@ -87,7 +89,7 @@ class SendIpWhitelistNotification extends Job
                 }
                 else
                     {
-                        $message = $data["user"]." (".$this->whitelistIp.") has been white listed on ".env('PORTAL_NAME')." successfully."
+                        $message = $data["user"]." (".$this->whitelistIp.") has been white listed on ".env('PORTAL_NAME')." successfully.";
                     }
                 $to = $value->country_code.$value->mobile;
 
@@ -159,6 +161,44 @@ class SendIpWhitelistNotification extends Job
 
             $mailService = new MailService($this->clientId, $mailable, $smtpSetting);
             $mailService->sendEmail($emails);
+
+            // Send FCM Push Notification
+            try {
+                $subscriberIds = array_column($emails, 'id');
+                $fcmTokens = UserFcmToken::whereIn('user_id', $subscriberIds)
+                    ->pluck('device_token')
+                    ->toArray();
+                
+                if (!empty($fcmTokens)) {
+                    $title = $this->subject ?? 'IP Whitelist Notification';
+                    $body = $message ?? "Update for IP Whitelist: " . ($this->whitelistIp ?? 'Unknown');
+                    
+                    if (!isset($message)) {
+                        if($this->subject == 'IP whitelisting pending for approval') { 
+                            $body = ($data["user"] ?? 'A user')." (".$this->whitelistIp.") is pending for IP white listing.";
+                        } else {
+                            $body = ($data["user"] ?? 'A user')." (".$this->whitelistIp.") has been white listed successfully.";
+                        }
+                    }
+
+                    FirebaseService::sendNotification(
+                        $fcmTokens,
+                        $title,
+                        strip_tags($body),
+                        [
+                            'type' => 'ip_whitelist_notification',
+                            'subject' => $this->subject,
+                            'whitelist_ip' => $this->whitelistIp,
+                            'clientId' => $this->clientId
+                        ]
+                    );
+                }
+            } catch (\Exception $e) {
+                Log::error('FCM IP Whitelist Notification failed', [
+                    'error' => $e->getMessage(),
+                    'clientId' => $this->clientId
+                ]);
+            }
 
             $subscription->last_sent = Carbon::now();
             $subscription->save();
