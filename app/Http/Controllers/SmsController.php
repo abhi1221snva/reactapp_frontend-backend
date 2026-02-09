@@ -18,6 +18,8 @@ use Illuminate\Support\Facades\Log;
 use Plivo\RestClient;
 use Illuminate\Http\JsonResponse;
 use App\Services\PusherService;
+use App\Services\FirebaseService;
+use App\Model\UserFcmToken;
 
 
 
@@ -648,6 +650,32 @@ if ($hasCredits === false) {
                     $response = $smsService->sendMessage($from_number,$to,$message);*/
                     Log::debug("SendNotificationForReceiveSMSMobileDidforsale.sendMessage.response", [$res]);
                 }
+            }
+            
+            // Send FCM Push Notification for Incoming SMS
+            try {
+                $fcmTokens = UserFcmToken::where('user_id', $request->get('user_id'))
+                    ->pluck('device_token')
+                    ->toArray();
+                
+                if (!empty($fcmTokens)) {
+                    FirebaseService::sendNotification(
+                        $fcmTokens,
+                        "New SMS from " . $request->get('from'),
+                        $request->get('message'),
+                        [
+                            'type' => 'incoming_sms',
+                            'from' => $request->get('from'),
+                            'did' => $request->get('to'),
+                            'user_id' => $request->get('user_id')
+                        ]
+                    );
+                }
+            } catch (\Exception $e) {
+                Log::error('FCM Incoming SMS Notification failed', [
+                    'error' => $e->getMessage(),
+                    'user_id' => $request->get('user_id')
+                ]);
             }
 
             return array(

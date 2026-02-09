@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use App\Services\SmsService;
+use App\Services\FirebaseService;
+use App\Model\UserFcmToken;
 use App\Model\Master\Client;
 use Plivo\RestClient;
 
@@ -62,7 +64,7 @@ class DailyCallReportJob extends Job
                 return;
             }
 
-            $emails = User::whereIn('id', $subscription->subscribers)->select('email','mobile','country_code','base_parent_id')->get()->all();
+            $emails = User::whereIn('id', $subscription->subscribers)->select('id', 'email','mobile','country_code','base_parent_id')->get()->all();
             Log::info("DailyCallReportJob.emails", [
                 "clientId" => $this->clientId,
                 "emails" => $emails
@@ -184,6 +186,34 @@ class DailyCallReportJob extends Job
 
                         $subscription->last_sent = Carbon::now();
                         $subscription->save();
+                    }
+
+                    // Send FCM Push Notification
+                    try {
+                        $fcmTokens = UserFcmToken::where('user_id', $email->id)
+                            ->pluck('device_token')
+                            ->toArray();
+                        
+                        if (!empty($fcmTokens)) {
+                            $title = "Daily Call Report";
+                            $body = "Total calls made: " . ($total_calls ?? 0) . " for " . ($data['company_name'] ?? 'your company');
+                            
+                            FirebaseService::sendNotification(
+                                $fcmTokens,
+                                $title,
+                                $body,
+                                [
+                                    'type' => 'daily_call_report',
+                                    'clientId' => $this->clientId,
+                                    'total_calls' => $total_calls ?? 0
+                                ]
+                            );
+                        }
+                    } catch (\Exception $e) {
+                        Log::error('FCM Daily Call Report Notification failed', [
+                            'error' => $e->getMessage(),
+                            'user_id' => $email->id
+                        ]);
                     }
                     
                 } catch (\Throwable $throwable) {

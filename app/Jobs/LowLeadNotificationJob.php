@@ -12,6 +12,8 @@ use App\Services\MailService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use App\Services\SmsService;
+use App\Services\FirebaseService;
+use App\Model\UserFcmToken;
 use App\Model\Master\Client;
 use Plivo\RestClient;
 
@@ -55,7 +57,7 @@ class LowLeadNotificationJob extends Job
             return;
         }
 
-        $emails = User::whereIn('id', $subscription->subscribers)->select('email','mobile','country_code','base_parent_id')->get()->all();
+        $emails = User::whereIn('id', $subscription->subscribers)->select('id', 'email','mobile','country_code','base_parent_id')->get()->all();
         if(empty($emails))
         {
             return;
@@ -162,6 +164,35 @@ class LowLeadNotificationJob extends Job
 
             $mailService = new MailService($this->clientId, $mailable, $smtpSetting);
             $mailService->sendEmail($emails);
+
+            // Send FCM Push Notification
+            try {
+                $subscriberIds = array_column($emails, 'id');
+                $fcmTokens = UserFcmToken::whereIn('user_id', $subscriberIds)
+                    ->pluck('device_token')
+                    ->toArray();
+                
+                if (!empty($fcmTokens)) {
+                    $title = "Low Lead Alert";
+                    $body = "You are running low leads on campaign: " . ($campaign->title ?? 'Unknown');
+                    
+                    FirebaseService::sendNotification(
+                        $fcmTokens,
+                        $title,
+                        $body,
+                        [
+                            'type' => 'low_lead_notification',
+                            'campaign_id' => $this->campaignId,
+                            'clientId' => $this->clientId
+                        ]
+                    );
+                }
+            } catch (\Exception $e) {
+                Log::error('FCM Low Lead Notification failed', [
+                    'error' => $e->getMessage(),
+                    'clientId' => $this->clientId
+                ]);
+            }
 
             $subscription->last_sent = Carbon::now();
             $subscription->save();

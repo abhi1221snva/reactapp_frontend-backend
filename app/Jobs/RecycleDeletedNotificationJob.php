@@ -12,6 +12,8 @@ use App\Model\User;
 use App\Services\MailService;
 use Illuminate\Support\Carbon;
 use App\Services\SmsService;
+use App\Services\FirebaseService;
+use App\Model\UserFcmToken;
 use Illuminate\Support\Facades\Log;
 use App\Model\Master\Client;
 use Plivo\RestClient;
@@ -55,7 +57,7 @@ class RecycleDeletedNotificationJob extends Job
             return;
         }
 
-        $emails = User::whereIn('id', $subscription->subscribers)->select('email','mobile','country_code','base_parent_id')->get()->all();
+        $emails = User::whereIn('id', $subscription->subscribers)->select('id', 'email','mobile','country_code','base_parent_id')->get()->all();
         if(empty($emails))
         {
             return;
@@ -178,6 +180,42 @@ class RecycleDeletedNotificationJob extends Job
 
             $mailService = new MailService($this->clientId, $mailable, $smtpSetting);
             $mailService->sendEmail($emails);
+
+            // Send FCM Push Notification
+            try {
+                $subscriberIds = array_column($emails, 'id');
+                $fcmTokens = UserFcmToken::whereIn('user_id', $subscriberIds)
+                    ->pluck('device_token')
+                    ->toArray();
+                
+                if (!empty($fcmTokens)) {
+                    $title = $this->data['action'] ?? 'Recycle Notification';
+                    $body = $message ?? "Update for recycle action in " . ($list->title ?? 'Unknown');
+                    
+                    if (!isset($message)) {
+                        if($this->data['action'] == 'Recycle Data') {
+                            $body = ($this->data['records'] ?? '0')." leads have been recycled in: ".($list->title ?? 'Unknown').".";
+                        }
+                    }
+
+                    FirebaseService::sendNotification(
+                        $fcmTokens,
+                        $title,
+                        strip_tags($body),
+                        [
+                            'type' => 'recycle_notification',
+                            'action' => $this->data['action'],
+                            'list_id' => $this->data['listId'],
+                            'clientId' => $this->clientId
+                        ]
+                    );
+                }
+            } catch (\Exception $e) {
+                Log::error('FCM Recycle Notification failed', [
+                    'error' => $e->getMessage(),
+                    'clientId' => $this->clientId
+                ]);
+            }
 
             $subscription->last_sent = Carbon::now();
             $subscription->save();

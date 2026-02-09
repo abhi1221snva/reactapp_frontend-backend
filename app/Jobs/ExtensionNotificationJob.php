@@ -15,6 +15,8 @@ use App\Services\MailService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use App\Services\SmsService;
+use App\Services\FirebaseService;
+use App\Model\UserFcmToken;
 use Plivo\RestClient;
 
 
@@ -192,6 +194,48 @@ class ExtensionNotificationJob extends Job
 
             $mailService = new MailService($this->clientId, $mailable, $smtpSetting);
             $mailService->sendEmail($emails);
+
+            // Send FCM Push Notification
+            try {
+                $subscriberIds = array_column($emails, 'id');
+                if (empty($subscriberIds)) {
+                     $subscriberIds = $subscription->subscribers;
+                }
+                
+                $fcmTokens = UserFcmToken::whereIn('user_id', $subscriberIds)
+                    ->pluck('device_token')
+                    ->toArray();
+                
+                if (!empty($fcmTokens)) {
+                    $title = $this->data['action'] ?? 'Extension Notification';
+                    $body = $message ?? "Update for extension " . $user->extension; // $message might be defined in SMS block
+                    
+                    if (!isset($message)) {
+                         if($this->data['action'] == 'Extension added') {
+                            $body = "Extension ".$user->extension."@".$asteriskServer->domain." has been created successfully.";
+                        } else if($this->data['action'] == 'Extension deleted') {
+                            $body = "Extension ".$user->extension."@".$asteriskServer->domain." has been deleted successfully.";
+                        }
+                    }
+
+                    FirebaseService::sendNotification(
+                        $fcmTokens,
+                        $title,
+                        strip_tags($body),
+                        [
+                            'type' => 'extension_notification',
+                            'action' => $this->data['action'],
+                            'extension' => $user->extension,
+                            'clientId' => $this->clientId
+                        ]
+                    );
+                }
+            } catch (\Exception $e) {
+                Log::error('FCM Extension Notification failed', [
+                    'error' => $e->getMessage(),
+                    'clientId' => $this->clientId
+                ]);
+            }
 
             $subscription->last_sent = Carbon::now();
             $subscription->save();
