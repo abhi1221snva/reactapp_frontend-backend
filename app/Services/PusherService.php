@@ -22,7 +22,7 @@ class PusherService
     {
         Log::info('channel',['channel'=>$request->all()]);
 
-        try {
+        /*try {
          $parentId = $request->auth->parent_id
             ?? $request->parent_id
             ?? $request->get('parent_id')
@@ -44,6 +44,6 @@ class PusherService
                 'channel' => $channel ?? null,
                 'data'    => $data
             ]);
-        }
+        }*/
     }
 }
