@@ -10,6 +10,8 @@ use App\Model\Dialer;
 use Illuminate\Support\Facades\DB;
 use DateTime;
 use App\Model\Cron;
+use App\Model\User;
+use App\Services\EasifyCreditService;
 
 class PredictiveCallJob extends Job
 {
@@ -130,6 +132,35 @@ class PredictiveCallJob extends Job
                                             $data['parent_'.$clientId]['campaign'][$extension_key]['asterisk_server_id'] = $responseList['serverList'][0]->id;
 
                                             $extension = $live_extensions_status[0]->extension;
+
+                                            //  Find the billing admin for this client
+                                            $adminUser = User::where('parent_id', $clientId)->where('role', 1)->first();
+
+                                            /* =======================
+                                             * 🔹 EASIFY CREDIT CHECK
+                                             * ======================= */
+                                            if ($adminUser && !empty($adminUser->easify_user_uuid)) {
+                                                $creditService = new EasifyCreditService();
+                                                $creditCheck = $creditService->checkCredits(
+                                                    $adminUser->id,
+                                                    $adminUser->easify_user_uuid,
+                                                    'outgoing_call',
+                                                    'predictive_dial_batch', // placeholder resource
+                                                    $total_hits_predictive_calls
+                                                );
+
+                                                //  Skip if credit check fails or insufficient balance
+                                                if (
+                                                    empty($creditCheck) || 
+                                                    ($creditCheck['status'] ?? false) === false ||
+                                                    ($creditCheck['data']['has_sufficient_credits'] ?? false) === false
+                                                ) {
+                                                    Log::warning("Easify: Skipping predictive batch for client $clientId campaign {$campaign->id} due to credit check failure or insufficient balance", [
+                                                        'response' => $creditCheck
+                                                    ]);
+                                                    continue; // Skip this campaign campaign
+                                                }
+                                            }
 
                                             $dialer = new Dialer;
                                             $cron = new Cron();
