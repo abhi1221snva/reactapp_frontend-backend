@@ -537,12 +537,19 @@ if ($hasCredits === false) {
                     $request->get('from'),
                     $count
                 );
+            //email sender
+
+            $userDetails = User::findOrFail($request->get('user_id'));
+            
             // 👇 ADD THIS
             $request->merge([
                 'parent_id' => $request->get('client_id')
             ]);
 
-            /*try {
+            // Add pusher_uuid to request for targeting
+            $request->merge(['pusher_uuid' => $userDetails->pusher_uuid ?? null]);
+
+            try {
                 PusherService::notify($request, [
                     'module'  => 'sms',
                     'message' => 'New SMS from ' . $request->get('from'),
@@ -552,11 +559,7 @@ if ($hasCredits === false) {
                 Log::error('Pusher notification failed in smsResponse', [
                     'error' => $e->getMessage()
                 ]);
-            }*/
-
-            //email sender
-
-            $userDetails = User::findOrFail($request->get('user_id'));
+            }
             $receive_sms_on_email = $userDetails->receive_sms_on_email;
             $receive_sms_on_mobile = $userDetails->receive_sms_on_mobile;
             $sms_mobile = $userDetails->mobile;
