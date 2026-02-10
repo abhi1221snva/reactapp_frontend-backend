@@ -113,7 +113,13 @@ class MailController extends Controller
             $bcc = $request->input('bcc', []);
             //send email
             $mailService = new MailService($request->auth->parent_id, $genericMail, $smtpSetting);
-            $mailService->sendEmail($request->input("to"),$cc,$bcc);
+            $cc  = $request->input('cc', []);
+            $bcc = $request->input('bcc', []);
+            $attachments = $request->input('attachments', []);
+
+            //send email
+            $mailService = new MailService($request->auth->parent_id, $genericMail, $smtpSetting);
+            $mailService->sendEmail($request->input("to"),$cc,$bcc, $attachments);
 
             //Billing part for Email from "Start Dialing"
             $isFree = $intCharge = NULL;
@@ -173,6 +179,7 @@ class MailController extends Controller
             $emailLog->currency_code = $currencyCode;
             $emailLog->cc  = json_encode($cc);
             $emailLog->bcc = json_encode($bcc);
+            $emailLog->attachments = json_encode($attachments);
 
             $emailLog->saveOrFail();
             $recipients = array_merge(
@@ -207,6 +214,7 @@ class MailController extends Controller
     $emailLogInbox->charge = 0;
     $emailLogInbox->isFree = 1;
     $emailLogInbox->folder = 'inbox';
+    $emailLogInbox->attachments = json_encode($attachments);
     $emailLogInbox->saveOrFail();
 }
 
@@ -537,7 +545,7 @@ class MailController extends Controller
                 $fileName = 'image_' . time() . '.' . $extension;
                 //  $filePath = base_path('public/upload/' . $fileName);
                 // $filePath  ="C:\Users\shikh\Downloads\signed_application_1732268450.pdf";            // Decode and save the file
-                $file_paths = '/var/www/html/branch/frontend_beta/public/uploads/' . $fileName;
+                $filePath = '/var/www/html/branch/frontend_beta/public/uploads/' . $fileName;
 
                 file_put_contents($filePath, base64_decode($base64Data));
 
@@ -661,6 +669,35 @@ class MailController extends Controller
                     'updated_at' => Carbon::now(),
                 ]);
             }
+             // ✅ Log the email sent via CRM (was missing!)
+            foreach ($emailSet as $lenderId => $emailData) {
+                // Determine TO, CC, BCC from the emailData structure used above
+                 $toEmail = $emailData['to'] ?? '';
+                 // Gather CCs
+                 $ccs = [];
+                 if(!empty($emailData['cc1'])) $ccs[] = $emailData['cc1'];
+                 if(!empty($emailData['cc2'])) $ccs[] = $emailData['cc2'];
+                 if(!empty($emailData['cc3'])) $ccs[] = $emailData['cc3'];
+                 if(!empty($emailData['cc4'])) $ccs[] = $emailData['cc4'];
+
+                 if(empty($toEmail)) continue;
+
+                $crmEmailLog = new EmailLog();
+                $crmEmailLog->setConnection("mysql_" . $clientId);
+                $crmEmailLog->senderType = 'user'; // Sent by logged-in user
+                $crmEmailLog->user_id = $request->auth->id;
+                $crmEmailLog->campaign_id = null; // or pass if available
+                $crmEmailLog->from = $request->auth->email; // or SMTP from
+                $crmEmailLog->to = $toEmail;
+                $crmEmailLog->subject = $request->subject;
+                $crmEmailLog->body = $request->editor1;
+                $crmEmailLog->folder = 'sent';
+                $crmEmailLog->cc = json_encode($ccs);
+                $crmEmailLog->attachments = json_encode($file_paths); // Save paths
+                $crmEmailLog->created_at = Carbon::now();
+                $crmEmailLog->save();
+            }
+
         } catch (\Throwable $exception) {
             Log::error("MailController.sendMail.error", [
                 "message" => $exception->getMessage(),
