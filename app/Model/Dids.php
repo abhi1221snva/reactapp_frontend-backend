@@ -570,7 +570,7 @@ public function getList($request)
                 $data['conf_id_ooh']            =  $request->input('dest_type_ooh') == 5 ? $request->input('conf_id_ooh') : '';
                 $data['ingroup_ooh']            =  $request->input('dest_type_ooh') == 8 ? $request->input('ingroup_ooh') : '';
                 $data['phone_number_sid']          =  $request->input('phone_number_sid');
-                $data['sip_trunk_id']          =  $request->input('sip_trunk_id');
+                $data['sip_trunk_id']          =  "TK3b3e890b0075b08277c86c2a59ad3fbe";
 
                 $query = "INSERT INTO did (cli,cnam,area_code,dest_type,ivr_id,extension,voicemail_id,"
                     . "forward_number,country_code,conf_id,ingroup,operator,default_did,voice,fax,voip_provider,sms,sms_phone,sms_email,"
@@ -623,7 +623,6 @@ public function getList($request)
     // TWILIO SIP TRUNK (SAFE - NON BLOCKING)
     // ----------------------------------------
     if ($data['voip_provider'] === 'twilio'
-        && !empty($request->sip_trunk_id)
         && !empty($request->phone_number_sid)
     ) {
 
@@ -638,10 +637,10 @@ public function getList($request)
 
             if ($twilio) {
                 $client = new Client($twilio->auth_id, $twilio->api_key);
-
+                $trunkSid = 'TK3b3e890b0075b08277c86c2a59ad3fbe'; // sip2-
                 $client->trunking
                     ->v1
-                    ->trunks($request->sip_trunk_id)
+                    ->trunks($trunkSid)
                     ->phoneNumbers
                     ->create($request->phone_number_sid);
 
