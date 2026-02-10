@@ -23,7 +23,7 @@ class MailService
         $this->mailable = $mailable;
         $this->smtpSetting = $smtpSetting;
     }
-    function sendEmail($to,array $cc = [], array $bcc = [])
+    function sendEmail($to,array $cc = [], array $bcc = [], array $attachments = [])
 {
     try {
         $smtp = $this->smtpSetting;
@@ -60,6 +60,17 @@ class MailService
         // ✅ Add BCC
         if (!empty($bcc)) {
             $email->bcc(...$bcc);
+        }
+
+        // ✅ Add Attachments
+        if (!empty($attachments)) {
+            foreach ($attachments as $attachmentPath) {
+                if (file_exists($attachmentPath)) {
+                    $email->attachFromPath($attachmentPath);
+                } else {
+                    Log::warning("MailService: Attachment not found at path: $attachmentPath");
+                }
+            }
         }
         // Send
         $mailer->send($email);

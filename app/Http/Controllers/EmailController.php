@@ -72,7 +72,7 @@ public function index(Request $request)
                 'snippet' => $email->body,
                 'type' => $email->folder,
                 'created_at' => gmdate('c', strtotime($email->created_at)),
-                'has_attachments' => false // future-ready
+                'has_attachments' => !empty($email->attachments) && $email->attachments !== '[]' && $email->attachments !== 'null'
             ];
         });
 
@@ -119,7 +119,7 @@ public function show(Request $request, $id)
         'subject' => $email->subject,
         'body' => $email->body,
         'type' => $email->folder,
-        'attachments' => [], // future attachment table mapping
+        'attachments' => $email->attachments ? json_decode($email->attachments, true) : [],
         'created_at' => gmdate('c', strtotime($email->created_at))
     ];
 

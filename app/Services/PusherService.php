@@ -22,7 +22,7 @@ class PusherService
     {
         Log::info('channel',['channel'=>$request->all()]);
 
-        /*try {
+        try {
          $parentId = $request->auth->parent_id
             ?? $request->parent_id
             ?? $request->get('parent_id')
@@ -32,10 +32,31 @@ class PusherService
             throw new \Exception('parent_id not available for pusher notification');
         }
 
+        /*
+         * --------------------------
+         * GET PUSHER UUID
+         * --------------------------
+         */
+        $pusherUuid = null;
+        if (isset($request->auth->pusher_uuid)) {
+            $pusherUuid = $request->auth->pusher_uuid;
+        } elseif (isset($request->pusher_uuid)) {
+            $pusherUuid = $request->pusher_uuid;
+        } elseif ($request->get('pusher_uuid')) {
+            $pusherUuid = $request->get('pusher_uuid');
+        }
+
         $channel = 'dashboard-' . $parentId; // ✅ USE THIS
+
+        // Append UUID if available
+        $eventName = 'dashboard-notification';
+        if (!empty($pusherUuid)) {
+            $eventName .= $pusherUuid;
+        }
+
             self::instance()->trigger(
                 $channel,
-                'dashboard-notification',
+                $eventName,
                 $data
             );
         } catch (\Throwable $e) {
@@ -44,6 +65,6 @@ class PusherService
                 'channel' => $channel ?? null,
                 'data'    => $data
             ]);
-        }*/
+        }
     }
 }
