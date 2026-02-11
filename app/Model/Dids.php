@@ -663,12 +663,14 @@ public function getList($request)
 
         try {
 
-    $twilio = DB::connection('mysql_' . $request->auth->parent_id)
-        ->table('sms_providers')
-        ->where('provider', 'twilio')
-        ->where('status', 1)
-        ->whereNull('deleted_at')
-        ->first();
+   
+             $twilio = DB::connection($connection)
+    ->table('sms_providers')
+    ->where('provider', 'twilio')
+    ->where('status', 1)
+    ->whereNull('deleted_at')
+    ->orderByDesc('id')   // 👈 latest by ID
+    ->first();
 
     if ($twilio && !empty($twilio->twilio_trunk_id)) {
 
