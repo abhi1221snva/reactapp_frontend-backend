@@ -18,6 +18,46 @@ $router->delete('/delete-cache', 'RedisCacheController@deleteCache');
 $router->post('/delete-cache-by-age', 'RedisCacheController@deleteCacheByAge');
 $router->get('/test-redis', 'RedisCacheController@testConnection');
 
+$router->get('/trigger-pusher-test', function (\Illuminate\Http\Request $request) {
+    try {
+        $parentId = $request->input('parent_id') ?? 1; // Default to 1 if not provided
+        $pusherUuid = $request->input('pusher_uuid');
+        
+        // Mock request data
+        $request->merge([
+            'parent_id' => $parentId,
+            'pusher_uuid' => $pusherUuid
+        ]);
+        
+        // Mock auth for service compatibility
+        $request->auth = (object) [
+            'parent_id' => $parentId,
+            'pusher_uuid' => $pusherUuid
+        ];
+
+        \App\Services\PusherService::notify($request, [
+            'module' => 'test-route',
+            'message' => 'Test message from /trigger-pusher-test URL',
+            'timestamp' => date('Y-m-d H:i:s')
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Pusher event triggered successfully',
+            'channel' => "dashboard-{$parentId}",
+            'event' => $pusherUuid ? "dashboard-notification{$pusherUuid}" : "dashboard-notification"
+        ]);
+
+    } catch (\Throwable $e) {
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage()
+        ], 500);
+    }
+});
+
+
+
 
 $router->POST('authentication', 'AuthenticationController@authentication');
 
