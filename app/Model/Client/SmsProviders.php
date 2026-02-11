@@ -30,7 +30,9 @@ class SmsProviders extends Model
         'sip_password',
         'host',
         'user_extension_id',
-        'uuid','type'
+        'uuid','type',
+        'twilio_trunk_sid',
+        'twilio_friendly_name'
     ];
 
     
