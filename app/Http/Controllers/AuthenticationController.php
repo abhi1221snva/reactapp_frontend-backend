@@ -708,10 +708,8 @@ public function createUser(Request $request)
 }
 
 
-
 public function createCredential(Request $request)
 {
-    // 1️⃣ Validate request payload
     $validator = Validator::make($request->all(), [
         'uuid'                       => 'required|string',
         'provider'                   => 'required|string',
@@ -729,7 +727,6 @@ public function createCredential(Request $request)
         ], 422);
     }
 
-    // 2️⃣ Get user & DB connection
     $user_uuid = $request->header('X-Easify-User-Token');
     $parent_id = User::where('easify_user_uuid', $user_uuid)->value('parent_id');
 
@@ -741,7 +738,6 @@ public function createCredential(Request $request)
 
     $connection = "mysql_" . $parent_id;
 
-    // 3️⃣ Check duplicate UUID
     $alreadyExists = SmsProviders::on($connection)
         ->where('uuid', $request->uuid)
         ->exists();
@@ -757,7 +753,6 @@ public function createCredential(Request $request)
 
     try {
 
-        // 4️⃣ Create credential
         $credential = SmsProviders::on($connection)->create([
             'uuid'         => $request->uuid,
             'provider'     => $request->provider,
@@ -768,15 +763,12 @@ public function createCredential(Request $request)
             'status'       => 1,
         ]);
 
-        // ============================================================
-        // 🔥 TWILIO AUTO SIP TRUNK CREATION
-        // ============================================================
+        $trunkSid = null; // 👈 important
 
+        // ================================
+        // 🔥 TWILIO TRUNK CREATE
+        // ================================
         if (strtolower(trim($credential->provider)) === 'twilio') {
-
-            Log::info('Twilio create flow reached', [
-                'provider_id' => $credential->id
-            ]);
 
             $accountSid = $credential->auth_id;
             $authToken  = $credential->api_key;
@@ -788,7 +780,7 @@ public function createCredential(Request $request)
                     $sipUrl = env('TWILIO_SIP_URL');
 
                     if (!$sipUrl) {
-                        throw new \Exception('TWILIO_SIP_URL not configured in .env');
+                        throw new \Exception('TWILIO_SIP_URL not configured');
                     }
 
                     $twilioClient = new TwilioClient($accountSid, $authToken);
@@ -797,7 +789,6 @@ public function createCredential(Request $request)
                         . $credential->id . '-'
                         . Carbon::now()->timestamp;
 
-                    // ✅ Create trunk
                     $trunk = $twilioClient->trunking
                         ->v1
                         ->trunks
@@ -805,55 +796,47 @@ public function createCredential(Request $request)
                             'friendlyName' => $friendlyName
                         ]);
 
-                    // ✅ Add Origination URL
                     $twilioClient->trunking
                         ->v1
                         ->trunks($trunk->sid)
                         ->originationUrls
                         ->create(
-                            10,           // priority
-                            10,           // weight
-                            true,         // enabled
+                            10,
+                            10,
+                            true,
                             $friendlyName,
                             $sipUrl
                         );
 
-                    // ✅ Save trunk SID in DB
+                    // Save to DB
                     $credential->update([
                         'twilio_trunk_sid' => $trunk->sid
                     ]);
 
-                    Log::info('Twilio SIP trunk created successfully', [
-                        'provider_id' => $credential->id,
-                        'trunk_sid'   => $trunk->sid
-                    ]);
+                    $trunkSid = $trunk->sid; // 👈 store for response
 
                 } catch (TwilioException $e) {
 
-                    Log::error('Twilio SIP trunk creation failed', [
-                        'provider_id' => $credential->id,
-                        'error'       => $e->getMessage()
-                    ]);
-
-                } catch (\Exception $e) {
-
-                    Log::error('General error during Twilio trunk creation', [
+                    Log::error('Twilio trunk creation failed', [
                         'provider_id' => $credential->id,
                         'error'       => $e->getMessage()
                     ]);
                 }
+            } else {
+                $trunkSid = $credential->twilio_trunk_sid;
             }
         }
 
-        // ============================================================
+        // ================================
 
         return response()->json([
             'message' => 'Credential created successfully',
             'data' => [
-                'uuid'       => $credential->uuid,
-                'provider'   => $credential->provider,
-                'type'       => $credential->type,
-                'created_at' => $credential->created_at->toIso8601String(),
+                'uuid'            => $credential->uuid,
+                'provider'        => $credential->provider,
+                'type'            => $credential->type,
+                'twilio_trunk_sid'=> $trunkSid,   // 👈 trunk id in response
+                'created_at'      => $credential->created_at->toIso8601String(),
             ]
         ], 200);
 
@@ -871,6 +854,7 @@ public function createCredential(Request $request)
         throw $e;
     }
 }
+
 
 
 
