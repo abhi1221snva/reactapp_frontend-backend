@@ -669,7 +669,7 @@ public function getList($request)
             } else {
                 return array(
                     'success' => 'false',
-                    'message' => 'Cli already in list'
+                    'message' => 'Phone Number already in list'
                 );
             }
         }
