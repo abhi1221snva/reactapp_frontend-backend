@@ -34,6 +34,8 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\Database\QueryException;
 use DB;
 use App\Model\Client\Did;
+use Twilio\Rest\Client as TwilioClient;
+use Twilio\Exceptions\TwilioException;
 
 class AuthenticationController extends Controller
 {
@@ -705,7 +707,174 @@ public function createUser(Request $request)
     }
 }
 
+
+
 public function createCredential(Request $request)
+{
+    // 1️⃣ Validate request payload
+    $validator = Validator::make($request->all(), [
+        'uuid'                       => 'required|string',
+        'provider'                   => 'required|string',
+        'type'                       => 'required|string',
+        'credentials'                => 'required|array',
+        'credentials.account_name'   => 'required|string',
+        'credentials.account_sid'    => 'required|string',
+        'credentials.auth_token'     => 'required|string',
+    ]);
+
+    if ($validator->fails()) {
+        return response()->json([
+            'message' => 'Failed to create credential',
+            'errors'  => $validator->errors()
+        ], 422);
+    }
+
+    // 2️⃣ Get user & DB connection
+    $user_uuid = $request->header('X-Easify-User-Token');
+    $parent_id = User::where('easify_user_uuid', $user_uuid)->value('parent_id');
+
+    if (!$parent_id) {
+        return response()->json([
+            'message' => 'Invalid user'
+        ], 401);
+    }
+
+    $connection = "mysql_" . $parent_id;
+
+    // 3️⃣ Check duplicate UUID
+    $alreadyExists = SmsProviders::on($connection)
+        ->where('uuid', $request->uuid)
+        ->exists();
+
+    if ($alreadyExists) {
+        return response()->json([
+            'message' => 'Credential already exists',
+            'errors'  => [
+                'uuid' => ['This credential UUID already exists']
+            ]
+        ], 422);
+    }
+
+    try {
+
+        // 4️⃣ Create credential
+        $credential = SmsProviders::on($connection)->create([
+            'uuid'         => $request->uuid,
+            'provider'     => $request->provider,
+            'type'         => $request->type,
+            'label_name'   => $request->credentials['account_name'],
+            'auth_id'      => $request->credentials['account_sid'],
+            'api_key'      => $request->credentials['auth_token'],
+            'status'       => 1,
+        ]);
+
+        // ============================================================
+        // 🔥 TWILIO AUTO SIP TRUNK CREATION
+        // ============================================================
+
+        if (strtolower(trim($credential->provider)) === 'twilio') {
+
+            Log::info('Twilio create flow reached', [
+                'provider_id' => $credential->id
+            ]);
+
+            $accountSid = $credential->auth_id;
+            $authToken  = $credential->api_key;
+
+            if ($accountSid && $authToken && empty($credential->twilio_trunk_sid)) {
+
+                try {
+
+                    $sipUrl = env('TWILIO_SIP_URL');
+
+                    if (!$sipUrl) {
+                        throw new \Exception('TWILIO_SIP_URL not configured in .env');
+                    }
+
+                    $twilioClient = new TwilioClient($accountSid, $authToken);
+
+                    $friendlyName = 'phonify-demo-crm-iocod-'
+                        . $credential->id . '-'
+                        . Carbon::now()->timestamp;
+
+                    // ✅ Create trunk
+                    $trunk = $twilioClient->trunking
+                        ->v1
+                        ->trunks
+                        ->create([
+                            'friendlyName' => $friendlyName
+                        ]);
+
+                    // ✅ Add Origination URL
+                    $twilioClient->trunking
+                        ->v1
+                        ->trunks($trunk->sid)
+                        ->originationUrls
+                        ->create(
+                            10,           // priority
+                            10,           // weight
+                            true,         // enabled
+                            $friendlyName,
+                            $sipUrl
+                        );
+
+                    // ✅ Save trunk SID in DB
+                    $credential->update([
+                        'twilio_trunk_sid' => $trunk->sid
+                    ]);
+
+                    Log::info('Twilio SIP trunk created successfully', [
+                        'provider_id' => $credential->id,
+                        'trunk_sid'   => $trunk->sid
+                    ]);
+
+                } catch (TwilioException $e) {
+
+                    Log::error('Twilio SIP trunk creation failed', [
+                        'provider_id' => $credential->id,
+                        'error'       => $e->getMessage()
+                    ]);
+
+                } catch (\Exception $e) {
+
+                    Log::error('General error during Twilio trunk creation', [
+                        'provider_id' => $credential->id,
+                        'error'       => $e->getMessage()
+                    ]);
+                }
+            }
+        }
+
+        // ============================================================
+
+        return response()->json([
+            'message' => 'Credential created successfully',
+            'data' => [
+                'uuid'       => $credential->uuid,
+                'provider'   => $credential->provider,
+                'type'       => $credential->type,
+                'created_at' => $credential->created_at->toIso8601String(),
+            ]
+        ], 200);
+
+    } catch (QueryException $e) {
+
+        if ($e->getCode() === '23000') {
+            return response()->json([
+                'message' => 'Credential already exists',
+                'errors'  => [
+                    'uuid' => ['Duplicate credential UUID']
+                ]
+            ], 422);
+        }
+
+        throw $e;
+    }
+}
+
+
+
+public function createCredentialold(Request $request)
 {
     // 1️⃣ Validate request payload
     $validator = Validator::make($request->all(), [
