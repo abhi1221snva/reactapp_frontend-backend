@@ -1067,9 +1067,118 @@ public function deleteUser(Request $request)
 
 
 
+public function createPhoneNumber(Request $request)
+{
+    $validator = Validator::make($request->all(), [
+        'uuid'             => 'required|uuid',
+        'credential_uuid'  => 'required|uuid',
+        'phone_number'     => 'required|string',
+        'sid'              => 'required|string',
+        'type'             => 'required|string',
+        'active'           => 'required|boolean',
+    ]);
+
+    if ($validator->fails()) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Validation error',
+            'errors'  => $validator->errors(),
+        ], 422);
+    }
+
+    // 1️⃣ Get user & DB connection
+    $user_uuid = $request->header('X-Easify-User-Token');
+    $parent_id = User::where('easify_user_uuid', $user_uuid)->value('parent_id');
+
+    if (!$parent_id) {
+        return response()->json([
+            'message' => 'Invalid user'
+        ], 401);
+    }
+
+    $connection = "mysql_" . $parent_id;
+
+    // 2️⃣ Clean phone number
+    $cleanPhone = preg_replace('/\D/', '', $request->phone_number);
+
+    // 3️⃣ Save phone number in DB
+    $phone = Did::on($connection)->updateOrCreate(
+        ['uuid' => $request->uuid],
+        [
+            'credential_uuid'  => $request->credential_uuid,
+            'cli'              => $cleanPhone,
+            'phone_number_sid' => $request->sid,
+            'type'             => $request->type,
+            'status'           => $request->active,
+        ]
+    );
+
+    // ======================================================
+    // 🔥 TWILIO TRUNK ATTACH
+    // ======================================================
+
+    if ($request->active) {
+
+        try {
+
+            $twilio = DB::connection($connection)
+                ->table('sms_providers')
+                ->where('provider', 'twilio')
+                ->where('status', 1)
+                ->whereNull('deleted_at')
+                ->first();
+
+            if ($twilio && !empty($twilio->twilio_trunk_id)) {
+
+                $client = new TwilioClient($twilio->auth_id, $twilio->api_key);
+
+                $trunkSid = $twilio->twilio_trunk_id;
+
+                $client->trunking
+                    ->v1
+                    ->trunks($trunkSid)
+                    ->phoneNumbers
+                    ->create($request->sid);
+
+                Log::info('Twilio SIP trunk updated successfully', [
+                    'trunk_sid' => $trunkSid,
+                    'phone_sid' => $request->sid
+                ]);
+
+            } else {
+
+                Log::error('Twilio trunk not configured or missing trunk ID', [
+                    'phone_sid' => $request->sid
+                ]);
+            }
+
+        } catch (TwilioException $e) {
+
+            // Only log — do not break main API response
+            Log::error('Twilio SIP trunk update failed', [
+                'error'     => $e->getMessage(),
+                'phone_sid' => $request->sid
+            ]);
+        }
+    }
+
+    // ======================================================
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Phone number saved successfully',
+        'data'    => [
+            'phonify_id' => $phone->uuid,
+        ],
+    ]);
+}
 
 
-    public function createPhoneNumber(Request $request)
+
+
+
+
+    public function createPhoneNumberold(Request $request)
     {
         $validator = Validator::make($request->all(), [
             'uuid'             => 'required|uuid',
