@@ -16,6 +16,7 @@ use App\Services\TimezoneService;
 use App\Model\Master\AsteriskServer;
 use App\Exceptions\RenderableException;
 use App\Model\Client\Schedule;
+use App\Model\Master\Timezone;
 
 
 use DateTime;
@@ -30,13 +31,152 @@ class Dialer extends Model
      */
     protected $guarded = ['id'];
 
+
+    /**
+     * Smart Lead Selection with Timezone & Schedule Check
+     */
+    function addLeadToExtensionLiveOutboundAI(int $campaignId, int $hopperMode, int $extension, int $asteriskServerId, int $clientId, $weekPlan = null, $adminTimezone = null)
+    {
+        $response = ["status" => false, "code" => "NO_LEADS", "message" => "No leads in hopper for campaign", "data" => []];
+        $db = $clientId;
+
+        // Loop to find a VALID lead (Limit 50 tries to prevent infinite loops)
+        for ($i = 0; $i < 50; $i++) {
+            $lead = null;
+
+            // 1. Fetch Candidate Lead (Random/Linear)
+            if ($hopperMode == '2') {
+                // Random
+                $lead = DB::connection('mysql_' . $db)->selectOne(
+                    "SELECT * FROM lead_temp WHERE campaign_id = :campaign_id ORDER BY RAND()",
+                    ['campaign_id' => $campaignId]
+                );
+            } else {
+                // Linear - Use OFFSET to peek
+                $lead = DB::connection('mysql_' . $db)->selectOne(
+                    "SELECT * FROM lead_temp WHERE campaign_id = :campaign_id LIMIT 1 OFFSET :offset",
+                    ['campaign_id' => $campaignId, 'offset' => $i]
+                );
+            }
+
+            if (empty($lead)) {
+                // End of Hopper
+                return $response; 
+            }
+            $lead = (array)$lead;
+
+            // 2. Determine Timezone
+            $leadTimezone = $adminTimezone; // Default
+            
+            // Fetch Phone Number dynamically
+            $phoneNumber = null;
+            if (!empty($lead['list_id']) && !empty($lead['lead_id'])) {
+                 // Get the column name for phone number
+                 $listHeader = DB::connection('mysql_' . $db)->table('list_header')
+                     ->where('list_id', $lead['list_id'])
+                     ->where('is_dialing', 1)
+                     ->select('column_name')
+                     ->first();
+                 
+                 if ($listHeader && !empty($listHeader->column_name)) {
+                     $colName = $listHeader->column_name;
+                     // Get the actual data
+                     $listData = DB::connection('mysql_' . $db)->table('list_data')
+                         ->where('id', $lead['lead_id'])
+                         ->select($colName)
+                         ->first();
+                     
+                     if ($listData && isset($listData->$colName)) {
+                         $phoneNumber = $listData->$colName;
+                     }
+                 }
+            }
+
+            // Fallback checking (if lead_temp has phone_number but valid? Original code checked lead['phone_number']?? no, it didn't.)
+            // Assuming $phoneNumber is now found.
+
+            if (!empty($phoneNumber)) {
+                $phone = preg_replace('/[^0-9]/', '', $phoneNumber);
+                if (strlen($phone) >= 10) {
+                     $cleanPhone = substr($phone, -10); // Last 10 digits
+                     $areaCode = substr($cleanPhone, 0, 3);
+                     
+                     $tzRow = Timezone::where('areacode', $areaCode)->first();
+                     if ($tzRow && !empty($tzRow->timezone)) {
+                         $leadTimezone = $tzRow->timezone;
+                     }
+                }
+            }
+
+            // 3. Check Schedule
+            if ($this->isTimeAllowed($leadTimezone, $weekPlan)) {
+                // ✅ Valid Lead Found!
+                
+                // DELETE specific lead from hopper
+                DB::connection('mysql_' . $db)->delete(
+                    "DELETE FROM lead_temp WHERE campaign_id = :campaign_id AND lead_id = :lead_id",
+                    [
+                        'campaign_id' => $campaignId,
+                        'lead_id' => $lead['lead_id']
+                    ]
+                );
+                
+                // Return Logic
+                $campaignType = DB::connection('mysql_' . $db)->selectOne(
+                    "SELECT dial_mode FROM campaign WHERE id = :id",
+                    ['id' => $campaignId]
+                );
+
+                return $lead;
+            }
+            
+            // 4. If invalid, loop continues to next $i
+        }
+        
+        return $response; // No valid leads found in batch
+    }
+
+    /**
+     * Helper to check if current time in $timezone is allowed by $weekPlan
+     */
+    private function isTimeAllowed($timezone, $weekPlan)
+    {
+        if (empty($weekPlan)) return true; // No schedule = 24/7 allowed
+        
+        try {
+            if (empty($timezone)) $timezone = 'US/Eastern';
+            $now = new DateTime("now", new DateTimeZone($timezone));
+            $currentDay = strtolower($now->format('l')); // monday, tuesday...
+            $currentTime = $now->format('H:i:s'); // 14:30:00
+
+            foreach ($weekPlan as $dayKey => $times) {
+                if (strtolower($dayKey) === $currentDay) {
+                    if (empty($times['start_time']) || empty($times['end_time'])) return false; // Closed
+                    
+                    $start = $times['start_time'];
+                    $end = $times['end_time'];
+                    
+                    if ($currentTime >= $start && $currentTime <= $end) {
+                        return true;
+                    }
+                    return false; // Wrong time
+                }
+            }
+            return false; // Day not found
+            
+        } catch (\Exception $e) {
+            Log::error("Dialer Timezone Check Failed: " . $e->getMessage());
+            return true; // Fail Safe
+        }
+    }
+
     /*
      *Fetch campaign for agent
      *@param object $request
      *@return array
      */
 
-    function addLeadToExtensionLiveOutboundAI(int $campaignId, int $hopperMode, int $extension, int $asteriskServerId, int $clientId)
+    function addLeadToExtensionLiveOutboundAI_bkp(int $campaignId, int $hopperMode, int $extension, int $asteriskServerId, int $clientId)
     {
         $response = ["status" => false, "code" => "NO_LEADS", "message" => "No leads in hopper for campaign", "data" => []];
         $db = $clientId;

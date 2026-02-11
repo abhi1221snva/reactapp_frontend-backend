@@ -30,6 +30,9 @@ use App\Model\Cron;
 use App\Model\User;
 use App\Services\EasifyCreditService;
 use Illuminate\Support\Facades\Log;
+use DateTime;
+use DateTimeZone;
+use App\Services\TimezoneService;
 
 class OutboundUpdateCron extends Command
 {
@@ -62,7 +65,7 @@ class OutboundUpdateCron extends Command
      *
      * @return mixed
      */
-    public function handle()
+    public function handle_bkp()
     {
         try
         {
@@ -78,7 +81,7 @@ class OutboundUpdateCron extends Command
             foreach($clientIds as $clientId)
             {
 
-                date_default_timezone_set('US/Eastern');
+                date_default_timezone_set('America/New_York');
                 $last_time_cron_run = date('Y-m-d H:i:s');
 
                 // Find the billing admin for this client
@@ -315,13 +318,206 @@ class OutboundUpdateCron extends Command
 
         }
         }
-
         catch(\Exception $e)
         {
             echo $e->getMessage();
         }
     }
 
+    public function handle()
+    {
+        try {
+            $day = date('l');
+            $clientIds = array('3', '9');
+            $db = '3'; // Default or iterate? The original code hardcoded clientIds array but then accessed $this->argument('db') which might be null in cron context if not passed?
+            // Wait, original code: $clientIds = array('3','9'); foreach($clientIds...
+            // But strict cron signature says `outbound:cron`.
+            // Inside loop: $outboundCampaign = Campaign::on('mysql_'.$clientId)...
+            
+            // Let's stick to the original logic structure but inside the new handle()
+            
+            foreach ($clientIds as $clientId) {
+                date_default_timezone_set('America/New_York');
+                $last_time_cron_run = date('Y-m-d H:i:s');
+                $db = $clientId;
 
-   
+                // Find the billing admin for this client
+                $adminUser = User::where('parent_id', $clientId)->where('role', 1)->first();
+
+                // NEW QUERY: Join call_timers to get week_plan
+                $outboundCampaign = Campaign::on('mysql_' . $clientId)
+                    ->select('campaign.id', 'campaign.title', 'campaign.call_ratio', 'campaign.duration', 'campaign.hopper_mode', 'campaign.redirect_to', 'campaign.redirect_to_dropdown', 'campaign.amd_drop_action', 'campaign.voicedrop_option_user_id', 'campaign.amd', 'campaign.last_time_cron_run', 'campaign.dial_mode', 'campaign.group_id', 'call_timers.week_plan')
+                    ->leftJoin('call_timers', 'call_timers.id', '=', 'campaign.call_schedule_id')
+                    ->where('campaign.dial_mode', 'outbound_ai')
+                    ->where('campaign.status', 1)
+                    ->get()
+                    ->all();
+
+
+                if (!empty($outboundCampaign)) {
+                    foreach ($outboundCampaign as $details) {
+
+                        $call_ratio  = $details->call_ratio;
+                        $duration    = $details->duration;  //in sec
+                        $campaign_id = $details->id;
+                        $hopper_mode = $details->hopper_mode;
+                        // Use admin extension if available, otherwise default
+                        $extension   = $adminUser->extension ?? '37873'; 
+                        $asterisk_server_id = 7;
+                        $redirect_to = $details->redirect_to;
+                        $redirect_to_dropdown = $details->redirect_to_dropdown;
+                        $last_time_cron_run_db = $details->last_time_cron_run;
+
+
+                        $add_duration_date = strtotime($last_time_cron_run_db) + $duration;
+                        $add_duration_last_time_cron_run_db = date('Y-m-d H:i:s', $add_duration_date);
+
+                        $timestamp1 = strtotime($last_time_cron_run);
+                        $timestamp111 = date('Y-m-d H:i:s', $timestamp1);
+
+                        $timestamp2 = strtotime($add_duration_last_time_cron_run_db);
+                        $timestamp12 = date('Y-m-d H:i:s', $timestamp2);
+
+                        if (is_null($last_time_cron_run_db)) {
+                            $sql = "UPDATE campaign set last_time_cron_run = :last_time_cron_run WHERE id = :id";
+                            DB::connection('mysql_' . $clientId)->update($sql, array('id' => $campaign_id, 'last_time_cron_run' => $last_time_cron_run));
+                            $last_time_cron_run_db = $last_time_cron_run;
+                        }
+
+                        if ($timestamp1 > $timestamp2) {
+                            $sql = "UPDATE campaign set last_time_cron_run = :last_time_cron_run WHERE id = :id";
+                            DB::connection('mysql_' . $clientId)->update($sql, array(
+                                'id' => $campaign_id, 'last_time_cron_run' =>
+                                $add_duration_last_time_cron_run_db
+                            ));
+                        } else {
+                            continue; // Skip if duration not passed
+                        }
+
+
+                        $amd = $details->amd;
+                        if ($amd == 1) {
+                            $amd_drop_action = $details->amd_drop_action;
+                            $amd_drop_message_output = $details->voicedrop_option_user_id;
+                        } else {
+                            $amd_drop_action = 0;
+                            $amd_drop_message_output = 0;
+                        }
+
+                        /* =======================
+                         * 🔹 EASIFY CREDIT CHECK
+                         * ======================= */
+                        if ($adminUser && !empty($adminUser->easify_user_uuid)) {
+                            $creditService = new EasifyCreditService();
+                            $creditCheck = $creditService->checkCredits(
+                                $adminUser->id,
+                                $adminUser->easify_user_uuid,
+                                'outgoing_call',
+                                'outbound_ai_batch', // placeholder resource
+                                $call_ratio
+                            );
+
+                            //  Skip if credit check fails or insufficient balance
+                            if (
+                                empty($creditCheck) ||
+                                ($creditCheck['status'] ?? false) === false ||
+                                ($creditCheck['data']['has_sufficient_credits'] ?? false) === false
+                            ) {
+                                Log::warning("Easify: Skipping outbound batch for client $clientId campaign $campaign_id due to credit check failure or insufficient balance", [
+                                    'response' => $creditCheck
+                                ]);
+                                continue; // Skip this campaign for now
+                            }
+                        }
+
+                        $requestData = array(
+                            'hopper_mode' => $hopper_mode,
+                            'extension' => $extension,
+                            'asterisk_server_id' => $asterisk_server_id,
+                            'clientId' => $clientId,
+                            'campaign_id' => $campaign_id,
+                            'redirect_to' => $redirect_to,
+                            'redirect_to_dropdown' => $redirect_to_dropdown,
+                        );
+
+                        $dialer = new Dialer;
+                        $cron = new Cron();
+                        $template = new SmsTemplete();
+
+                        // Decode Week Plan
+                        $weekPlan = !empty($details->week_plan) ? json_decode($details->week_plan, true) : null;
+                        
+                        // Fallback Admin Timezone
+                        $adminTimezone = $adminUser->timezone ?? 'US/Eastern';
+
+                        for ($i = 0; $i < $call_ratio; $i++) {
+                            // Pass weekPlan and adminTimezone to a specific method
+                            $addResponse = $dialer->addLeadToExtensionLiveOutboundAI($campaign_id, $hopper_mode, $extension, $asterisk_server_id, $clientId, $weekPlan, $adminTimezone);
+                            
+                            if (!empty($addResponse['code']) == 'NO_LEADS') {
+                                $result = $cron->addLeadTemp($clientId, $campaign_id);
+                                break;
+                            }
+                            
+                            if ($addResponse === false) {
+                                // NO valid leads found in this batch after retries (logic inside dialer)
+                                // Trigger refill just in case
+                                $result = $cron->addLeadTemp($clientId, $campaign_id);
+                                break; 
+                            }
+
+
+                            $dialer = new Dialer;
+
+                            $requestData['list_id'] = $addResponse['list_id'];
+                            $requestData['lead_id'] = $addResponse['lead_id'];
+
+                            if ($amd_drop_action == 1) //hang up
+                            {
+                                $amd_drop_message_output = $amd_drop_message_output;
+                            } else
+                        if ($amd_drop_action == 2) //audio message
+                            {
+                                $amd_drop_message_output = $amd_drop_message_output;
+                            } else
+                        if ($amd_drop_action == 3) //voice template
+                            {
+                                $file_name = $template->changeVoiceMessageText($addResponse, $redirect_to, $amd_drop_message_output, $clientId);
+                                $amd_drop_message_output = $file_name;
+                            }
+
+                            if ($redirect_to == 1) //audio message
+                            {
+                                $file_name = $redirect_to_dropdown . '.wav';
+                            } else
+                        if ($redirect_to == 2) //voice template
+                            {
+                                $file_name = $template->changeVoiceMessageText($addResponse, $redirect_to, $redirect_to_dropdown, $clientId);
+                            } else
+                        if ($redirect_to == 3) //extension
+                            {
+                                $file_name = $redirect_to_dropdown;
+                            } else
+                        if ($redirect_to == 4) //ring group
+                            {
+                                $file_name = $redirect_to_dropdown;
+                            } else
+                        if ($redirect_to == 5) //ivr
+                            {
+                                $file_name = $redirect_to_dropdown . '.wav';
+                            }
+
+                            $requestData['file_name'] = $file_name;
+                            $requestData['amd_drop_action'] = $amd_drop_action;
+                            $requestData['amd_drop_message_output'] = $amd_drop_message_output;
+
+                            $call = $dialer->outboundAIDialAsterisk($requestData);
+                        }
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            echo $e->getMessage();
+        }
+    }
 }
