@@ -776,7 +776,7 @@ public function createCredential(Request $request)
             $accountSid = $credential->auth_id;
             $authToken  = $credential->api_key;
 
-            if ($accountSid && $authToken && empty($credential->twilio_trunk_sid)) {
+            if ($accountSid && $authToken && empty($credential->twilio_trunk_id)) {
 
                 try {
 
@@ -827,7 +827,7 @@ public function createCredential(Request $request)
                     ]);
                 }
             } else {
-                $trunkSid = $credential->twilio_trunk_sid;
+                $trunkSid = $credential->twilio_trunk_id;
             }
         }
 
@@ -839,7 +839,7 @@ public function createCredential(Request $request)
                 'uuid'            => $credential->uuid,
                 'provider'        => $credential->provider,
                 'type'            => $credential->type,
-                'twilio_trunk_sid'=> $trunkSid,   // 👈 trunk id in response
+                'twilio_trunk_id'=> $trunkSid,   // 👈 trunk id in response
                 'created_at'      => $credential->created_at->toIso8601String(),
             ]
         ], 200);
