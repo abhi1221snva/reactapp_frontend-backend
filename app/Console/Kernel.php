@@ -78,6 +78,7 @@ class Kernel extends ConsoleKernel
         SendScheduledReminders::class,
         \App\Console\Commands\SendTestFcm::class,
         \App\Console\Commands\BackfillPusherUuid::class,
+        \App\Console\Commands\VerifyPusher::class,
 
 
     ];

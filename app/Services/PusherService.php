@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Pusher\Pusher;
 use Illuminate\Support\Facades\Log;
+
 class PusherService
 {
     public static function instance()
@@ -18,53 +19,71 @@ class PusherService
             ]
         );
     }
+
     public static function notify($request, array $data)
     {
-        Log::info('channel',['channel'=>$request->all()]);
+        // Credentials verified via verify:pusher command
+        $app_id = "2107888";
+        $app_key = "3d5c035cf6c23695ae07";
+        $app_secret = "a28414392bd0b7232862";
+        $app_cluster = "ap2";
 
-        try {
-         $parentId = $request->auth->parent_id
-            ?? $request->parent_id
-            ?? $request->get('parent_id')
-            ?? null;
+        // Determine Parent ID
+        $parentId = $request->auth->parent_id
+            ?? ($request->parent_id ?? ($request->get('parent_id') ?? null));
 
         if (!$parentId) {
-            throw new \Exception('parent_id not available for pusher notification');
+            Log::warning('Pusher notification skipped: parent_id is missing.');
+            return;
         }
 
-        /*
-         * --------------------------
-         * GET PUSHER UUID
-         * --------------------------
-         */
-        $pusherUuid = null;
-        if (isset($request->auth->pusher_uuid)) {
-            $pusherUuid = $request->auth->pusher_uuid;
-        } elseif (isset($request->pusher_uuid)) {
-            $pusherUuid = $request->pusher_uuid;
-        } elseif ($request->get('pusher_uuid')) {
-            $pusherUuid = $request->get('pusher_uuid');
-        }
+        $channel = 'dashboard-' . $parentId;
 
-        $channel = 'dashboard-' . $parentId; // ✅ USE THIS
+        // Determine event name based on UUID availability
+        // Prioritize: 1. $request->pusher_uuid (explicit) 2. $request->auth->pusher_uuid (authenticated user)
+        $uuid = $request->pusher_uuid 
+            ?? ($request->auth->pusher_uuid ?? ($request->get('pusher_uuid') ?? null));
+            
+        $event = $uuid ? 'dashboard-notification' . $uuid : 'dashboard-notification';
 
-        // Append UUID if available
-        $eventName = 'dashboard-notification';
-        if (!empty($pusherUuid)) {
-            $eventName .= $pusherUuid;
-        }
+        // cURL Implementation
+        $body = json_encode([
+            'name' => $event,
+            'data' => json_encode($data),
+            'channels' => [$channel]
+        ]);
 
-            self::instance()->trigger(
-                $channel,
-                $eventName,
-                $data
-            );
-        } catch (\Throwable $e) {
-            Log::error('Pusher notify failed', [
-                'error'   => $e->getMessage(),
-                'channel' => $channel ?? null,
-                'data'    => $data
+        $auth_timestamp = time();
+        $auth_version = '1.0';
+        $body_md5 = md5($body);
+
+        $string_to_sign = "POST\n/apps/$app_id/events\nauth_key=$app_key&auth_timestamp=$auth_timestamp&auth_version=$auth_version&body_md5=$body_md5";
+        $auth_signature = hash_hmac('sha256', $string_to_sign, $app_secret);
+
+        $url = "https://api-$app_cluster.pusher.com/apps/$app_id/events?auth_key=$app_key&auth_timestamp=$auth_timestamp&auth_version=$auth_version&body_md5=$body_md5&auth_signature=$auth_signature";
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_POST, 1);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        if ($error || $httpCode !== 200) {
+            Log::error('PusherService cURL Error', [
+                'error' => $error,
+                'http_code' => $httpCode,
+                'response' => $response,
+                'data' => $data
             ]);
+            // Optional: throw exception or just log it
         }
+
+        return json_decode($response);
     }
 }
