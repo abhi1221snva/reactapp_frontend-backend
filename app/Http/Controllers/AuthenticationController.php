@@ -1117,7 +1117,7 @@ public function createPhoneNumber(Request $request)
     // 🔥 TWILIO TRUNK ATTACH
     // ======================================================
 
-    if ($request->active) {
+    //if ($request->active) {
 
         try {
 
@@ -1160,7 +1160,7 @@ public function createPhoneNumber(Request $request)
                 'phone_sid' => $request->sid
             ]);
         }
-    }
+   // }
 
     // ======================================================
 
