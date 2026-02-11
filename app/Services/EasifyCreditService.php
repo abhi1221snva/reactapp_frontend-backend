@@ -20,7 +20,7 @@ class EasifyCreditService
             config('services.phonify.easify_url') . '/api/user/credits/check',
             [
                 'action'   => $action,
-                'resource' => $resource,
+                 'resource' => $this->formatToE164($resource),
                 'count'    => $count,
             ]
         )->json();
@@ -51,7 +51,7 @@ class EasifyCreditService
             config('services.phonify.easify_url') . '/api/user/credits/deduct',
             [
                 'action'            => $action,
-                'resource'          => $resource,
+                'resource' => $this->formatToE164($resource),
                 'count'             => $count,
                 'skip_credit_check' => true,
             ]
@@ -69,6 +69,21 @@ class EasifyCreditService
 
         return $response;
     }
+    private function formatToE164($number)
+{
+    // Remove all non-digit characters
+    $clean = preg_replace('/\D/', '', $number);
+
+    // If number length is 10 → assume US and add country code 1
+    if (strlen($clean) === 10) {
+        $clean = '1' . $clean;
+    }
+
+    // If already has country code (11+ digits), use as it is
+
+    return '+' . $clean;
+}
+
 }
 
 

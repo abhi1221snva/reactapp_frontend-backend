@@ -1117,7 +1117,7 @@ public function createPhoneNumber(Request $request)
     // 🔥 TWILIO TRUNK ATTACH
     // ======================================================
 
-    if ($request->active) {
+    //if ($request->active) {
 
         try {
 
@@ -1160,7 +1160,7 @@ public function createPhoneNumber(Request $request)
                 'phone_sid' => $request->sid
             ]);
         }
-    }
+   // }
 
     // ======================================================
 
@@ -1312,7 +1312,49 @@ $phone = preg_replace('/\D/', '', $request->phone_number);
                 'errors'  => [],
             ], 404);
         }
+   // ======================================================
+    // 🔥 REMOVE FROM TWILIO TRUNK
+    // ======================================================
 
+    try {
+
+        $twilio = DB::connection($connection)
+            ->table('sms_providers')
+            ->where('provider', 'twilio')
+            ->where('status', 1)
+            ->whereNull('deleted_at')
+            ->first();
+
+        if ($twilio && !empty($twilio->twilio_trunk_id) && !empty($phone->phone_number_sid)) {
+
+            $client = new TwilioClient($twilio->auth_id, $twilio->api_key);
+
+            $client->trunking
+                ->v1
+                ->trunks($twilio->twilio_trunk_id)
+                ->phoneNumbers($phone->phone_number_sid)
+                ->delete();
+
+            Log::info('Twilio trunk phone number deleted successfully', [
+                'trunk_sid' => $twilio->twilio_trunk_id,
+                'phone_sid' => $phone->phone_number_sid
+            ]);
+        }
+
+    } catch (TwilioException $e) {
+
+        Log::error('Twilio trunk phone number delete failed', [
+            'error'     => $e->getMessage(),
+            'phone_sid' => $phone->phone_number_sid ?? null
+        ]);
+
+        // ⚠️ Optional: You can decide if you want to stop here
+        // return response()->json([...], 500);
+    }
+
+    // ======================================================
+    // 🗑 Delete from DB
+    // ======================================================
         $phone->delete();
 
         return response()->json([

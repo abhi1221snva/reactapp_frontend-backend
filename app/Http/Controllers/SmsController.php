@@ -244,22 +244,43 @@ public function sendSms()
         'date'=> 'required',
     ]);
       // 🔹 Step 1: CHECK CREDITS
-       $to = $this->request->to;
-       $segments = ceil(strlen($this->request->message) / 160);
-       $count = $segments;
+       $from = $this->request->from;
+       $message = $this->request->message ?? '';
 
+        // Detect if message contains Unicode
+        $isUnicode = preg_match('/[^\x00-\x7F]/', $message);
+
+        $length = mb_strlen($message, 'UTF-8');
+
+    if ($isUnicode) {
+        // Unicode SMS
+        if ($length <= 70) {
+            $segments = 1;
+        } else {
+            $segments = ceil($length / 67);
+        }
+    } else {
+        // GSM SMS
+        if ($length <= 160) {
+            $segments = 1;
+        } else {
+            $segments = ceil($length / 153);
+        }
+    }
+
+    $count = $segments;
     $creditService = new EasifyCreditService();
 
   $user = $this->request->auth; // or auth()->user()
 
-// CHECK
-$creditCheck = $creditService->checkCredits(
-    $user->id,
-    $user->easify_user_uuid,
-    'outgoing_sms',
-    $this->request->to,
-    $count
-);
+    // CHECK
+    $creditCheck = $creditService->checkCredits(
+        $user->id,
+        $user->easify_user_uuid,
+        'outgoing_sms',
+        $this->request->from,
+        $count
+    );
 
 // 🔴 Easify failed (like phone not found)
 if (
@@ -269,7 +290,7 @@ if (
     Log::warning('Easify credit check failed', [
         'user_id' => $user->id,
         'action'  => 'outgoing_sms',
-        'to'      => $this->request->to,
+        'to'      => $this->request->from,
         'response'=> $creditCheck
     ]);
 
@@ -310,7 +331,7 @@ if ($hasCredits === false) {
     $user->id,
     $user->easify_user_uuid,
     'outgoing_sms',
-    $this->request->to,
+    $this->request->from,
     $count
 );
     return response()->json($response, $statusCode);
