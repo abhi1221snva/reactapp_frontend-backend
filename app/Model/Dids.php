@@ -622,11 +622,10 @@ public function getList($request)
     // ----------------------------------------
     // TWILIO SIP TRUNK (SAFE - NON BLOCKING)
     // ----------------------------------------
-    if ($data['voip_provider'] === 'twilio'
-        && !empty($request->phone_number_sid)
-    ) {
+    if ($data['voip_provider'] === 'twilio' && !empty($request->phone_number_sid)) 
+    {
 
-        try {
+       /* try {
 
             $twilio = DB::connection('mysql_' . $request->auth->parent_id)
                 ->table('sms_providers')
@@ -637,7 +636,7 @@ public function getList($request)
 
             if ($twilio) {
                 $client = new Client($twilio->auth_id, $twilio->api_key);
-                $trunkSid = 'TK3b3e890b0075b08277c86c2a59ad3fbe'; // sip2-
+                $trunkSid = $twilio->twilio_trunk_id;//'TK3b3e890b0075b08277c86c2a59ad3fbe'; // sip2-
                 $client->trunking
                     ->v1
                     ->trunks($trunkSid)
@@ -659,6 +658,52 @@ public function getList($request)
                 'phone_sid' => $request->phone_number_sid
             ]);
         }
+
+        */
+
+        try {
+
+    $twilio = DB::connection('mysql_' . $request->auth->parent_id)
+        ->table('sms_providers')
+        ->where('provider', 'twilio')
+        ->where('status', 1)
+        ->whereNull('deleted_at')
+        ->first();
+
+    if ($twilio && !empty($twilio->twilio_trunk_id)) {
+
+        $client = new Client($twilio->auth_id, $twilio->api_key);
+
+        $trunkSid = $twilio->twilio_trunk_id;
+
+        $client->trunking
+            ->v1
+            ->trunks($trunkSid)
+            ->phoneNumbers
+            ->create($request->phone_number_sid);
+
+        Log::info('Twilio SIP trunk updated successfully', [
+            'trunk_sid' => $trunkSid,
+            'phone_sid' => $request->phone_number_sid
+        ]);
+
+    } else {
+
+        Log::error('Twilio trunk not configured or missing trunk ID', [
+            'phone_sid' => $request->phone_number_sid
+        ]);
+    }
+
+} catch (TwilioException $e) {
+
+    // Only log — do not break main flow
+    Log::error('Twilio SIP trunk update failed', [
+        'error'     => $e->getMessage(),
+        'trunk_sid' => isset($trunkSid) ? $trunkSid : null,
+        'phone_sid' => $request->phone_number_sid
+    ]);
+}
+
     }
                     return array(
                         'success' => 'true',
@@ -669,7 +714,7 @@ public function getList($request)
             } else {
                 return array(
                     'success' => 'false',
-                    'message' => 'Cli already in list'
+                    'message' => 'Phone Number already in list'
                 );
             }
         }

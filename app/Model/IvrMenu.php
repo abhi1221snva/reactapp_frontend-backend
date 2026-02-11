@@ -213,8 +213,63 @@ class IvrMenu extends Model {
             Log::log($e->getMessage());
         }
     }
+public function addIvrMenu($request)
+{
+    try {
 
-    public function addIvrMenu($request) {
+        $responseData = [];
+
+        if (is_array($request->input('parameter'))) {
+
+            foreach ($request->input('parameter') as $key => $value) {
+
+                $data = [];
+                $data['dtmf']       = $value['dtmf'] ?? null;
+                $data['dest_type']  = $value['dest_type'] ?? null;
+                $data['ivr_id']     = $value['ivr_id'] ?? null;
+                $data['dest']       = $value['dest'] ?? null;
+                $data['dtmf_title'] = $value['dtmf_title'] ?? null;
+
+                // Insert using Query Builder (recommended)
+                DB::connection('mysql_' . $request->auth->parent_id)
+                    ->table($this->table)
+                    ->insert($data);
+
+                // Add inserted data to response
+                $responseData[] = [
+                    'ivr_id'     => $data['ivr_id'],
+                    'dtmf'       => $data['dtmf'],
+                    'dtmf_title' => $data['dtmf_title'],
+                    'dest_type'  => $data['dest_type'],
+                    'dest'       => $data['dest'],
+                ];
+            }
+
+            return [
+                'success' => true,
+                'message' => 'IVR Menu added successfully.',
+                'data'    => $responseData
+            ];
+        }
+
+        return [
+            'success' => false,
+            'message' => 'Invalid parameter format.'
+        ];
+
+    } catch (\Exception $e) {
+
+        Log::error('Add IVR Menu Error: ' . $e->getMessage());
+
+        return [
+            'success' => false,
+            'message' => $e->getMessage()
+        ];
+    }
+}
+
+
+    public function addIvrMenuold($request) {
 
         //dd($request);die;
         try {
@@ -236,8 +291,11 @@ class IvrMenu extends Model {
                     $data['ivr_id'] = $value['ivr_id'];
                     $data['dest'] = $value['dest'];
 
-                    $query = "INSERT INTO " . $this->table . " (dtmf,dest_type,ivr_id,dest) VALUE (:dtmf,:dest_type,:ivr_id,:dest)";
-                    $add = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
+                     $data['dtmf_title'] = $value['dtmf_title']; // ✅ ADD THIS
+
+                $query = "INSERT INTO " . $this->table . " 
+                (dtmf, dest_type, ivr_id, dest, dtmf_title) 
+                VALUES (:dtmf, :dest_type, :ivr_id, :dest, :dtmf_title)";
                 }
 
                 return array(
