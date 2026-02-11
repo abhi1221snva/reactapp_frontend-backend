@@ -380,30 +380,63 @@ public function patchNew(Request $request)
 
         $extGroup->save();
 
-        if ($request->has('extensions')) {
-            DB::connection($conn)
-                ->table('extension_group_map')
-                ->where('group_id', $id)
-                ->delete();
+        // if ($request->has('extensions')) {
+        //     DB::connection($conn)
+        //         ->table('extension_group_map')
+        //         ->where('group_id', $id)
+        //         ->delete();
 
-            foreach ($request->extensions as $value) {
-                $user = User::where('extension', $value)->first();
-                if (!$user) continue;
+        //     foreach ($request->extensions as $value) {
+        //         $user = User::where('extension', $value)->first();
+        //         if (!$user) continue;
 
-                $exts = array_unique(array_filter([
-                    $user->extension,
-                    $user->alt_extension,
-                    $user->app_extension
-                ]));
+        //         $exts = array_unique(array_filter([
+        //             $user->extension,
+        //             $user->alt_extension,
+        //             $user->app_extension
+        //         ]));
 
-                foreach ($exts as $ext) {
-                    DB::connection($conn)->table('extension_group_map')->insert([
-                        'extension' => $ext,
-                        'group_id'  => $id
-                    ]);
-                }
-            }
-        }
+        //         foreach ($exts as $ext) {
+        //             DB::connection($conn)->table('extension_group_map')->insert([
+        //                 'extension' => $ext,
+        //                 'group_id'  => $id
+        //             ]);
+        //         }
+        //     }
+        // }
+if ($request->has('extensions')) {
+
+    $finalExtensions = [];
+
+    foreach ($request->extensions as $value) {
+        $user = User::where('extension', $value)->first();
+        if (!$user) continue;
+
+        $exts = array_unique(array_filter([
+            $user->extension,
+            $user->alt_extension,
+            $user->app_extension
+        ]));
+
+        $finalExtensions = array_merge($finalExtensions, $exts);
+    }
+
+    $finalExtensions = array_unique($finalExtensions);
+
+    DB::connection($conn)
+        ->table('extension_group_map')
+        ->where('group_id', $id)
+        ->delete();
+
+    foreach ($finalExtensions as $ext) {
+        DB::connection($conn)
+            ->table('extension_group_map')
+            ->insert([
+                'extension' => $ext,
+                'group_id'  => $id
+            ]);
+    }
+}
 
         DB::connection($conn)->commit();
 
