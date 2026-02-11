@@ -13,7 +13,7 @@ use Plivo\RestClient;
 use Plivo\Exceptions\PlivoRestException;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Validator;
-use Twilio\Rest\Client;
+use Twilio\Rest\Client as TwilioClient;
 use Twilio\Exceptions\TwilioException;
 
 class Dids extends Model
@@ -980,31 +980,116 @@ $didObj->sms_email      = (!empty($request->sms)) ? $request->sms_email : '';
 
 
 
-    public function deleteDid($request)
-    {
-        if ($request->has('did_id')) {
-            $deleteId = $request->input('did_id');
-            $data['did_id'] = $deleteId;
-            $query = "DELETE FROM did WHERE id= :did_id ";
-            $deleteRecord = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
-            if ($deleteRecord == true) {
-                return array(
-                    'success' => 'true',
-                    'message' => 'Phone Number delete successfully.'
-                );
-            } else {
-                return array(
-                    'success' => 'false',
-                    'message' => 'Phone Number not deleted in list'
-                );
-            }
-        } else {
-            return array(
-                'success' => 'false',
-                'message' => 'Phone Number id is missing in list'
-            );
-        }
+    // public function deleteDid($request)
+    // {
+    //     if ($request->has('did_id')) {
+    //         $deleteId = $request->input('did_id');
+    //         $data['did_id'] = $deleteId;
+    //         $query = "DELETE FROM did WHERE id= :did_id ";
+    //         $deleteRecord = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
+    //         if ($deleteRecord == true) {
+    //             return array(
+    //                 'success' => 'true',
+    //                 'message' => 'Phone Number delete successfully.'
+    //             );
+    //         } else {
+    //             return array(
+    //                 'success' => 'false',
+    //                 'message' => 'Phone Number not deleted in list'
+    //             );
+    //         }
+    //     } else {
+    //         return array(
+    //             'success' => 'false',
+    //             'message' => 'Phone Number id is missing in list'
+    //         );
+    //     }
+    // }
+public function deleteDid($request)
+{
+    if (!$request->has('did_id')) {
+        return [
+            'success' => 'false',
+            'message' => 'Phone Number id is missing in list'
+        ];
     }
+
+    $deleteId = $request->input('did_id');
+    $connection = 'mysql_' . $request->auth->parent_id;
+
+    // 🔹 Step 1: Get DID record first
+    $did = DB::connection($connection)
+        ->table('did')
+        ->where('id', $deleteId)
+        ->first();
+
+    if (!$did) {
+        return [
+            'success' => 'false',
+            'message' => 'Phone Number not found'
+        ];
+    }
+
+    // ======================================================
+    // 🔥 REMOVE FROM TWILIO TRUNK
+    // ======================================================
+
+    try {
+
+        $twilio = DB::connection($connection)
+            ->table('sms_providers')
+            ->where('provider', 'twilio')
+            ->where('status', 1)
+            ->whereNull('deleted_at')
+            ->first();
+
+        if ($twilio && !empty($twilio->twilio_trunk_id) && !empty($did->phone_number_sid)) {
+
+            $client = new TwilioClient($twilio->auth_id, $twilio->api_key);
+
+            $client->trunking
+                ->v1
+                ->trunks($twilio->twilio_trunk_id)
+                ->phoneNumbers($did->phone_number_sid)
+                ->delete();
+
+            Log::info('Twilio trunk phone number deleted successfully', [
+                'trunk_sid' => $twilio->twilio_trunk_id,
+                'phone_sid' => $did->phone_number_sid
+            ]);
+        }
+
+    } catch (\Twilio\Exceptions\TwilioException $e) {
+
+        Log::error('Twilio trunk phone number delete failed', [
+            'error'     => $e->getMessage(),
+            'phone_sid' => $did->phone_number_sid ?? null
+        ]);
+
+        // ⚠️ You can return error here if you want strict behavior
+    }
+
+    // ======================================================
+    // 🗑 Delete from DID table
+    // ======================================================
+
+    $deleteRecord = DB::connection($connection)
+        ->table('did')
+        ->where('id', $deleteId)
+        ->delete();
+
+    if ($deleteRecord) {
+        return [
+            'success' => 'true',
+            'message' => 'Phone Number deleted successfully.'
+        ];
+    }
+
+    return [
+        'success' => 'false',
+        'message' => 'Phone Number not deleted'
+    ];
+}
 
     public function getListCount($request)
     {
