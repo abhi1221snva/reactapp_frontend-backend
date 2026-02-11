@@ -31,7 +31,7 @@ class SmsProviders extends Model
         'host',
         'user_extension_id',
         'uuid','type',
-        'twilio_trunk_sid',
+        'twilio_trunk_id',
         'twilio_friendly_name'
     ];
 

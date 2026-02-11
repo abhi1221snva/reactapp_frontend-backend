@@ -813,7 +813,7 @@ public function createCredential(Request $request)
 
                     // Save to DB
                     $credential->update([
-                        'twilio_trunk_sid' => $trunk->sid,
+                        'twilio_trunk_id' => $trunk->sid,
                         'twilio_friendly_name' =>$trunk->friendlyName
                     ]);
 
