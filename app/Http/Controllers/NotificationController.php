@@ -132,17 +132,18 @@ class NotificationController extends Controller
 
         $result[] = [
             // 'index'        => $key,  // <-- move key inside object
-            'id'           => $type["id"],
+            'id'           => (string)$type["id"],
             'name'         => $type["name"],
             'type'         => $type["type"],
             'display_order'=> $type["display_order"],
-            'created_at'   => $type["created_at"],
-            'updated_at'   => $type["updated_at"],
-            'type_sms'     => $type["type_sms"],
-            'active'       => $subscriptions ? $subscriptions->active : 0,
-            'active_sms'   => $subscriptions ? $subscriptions->active_sms : 0,
+            'created_at'   => $type["created_at"] ? Carbon::parse($type["created_at"])->format('Y-m-d H:i:s') : null,
+            'updated_at'   => $type["updated_at"] ? Carbon::parse($type["updated_at"])->format('Y-m-d H:i:s') : null,
+            'type_sms'     => $type["type_sms"] ?? 'sms', // specific user request, default to 'sms' if missing
+            'active'       => $subscriptions ? (int)$subscriptions->active : 0,
+            'active_sms'   => $subscriptions ? (int)$subscriptions->active_sms : 0,
             'subscribers'  => $subscriptions ? $subscriptions->subscribers : [],
         ];
+
     }
    /* =========================
        🔔 SEND PUSH NOTIFICATION
