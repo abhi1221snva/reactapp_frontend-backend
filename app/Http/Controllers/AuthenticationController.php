@@ -761,6 +761,9 @@ public function createCredential(Request $request)
             'auth_id'      => $request->credentials['account_sid'],
             'api_key'      => $request->credentials['auth_token'],
             'status'       => 1,
+            
+
+
         ]);
 
         $trunkSid = null; // 👈 important
@@ -810,7 +813,8 @@ public function createCredential(Request $request)
 
                     // Save to DB
                     $credential->update([
-                        'twilio_trunk_sid' => $trunk->sid
+                        'twilio_trunk_sid' => $trunk->sid,
+                        'twilio_friendly_name' =>$trunk->friendlyName
                     ]);
 
                     $trunkSid = $trunk->sid; // 👈 store for response
