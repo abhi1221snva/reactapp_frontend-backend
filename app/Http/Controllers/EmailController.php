@@ -60,13 +60,15 @@ public function index(Request $request)
                 'to' => $email->to,
                 // 'cc'  => $email->cc  ? json_decode($email->cc, true)  : [],
                 // 'bcc' => $email->bcc ? json_decode($email->bcc, true) : [],
-                'cc' => $email->cc 
-                    ? implode(', ', json_decode($email->cc, true)) 
-                    : '',
+                'cc' => (function($val) {
+                    $decoded = json_decode($val, true);
+                    return is_array($decoded) ? implode(', ', $decoded) : (is_string($decoded) ? $decoded : $val);
+                })($email->cc ?? ''),
 
-                'bcc' => $email->bcc 
-                    ? implode(', ', json_decode($email->bcc, true)) 
-                    : '',
+                'bcc' => (function($val) {
+                    $decoded = json_decode($val, true);
+                    return is_array($decoded) ? implode(', ', $decoded) : (is_string($decoded) ? $decoded : $val);
+                })($email->bcc ?? ''),
 
                 'subject' => $email->subject,
                 'snippet' => $email->body,
@@ -109,13 +111,15 @@ public function show(Request $request, $id)
         'id' => $email->id,
         'from' => $email->from,
         'to' => $email->to,
-        'cc' => $email->cc 
-                    ? implode(', ', json_decode($email->cc, true)) 
-                    : '',
+        'cc' => (function($val) {
+            $decoded = json_decode($val, true);
+            return is_array($decoded) ? implode(', ', $decoded) : (is_string($decoded) ? $decoded : $val);
+        })($email->cc ?? ''),
 
-         'bcc' => $email->bcc 
-                    ? implode(', ', json_decode($email->bcc, true)) 
-                    : '',
+         'bcc' => (function($val) {
+            $decoded = json_decode($val, true);
+            return is_array($decoded) ? implode(', ', $decoded) : (is_string($decoded) ? $decoded : $val);
+        })($email->bcc ?? ''),
         'subject' => $email->subject,
         'body' => $email->body,
         'type' => $email->folder,
