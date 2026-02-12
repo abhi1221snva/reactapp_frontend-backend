@@ -572,10 +572,21 @@ if ($hasCredits === false) {
 
             try {
                 PusherService::notify($request, [
+                    'id' => 'new_sms',
+                    'name' => 'New SMS',
+                    'type' => 'sms',
+                    'display_order' => 0,
+                    'created_at' => Carbon::parse($request->date ?? now())->format('Y-m-d H:i:s'),
+                    'updated_at' => Carbon::now()->format('Y-m-d H:i:s'),
+                    'type_sms' => 'sms',
+                    'active' => 1,
+                    'active_sms' => 1,
+                    'subscribers' => [],
                     'module'  => 'sms',
                     'message' => 'New SMS from ' . $request->get('from'),
 
                 ]);
+
             } catch (\Throwable $e) {
                 Log::error('Pusher notification failed in smsResponse', [
                     'error' => $e->getMessage()
