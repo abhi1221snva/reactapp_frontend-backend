@@ -25,7 +25,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
-
+use App\Model\Client\ListData;
+use App\Model\Client\ListHeader;
+use App\Model\Client\Label;
 class MailController extends Controller
 {
 
@@ -103,18 +105,25 @@ class MailController extends Controller
                     "name" => $smtpSetting->from_name
                 ];
             }
+$processedBody = $this->processEmailBody($request, $request->input("body"));
+Log::info('proced email',['processedBody'=>$processedBody]);
+$genericMail = new GenericMail(
+    $request->input("subject"),
+    $from,
+    $processedBody
+);
 
-            $genericMail = new GenericMail(
-                $request->input("subject"),
-                $from,
-                $request->input("body")
-            );
+            // $genericMail = new GenericMail(
+            //     $request->input("subject"),
+            //     $from,
+            //     $request->input("body")
+            // );
             $cc  = $request->input('cc', []);
             $bcc = $request->input('bcc', []);
             //send email
-            $mailService = new MailService($request->auth->parent_id, $genericMail, $smtpSetting);
-            $cc  = $request->input('cc', []);
-            $bcc = $request->input('bcc', []);
+            // $mailService = new MailService($request->auth->parent_id, $genericMail, $smtpSetting);
+            // $cc  = $request->input('cc', []);
+            // $bcc = $request->input('bcc', []);
             $attachments = $request->input('attachments', []);
 
             //send email
@@ -716,4 +725,109 @@ class MailController extends Controller
             "message" => "Emails sent successfully",
         ]);
     }
+private function processEmailBody(Request $request, $body)
+{
+    if (empty($body)) {
+        return $body;
+    }
+
+    $parentId = $request->auth->parent_id;
+    $userId   = $request->input('user_id') ?? $request->auth->id;
+
+    $list_id = $request->input('list_id');
+    $lead_id = $request->input('lead_id');
+
+    $user = User::find($userId);
+
+    $lead = null;
+    $headers = [];
+
+    if ($lead_id && $list_id) {
+        $lead = ListData::on("mysql_" . $parentId)
+            ->where('id', $lead_id)
+            ->first();
+
+        // Fetch all headers once (optimization)
+        $headers = ListHeader::on("mysql_" . $parentId)
+            ->where("list_id", $list_id)
+            ->where("is_deleted", "0")
+            ->get()
+            ->keyBy('header'); // key by header name
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | 1️⃣ LEAD PLACEHOLDERS [[lead.field]]
+    |--------------------------------------------------------------------------
+    */
+
+preg_match_all('/\[\[(.*?)\]\]/', $body, $leadMatches);
+
+foreach ($leadMatches[1] as $placeholder) {
+
+    $value = '';
+
+    if ($lead && isset($headers[$placeholder])) {
+
+        $column_name = $headers[$placeholder]->column_name;
+
+        if (isset($lead[$column_name])) {
+            $value = $lead[$column_name];
+        }
+    }
+
+    $body = str_replace("[[$placeholder]]", $value, $body);
+}
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | 2️⃣ SENDER PLACEHOLDERS {{first_name}}
+    |--------------------------------------------------------------------------
+    */
+    preg_match_all('/\{\{(.*?)\}\}/', $body, $senderMatches);
+
+    foreach ($senderMatches[1] as $placeholder) {
+
+        $value = '';
+
+        if ($user && isset($user[$placeholder])) {
+            $value = $user[$placeholder];
+        }
+
+        $body = str_replace("{{{$placeholder}}}", $value, $body);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | 3️⃣ CUSTOM PLACEHOLDERS ((4))
+    |--------------------------------------------------------------------------
+    */
+    preg_match_all('/\(\((.*?)\)\)/', $body, $customMatches);
+
+    foreach ($customMatches[1] as $placeholder) {
+
+        $value = '';
+
+        if (is_numeric($placeholder)) {
+
+            $customField = DB::connection("mysql_" . $parentId)
+                ->table('custom_field_labels')
+                ->where('id', $placeholder)
+                ->where('is_deleted', 0)
+                ->first();
+
+            if ($customField) {
+                $value = $customField->title;
+            }
+        }
+
+        $body = str_replace("(($placeholder))", $value, $body);
+    }
+
+    return $body;
+}
+
+
+
 }
