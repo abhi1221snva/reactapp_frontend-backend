@@ -53,19 +53,12 @@ class FirebaseService
     }
 
     /**
-     * Send notification to multiple device tokens
+     * Get the project ID from config or credentials file
      */
-    public static function sendNotification(array $tokens, string $title, string $body, array $data = [])
+    protected static function getProjectId()
     {
-        $accessToken = self::getAccessToken();
-        if (!$accessToken) {
-            Log::error('FCM sendNotification aborted: Access token could not be generated.');
-            return false;
-        }
-
         $projectId = config('firebase.project_id');
 
-        // Fallback: Try to get project_id from credentials file if config is missing
         if (empty($projectId)) {
             $config = config('firebase');
             $credentialsFile = $config['credentials_file'];
@@ -74,6 +67,22 @@ class FirebaseService
                 $projectId = $credentials['project_id'] ?? null;
             }
         }
+
+        return $projectId;
+    }
+
+    /**
+     * Send notification to multiple device tokens
+     */
+    public static function sendNotification(array $tokens, string $title, string $body, array $data = [], bool $highPriority = false)
+    {
+        $accessToken = self::getAccessToken();
+        if (!$accessToken) {
+            Log::error('FCM sendNotification aborted: Access token could not be generated.');
+            return false;
+        }
+
+        $projectId = self::getProjectId();
         
         if (empty($projectId)) {
              Log::error('FCM sendNotification aborted: Project ID not found.');
@@ -94,6 +103,29 @@ class FirebaseService
                             'body' => $body,
                         ],
                         'data' => array_map('strval', $data), // FCM data values must be strings
+                        'android' => [
+                            'priority' => $highPriority ? 'high' : 'normal',
+                            'notification' => [
+                                'channel_id' => $highPriority ? 'high_importance_channel' : 'default',
+                                'sound' => 'default',
+                                'notification_priority' => $highPriority ? 'PRIORITY_MAX' : 'PRIORITY_DEFAULT',
+                            ],
+                        ],
+                        'apns' => [
+                            'payload' => [
+                                'aps' => [
+                                    'alert' => [
+                                        'title' => $title,
+                                        'body' => $body,
+                                    ],
+                                    'sound' => 'default',
+                                    'content-available' => 1,
+                                ],
+                            ],
+                            'headers' => [
+                                'apns-priority' => $highPriority ? '10' : '5',
+                            ],
+                        ],
                         'webpush' => [
                             'fcm_options' => [
                                 'link' => $data['link'] ?? '/',
@@ -141,5 +173,91 @@ class FirebaseService
         }
 
         return $results;
+    }
+
+    /**
+     * Send notification to an FCM Topic (broadcasting)
+     */
+    public static function sendToTopic(string $topic, string $title, string $body, array $data = [], bool $highPriority = true)
+    {
+        $accessToken = self::getAccessToken();
+        if (!$accessToken) {
+            Log::error('FCM sendToTopic aborted: Access token could not be generated.');
+            return false;
+        }
+
+        $projectId = self::getProjectId();
+        if (empty($projectId)) {
+            Log::error('FCM sendToTopic aborted: Project ID not found.');
+            return false;
+        }
+
+        $url = "https://fcm.googleapis.com/v1/projects/{$projectId}/messages:send";
+        $client = new Client();
+
+        try {
+            $payload = [
+                'message' => [
+                    'topic' => $topic,
+                    'notification' => [
+                        'title' => $title,
+                        'body' => $body,
+                    ],
+                    'data' => array_map('strval', $data),
+                    'android' => [
+                        'priority' => $highPriority ? 'high' : 'normal',
+                        'notification' => [
+                            'channel_id' => $highPriority ? 'high_importance_channel' : 'default',
+                            'sound' => 'default',
+                        ],
+                    ],
+                    'apns' => [
+                        'payload' => [
+                            'aps' => [
+                                'sound' => 'default',
+                            ],
+                        ],
+                        'headers' => [
+                            'apns-priority' => $highPriority ? '10' : '5',
+                        ],
+                    ],
+                    'webpush' => [
+                        'fcm_options' => [
+                            'link' => $data['link'] ?? '/',
+                        ]
+                    ],
+                ]
+            ];
+
+            $response = $client->post($url, [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $accessToken,
+                    'Content-Type' => 'application/json',
+                ],
+                'json' => $payload,
+            ]);
+
+            return [
+                'status' => 'success',
+                'topic' => $topic,
+                'response' => json_decode($response->getBody(), true)
+            ];
+        } catch (Exception $e) {
+            $responseBody = $e instanceof \GuzzleHttp\Exception\ClientException 
+                ? json_decode($e->getResponse()->getBody(), true) 
+                : [];
+
+            Log::error('FCM sendToTopic failed', [
+                'topic' => $topic,
+                'error' => $e->getMessage(),
+                'response' => $responseBody
+            ]);
+
+            return [
+                'status' => 'failed',
+                'topic' => $topic,
+                'error' => $e->getMessage()
+            ];
+        }
     }
 }

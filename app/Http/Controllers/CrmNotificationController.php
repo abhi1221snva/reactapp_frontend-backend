@@ -94,7 +94,8 @@ class CrmNotificationController extends Controller
                             'type' => 'crm_notification',
                             'lead_id' => $request->lead_id,
                             'user_id' => $request->auth->id
-                        ]
+                        ],
+                        true // High priority for CRM updates
                     );
                 }
             } catch (\Exception $e) {

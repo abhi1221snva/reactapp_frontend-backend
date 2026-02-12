@@ -186,9 +186,10 @@ class NotificationController extends Controller
      */
     public function testFcmTrigger(Request $request)
     {
-        $userId = $request->input('user_id');
-        $title  = $request->input('title', 'Test Notification');
-        $body   = $request->input('body', 'This is a test message from URL trigger.');
+        $userId   = $request->input('user_id');
+        $title    = $request->input('title', 'Test Notification');
+        $body     = $request->input('body', 'This is a test message from URL trigger.');
+        $priority = $request->input('priority', 1); // Default to high priority
 
         if (!$userId) {
             return response()->json(['error' => 'user_id is required'], 400);
@@ -217,7 +218,8 @@ class NotificationController extends Controller
                     'type' => 'test_trigger',
                     'click_action' => 'FLUTTER_NOTIFICATION_CLICK',
                     'user_id' => $userId
-                ]
+                ],
+                (bool)$priority
             );
 
             return response()->json([
@@ -408,7 +410,7 @@ class NotificationController extends Controller
                     FirebaseService::sendNotification($fcmTokens, $subject, strip_tags($message), [
                         'lead_id' => $requestData['user']['lead_id'],
                         'type' => 'crm_notification'
-                    ]);
+                    ], true);
                 }
             } catch (\Exception $e) {
                 Log::error('FCM CRM Notification failed', ['error' => $e->getMessage()]);

@@ -184,7 +184,8 @@ class LowLeadNotificationJob extends Job
                             'type' => 'low_lead_notification',
                             'campaign_id' => $this->campaignId,
                             'clientId' => $this->clientId
-                        ]
+                        ],
+                        true // High priority for critical lead alerts
                     );
                 }
             } catch (\Exception $e) {

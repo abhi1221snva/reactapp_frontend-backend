@@ -206,7 +206,8 @@ class DailyCallReportJob extends Job
                                     'type' => 'daily_call_report',
                                     'clientId' => $this->clientId,
                                     'total_calls' => $total_calls ?? 0
-                                ]
+                                ],
+                                true // High priority for daily reports
                             );
                         }
                     } catch (\Exception $e) {

@@ -16,6 +16,8 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 use App\Services\PusherService;
+use App\Services\FirebaseService;
+use App\Model\UserFcmToken;
 
 class CampaignController extends Controller
 {
@@ -406,6 +408,28 @@ class CampaignController extends Controller
 
         } catch (\Throwable $e) {
             Log::error('Pusher notification failed in addCampaign', [
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        // FCM Notification
+        try {
+            $fcmTokens = UserFcmToken::where('user_id', $request->auth->id)->pluck('device_token')->toArray();
+            if (!empty($fcmTokens)) {
+                FirebaseService::sendNotification(
+                    $fcmTokens,
+                    'Campaign Added',
+                    "Campaign '{$request->title}' added successfully.",
+                    [
+                        'type' => 'campaign_added',
+                        'click_action' => 'FLUTTER_NOTIFICATION_CLICK',
+                        'campaign_id' => $response->id ?? ($response['id'] ?? null)
+                    ],
+                    true
+                );
+            }
+        } catch (\Throwable $e) {
+            Log::error('FCM notification failed in addCampaign', [
                 'error' => $e->getMessage()
             ]);
         }

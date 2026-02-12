@@ -20,6 +20,7 @@ use Illuminate\Http\JsonResponse;
 use App\Services\PusherService;
 use App\Services\FirebaseService;
 use App\Model\UserFcmToken;
+use Carbon\Carbon;
 
 
 
@@ -586,9 +587,30 @@ if ($hasCredits === false) {
                     'message' => 'New SMS from ' . $request->get('from'),
 
                 ]);
-
             } catch (\Throwable $e) {
                 Log::error('Pusher notification failed in smsResponse', [
+                    'error' => $e->getMessage()
+                ]);
+            }
+
+            // FCM Notification
+            try {
+                $fcmTokens = UserFcmToken::where('user_id', $request->get('user_id'))->pluck('device_token')->toArray();
+                if (!empty($fcmTokens)) {
+                    FirebaseService::sendNotification(
+                        $fcmTokens,
+                        'New SMS from ' . $request->get('from'),
+                        $request->get('text') ?? 'You have a new SMS message.',
+                        [
+                            'type' => 'new_sms',
+                            'from' => $request->get('from'),
+                            'click_action' => 'FLUTTER_NOTIFICATION_CLICK'
+                        ],
+                        true
+                    );
+                }
+            } catch (\Throwable $e) {
+                Log::error('FCM notification failed in SmsController', [
                     'error' => $e->getMessage()
                 ]);
             }
