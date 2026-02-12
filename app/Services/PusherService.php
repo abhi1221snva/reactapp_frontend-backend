@@ -84,6 +84,44 @@ class PusherService
             // Optional: throw exception or just log it
         }
 
+        // ==========================================
+        // 💾 PERSIST NOTIFICATION TO DATABASE
+        // ==========================================
+        try {
+            $notification = new \App\Model\Client\Notification();
+            $notification->setConnection("mysql_$parentId");
+            
+            // Determine User ID (logic similar to uuid)
+            // If request has auth user, use it. usage of 'pusher_uuid' might imply specific user targeting too.
+            // For now, if auth exists, use it. Else null (global).
+            $userId = $request->auth->id ?? ($request->user_id ?? null);
+
+            $notification->user_id = $userId;
+            $notification->lead_id = null; // Generic notification
+            $notification->title   = $data['name'] ?? 'Notification';
+            $notification->message = $data['message'] ?? '';
+            $notification->type    = '0'; // Default to '0' (updates) as per enum constraint. Real type is in data.
+            $notification->data    = $data; // Auto-cast to JSON if model casts set, else needs json_encode. 
+                                            // Model doesn't have casts for 'data' yet (I added column but didn't check model casts).
+                                            // Better to pass array and let Eloquent handle cast IF I add it to model, 
+                                            // OR json_encode here if I didn't. 
+                                            // I didn't add cast to model in Step 562. I should probably do that or just json_encode here.
+                                            // Let's json_encode here to be safe across generic model usage.
+            if (is_array($data)) {
+                 $notification->data = json_encode($data);
+            } else {
+                 $notification->data = $data;
+            }
+
+            $notification->save();
+        } catch (\Throwable $e) {
+            Log::error('Failed to persist Pusher notification', [
+                'error' => $e->getMessage(),
+                'parentId' => $parentId,
+                'data' => $data
+            ]);
+        }
+
         return json_decode($response);
     }
 }
