@@ -755,24 +755,46 @@ private function processEmailBody(Request $request, $body)
             ->keyBy('header'); // key by header name
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | 1️⃣ LEAD PLACEHOLDERS [[lead.field]]
-    |--------------------------------------------------------------------------
-    */
 
+/*
+|--------------------------------------------------------------------------
+| 1️⃣ LEAD PLACEHOLDERS [[Label Title]]
+|--------------------------------------------------------------------------
+*/
 preg_match_all('/\[\[(.*?)\]\]/', $body, $leadMatches);
 
 foreach ($leadMatches[1] as $placeholder) {
 
     $value = '';
+    $labelTitle = trim($placeholder);
 
-    if ($lead && isset($headers[$placeholder])) {
+    if ($lead && $list_id) {
 
-        $column_name = $headers[$placeholder]->column_name;
+        // Step 1️⃣: Find label id from custom_field_labels using title
+        $label = DB::connection("mysql_" . $parentId)
+            ->table('label')
+            ->where('title', $labelTitle)
+            ->where('is_deleted', 0)
+            ->first();
 
-        if (isset($lead[$column_name])) {
-            $value = $lead[$column_name];
+        if ($label) {
+
+            // Step 2️⃣: Find column name in list_header using label_id
+            $listHeader = ListHeader::on("mysql_" . $parentId)
+                ->where("label_id", $label->id)
+                ->where("list_id", $list_id)
+                ->where("is_deleted", "0")
+                ->first();
+
+            if ($listHeader) {
+
+                $column_name = $listHeader->column_name;
+
+                // Step 3️⃣: Get value from list_data
+                if (isset($lead[$column_name])) {
+                    $value = $lead[$column_name];
+                }
+            }
         }
     }
 
@@ -803,27 +825,45 @@ foreach ($leadMatches[1] as $placeholder) {
     | 3️⃣ CUSTOM PLACEHOLDERS ((4))
     |--------------------------------------------------------------------------
     */
-    preg_match_all('/\(\((.*?)\)\)/', $body, $customMatches);
+   /*
+|--------------------------------------------------------------------------
+| 3️⃣ CUSTOM PLACEHOLDERS ((Title))
+|--------------------------------------------------------------------------
+*/
+preg_match_all('/\(\((.*?)\)\)/', $body, $customMatches);
 
-    foreach ($customMatches[1] as $placeholder) {
+foreach ($customMatches[1] as $placeholder) {
 
-        $value = '';
+    $value = '';
+    $title = trim($placeholder);
 
-        if (is_numeric($placeholder)) {
+    if ($userId) {
 
-            $customField = DB::connection("mysql_" . $parentId)
-                ->table('custom_field_labels')
-                ->where('id', $placeholder)
+        // Step 1️⃣: Get custom label id from custom_field_labels
+        $customLabel = DB::connection("mysql_" . $parentId)
+            ->table('custom_field_labels')
+            ->where('title', $title)
+            ->where('is_deleted', 0)
+            ->first();
+
+        if ($customLabel) {
+
+            // Step 2️⃣: Get title_links from custom_fields_labels_values
+            $customValue = DB::connection("mysql_" . $parentId)
+                ->table('custom_fields_labels_values')
+                ->where('custom_id', $customLabel->id)
+                ->where('user_id', $userId)
                 ->where('is_deleted', 0)
                 ->first();
 
-            if ($customField) {
-                $value = $customField->title;
+            if ($customValue && !empty($customValue->title_links)) {
+                $value = $customValue->title_links;
             }
         }
-
-        $body = str_replace("(($placeholder))", $value, $body);
     }
+
+    $body = str_replace("(($placeholder))", $value, $body);
+}
 
     return $body;
 }
