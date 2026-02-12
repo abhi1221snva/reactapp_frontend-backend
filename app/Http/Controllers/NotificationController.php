@@ -167,7 +167,7 @@ class NotificationController extends Controller
 
                 // Extra fields for History (Frontend may ignore these or use them)
                 'message'       => $notification->message,
-                'data'          => $payload,
+                // 'data'          => $payload,
                 'is_read'       => false,
             ];
         }
