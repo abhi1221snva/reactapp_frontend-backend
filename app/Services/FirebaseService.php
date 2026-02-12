@@ -64,6 +64,22 @@ class FirebaseService
         }
 
         $projectId = config('firebase.project_id');
+
+        // Fallback: Try to get project_id from credentials file if config is missing
+        if (empty($projectId)) {
+            $config = config('firebase');
+            $credentialsFile = $config['credentials_file'];
+            if (file_exists($credentialsFile)) {
+                $credentials = json_decode(file_get_contents($credentialsFile), true);
+                $projectId = $credentials['project_id'] ?? null;
+            }
+        }
+        
+        if (empty($projectId)) {
+             Log::error('FCM sendNotification aborted: Project ID not found.');
+             return false;
+        }
+
         $url = "https://fcm.googleapis.com/v1/projects/{$projectId}/messages:send";
         $client = new Client();
 
