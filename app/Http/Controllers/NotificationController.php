@@ -180,6 +180,63 @@ class NotificationController extends Controller
         ]);
     }
 
+    /**
+     * Test FCM Trigger via URL
+     * Example: /test-fcm-trigger?user_id=1&title=Test&body=Hello
+     */
+    public function testFcmTrigger(Request $request)
+    {
+        $userId = $request->input('user_id');
+        $title  = $request->input('title', 'Test Notification');
+        $body   = $request->input('body', 'This is a test message from URL trigger.');
+
+        if (!$userId) {
+            return response()->json(['error' => 'user_id is required'], 400);
+        }
+
+        // Fetch Tokens
+        $fcmTokens = UserFcmToken::where('user_id', $userId)
+            ->pluck('device_token')
+            ->toArray();
+
+        if (empty($fcmTokens)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No FCM tokens found for this user.',
+                'user_id' => $userId
+            ], 404);
+        }
+
+        // Send Notification
+        try {
+            $response = FirebaseService::sendNotification(
+                $fcmTokens,
+                $title,
+                $body,
+                [
+                    'type' => 'test_trigger',
+                    'click_action' => 'FLUTTER_NOTIFICATION_CLICK',
+                    'user_id' => $userId
+                ]
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Notification sent successfully.',
+                'user_id' => $userId,
+                'token_count' => count($fcmTokens),
+                'tokens' => $fcmTokens,
+                'firebase_response' => $response
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
 
 
 
