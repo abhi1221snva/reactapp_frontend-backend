@@ -390,11 +390,22 @@ class CampaignController extends Controller
         // ✅ PUSHER TRIGGER (CORRECT PLACE)
         try {
             PusherService::notify($request, [
+                'id' => 'campaign_added',
+                'name' => 'Campaign Added',
+                'type' => 'campaign',
+                'display_order' => 0,
+                'created_at' => Carbon::now()->format('Y-m-d H:i:s'),
+                'updated_at' => Carbon::now()->format('Y-m-d H:i:s'),
+                'type_sms' => 'sms',
+                'active' => 1,
+                'active_sms' => 0,
+                'subscribers' => [],
                 'module'  => 'campaign',
                 'message' => $response->message
                     ?? $response['message']
                     ?? 'Campaign added successfully',
             ]);
+
         } catch (\Throwable $e) {
             Log::error('Pusher notification failed in addCampaign', [
                 'error' => $e->getMessage()
