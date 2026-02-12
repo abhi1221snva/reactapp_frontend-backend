@@ -120,96 +120,66 @@ class NotificationController extends Controller
     //     return $this->successResponse("notifications", $types);
     // }
     public function index(Request $request)
-{
-    $clientId = $request->auth->parent_id;
-    $notifications = SystemNotificationType::all()->sortBy("display_order");
-    $types = $notifications->toArray();
-    $userId=$request->auth->id;
-    $result = [];
+    {
+        $clientId = $request->auth->parent_id;
+        $userId   = $request->auth->id;
 
-    foreach ($types as $key => $type) {
-        $subscriptions = SystemNotification::on("mysql_$clientId")->find($type["id"]);
+        // Fetch Notifications (History)
+        $query = \App\Model\Client\Notification::on("mysql_$clientId")
+            ->where(function($q) use ($userId) {
+                // crm_notifications table is used
+                $q->where('crm_notifications.user_id', $userId)
+                  ->orWhereNull('crm_notifications.user_id');
+            })
+            ->orderBy('crm_notifications.created_at', 'DESC');
 
-        $result[] = [
-            // 'index'        => $key,  // <-- move key inside object
-            'id'           => (string)$type["id"],
-            'name'         => $type["name"],
-            'type'         => $type["type"],
-            'display_order'=> $type["display_order"],
-            'created_at'   => $type["created_at"] ? Carbon::parse($type["created_at"])->format('Y-m-d H:i:s') : null,
-            'updated_at'   => $type["updated_at"] ? Carbon::parse($type["updated_at"])->format('Y-m-d H:i:s') : null,
-            'type_sms'     => $type["type_sms"] ?? 'sms', // specific user request, default to 'sms' if missing
-            'active'       => $subscriptions ? (int)$subscriptions->active : 0,
-            'active_sms'   => $subscriptions ? (int)$subscriptions->active_sms : 0,
-            'subscribers'  => $subscriptions ? $subscriptions->subscribers : [],
-        ];
+        $total_row = $query->count();
 
-    }
-   /* =========================
-       🔔 SEND PUSH NOTIFICATION
-       ========================= */
-    try {
-        $fcmTokens = UserFcmToken::where('user_id', $userId)
-            ->pluck('device_token')
-            ->toArray();
-
-        if (!empty($fcmTokens)) {
-            FirebaseService::sendNotification(
-                $fcmTokens,
-                'Notification Settings',
-                'Notification settings viewed',
-                [
-                    'type' => 'notification_settings',
-                    'user_id' => $userId
-                ]
-            );
+        // Pagination
+        $start = 0;
+        $limit = 15;
+        if ($request->has('start') && $request->has('limit')) {
+            $start = (int) $request->input('start');
+            $limit = (int) $request->input('limit');
         }
-    } catch (\Exception $e) {
-        Log::error('FCM Notification Settings failed', [
-            'error' => $e->getMessage(),
-            'user_id' => $userId
-        ]);
-    }
-    // pagination logic
-    if ($request->has('start') && $request->has('limit')) {
-        $total_row = count($result);
-        $start = (int) $request->input('start');
-        $limit = (int) $request->input('limit');
-        $pagedResult = array_slice($result, $start, $limit);
+
+        $notifications = $query->skip($start)->take($limit)->get();
+        
+        $data = [];
+        foreach ($notifications as $notification) {
+            $payload = $notification->data;
+            if (is_string($payload)) {
+                $payload = json_decode($payload, true);
+            }
+
+            $data[] = [
+                // Legacy Formatting: ID must match SystemNotificationType key if possible for frontend icons
+                'id'            => $payload['id'] ?? (string)$notification->id, // Use payload 'id' (campaign_added) if available, else DB ID
+                'name'          => $notification->title ?? ($payload['name'] ?? 'Notification'),
+                'type'          => $notification->type == '0' ? ($payload['type'] ?? 'system') : $notification->type,
+                'display_order' => 0, 
+                'created_at'    => $notification->created_at ? $notification->created_at->format('Y-m-d H:i:s') : null,
+                'updated_at'    => $notification->updated_at ? $notification->updated_at->format('Y-m-d H:i:s') : null,
+                'type_sms'      => 'sms', 
+                'active'        => 1, 
+                'active_sms'    => 0, 
+                'subscribers'   => [], 
+
+                // Extra fields for History (Frontend may ignore these or use them)
+                'message'       => $notification->message,
+                'data'          => $payload,
+                'is_read'       => false,
+            ];
+        }
 
         return $this->successResponse("notifications", [
             'start' => $start,
             'limit' => $limit,
             'total' => $total_row,
-            'data'  => array_values($pagedResult)
+            'data'  => $data
         ]);
     }
 
-    return $this->successResponse("notifications", array_values($result));
-}
-
-
-    public function index_old_code(Request $request)
-    {
-        $clientId = $request->auth->parent_id;
-        $notifications = SystemNotificationType::all()->sortBy("display_order");
-        $types = $notifications->toArray();
-        foreach ($types as $key => $type) {
-            $subscriptions = SystemNotification::on("mysql_$clientId")->find($type["id"]);
-            if ($subscriptions) {
-                $types[$key]["active"] = $subscriptions->active;
-                $types[$key]["active_sms"] = $subscriptions->active_sms;
-
-                $types[$key]["subscribers"] = $subscriptions->subscribers;
-            } else {
-                $types[$key]["active"] = 0;
-                $types[$key]["active_sms"] = 0;
-
-                $types[$key]["subscribers"] = [];
-            }
-        }
-        return $this->successResponse("notifications", $types);
-    }
 
 
 

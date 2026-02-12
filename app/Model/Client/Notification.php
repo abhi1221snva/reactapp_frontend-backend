@@ -5,5 +5,6 @@ class Notification extends Model
 {
     public $timestamps = true;
     protected $table = "crm_notifications";
-    
+
+    protected $guarded = ['id'];
 }
