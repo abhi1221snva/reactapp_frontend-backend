@@ -19,6 +19,7 @@ $router->post('/delete-cache-by-age', 'RedisCacheController@deleteCacheByAge');
 $router->get('/test-redis', 'RedisCacheController@testConnection');
 
 $router->get('/trigger-pusher-test', 'PusherController@triggerTest');
+$router->get('/test-fcm-trigger', 'NotificationController@testFcmTrigger');
 
 
 

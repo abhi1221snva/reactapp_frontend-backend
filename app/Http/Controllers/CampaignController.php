@@ -401,9 +401,7 @@ class CampaignController extends Controller
                 'active_sms' => 0,
                 'subscribers' => [],
                 'module'  => 'campaign',
-                'message' => $response->message
-                    ?? $response['message']
-                    ?? 'Campaign added successfully',
+                'message' => "Campaign '{$request->title}' added successfully.",
             ]);
 
         } catch (\Throwable $e) {
