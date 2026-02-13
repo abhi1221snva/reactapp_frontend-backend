@@ -328,32 +328,7 @@ $records = collect($records)->map(function ($r) use ($conversationId) {
 })->toArray();
 
 
-    /* ============================
-       🔔 SEND PUSH NOTIFICATION
-       ============================ */
 
-    try {
-        // Example: notify the logged-in user
-        $fcmTokens = UserFcmToken::where('user_id', $request->auth->id)
-            ->pluck('device_token')
-            ->toArray();
-
-        if (!empty($fcmTokens)) {
-            FirebaseService::sendNotification(
-                $fcmTokens,
-                'SMS Opened',
-                'Conversation viewed',
-                [
-                    'conversation_id' => $conversationId,
-                    'type' => 'sms_chat'
-                ]
-            );
-        }
-    } catch (\Exception $e) {
-        Log::error('FCM SMS Notification failed', [
-            'error' => $e->getMessage()
-        ]);
-    }
 
     // ✅ Return final response
     return [
