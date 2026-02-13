@@ -62,6 +62,8 @@ $router->get('/redis-test', function () {
     externalRedisCacheSet(123, 'test-prompt', ['data' => 'value from Redis!']);
     return externalRedisCacheGet(123, 'test-prompt', 'Not found');
 });
+
+$router->get('/test-timezone', 'TimezoneTestController@test');
 $router->get('/', function () use ($router) {
   return $router->app->version();
 });
