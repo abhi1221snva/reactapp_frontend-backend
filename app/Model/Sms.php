@@ -862,7 +862,7 @@ Log::info('result reached',['result'=>$result]);
 
 
               
-                $sms_setting = SmsProviders::on("mysql_$clientId")->where("status",'1')->where('provider',$voip_provider)->get()->first();
+                $sms_setting = SmsProviders::on("mysql_$clientId")->where("status",'1')->where('provider',$voip_provider)->orderBy('id', 'desc')->first();
                 //$auth_id = $sms_setting->auth_id;
                 $api_key = $sms_setting->api_key;
 
