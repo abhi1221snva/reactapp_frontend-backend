@@ -1607,6 +1607,14 @@ public function deleteDispositionAndList($request)
         $disposition = $request->input('disposition'); // [0 => 144]
         $select_id   = $request->input('select_id');   // [0 => 2] → call limit
 
+        recycleLogicLog("--- Start On-Demand Recycle ---", [
+            'parent_id' => $parentId,
+            'campaign_id' => $campaignId,
+            'list_id' => $listId,
+            'dispositions' => $disposition,
+            'call_limits' => $select_id
+        ]);
+
         $count = [];
         $count_deletedLeads = 0;
 
@@ -1614,36 +1622,32 @@ public function deleteDispositionAndList($request)
 
         foreach ($disposition as $dis => $dispositionId) {
 
-            /**
-             * ✅ user-provided call limit
-             * (same role as recycle_rule.call_time)
-             */
             $maxAllowedCalls = (int) ($select_id[$dis] ?? 0);
-
             if ($maxAllowedCalls <= 0) {
+                recycleLogicLog("Skipping disposition due to zero/negative limit", ['disposition_id' => $dispositionId, 'limit' => $maxAllowedCalls]);
                 continue;
             }
 
+            recycleLogicLog("Processing disposition", ['disposition_id' => $dispositionId, 'limit' => $maxAllowedCalls]);
+
             /**
-             * 🔹 Count calls from cdr + cdr_archive
+             * ✅ FIXED LOGIC: Count TOTAL campaign calls for the lead
+             * (Removed disposition_id filter from subqueries and join)
              */
             $sql = "
                 SELECT lr.lead_id, COUNT(x.id) AS total
                 FROM lead_report lr
                 LEFT JOIN (
-                    SELECT id, lead_id, campaign_id, disposition_id
+                    SELECT id, lead_id, campaign_id
                     FROM cdr
                     WHERE campaign_id = ?
-                      AND disposition_id = ?
                     UNION ALL
-                    SELECT id, lead_id, campaign_id, disposition_id
+                    SELECT id, lead_id, campaign_id
                     FROM cdr_archive
                     WHERE campaign_id = ?
-                      AND disposition_id = ?
                 ) x
                   ON x.lead_id = lr.lead_id
                  AND x.campaign_id = lr.campaign_id
-                 AND x.disposition_id = lr.disposition_id
                 WHERE lr.campaign_id = ?
                   AND lr.list_id = ?
                   AND lr.disposition_id = ?
@@ -1653,32 +1657,37 @@ public function deleteDispositionAndList($request)
             $records = DB::connection('mysql_' . $parentId)->select(
                 $sql,
                 [
-                    $campaignId, $dispositionId,
-                    $campaignId, $dispositionId,
+                    $campaignId,
+                    $campaignId,
                     $campaignId, $listId, $dispositionId
                 ]
             );
 
             $deleteId = [];
-
-            /**
-             * ✅ DELETE LOGIC SAME AS deleteLeadRule
-             * delete when total calls >= allowed calls
-             */
             foreach ($records as $row) {
                 if ((int)$row->total >= $maxAllowedCalls) {
                     $deleteId[] = $row->lead_id;
+                    recycleLogicLog("Lead marked for deletion", [
+                        'lead_id' => $row->lead_id,
+                        'total_calls' => $row->total,
+                        'limit' => $maxAllowedCalls
+                    ]);
                 }
             }
 
             if (!empty($deleteId)) {
-                DB::connection('mysql_' . $parentId)
+                $deleted = DB::connection('mysql_' . $parentId)
                     ->table('lead_report')
                     ->where('campaign_id', $campaignId)
                     ->where('list_id', $listId)
                     ->where('disposition_id', $dispositionId)
                     ->whereIn('lead_id', $deleteId)
                     ->delete();
+                
+                recycleLogicLog("Successfully deleted leads from lead_report", [
+                    'disposition_id' => $dispositionId,
+                    'count' => $deleted
+                ]);
             }
 
             $count[$dispositionId] = count($deleteId);
@@ -1687,18 +1696,18 @@ public function deleteDispositionAndList($request)
 
         DB::commit();
 
-/**
- * ✅ Update campaign status if leads were deleted
- */
-if ($count_deletedLeads > 0) {
-    DB::connection('mysql_' . $parentId)
-        ->table('campaign')
-        ->where('id', $campaignId)
-        ->update([
-            'status' => 1// or whatever "active / recycled" means in your system
-        ]);
-}
+        recycleLogicLog("Database transaction committed", ['total_recycled' => $count_deletedLeads]);
 
+        if ($count_deletedLeads > 0) {
+            DB::connection('mysql_' . $parentId)
+                ->table('campaign')
+                ->where('id', $campaignId)
+                ->update(['status' => 1]);
+            
+            recycleLogicLog("Campaign status set to active", ['campaign_id' => $campaignId]);
+        }
+
+        recycleLogicLog("Dispatching notification job");
         dispatch(
             new RecycleDeletedNotificationJob(
                 $parentId,
@@ -1713,6 +1722,8 @@ if ($count_deletedLeads > 0) {
             )
         )->onConnection('database');
 
+        recycleLogicLog("--- End On-Demand Recycle ---");
+
         return [
             'success' => true,
             'message' => 'Disposition List deleted successfully.',
@@ -1721,6 +1732,7 @@ if ($count_deletedLeads > 0) {
 
     } catch (\Exception $e) {
         DB::rollBack();
+        recycleLogicLog("ERROR: Exception in recycle logic", ['message' => $e->getMessage()]);
         return [
             'success' => false,
             'message' => $e->getMessage()

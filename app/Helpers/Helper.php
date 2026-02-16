@@ -60,6 +60,21 @@ function buildPrevious(\Throwable $throwable, array &$context, $index = 0)
 }
 
 
+if (!function_exists('recycleLogicLog')) {
+    function recycleLogicLog($message, $data = [])
+    {
+        try {
+            $logPath = storage_path('logs/recycle.log');
+            $timestamp = date('Y-m-d H:i:s');
+            $dataStr = !empty($data) ? json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '';
+            $logEntry = "[{$timestamp}] {$message} {$dataStr}" . PHP_EOL;
+            file_put_contents($logPath, $logEntry, FILE_APPEND);
+        } catch (\Exception $e) {
+            // Silently fail if logging fails
+        }
+    }
+}
+
 if (!function_exists('redisDebugLog')) {
     function redisDebugLog($message, $data = [])
     {
