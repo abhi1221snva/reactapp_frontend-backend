@@ -482,6 +482,25 @@ class OutboundUpdateCron extends Command
                                 $this->customLog("No leads available, attempting to refill hopper", ['campaign_id' => $campaign_id]);
                                 $result = $cron->addLeadTemp($clientId, $campaign_id);
                                 $this->customLog("Hopper refill result", ['result' => $result]);
+
+                                // Descriptive summary for refill failure
+                                if (isset($result['added']) && $result['added'] == 0) {
+                                    $emptyLists = [];
+                                    if (isset($result['lists']) && !empty($result['lists'])) {
+                                        foreach ($result['lists'] as $listId => $stats) {
+                                            if (($stats['records'] ?? 0) == 0) {
+                                                $emptyLists[] = $listId;
+                                            }
+                                        }
+                                        if (!empty($emptyLists)) {
+                                            $this->customLog("REFILL FAILED: Leads found were 0 in associated lists: " . implode(', ', $emptyLists), ['campaign_id' => $campaign_id]);
+                                        } else {
+                                            $this->customLog("REFILL FAILED: Refill logic processed lists but added 0 leads (possibly due to filters or already in hopper).", ['campaign_id' => $campaign_id]);
+                                        }
+                                    } else {
+                                        $this->customLog("REFILL FAILED: No active lists associated with this campaign.", ['campaign_id' => $campaign_id]);
+                                    }
+                                }
                                 break;
                             }
                             
