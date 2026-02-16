@@ -1665,7 +1665,7 @@ public function deleteDispositionAndList($request)
 
             $deleteId = [];
             foreach ($records as $row) {
-                if ((int)$row->total >= $maxAllowedCalls) {
+                if ((int)$row->total <= $maxAllowedCalls) {
                     $deleteId[] = $row->lead_id;
                     recycleLogicLog("Lead marked for deletion", [
                         'lead_id' => $row->lead_id,
