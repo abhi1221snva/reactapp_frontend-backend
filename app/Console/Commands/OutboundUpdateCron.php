@@ -343,8 +343,11 @@ class OutboundUpdateCron extends Command
                 $last_time_cron_run = date('Y-m-d H:i:s');
                 $db = $clientId;
 
-                // Find the billing admin for this client
-                $adminUser = User::where('parent_id', $clientId)->where('role', 1)->first();
+                // Find the billing admin for this client (Admin, Super Admin, or System Admin)
+                $adminUser = User::where('parent_id', $clientId)
+                    ->whereIn('role', [1, 5, 6])
+                    ->orderBy('user_level', 'desc')
+                    ->first();
 
                 // NEW QUERY: Join call_timers to get week_plan
                 $outboundCampaign = Campaign::on('mysql_' . $clientId)
@@ -447,6 +450,11 @@ class OutboundUpdateCron extends Command
                             'redirect_to' => $redirect_to,
                             'redirect_to_dropdown' => $redirect_to_dropdown,
                         );
+                        if ($adminUser) {
+                            $this->customLog("Admin user identified", ['userId' => $adminUser->id, 'timezone' => $adminUser->timezone]);
+                        } else {
+                            $this->customLog("Admin user NOT found, using defaults", ['clientId' => $clientId]);
+                        }
 
                         $dialer = new Dialer;
                         $cron = new Cron();
@@ -458,14 +466,22 @@ class OutboundUpdateCron extends Command
                         // Fallback Admin Timezone
                         $adminTimezone = $adminUser->timezone ?? 'US/Eastern';
 
-                        $this->customLog("Starting lead processing loop", ['campaign_id' => $campaign_id, 'call_ratio' => $call_ratio]);
+                        $this->customLog("Starting lead processing loop", [
+                            'campaign_id' => $campaign_id,
+                            'call_ratio' => $call_ratio,
+                            'adminTimezone' => $adminTimezone,
+                            'hasWeekPlan' => !empty($weekPlan)
+                        ]);
 
                         for ($i = 0; $i < $call_ratio; $i++) {
                             // Pass weekPlan and adminTimezone to a specific method
                             $addResponse = $dialer->addLeadToExtensionLiveOutboundAI($campaign_id, $hopper_mode, $extension, $asterisk_server_id, $clientId, $weekPlan, $adminTimezone);
+                            $this->customLog("Lead retrieval response", ['iteration' => $i, 'response' => $addResponse]);
                             
-                            if (!empty($addResponse['code']) == 'NO_LEADS') {
+                            if (isset($addResponse['code']) && $addResponse['code'] == 'NO_LEADS') {
+                                $this->customLog("No leads available, attempting to refill hopper", ['campaign_id' => $campaign_id]);
                                 $result = $cron->addLeadTemp($clientId, $campaign_id);
+                                $this->customLog("Hopper refill result", ['result' => $result]);
                                 break;
                             }
                             
