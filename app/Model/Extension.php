@@ -657,11 +657,15 @@ public function extensionDetailList(Request $request, int $extension_id = null)
 
         $where = "users.is_deleted = :is_deleted AND users.status = :status";
         $bindings = $data;
+            if ($request->auth->level >= 7) {
+                $bindings['parent_id'] = $request->auth->parent_id;
+                $where .= " AND users.parent_id = :parent_id";
+            }else{
 
-        if ($request->auth->level >= 7) {
-            $bindings['parent_id'] = $request->auth->parent_id;
-            $where .= " AND users.id IN (SELECT user_id FROM permissions WHERE client_id = :parent_id)";
-        } else {
+        // if ($request->auth->level >= 7) {
+        //     $bindings['parent_id'] = $request->auth->parent_id;
+        //     $where .= " AND users.id IN (SELECT user_id FROM permissions WHERE client_id = :parent_id)";
+        // } else {
             $bindings['id'] = $request->auth->id;
             $where .= " AND users.parent_id = :parent_id AND users.id = :id";
         }
