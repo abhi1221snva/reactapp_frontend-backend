@@ -327,6 +327,7 @@ class OutboundUpdateCron extends Command
     public function handle()
     {
         try {
+            $this->customLog("--- Outbound Cron Started ---");
             $day = date('l');
             $clientIds = array('3', '9');
             $db = '3'; // Default or iterate? The original code hardcoded clientIds array but then accessed $this->argument('db') which might be null in cron context if not passed?
@@ -337,6 +338,7 @@ class OutboundUpdateCron extends Command
             // Let's stick to the original logic structure but inside the new handle()
             
             foreach ($clientIds as $clientId) {
+                $this->customLog("Processing Client", ['clientId' => $clientId]);
                 date_default_timezone_set('America/New_York');
                 $last_time_cron_run = date('Y-m-d H:i:s');
                 $db = $clientId;
@@ -352,6 +354,8 @@ class OutboundUpdateCron extends Command
                     ->where('campaign.status', 1)
                     ->get()
                     ->all();
+
+                $this->customLog("Campaigns found", ['clientId' => $clientId, 'count' => count($outboundCampaign)]);
 
 
                 if (!empty($outboundCampaign)) {
@@ -390,7 +394,9 @@ class OutboundUpdateCron extends Command
                                 'id' => $campaign_id, 'last_time_cron_run' =>
                                 $add_duration_last_time_cron_run_db
                             ));
+                            $this->customLog("Interval passed, allowed to dial", ['campaign_id' => $campaign_id]);
                         } else {
+                            $this->customLog("Interval not passed, skipping campaign", ['campaign_id' => $campaign_id, 'next_run' => $add_duration_last_time_cron_run_db]);
                             continue; // Skip if duration not passed
                         }
 
@@ -426,8 +432,10 @@ class OutboundUpdateCron extends Command
                                 Log::warning("Easify: Skipping outbound batch for client $clientId campaign $campaign_id due to credit check failure or insufficient balance", [
                                     'response' => $creditCheck
                                 ]);
+                                $this->customLog("Easify credit check failed, skipping campaign", ['clientId' => $clientId, 'campaign_id' => $campaign_id, 'response' => $creditCheck]);
                                 continue; // Skip this campaign for now
                             }
+                            $this->customLog("Easify credit check successful", ['clientId' => $clientId, 'campaign_id' => $campaign_id]);
                         }
 
                         $requestData = array(
@@ -449,6 +457,8 @@ class OutboundUpdateCron extends Command
                         
                         // Fallback Admin Timezone
                         $adminTimezone = $adminUser->timezone ?? 'US/Eastern';
+
+                        $this->customLog("Starting lead processing loop", ['campaign_id' => $campaign_id, 'call_ratio' => $call_ratio]);
 
                         for ($i = 0; $i < $call_ratio; $i++) {
                             // Pass weekPlan and adminTimezone to a specific method
@@ -472,38 +482,24 @@ class OutboundUpdateCron extends Command
                             $requestData['list_id'] = $addResponse['list_id'];
                             $requestData['lead_id'] = $addResponse['lead_id'];
 
-                            if ($amd_drop_action == 1) //hang up
-                            {
+                            if ($amd_drop_action == 1) { //hang up
                                 $amd_drop_message_output = $amd_drop_message_output;
-                            } else
-                        if ($amd_drop_action == 2) //audio message
-                            {
+                            } else if ($amd_drop_action == 2) { //audio message
                                 $amd_drop_message_output = $amd_drop_message_output;
-                            } else
-                        if ($amd_drop_action == 3) //voice template
-                            {
+                            } else if ($amd_drop_action == 3) { //voice template
                                 $file_name = $template->changeVoiceMessageText($addResponse, $redirect_to, $amd_drop_message_output, $clientId);
                                 $amd_drop_message_output = $file_name;
                             }
 
-                            if ($redirect_to == 1) //audio message
-                            {
+                            if ($redirect_to == 1) { //audio message
                                 $file_name = $redirect_to_dropdown . '.wav';
-                            } else
-                        if ($redirect_to == 2) //voice template
-                            {
+                            } else if ($redirect_to == 2) { //voice template
                                 $file_name = $template->changeVoiceMessageText($addResponse, $redirect_to, $redirect_to_dropdown, $clientId);
-                            } else
-                        if ($redirect_to == 3) //extension
-                            {
+                            } else if ($redirect_to == 3) { //extension
                                 $file_name = $redirect_to_dropdown;
-                            } else
-                        if ($redirect_to == 4) //ring group
-                            {
+                            } else if ($redirect_to == 4) { //ring group
                                 $file_name = $redirect_to_dropdown;
-                            } else
-                        if ($redirect_to == 5) //ivr
-                            {
+                            } else if ($redirect_to == 5) { //ivr
                                 $file_name = $redirect_to_dropdown . '.wav';
                             }
 
@@ -511,13 +507,37 @@ class OutboundUpdateCron extends Command
                             $requestData['amd_drop_action'] = $amd_drop_action;
                             $requestData['amd_drop_message_output'] = $amd_drop_message_output;
 
+                            $this->customLog("Initiating call", ['campaign_id' => $campaign_id, 'lead_id' => $requestData['lead_id'], 'file_name' => $file_name]);
                             $call = $dialer->outboundAIDialAsterisk($requestData);
+                            $this->customLog("Call initiation response", ['response' => $call]);
                         }
                     }
                 }
             }
+            $this->customLog("--- Outbound Cron Finished ---");
         } catch (\Exception $e) {
+            $this->customLog("Cron Error", ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             echo $e->getMessage();
+        }
+    }
+
+    /**
+     * Custom logging to storage/app/outbound_cron.log
+     */
+    private function customLog($message, $data = [])
+    {
+        try {
+            $logPath = storage_path('app/outbound_cron.log');
+            $timestamp = date('Y-m-d H:i:s');
+            $logEntry = "[$timestamp] $message";
+            if (!empty($data)) {
+                $logEntry .= " " . json_encode($data);
+            }
+            $logEntry .= PHP_EOL;
+            file_put_contents($logPath, $logEntry, FILE_APPEND);
+        } catch (\Exception $e) {
+            // Fallback to standard Laravel log if custom log fails
+            Log::error("Failed to write to custom log: " . $e->getMessage());
         }
     }
 }
