@@ -1885,10 +1885,10 @@ public function checkExtension($request)
 
 
         $users_package['user_id'] = $user->id;
-        $users_package['client_package_id'] = $request->input('package_id');
+        // $users_package['client_package_id'] = $request->input('package_id');
 
-        $insertData = "UPDATE user_packages SET user_id= :user_id WHERE client_package_id=:client_package_id and user_id IS NULL LIMIT 1 ";
-        $record_ustext = DB::connection('mysql_' . $request->auth->parent_id)->select($insertData, $users_package);
+        // $insertData = "UPDATE user_packages SET user_id= :user_id WHERE client_package_id=:client_package_id and user_id IS NULL LIMIT 1 ";
+        // $record_ustext = DB::connection('mysql_' . $request->auth->parent_id)->select($insertData, $users_package);
 
 
 
