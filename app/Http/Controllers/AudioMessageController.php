@@ -51,16 +51,64 @@ class AudioMessageController extends Controller
      * )
      */
 
+    // public function list(Request $request)
+    // {
+    //     $audio_message = AudioMessage::on("mysql_" . $request->auth->parent_id)->get()->all();
+    //     if ($request->has('start') && $request->has('limit')) {
+    //         $start = (int)$request->input('start'); // Start index (0-based)
+    //         $limit = (int)$request->input('limit'); // Limit number of records to fetch
+    //         $audio_message = array_slice($audio_message, $start, $limit, false);
+    //     }
+    //     return $this->successResponse("Audio Message List", $audio_message);
+    // }
     public function list(Request $request)
-    {
-        $audio_message = AudioMessage::on("mysql_" . $request->auth->parent_id)->get()->all();
-        if ($request->has('start') && $request->has('limit')) {
-            $start = (int)$request->input('start'); // Start index (0-based)
-            $limit = (int)$request->input('limit'); // Limit number of records to fetch
-            $audio_message = array_slice($audio_message, $start, $limit, false);
-        }
-        return $this->successResponse("Audio Message List", $audio_message);
+{
+    $query = AudioMessage::on("mysql_" . $request->auth->parent_id);
+
+    // 🔎 SEARCH (only if not empty)
+    if ($request->filled('search')) {
+        $search = $request->input('search');
+
+        $query->where(function ($q) use ($search) {
+            $q->where('ivr_id', 'LIKE', "%{$search}%")
+              ->orWhere('ann_id', 'LIKE', "%{$search}%")
+              ->orWhere('ivr_desc', 'LIKE', "%{$search}%")
+              ->orWhere('speech_text', 'LIKE', "%{$search}%")
+              ->orWhere('language', 'LIKE', "%{$search}%")
+              ->orWhere('voice_name', 'LIKE', "%{$search}%");
+        });
     }
+
+    // 📊 TOTAL COUNT (before pagination)
+    $total = $query->count();
+
+    // 📌 PAGINATION
+    if ($request->has('start') && $request->has('limit')) {
+
+        $start = (int) $request->input('start');
+        $limit = (int) $request->input('limit');
+
+        $data = $query->offset($start)
+                      ->limit($limit)
+                      ->get();
+
+        return $this->successResponse("Audio Message List", [
+            'start' => $start,
+            'limit' => $limit,
+            'total' => $total,
+            'data'  => $data
+        ]);
+    }
+
+    // If no pagination
+    $data = $query->get();
+
+    return $this->successResponse("Audio Message List", [
+        'total' => $total,
+        'data'  => $data
+    ]);
+}
+
     public function list_old(Request $request)
     {
         $audio_message = AudioMessage::on("mysql_" . $request->auth->parent_id)->get()->all();
