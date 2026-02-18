@@ -106,7 +106,6 @@ class MailService
         );
 $transport = \Symfony\Component\Mailer\Transport::fromDsn($dsn);
 
-        //$transport = Transport::fromDsn($dsn);
         $mailer = new Mailer($transport);
 
         $email = (new Email())
