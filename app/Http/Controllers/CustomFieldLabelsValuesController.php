@@ -52,46 +52,89 @@ class CustomFieldLabelsValuesController extends Controller
      * )
      */
 
-    public function index(Request $request)
-    {
-        $custom_field_labels_values = CustomFieldLabelsValues::on("mysql_" . $request->auth->parent_id)->where('user_id', $request->auth->id)->get()->all();
+    // public function index(Request $request)
+    // {
+    //     $custom_field_labels_values = CustomFieldLabelsValues::on("mysql_" . $request->auth->parent_id)->where('user_id', $request->auth->id)->get()->all();
 
 
-        if ($request->has('search')) {
-            $query = CustomFieldLabelsValues::on("mysql_" . $request->auth->parent_id)
-                ->where('user_id', $request->auth->id);
+    //     if ($request->has('search')) {
+    //         $query = CustomFieldLabelsValues::on("mysql_" . $request->auth->parent_id)
+    //             ->where('user_id', $request->auth->id);
 
-            $searchTerm = $request->input('search');
-            $query->where(function ($q) use ($searchTerm) {
-                $q->where('title_match', 'LIKE', "%{$searchTerm}%")
-                    ->orWhere('title_links', 'LIKE', "%{$searchTerm}%");
-            });
-            $allResults = $query->get()->all();
-            $total_row = count($allResults);
+    //         $searchTerm = $request->input('search');
+    //         $query->where(function ($q) use ($searchTerm) {
+    //             $q->where('title_match', 'LIKE', "%{$searchTerm}%")
+    //                 ->orWhere('title_links', 'LIKE', "%{$searchTerm}%");
+    //         });
+    //         $allResults = $query->get()->all();
+    //         $total_row = count($allResults);
 
 
-            return $this->successResponse("Custom Field Labels Values List", [
-                'total' => $total_row,
-                'data' =>  $allResults
-            ]);
-        }
-        if ($request->has('start') && $request->has('limit')) {
-            $total_row = count($custom_field_labels_values);
+    //         return $this->successResponse("Custom Field Labels Values List", [
+    //             'total' => $total_row,
+    //             'data' =>  $allResults
+    //         ]);
+    //     }
+    //     if ($request->has('start') && $request->has('limit')) {
+    //         $total_row = count($custom_field_labels_values);
 
-            $start = (int) $request->input('start');  // Start index (0-based)
-            $limit = (int) $request->input('limit');  // Number of records to fetch
+    //         $start = (int) $request->input('start');  // Start index (0-based)
+    //         $limit = (int) $request->input('limit');  // Number of records to fetch
 
-            $custom_field_labels_values = array_slice($custom_field_labels_values, $start, $limit, false);
+    //         $custom_field_labels_values = array_slice($custom_field_labels_values, $start, $limit, false);
 
-            return $this->successResponse("Custom Field Labels Values List", [
-                'start' => $start,
-                'limit' => $limit,
-                'total' => $total_row,
-                'data' => $custom_field_labels_values
-            ]);
-        }
-        return $this->successResponse("Custom Field Labels Values List", $custom_field_labels_values);
+    //         return $this->successResponse("Custom Field Labels Values List", [
+    //             'start' => $start,
+    //             'limit' => $limit,
+    //             'total' => $total_row,
+    //             'data' => $custom_field_labels_values
+    //         ]);
+    //     }
+    //     return $this->successResponse("Custom Field Labels Values List", $custom_field_labels_values);
+    // }
+public function index(Request $request)
+{
+    $query = CustomFieldLabelsValues::on("mysql_" . $request->auth->parent_id)
+        ->where('user_id', $request->auth->id);
+
+    // Apply search only if not empty
+    if ($request->filled('search')) {
+        $searchTerm = $request->input('search');
+
+        $query->where(function ($q) use ($searchTerm) {
+            $q->where('title_match', 'LIKE', "%{$searchTerm}%")
+              ->orWhere('title_links', 'LIKE', "%{$searchTerm}%");
+        });
     }
+
+    $total_row = $query->count();
+
+    // Apply pagination if start & limit provided
+    if ($request->has('start') && $request->has('limit')) {
+
+        $start = (int) $request->input('start');
+        $limit = (int) $request->input('limit');
+
+        $data = $query->offset($start)
+                      ->limit($limit)
+                      ->get();
+
+        return $this->successResponse("Custom Field Labels Values List", [
+            'start' => $start,
+            'limit' => $limit,
+            'total' => $total_row,
+            'data' => $data
+        ]);
+    }
+
+    // If no pagination, return all
+    $data = $query->get();
+
+    return $this->successResponse("Custom Field Labels Values List", [
+        'total' => $total_row,
+        'data' => $data
+    ]);
+}
 
     public function index_old(Request $request)
     {
