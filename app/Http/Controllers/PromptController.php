@@ -7,6 +7,7 @@ use App\Model\User;
 use App\Model\Client\PromptFunction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 
 class PromptController extends Controller
 {
@@ -79,10 +80,7 @@ public function index(Request $request)
     if (!empty($search)) {
         $query->where(function ($q) use ($search) {
             $q->where('title', 'like', "%{$search}%")
-              ->orWhere('initial_greeting', 'like', "%{$search}%")
-              ->orWhere('description', 'like', "%{$search}%")
-            ->orWhere('voice_name', 'like', "%{$search}%");
-
+              ->orWhere('description', 'like', "%{$search}%");
         });
     }
 
@@ -119,8 +117,6 @@ public function index(Request $request)
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'initial_greeting' => 'nullable|string',
-            'voice_name' => 'nullable|string|max:255',
         ]);
         if ($validator->fails()) {
             return response()->json([
@@ -136,8 +132,8 @@ public function index(Request $request)
             'user_id' => $userId,
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
-            'initial_greeting' => $validated['initial_greeting'] ?? null,
-            'voice_name' => $validated['voice_name'],
+            'initial_greeting' => null,
+            'voice_name' => null,
         ]);
 
         externalRedisCacheSet($clientId, $prompt->id);
@@ -226,8 +222,6 @@ public function index(Request $request)
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'initial_greeting' => 'nullable|string',
-            'voice_name' => 'nullable|string|max:255',
         ]);
 
         if ($validator->fails()) {
@@ -239,7 +233,10 @@ public function index(Request $request)
 
         $validated = $validator->validated();
 
-        $prompt->update($validated);
+        $prompt->update(array_merge($validated, [
+            'initial_greeting' => null,
+            'voice_name' => null,
+        ]));
 
         externalRedisCacheSet($clientId, $id);
 
@@ -534,7 +531,7 @@ public function index(Request $request)
             
         } catch (\Exception $e) {
             // Log error but don't fail the function save
-            \Log::error("Failed to generate function description", [
+            Log::error("Failed to generate function description", [
                 'type' => $type,
                 'error' => $e->getMessage()
             ]);
