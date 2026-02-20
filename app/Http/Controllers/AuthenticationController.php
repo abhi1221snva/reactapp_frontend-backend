@@ -1089,7 +1089,7 @@ public function createPhoneNumber(Request $request)
     // 1️⃣ Get user & DB connection
     $user_uuid = $request->header('X-Easify-User-Token');
     $parent_id = User::where('easify_user_uuid', $user_uuid)->value('parent_id');
-
+    $user_id =User::where('easify_user_uuid', $user_uuid)->value('id');
     if (!$parent_id) {
         return response()->json([
             'message' => 'Invalid user'
@@ -1110,6 +1110,8 @@ public function createPhoneNumber(Request $request)
             'phone_number_sid' => $request->sid,
             'type'             => $request->type,
             'status'           => $request->active,
+            'dest_type'        => "1",
+            'extension'        => $user_id
         ]
     );
 
