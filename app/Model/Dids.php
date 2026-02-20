@@ -529,13 +529,15 @@ public function getList($request)
                 $data['conf_id'] = $data['dest_type'] == 5 ? $request->input('conf_id') : '';
                 $data['ingroup'] = $data['dest_type'] == 8 ? $request->input('ingroup') : '';
                 $data['operator'] = $request->input('operator_check') != '' ? $request->input('operator') : '';
-                $data['default_did'] = $request->input('default_did');
+                // $data['default_did'] = $request->input('default_did');
+                $data['default_did'] = '0';
                 $data['voice'] = $request->input('option_1') == 'v' ? '1' : '';
                 $data['fax'] = $request->input('option_1') == 'f' ? '1' : '';
                 $data['sms'] = $request->input('is_sms');
                 $data['sms_phone'] = $data['sms'] == '1' ? $request->input('sms_phone') : '';
                 $data['sms_email'] = $data['sms'] == '1' ? $request->input('sms_email') : '';
-                $data['set_exclusive_for_user'] = $request->input('set_exclusive_for_user');
+                // $data['set_exclusive_for_user'] = $request->input('set_exclusive_for_user');
+                $data['set_exclusive_for_user'] = 0;
 
                 //call screening audio file
                 $data['call_screening_status'] = $request->input('call_screening_status');

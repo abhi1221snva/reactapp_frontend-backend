@@ -1111,7 +1111,9 @@ public function createPhoneNumber(Request $request)
             'type'             => $request->type,
             'status'           => $request->active,
             'dest_type'        => "1",
-            'extension'        => $user_id
+            'extension'        => $user_id,
+            'default_did'     => "0",
+            'set_exclusive_for_user'=> 0
         ]
     );
 
