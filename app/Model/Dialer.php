@@ -1247,10 +1247,11 @@ return response()->json([
                     $asterisk = $this->getAsterisk($asteriskServerId, $extension, $clientId);
                     $response = $asterisk->click2Call($number, $campaignId, $lead['lead_id'],$user_id);
                     if (is_array($response) && isset($response['success']) && $response['success'] === false) {
-                    return response()->json([
+                        return [
                         'success' => false,
-                        'message' => $response['message']
-                    ], $response['code']);
+                        'message' => $response['message'] ?? 'Call failed',
+                        'status'    => $response['status'] ?? 400
+                    ];
                 }
 
 
