@@ -253,23 +253,9 @@ public function sendSms()
 
         $length = mb_strlen($message, 'UTF-8');
 
-    if ($isUnicode) {
-        // Unicode SMS
-        if ($length <= 70) {
-            $segments = 1;
-        } else {
-            $segments = ceil($length / 67);
-        }
-    } else {
-        // GSM SMS
-        if ($length <= 160) {
-            $segments = 1;
-        } else {
-            $segments = ceil($length / 153);
-        }
-    }
+Log::info('Character Count', ['total_characters' => $length]);
 
-    $count = $segments;
+$count = $length;   // Only total characters
     $creditService = new EasifyCreditService();
 
   $user = $this->request->auth; // or auth()->user()
@@ -463,11 +449,11 @@ if ($hasCredits === false) {
         $user->id = $request->get('user_id');
         $user->parent_id = $clientId;
         $package = $user->getAssignedUserPackage(true);
-   
+        $message=$request->get('message');
         $creditService = new EasifyCreditService();
+        $length = mb_strlen($message, 'UTF-8');
 
-        $segments = ceil(strlen($request->get('message')) / 160);
-        $count = $segments;
+        $count = $length;
         $userDetails=User::where('id',$request->user_id)->first();
         $easify_user_uuid=$userDetails->easify_user_uuid;
         $creditCheck = $creditService->checkCredits(
