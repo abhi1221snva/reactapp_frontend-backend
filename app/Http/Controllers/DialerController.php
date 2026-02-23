@@ -452,7 +452,7 @@ class DialerController extends Controller
         ]);
         $response = $this->model->hangUp($this->request);
         $user = $this->request->auth;
-            $db   = "mysql_" . $user->parent_id;
+        $db   = "mysql_" . $user->parent_id;
 
     /* =======================
      * 🔹 GET CHANNEL
@@ -463,13 +463,13 @@ class DialerController extends Controller
         "SELECT channel FROM line_detail WHERE extension = :extension",
         ['extension' => $user->extension]
     );
-
+Log::info('line detail data',['lineDetails'=>$lineDetail]);
     // From local_channel1 (fallback)
     $localChannel = DB::connection($db)->selectOne(
         "SELECT local_channel AS channel FROM local_channel1 WHERE confno = :extension",
         ['extension' => $user->extension]
     );
-
+Log::info('line channel data',['localChannel'=>$localChannel]);
     $channel = null;
 
     if (!empty($lineDetail) && !empty($lineDetail->channel)) {
@@ -477,6 +477,8 @@ class DialerController extends Controller
     } elseif (!empty($localChannel) && !empty($localChannel->channel)) {
         $channel = $localChannel->channel;
     }
+Log::info('channel recahed',['channel'=>$channel]);
+
 
     // ❌ If no channel found → no billing
     if (!$channel) {
@@ -488,7 +490,7 @@ class DialerController extends Controller
      * ======================= */
 
     $cdr = DB::connection($db)->selectOne(
-        "SELECT number, duration
+        "SELECT cli, duration
          FROM cdr
          WHERE channel LIKE :channel
            AND duration > 0
@@ -501,6 +503,7 @@ class DialerController extends Controller
         // ❌ No charge if not connected
         return response()->json($response);
     }
+Log::info('cli recahed',['cli'=>$cdr->cli]);
 
     /* =======================
      * 🔹 CREDIT DEDUCT
@@ -508,14 +511,18 @@ class DialerController extends Controller
 
     $creditService = new EasifyCreditService();
 
-    $creditService->deductCredits(
+   $deductResponse = $creditService->deductCredits(
         $user->id,
         $user->easify_user_uuid,
         'outgoing_call',
         (string) $cdr->cli,   // resource
         (int) $cdr->duration     // seconds → Easify converts to minutes
     );
-
+/* 🔎 Log Easify Response */
+Log::info('Credit deduction response (hangUp)', [
+    'user_id'  => $user->id,
+    'response' => $deductResponse
+]);
         return response()->json($response);
 
     }
