@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
 use App\Exceptions\RenderableException;
+use App\Services\EasifyCreditService;
 
 
 class Asterisk extends Model
@@ -461,7 +462,7 @@ class Asterisk extends Model
         }*/
     }
 
-    public function click2Call($number, $campaignId, $id)
+    public function click2Call($number, $campaignId, $id, $user_id)
     {
         $number = preg_replace('/[^0-9]/', '', $number);
         $area_code =  substr($number, 0, 3);
@@ -547,8 +548,55 @@ class Asterisk extends Model
                 $combine = $area_code_3_data.$rand;
                 $cli = $combine;
             }
+            $user=User::where('id',$user_id)->first();
+            $from   = $cli;
+            $count = 1; // 1 call = 1 credit
 
-            
+        $creditService = new EasifyCreditService();
+
+        /* =======================
+        * 🔹 STEP 1: CHECK CREDITS
+        * ======================= */
+        $creditCheck = $creditService->checkCredits(
+            $user_id,
+            $user->easify_user_uuid,
+            'outgoing_call',
+            (string) $from,
+            $count
+        );
+
+        // 🔴 Easify failure (API error, validation fail etc.)
+        if (
+            empty($creditCheck) ||
+            ($creditCheck['status'] ?? false) === false
+        ) {
+            Log::warning('Easify credit check failed (click2call)', [
+                'user_id' => $user_id,
+                'from'    => $from,
+                'response'=> $creditCheck
+            ]);
+
+           return [
+    'success' => false,
+    'message' => $creditCheck['message'] ?? 'Credit check failed',
+    'code'    => 400
+];
+        }
+
+        // 🟡 Insufficient credits
+        if (($creditCheck['data']['has_sufficient_credits'] ?? false) === false) {
+
+            Log::warning('Insufficient credits for click2call', [
+                'user_id' => $user_id,
+                'from'    => $from
+            ]);
+
+           return [
+    'success' => false,
+    'message' => 'Insufficient credits to make a call',
+    'status'    => 402
+];
+        }
         if(!empty($agentLoginStatus)) {
             if ($number != '' && $this->extension != '') {
 
