@@ -930,16 +930,16 @@ $totalRows = count($campaign);
                             $request->auth->id
                         );
                        if ($response["status"] === false) {
-    return response()->json([
-        'success' => false,
-        'message' => $response["message"]
-    ], 402);
-}
+                        return response()->json([
+                            'success' => false,
+                            'message' => $response["message"]
+                        ], 402);
+                    }
 
-return response()->json([
-    'success' => true,
-    'message' => 'You are logged in successfully. ' . $response["message"]
-], 200);
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'You are logged in successfully. ' . $response["message"]
+                    ], 200);
 
                     } elseif ($count == 5) {
                         return array(
@@ -1248,9 +1248,9 @@ return response()->json([
                     $response = $asterisk->click2Call($number, $campaignId, $lead['lead_id'],$user_id);
                     if (is_array($response) && isset($response['success']) && $response['success'] === false) {
                         return [
-                        'success' => false,
+                        'status' => false,
                         'message' => $response['message'] ?? 'Call failed',
-                        'status'    => $response['status'] ?? 400
+                        //'status'    => $response['status'] ?? 400
                     ];
                 }
 
