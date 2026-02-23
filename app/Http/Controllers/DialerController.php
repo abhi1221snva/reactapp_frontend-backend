@@ -393,16 +393,17 @@ class DialerController extends Controller
         ]);
 
         $response = $this->model->callNumber($this->request);
+if ($response instanceof \Illuminate\Http\JsonResponse) {
+    return $response;
+}
+
 $statusCode = $response['status'] ?? 200;
 
-// Remove status from body before sending
 if (isset($response['status'])) {
     unset($response['status']);
 }
 
 return response()->json($response, $statusCode);
-    //    return response()->json($response, $statusCode);
-       // return response()->json($response);
     }
 
     /*

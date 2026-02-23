@@ -579,7 +579,7 @@ class Asterisk extends Model
            return [
     'success' => false,
     'message' => $creditCheck['message'] ?? 'Credit check failed',
-    'code'    => 400
+    'status'    => 400
 ];
         }
 
