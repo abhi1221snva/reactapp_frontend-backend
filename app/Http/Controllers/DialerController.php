@@ -459,50 +459,47 @@ class DialerController extends Controller
      * ======================= */
 
     // From line_detail
-    $lineDetail = DB::connection($db)->selectOne(
-        "SELECT channel FROM line_detail WHERE extension = :extension",
-        ['extension' => $user->extension]
-    );
-Log::info('line detail data',['lineDetails'=>$lineDetail]);
-    // From local_channel1 (fallback)
-    $localChannel = DB::connection($db)->selectOne(
-        "SELECT local_channel AS channel FROM local_channel1 WHERE confno = :extension",
-        ['extension' => $user->extension]
-    );
-Log::info('line channel data',['localChannel'=>$localChannel]);
-    $channel = null;
+//     $lineDetail = DB::connection($db)->selectOne(
+//         "SELECT channel FROM line_detail WHERE extension = :extension",
+//         ['extension' => $user->extension]
+//     );
+// Log::info('line detail data',['lineDetails'=>$lineDetail]);
+//     // From local_channel1 (fallback)
+//     $localChannel = DB::connection($db)->selectOne(
+//         "SELECT local_channel AS channel FROM local_channel1 WHERE confno = :extension",
+//         ['extension' => $user->extension]
+//     );
+// Log::info('line channel data',['localChannel'=>$localChannel]);
+//     $channel = null;
 
-    if (!empty($lineDetail) && !empty($lineDetail->channel)) {
-        $channel = $lineDetail->channel;
-    } elseif (!empty($localChannel) && !empty($localChannel->channel)) {
-        $channel = $localChannel->channel;
-    }
-Log::info('channel recahed',['channel'=>$channel]);
+//     if (!empty($lineDetail) && !empty($lineDetail->channel)) {
+//         $channel = $lineDetail->channel;
+//     } elseif (!empty($localChannel) && !empty($localChannel->channel)) {
+//         $channel = $localChannel->channel;
+//     }
+// Log::info('channel recahed',['channel'=>$channel]);
 
 
-    // ❌ If no channel found → no billing
-    if (!$channel) {
-        return response()->json($response);
-    }
+//     // ❌ If no channel found → no billing
+//     if (!$channel) {
+//         return response()->json($response);
+//     }
 
     /* =======================
      * 🔹 GET CDR USING CHANNEL
      * ======================= */
 
-    $cdr = DB::connection($db)->selectOne(
-        "SELECT cli, duration
-         FROM cdr
-         WHERE channel LIKE :channel
-           AND duration > 0
-         ORDER BY id DESC
-         LIMIT 1",
-        ['channel' => "%$channel%"]
-    );
+$cdr = DB::connection($db)->selectOne(
+    "SELECT cli, duration
+     FROM cdr
+     WHERE extension = :extension
+       AND duration > 0
+     ORDER BY id DESC
+     LIMIT 1",
+    ['extension' => $extension]
+);
 
-    if (empty($cdr) || empty($cdr->duration) || $cdr->duration <= 0) {
-        // ❌ No charge if not connected
-        return response()->json($response);
-    }
+  
 Log::info('cli recahed',['cli'=>$cdr->cli]);
 
     /* =======================
