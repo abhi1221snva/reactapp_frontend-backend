@@ -401,7 +401,7 @@ if (isset($response['status'])) {
 }
 
 return response()->json($response, $statusCode);
-       return response()->json($response, $statusCode);
+    //    return response()->json($response, $statusCode);
        // return response()->json($response);
     }
 

@@ -926,7 +926,8 @@ $totalRows = count($campaign);
                             $modeType['hopper_mode'],
                             $extension,
                             $request->auth->asterisk_server_id,
-                            $request->auth->parent_id
+                            $request->auth->parent_id,
+                            $request->auth->id
                         );
                        if ($response["status"] === false) {
     return response()->json([
@@ -968,7 +969,8 @@ return response()->json([
                         $modeType['hopper_mode'],
                         $extension,
                         $request->auth->asterisk_server_id,
-                        $request->auth->parent_id
+                        $request->auth->parent_id,
+                        $request->auth->id
                     );
                     return array(
                         'success' => $response["status"],
@@ -1157,7 +1159,7 @@ return response()->json([
      * Fetches lead information
      * @return boolean
      */
-    function addLeadToExtensionLive(int $campaignId, int $hopperMode, int $extension, int $asteriskServerId, int $clientId)
+    function addLeadToExtensionLive(int $campaignId, int $hopperMode, int $extension, int $asteriskServerId, int $clientId ,int $user_id)
     {
 
         $response = [
@@ -1260,7 +1262,7 @@ return response()->json([
                     }
                 } else {
 
-                    $addResponse = $this->addLeadToExtensionLive($campaignId, $hopperMode, $extension, $asteriskServerId, $clientId);
+                    $addResponse = $this->addLeadToExtensionLive($campaignId, $hopperMode, $extension, $asteriskServerId, $clientId,$user_id);
                     $response["dail_next_lead"] = $addResponse;
                     //return array('status' => false, 'message' => "Incorrect lead value");
                 }
@@ -1821,7 +1823,8 @@ public function getLead(int $parentId, int $extension)
                     $modeType['hopper_mode'],
                     $extension,
                     $request->auth->asterisk_server_id,
-                    $request->auth->parent_id
+                    $request->auth->parent_id,
+                    $request->auth->id
                 );
                 $response["dail_next_lead"] = $addResponse;
             } catch (\Exception $exception) {
@@ -2072,7 +2075,8 @@ public function getLead(int $parentId, int $extension)
                     $modeType['hopper_mode'],
                     $extension,
                     $request->auth->asterisk_server_id,
-                    $request->auth->parent_id
+                    $request->auth->parent_id,
+                    $request->auth->id
                 );
                 $response["dail_next_lead"] = $addResponse;
             } catch (\Exception $exception) {
