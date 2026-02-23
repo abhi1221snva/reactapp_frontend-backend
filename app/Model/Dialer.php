@@ -1063,7 +1063,14 @@ return response()->json([
                 /*close new code implement*/
 
                 $asterisk = $this->getAsterisk($request->auth->asterisk_server_id, $extension, $request->auth->parent_id);
-                $response = $asterisk->click2Call($request->input('number'), $request->input('campaign_id'), $request->input('lead_id'));
+                $response = $asterisk->click2Call($request->input('number'), $request->input('campaign_id'), $request->input('lead_id'),$request->auth->id);
+                  if (is_array($response) && isset($response['success']) && $response['success'] === false) {
+                    return [
+                        'success' => false,
+                        'message' => $response['message'] ?? 'Call failed',
+                        'status'    => $response['status'] ?? 400
+                    ];
+                }
                 if ($response == true) {
                     return array(
                         'success' => 'true',
@@ -1236,7 +1243,15 @@ return response()->json([
                         ]
                     );
                     $asterisk = $this->getAsterisk($asteriskServerId, $extension, $clientId);
-                    $response = $asterisk->click2Call($number, $campaignId, $lead['lead_id']);
+                    $response = $asterisk->click2Call($number, $campaignId, $lead['lead_id'],$request->auth->id);
+                    if (is_array($response) && isset($response['success']) && $response['success'] === false) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $response['message']
+                    ], $response['code']);
+                }
+
+
                     if ($response == true) {
                         $this->addToLeadReport('mysql_' . $db, $campaignId, $lead['list_id'], $lead['lead_id'], 0);
                         return array('status' => true, 'message' => "Call connected");
