@@ -393,17 +393,19 @@ class DialerController extends Controller
         ]);
 
         $response = $this->model->callNumber($this->request);
-        if ($response instanceof \Illuminate\Http\JsonResponse) {
-            return $response;
-        }
+        // if ($response instanceof \Illuminate\Http\JsonResponse) {
+        //     return $response;
+        // }
 
-        $statusCode = $response['status'] ?? 200;
+        // $statusCode = $response['status'] ?? 200;
 
-        if (isset($response['status'])) {
-            unset($response['status']);
-        }
+        // if (isset($response['status'])) {
+        //     unset($response['status']);
+        // }
 
-        return response()->json($response, $statusCode);
+        // return response()->json($response, $statusCode);
+     return response()->json($response);
+
     }
 
     /*
@@ -451,64 +453,64 @@ class DialerController extends Controller
             'id' => 'required|numeric'
         ]);
         $response = $this->model->hangUp($this->request);
-        $user = $this->request->auth;
-        $db   = "mysql_" . $user->parent_id;
-        $extension = $user->extension;
+    //     $user = $this->request->auth;
+    //     $db   = "mysql_" . $user->parent_id;
+    //     $extension = $user->extension;
 
-    // Small delay to ensure CDR is inserted
-    sleep(1);
+    // // Small delay to ensure CDR is inserted
+    // sleep(1);
 
-    /* ==========================
-     * 🔹 GET LAST OUTBOUND CDR
-     * ========================== */
+    // /* ==========================
+    //  * 🔹 GET LAST OUTBOUND CDR
+    //  * ========================== */
 
-    $cdr = DB::connection($db)->selectOne(
-        "SELECT id, cli, duration
-         FROM cdr
-         WHERE extension = :extension
-           AND route = 'OUT'
-           AND duration > 0
-         ORDER BY id DESC
-         LIMIT 1",
-        ['extension' => $extension]
-    );
+    // $cdr = DB::connection($db)->selectOne(
+    //     "SELECT id, cli, duration
+    //      FROM cdr
+    //      WHERE extension = :extension
+    //        AND route = 'OUT'
+    //        AND duration > 0
+    //      ORDER BY id DESC
+    //      LIMIT 1",
+    //     ['extension' => $extension]
+    // );
 
-    // ❌ No CDR found → no billing
-    if (empty($cdr)) {
-        Log::info('No outbound CDR found for billing', [
-            'extension' => $extension
-        ]);
-        return response()->json($response);
-    }
+    // // ❌ No CDR found → no billing
+    // if (empty($cdr)) {
+    //     Log::info('No outbound CDR found for billing', [
+    //         'extension' => $extension
+    //     ]);
+    //     return response()->json($response);
+    // }
 
-    Log::info('Outbound CDR found', [
-        'cdr_id' => $cdr->id,
-        'cli' => $cdr->cli,
-        'duration' => $cdr->duration
-    ]);
-
-
+    // Log::info('Outbound CDR found', [
+    //     'cdr_id' => $cdr->id,
+    //     'cli' => $cdr->cli,
+    //     'duration' => $cdr->duration
+    // ]);
 
 
-    /* ==========================
-     * 🔹 DEDUCT CREDITS
-     * ========================== */
 
-    $creditService = new EasifyCreditService();
 
-    $deductResponse = $creditService->deductCredits(
-        $user->id,
-        $user->easify_user_uuid,
-        'outgoing_call',
-        (string) $cdr->cli,
-        (int) $cdr->duration
-    );
+    // /* ==========================
+    //  * 🔹 DEDUCT CREDITS
+    //  * ========================== */
 
-    Log::info('Credit deduction response (hangUp)', [
-        'user_id' => $user->id,
-        'cdr_id' => $cdr->id,
-        'response' => $deductResponse
-    ]);
+    // $creditService = new EasifyCreditService();
+
+    // $deductResponse = $creditService->deductCredits(
+    //     $user->id,
+    //     $user->easify_user_uuid,
+    //     'outgoing_call',
+    //     (string) $cdr->cli,
+    //     (int) $cdr->duration
+    // );
+
+    // Log::info('Credit deduction response (hangUp)', [
+    //     'user_id' => $user->id,
+    //     'cdr_id' => $cdr->id,
+    //     'response' => $deductResponse
+    // ]);
 
 
         return response()->json($response);

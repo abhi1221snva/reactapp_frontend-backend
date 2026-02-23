@@ -552,51 +552,51 @@ class Asterisk extends Model
             $from   = $cli;
             $count = 1; // 1 call = 1 credit
 
-        $creditService = new EasifyCreditService();
+//         $creditService = new EasifyCreditService();
 
-        /* =======================
-        * 🔹 STEP 1: CHECK CREDITS
-        * ======================= */
-        $creditCheck = $creditService->checkCredits(
-            $user_id,
-            $user->easify_user_uuid,
-            'outgoing_call',
-            (string) $from,
-            $count
-        );
+//         /* =======================
+//         * 🔹 STEP 1: CHECK CREDITS
+//         * ======================= */
+//         $creditCheck = $creditService->checkCredits(
+//             $user_id,
+//             $user->easify_user_uuid,
+//             'outgoing_call',
+//             (string) $from,
+//             $count
+//         );
 
-        // 🔴 Easify failure (API error, validation fail etc.)
-        if (
-            empty($creditCheck) ||
-            ($creditCheck['status'] ?? false) === false
-        ) {
-            Log::warning('Easify credit check failed (click2call)', [
-                'user_id' => $user_id,
-                'from'    => $from,
-                'response'=> $creditCheck
-            ]);
+//         // 🔴 Easify failure (API error, validation fail etc.)
+//         if (
+//             empty($creditCheck) ||
+//             ($creditCheck['status'] ?? false) === false
+//         ) {
+//             Log::warning('Easify credit check failed (click2call)', [
+//                 'user_id' => $user_id,
+//                 'from'    => $from,
+//                 'response'=> $creditCheck
+//             ]);
 
-           return [
-    'success' => false,
-    'message' => $creditCheck['message'] ?? 'Credit check failed',
-    'status'    => 400
-];
-        }
+//            return [
+//     'success' => false,
+//     'message' => $creditCheck['message'] ?? 'Credit check failed',
+//     'status'    => 400
+// ];
+//         }
 
-        // 🟡 Insufficient credits
-        if (($creditCheck['data']['has_sufficient_credits'] ?? false) === false) {
+//         // 🟡 Insufficient credits
+//         if (($creditCheck['data']['has_sufficient_credits'] ?? false) === false) {
 
-            Log::warning('Insufficient credits for click2call', [
-                'user_id' => $user_id,
-                'from'    => $from
-            ]);
+//             Log::warning('Insufficient credits for click2call', [
+//                 'user_id' => $user_id,
+//                 'from'    => $from
+//             ]);
 
-           return [
-    'success' => false,
-    'message' => 'Insufficient credits to make a call',
-    'status'    => 402
-];
-        }
+//            return [
+//     'success' => false,
+//     'message' => 'Insufficient credits to make a call',
+//     'status'    => 402
+// ];
+//         }
         if(!empty($agentLoginStatus)) {
             if ($number != '' && $this->extension != '') {
 
@@ -620,6 +620,7 @@ class Asterisk extends Model
                 $param['campaign_id'] = $campaignId;
                 $param['mobile'] = $number;
                 $response = $this->amiCommand($originateRequest, $param);
+                
                 if($response == "true")
                 {
                     /*include_once ("Class/ListClass.php");
