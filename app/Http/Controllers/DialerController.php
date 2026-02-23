@@ -455,72 +455,62 @@ class DialerController extends Controller
         $db   = "mysql_" . $user->parent_id;
         $extension = $user->extension;
 
-    /* =======================
-     * 🔹 GET CHANNEL
-     * ======================= */
+    // Small delay to ensure CDR is inserted
+    sleep(1);
 
-    // From line_detail
-//     $lineDetail = DB::connection($db)->selectOne(
-//         "SELECT channel FROM line_detail WHERE extension = :extension",
-//         ['extension' => $user->extension]
-//     );
-// Log::info('line detail data',['lineDetails'=>$lineDetail]);
-//     // From local_channel1 (fallback)
-//     $localChannel = DB::connection($db)->selectOne(
-//         "SELECT local_channel AS channel FROM local_channel1 WHERE confno = :extension",
-//         ['extension' => $user->extension]
-//     );
-// Log::info('line channel data',['localChannel'=>$localChannel]);
-//     $channel = null;
+    /* ==========================
+     * 🔹 GET LAST OUTBOUND CDR
+     * ========================== */
 
-//     if (!empty($lineDetail) && !empty($lineDetail->channel)) {
-//         $channel = $lineDetail->channel;
-//     } elseif (!empty($localChannel) && !empty($localChannel->channel)) {
-//         $channel = $localChannel->channel;
-//     }
-// Log::info('channel recahed',['channel'=>$channel]);
+    $cdr = DB::connection($db)->selectOne(
+        "SELECT id, cli, duration
+         FROM cdr
+         WHERE extension = :extension
+           AND route = 'OUT'
+           AND duration > 0
+         ORDER BY id DESC
+         LIMIT 1",
+        ['extension' => $extension]
+    );
+
+    // ❌ No CDR found → no billing
+    if (empty($cdr)) {
+        Log::info('No outbound CDR found for billing', [
+            'extension' => $extension
+        ]);
+        return response()->json($response);
+    }
+
+    Log::info('Outbound CDR found', [
+        'cdr_id' => $cdr->id,
+        'cli' => $cdr->cli,
+        'duration' => $cdr->duration
+    ]);
 
 
-//     // ❌ If no channel found → no billing
-//     if (!$channel) {
-//         return response()->json($response);
-//     }
 
-    /* =======================
-     * 🔹 GET CDR USING CHANNEL
-     * ======================= */
 
-$cdr = DB::connection($db)->selectOne(
-    "SELECT cli, duration
-     FROM cdr
-     WHERE extension = :extension
-       AND duration > 0
-     ORDER BY id DESC
-     LIMIT 1",
-    ['extension' => $extension]
-);
-
-  
-Log::info('cli recahed',['cli'=>$cdr->cli]);
-
-    /* =======================
-     * 🔹 CREDIT DEDUCT
-     * ======================= */
+    /* ==========================
+     * 🔹 DEDUCT CREDITS
+     * ========================== */
 
     $creditService = new EasifyCreditService();
 
-   $deductResponse = $creditService->deductCredits(
+    $deductResponse = $creditService->deductCredits(
         $user->id,
         $user->easify_user_uuid,
         'outgoing_call',
-        (string) $cdr->cli,   // resource
-        (int) $cdr->duration     // seconds → Easify converts to minutes
+        (string) $cdr->cli,
+        (int) $cdr->duration
     );
-/* 🔎 Log Easify Response */
-Log::info('Credit deduction response (hangUp)', [
-    'user_id'  => $user->id,
-    'response' => $deductResponse
-]);
+
+    Log::info('Credit deduction response (hangUp)', [
+        'user_id' => $user->id,
+        'cdr_id' => $cdr->id,
+        'response' => $deductResponse
+    ]);
+
+
         return response()->json($response);
 
     }
