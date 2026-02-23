@@ -453,6 +453,7 @@ class DialerController extends Controller
         $response = $this->model->hangUp($this->request);
         $user = $this->request->auth;
         $db   = "mysql_" . $user->parent_id;
+        $extension = $user->extension;
 
     /* =======================
      * 🔹 GET CHANNEL
