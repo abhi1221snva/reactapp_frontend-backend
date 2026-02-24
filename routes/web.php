@@ -511,6 +511,7 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->post('hang-up', 'DialerController@hangUp');
   $router->post('dtmf', 'DialerController@dtmf');
   $router->post('user-logout', 'DialerController@logout');
+  $router->post('extension-logout', 'DialerController@extensionlogout');
   $router->post('disposition-campaign', 'DialerController@dispositionCampaign');
   $router->post('disposition_by_campaignId', 'DialerController@dispositionByCampaignId');
   $router->post('get-lead', 'DialerController@getLead');

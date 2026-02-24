@@ -1302,6 +1302,11 @@ class DialerController extends Controller
         $response = $this->model->logout($this->request);
         return response()->json($response);
     }
+     public function extensionlogout()
+    {
+        $response = $this->model->extensionlogout($this->request);
+        return response()->json($response);
+    }
 
     /*
      * listen Call

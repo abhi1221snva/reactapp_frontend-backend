@@ -2497,7 +2497,37 @@ public function getLead(int $parentId, int $extension)
         curl_close($curl);
         return $result;
     }
+        public function extensionlogout($request)
+        {
+          $extension = $request->auth->extension;
+        $intWebPhoneSetting = DialerController::getWebPhonestatus($request->auth->id, $request->auth->parent_id);
+        if ($intWebPhoneSetting == 1) {
+            $extension = $request->auth->alt_extension;
+        }
 
+        /* new code implement*/
+
+        $dataUser = User::where('id', $request->auth->id)->get()->first();
+
+        $dialer_mode = $dataUser->dialer_mode;
+
+        if ($dialer_mode == 3) {
+            $extension = $dataUser->app_extension;
+        } else
+            if ($dialer_mode == 2) {
+            $extension = $request->auth->alt_extension;
+        } else
+            if ($dialer_mode == 1) {
+            $extension =  $request->auth->extension;
+        }
+
+        //echo $extension;die;
+
+        /*close new code implement*/
+
+        $asterisk = $this->getAsterisk($request->auth->asterisk_server_id, $extension, $request->auth->parent_id);
+        return $asterisk->asteriskLogout($request->auth->parent_id, $extension);
+        }
     public function logout($request)
     {
         $extension = $request->auth->extension;
