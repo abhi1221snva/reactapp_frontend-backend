@@ -919,15 +919,7 @@ $totalRows = count($campaign);
                 while (true) {
                     $getExtensionLive = $this->getExtensionLive($extension, $request->auth->parent_id);
                     if (!empty($getExtensionLive)) {
-                      $leadCount= $this->getLeadCountInTemp($request->input('campaign_id'), $request->auth->parent_id);
-                    Log::info('reched leadcount in if part',['leadCount'=>$leadCount]);
-
-                      if ($leadCount == 0) {
-                            return response()->json([
-                                'success' => false,
-                                'message' => 'No leads available in this campaign.'
-                            ], 400);
-                        }
+                        $this->getLeadCountInTemp($request->input('campaign_id'), $request->auth->parent_id);
                         $modeType = $this->getHopperModeInCampaign($request->input('campaign_id'), $request->auth->parent_id);
                         $response = $this->addLeadToExtensionLive(
                             $request->input('campaign_id'),
@@ -970,14 +962,7 @@ $totalRows = count($campaign);
                 if ($getExtensionLive['status'] == 0 || $getExtensionLive['status'] == 3) {
                     $sql = "UPDATE extension_live SET status = :status, lead_id = null, campaign_id = :campaign_id WHERE extension = :extension";
                     DB::connection('mysql_' . $request->auth->parent_id)->update($sql, array('extension' => $extension, 'status' => '0', 'campaign_id' => $request->input('campaign_id')));
-                   $leadCount=$this->getLeadCountInTemp($request->input('campaign_id'), $request->auth->parent_id);
-                    Log::info('reched leadcount in else part',['leadCount'=>$leadCount]);
-                    if ($leadCount == 0) {
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'No leads available in this campaign.'
-                        ], 400);
-                    }
+                    $this->getLeadCountInTemp($request->input('campaign_id'), $request->auth->parent_id);
                     $modeType = $this->getHopperModeInCampaign($request->input('campaign_id'), $request->auth->parent_id);
                     $response = $this->addLeadToExtensionLive(
                         $request->input('campaign_id'),
