@@ -107,7 +107,7 @@ public function index(Request $request)
     $connection = "mysql_" . $request->auth->parent_id;
 
     // Base query
-    $query = EmailTemplete::on($connection);
+    $query = EmailTemplete::on($connection)->orderBy('id', 'desc');
 
     // Apply search (optional)
     if ($request->has('search') && !empty($request->input('search'))) {
