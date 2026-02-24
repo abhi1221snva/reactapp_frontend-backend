@@ -929,13 +929,34 @@ $totalRows = count($campaign);
                             $request->auth->parent_id,
                             $request->auth->id
                         );
-                       if ($response["status"] === false) {
-                        return response()->json([
-                            'success' => false,
-                            'message' => $response["message"]
-                        ], 402);
-                    }
+                    //    if ($response["status"] === false) {
+                    //     return response()->json([
+                    //         'success' => false,
+                    //         'message' => $response["message"]
+                    //     ], 402);
+                    // }
+if ($response["status"] === false) {
 
+    // 🔥 Logout extension when no leads
+    if (isset($response["code"]) && $response["code"] == "NO_LEADS") {
+
+        $asterisk = $this->getAsterisk(
+            $request->auth->asterisk_server_id,
+            $extension,
+            $request->auth->parent_id
+        );
+
+        $asterisk->asteriskLogout(
+            $request->auth->parent_id,
+            $extension
+        );
+    }
+
+    return response()->json([
+        'success' => false,
+        'message' => $response["message"]
+    ], 402);
+}
                     return response()->json([
                         'success' => true,
                         'message' => 'You are logged in successfully. ' . $response["message"]
@@ -972,6 +993,28 @@ $totalRows = count($campaign);
                         $request->auth->parent_id,
                         $request->auth->id
                     );
+                    if ($response["status"] === false) {
+
+                        // 🔥 Logout extension when no leads
+                        if (isset($response["code"]) && $response["code"] == "NO_LEADS") {
+
+                            $asterisk = $this->getAsterisk(
+                                $request->auth->asterisk_server_id,
+                                $extension,
+                                $request->auth->parent_id
+                            );
+
+                            $asterisk->asteriskLogout(
+                                $request->auth->parent_id,
+                                $extension
+                            );
+                        }
+
+                        return response()->json([
+                            'success' => false,
+                            'message' => $response["message"]
+                        ], 402);
+                    }
                     return array(
                         'success' => $response["status"],
                         'message' => 'You are logged in successfully. ' . $response["message"]
