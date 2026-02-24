@@ -14,5 +14,5 @@ class EmailTemplete  extends Model
 
     protected $table = "email_templates";
 
-    protected $fillable = ['template_name', 'template_html','subject'];
+    protected $fillable = ['template_name', 'template_html','subject','type'];
 }
