@@ -935,28 +935,19 @@ $totalRows = count($campaign);
                     //         'message' => $response["message"]
                     //     ], 402);
                     // }
-if ($response["status"] === false) {
+                    if ($response["status"] === false) {
 
-    // 🔥 Logout extension when no leads
-    if (isset($response["code"]) && $response["code"] == "NO_LEADS") {
+                        if (isset($response["code"]) && $response["code"] == "NO_LEADS") {
 
-        $asterisk = $this->getAsterisk(
-            $request->auth->asterisk_server_id,
-            $extension,
-            $request->auth->parent_id
-        );
+                            // ✅ Call common logout function
+                            $this->extensionlogout($request);
+                        }
 
-        $asterisk->asteriskLogout(
-            $request->auth->parent_id,
-            $extension
-        );
-    }
-
-    return response()->json([
-        'success' => false,
-        'message' => $response["message"]
-    ], 402);
-}
+                        return response()->json([
+                            'success' => false,
+                            'message' => $response["message"]
+                        ], 402);
+                    }
                     return response()->json([
                         'success' => true,
                         'message' => 'You are logged in successfully. ' . $response["message"]
@@ -993,21 +984,12 @@ if ($response["status"] === false) {
                         $request->auth->parent_id,
                         $request->auth->id
                     );
-                    if ($response["status"] === false) {
+                 if ($response["status"] === false) {
 
-                        // 🔥 Logout extension when no leads
                         if (isset($response["code"]) && $response["code"] == "NO_LEADS") {
 
-                            $asterisk = $this->getAsterisk(
-                                $request->auth->asterisk_server_id,
-                                $extension,
-                                $request->auth->parent_id
-                            );
-
-                            $asterisk->asteriskLogout(
-                                $request->auth->parent_id,
-                                $extension
-                            );
+                            // ✅ Call common logout function
+                            $this->extensionlogout($request);
                         }
 
                         return response()->json([
