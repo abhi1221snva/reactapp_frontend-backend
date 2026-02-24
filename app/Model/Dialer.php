@@ -919,7 +919,13 @@ $totalRows = count($campaign);
                 while (true) {
                     $getExtensionLive = $this->getExtensionLive($extension, $request->auth->parent_id);
                     if (!empty($getExtensionLive)) {
-                        $this->getLeadCountInTemp($request->input('campaign_id'), $request->auth->parent_id);
+                      $leadCount= $this->getLeadCountInTemp($request->input('campaign_id'), $request->auth->parent_id);
+                      if ($leadCount == 0) {
+                            return response()->json([
+                                'success' => false,
+                                'message' => 'No leads available in this campaign.'
+                            ], 400);
+                        }
                         $modeType = $this->getHopperModeInCampaign($request->input('campaign_id'), $request->auth->parent_id);
                         $response = $this->addLeadToExtensionLive(
                             $request->input('campaign_id'),
