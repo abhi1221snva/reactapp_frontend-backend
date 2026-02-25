@@ -283,7 +283,10 @@ public function archive(Request $request)
         ->table('email_logs')
         ->whereIn('id', $request->email_ids)->where('user_id',$request->auth->id)
         ->where('folder', '!=', 'archived') // ✅ ignore already archived emails
-        ->update(['folder' => 'archived']);
+        ->update([
+            'previous_folder' => DB::raw('folder'), // ✅ store old folder
+            'folder' => 'archived'
+        ]);
 
     return response()->json([
         'status' => true,
@@ -291,6 +294,36 @@ public function archive(Request $request)
         'archived_count' => $archivedCount
     ]);
 }
+
+// public function unarchive(Request $request)
+// {
+//     $validator = Validator::make($request->all(), [
+//         'email_ids' => 'required|array|min:1',
+//         'email_ids.*' => 'integer',
+//     ]);
+
+//     if ($validator->fails()) {
+//         return response()->json([
+//             'status' => false,
+//             'errors' => $validator->errors()
+//         ], 422);
+//     }
+
+//     $connection = 'mysql_' . $request->auth->parent_id;
+
+//     // 🔄 Update folder back to "inbox" and get count
+//     $unarchivedCount = DB::connection($connection)
+//         ->table('email_logs')
+//         ->whereIn('id', $request->email_ids)
+//         ->update(['folder' => 'sent']);
+
+//     return response()->json([
+//         'status' => true,
+//         'message' => 'Emails restored successfully',
+//         'restored_count' => $unarchivedCount  // ✅ Number of emails unarchived
+//     ]);
+// }
+
 
 public function unarchive(Request $request)
 {
@@ -308,20 +341,32 @@ public function unarchive(Request $request)
 
     $connection = 'mysql_' . $request->auth->parent_id;
 
-    // 🔄 Update folder back to "inbox" and get count
-    $unarchivedCount = DB::connection($connection)
+    $emails = DB::connection($connection)
         ->table('email_logs')
         ->whereIn('id', $request->email_ids)
-        ->update(['folder' => 'sent']);
+        ->where('user_id', $request->auth->id)
+        ->where('folder', 'archived')
+        ->get();
+
+    $restoredCount = 0;
+
+    foreach ($emails as $email) {
+        DB::connection($connection)
+            ->table('email_logs')
+            ->where('id', $email->id)
+            ->update([
+                'folder' => $email->previous_folder ?? 'sent',
+                'previous_folder' => null
+            ]);
+
+        $restoredCount++;
+    }
 
     return response()->json([
         'status' => true,
         'message' => 'Emails restored successfully',
-        'restored_count' => $unarchivedCount  // ✅ Number of emails unarchived
+        'restored_count' => $restoredCount
     ]);
 }
-
-
-
 
 }
