@@ -681,6 +681,7 @@ $totalRows = count($campaign);
      *@param object $request
      *@return array
      */
+    
     public function getLeadCountInTemp(int $campaignId, int $parentId)
     {
         try {
@@ -2524,6 +2525,7 @@ public function getLead(int $parentId, int $extension)
     }
         public function extensionlogout($request)
         {
+            Log::info('reached extension logout');
           $extension = $request->auth->extension;
         $intWebPhoneSetting = DialerController::getWebPhonestatus($request->auth->id, $request->auth->parent_id);
         if ($intWebPhoneSetting == 1) {
