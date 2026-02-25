@@ -930,19 +930,19 @@ $totalRows = count($campaign);
                             $request->auth->parent_id,
                             $request->auth->id
                         );
-                    //    if ($response["status"] === false) {
-                    //     return response()->json([
-                    //         'success' => false,
-                    //         'message' => $response["message"]
-                    //     ], 402);
-                    // }
+                       if ($response["status"] === false) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => $response["message"]
+                        ], 402);
+                    }
                     if ($response["status"] === false) {
 
-                        if (isset($response["code"]) && $response["code"] == "NO_LEADS") {
+                        // if (isset($response["code"]) && $response["code"] == "NO_LEADS") {
 
-                            // ✅ Call common logout function
-                            $this->extensionlogout($request);
-                        }
+                        //     // ✅ Call common logout function
+                        //     $this->extensionlogout($request);
+                        // }
 
                         return response()->json([
                             'success' => false,
@@ -986,12 +986,6 @@ $totalRows = count($campaign);
                         $request->auth->id
                     );
                  if ($response["status"] === false) {
-
-                        if (isset($response["code"]) && $response["code"] == "NO_LEADS") {
-
-                            // ✅ Call common logout function
-                            $this->extensionlogout($request);
-                        }
 
                         return response()->json([
                             'success' => false,
