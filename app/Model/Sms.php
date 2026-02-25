@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use App\Model\UserFcmToken;
 use App\Services\FirebaseService;
+use Carbon\Carbon;
 class Sms extends Model {
 
     /**
@@ -309,25 +310,51 @@ public function smsDetailsByDid($request)
     //     return $r;
     // })->toArray();
     // ✅ conversation_id = latest SMS id (first record, since ORDER BY s.id DESC)
+// $conversationId = !empty($records) ? (string) $records[0]->id : null;
+
+// $records = collect($records)->map(function ($r) use ($conversationId) {
+
+//     $ordered = [
+//         'id' => $r->id,
+//         'conversation_id' => $conversationId, // ✅ SAME for all
+//     ];
+
+//     foreach ($r as $key => $value) {
+//         if ($key !== 'id') {
+//             $ordered[$key] = $value ?? '';
+//         }
+//     }
+
+//     return $ordered;
+// })->toArray();
+
 $conversationId = !empty($records) ? (string) $records[0]->id : null;
 
-$records = collect($records)->map(function ($r) use ($conversationId) {
+$userTimezone = $request->auth->timezone ?? config('app.timezone');
+
+$records = collect($records)->map(function ($r) use ($conversationId, $userTimezone) {
 
     $ordered = [
         'id' => $r->id,
-        'conversation_id' => $conversationId, // ✅ SAME for all
+        'conversation_id' => $conversationId,
     ];
 
     foreach ($r as $key => $value) {
-        if ($key !== 'id') {
-            $ordered[$key] = $value ?? '';
+
+        // ✅ Convert date fields to user timezone
+        if (in_array($key, ['created_at', 'updated_at', 'date', 'sent_at']) && !empty($value)) {
+            $ordered[$key] = Carbon::parse($value)
+                ->timezone($userTimezone)
+                ->format('Y-m-d H:i:s');
+        } else {
+            if ($key !== 'id') {
+                $ordered[$key] = $value ?? '';
+            }
         }
     }
 
     return $ordered;
 })->toArray();
-
-
 
 
     // ✅ Return final response
