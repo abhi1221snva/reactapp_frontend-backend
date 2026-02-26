@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 use App\Model\Client\ListHeader;
 use App\Model\Client\ListData;
+use App\Model\Client\Notification;
 use App\Model\Master\InboundCallPopup;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -11,12 +12,15 @@ use Illuminate\Support\Facades\DB;
 use App\Model\Client\LocationGroup;
 use App\Model\User;
 use DateTime;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 use App\Model\Cron;
+use App\Services\PusherService;
 
 class InboundCallPopUpController extends Controller
 {
     private $request;
+    protected $model;
     public function __construct(Request $request, Report $report)
     {
         $this->request = $request;
