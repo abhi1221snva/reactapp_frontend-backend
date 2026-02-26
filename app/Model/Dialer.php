@@ -1372,6 +1372,7 @@ $totalRows = count($campaign);
                 return array('status' => true, 'message' => "Call connected");
             }
         }
+        $this->extensionLogout($user_id, $clientId, $asteriskServerId);
         return $response;
     }
 
@@ -2517,38 +2518,61 @@ public function getLead(int $parentId, int $extension)
         curl_close($curl);
         return $result;
     }
-        public function extensionlogout($request)
-        {
-            Log::info('reached extension logout');
-          $extension = $request->auth->extension;
-        $intWebPhoneSetting = DialerController::getWebPhonestatus($request->auth->id, $request->auth->parent_id);
+        // public function extensionlogout($request)
+        // {
+        //     Log::info('reached extension logout');
+        //   $extension = $request->auth->extension;
+        // $intWebPhoneSetting = DialerController::getWebPhonestatus($request->auth->id, $request->auth->parent_id);
+        // if ($intWebPhoneSetting == 1) {
+        //     $extension = $request->auth->alt_extension;
+        // }
+
+        // /* new code implement*/
+
+        // $dataUser = User::where('id', $request->auth->id)->get()->first();
+
+        // $dialer_mode = $dataUser->dialer_mode;
+
+        // if ($dialer_mode == 3) {
+        //     $extension = $dataUser->app_extension;
+        // } else
+        //     if ($dialer_mode == 2) {
+        //     $extension = $request->auth->alt_extension;
+        // } else
+        //     if ($dialer_mode == 1) {
+        //     $extension =  $request->auth->extension;
+        // }
+        // $asterisk = $this->getAsterisk($request->auth->asterisk_server_id, $extension, $request->auth->parent_id);
+        // return $asterisk->asteriskLogout($request->auth->parent_id, $extension);
+        // }
+        public function extensionlogout($userId, $clientId, $asteriskServerId)
+{
+   Log::info('reached extension logout');
+   
+    $dataUser = User::find($userId);
+
+    if (!$dataUser) {
+        return false;
+    }
+  $intWebPhoneSetting = DialerController::getWebPhonestatus($userId, $clientId);
         if ($intWebPhoneSetting == 1) {
-            $extension = $request->auth->alt_extension;
+            $extension = $dataUser->extension;
+        }
+    $extension = $dataUser->extension;
+
+    // Resolve correct extension based on dialer mode
+    if ($dataUser->dialer_mode == 3) {
+        $extension = $dataUser->app_extension;
+    } elseif ($dataUser->dialer_mode == 2) {
+        $extension = $dataUser->alt_extension;
+    }elseif ($dataUser->dialer_mode == 1) {
+            $extension =  $dataUser->extension;
         }
 
-        /* new code implement*/
+    $asterisk = $this->getAsterisk($asteriskServerId, $extension, $clientId);
 
-        $dataUser = User::where('id', $request->auth->id)->get()->first();
-
-        $dialer_mode = $dataUser->dialer_mode;
-
-        if ($dialer_mode == 3) {
-            $extension = $dataUser->app_extension;
-        } else
-            if ($dialer_mode == 2) {
-            $extension = $request->auth->alt_extension;
-        } else
-            if ($dialer_mode == 1) {
-            $extension =  $request->auth->extension;
-        }
-
-        //echo $extension;die;
-
-        /*close new code implement*/
-
-        $asterisk = $this->getAsterisk($request->auth->asterisk_server_id, $extension, $request->auth->parent_id);
-        return $asterisk->asteriskLogout($request->auth->parent_id, $extension);
-        }
+    return $asterisk->asteriskLogout($clientId, $extension);
+}
     public function logout($request)
     {
         $extension = $request->auth->extension;
