@@ -102,12 +102,12 @@ class EmailTempleteController extends Controller
     //     }
     //     return $this->successResponse("Template List", $templates);
     // }
-public function index(Request $request)
+public function indexold(Request $request)
 {
     $connection = "mysql_" . $request->auth->parent_id;
 
     // Base query
-    $query = EmailTemplete::on($connection);
+    $query = EmailTemplete::on($connection)->orderBy('id', 'desc');
 
     // Apply search (optional)
     if ($request->has('search') && !empty($request->input('search'))) {
@@ -115,7 +115,8 @@ public function index(Request $request)
 
         $query->where(function ($q) use ($search) {
             $q->where('template_name', 'like', '%' . $search . '%')
-              ->orWhere('subject', 'like', '%' . $search . '%');
+              ->orWhere('subject', 'like', '%' . $search . '%')
+              ->orWhere('type', 'like', '%' . $search . '%');
         });
     }
 
@@ -143,13 +144,45 @@ public function index(Request $request)
 }
 
 
-    public function index_old(Request $request)
-    {
-        $templates = EmailTemplete::on("mysql_" . $request->auth->parent_id)->get()->all();
 
-        return $this->successResponse("Template List", $templates);
+public function index(Request $request)
+{
+    $connection = "mysql_" . $request->auth->parent_id;
+
+    // Base query
+    $query = EmailTemplete::on($connection)->orderBy('id', 'desc');
+
+    // Apply search
+    if ($request->has('search') && !empty($request->input('search'))) {
+        $search = $request->input('search');
+
+        $query->where(function ($q) use ($search) {
+            $q->where('template_name', 'like', '%' . $search . '%')
+              ->orWhere('subject', 'like', '%' . $search . '%')
+              ->orWhere('type', 'like', '%' . $search . '%');
+        });
     }
 
+    // ✅ Clone query before pagination
+    $total = (clone $query)->count();
+
+    // Apply pagination
+    if ($request->has('start') && $request->has('limit')) {
+        $start = (int) $request->input('start');
+        $limit = (int) $request->input('limit');
+
+        $query->skip($start)->take($limit);
+    }
+
+    $templates = $query->get();
+
+    return $this->successResponse("Template List", [
+        'start' => $request->input('start', 0),
+        'limit' => $request->input('limit', $total),
+        'total' => $total,
+        'data'  => $templates
+    ]);
+}
 
     /**
      * @OA\Put(

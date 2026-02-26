@@ -391,53 +391,21 @@ class DialerController extends Controller
             'number' => 'required|numeric',
             'id' => 'required|numeric'
         ]);
-    //      $user = $this->request->auth;
-    // $to   = $this->request->number;
-    // $count = 1; // 1 call = 1 credit
-
-    // $creditService = new EasifyCreditService();
-
-    // /* =======================
-    //  * 🔹 STEP 1: CHECK CREDITS
-    //  * ======================= */
-    // $creditCheck = $creditService->checkCredits(
-    //     $user->id,
-    //     $user->easify_user_uuid,
-    //     'outgoing_call',
-    //     (string) $to,
-    //     $count
-    // );
-
-    // 🔴 Easify failure (number not found, validation error, etc.)
-    // if (
-    //     empty($creditCheck) ||
-    //     ($creditCheck['status'] ?? false) === false
-    // ) {
-    //     Log::warning('Easify credit check failed (call)', [
-    //         'user_id' => $user->id,
-    //         'action'  => 'outgoing_call',
-    //         'to'      => $to,
-    //         'response'=> $creditCheck
-    //     ]);
-
-    //     return response()->json([
-    //         'success' => false,
-    //         'message' => $creditCheck['message'] ?? 'Credit check failed'
-    //     ], 400);
-    // }
-
-    // 🟡 Insufficient credits
-    // if (($creditCheck['data']['has_sufficient_credits'] ?? false) === false) {
-    //     return response()->json([
-    //         'success' => false,
-    //         'message' => 'Insufficient credits to make a call'
-    //     ], 402);
-    // }
 
         $response = $this->model->callNumber($this->request);
- 
+        // if ($response instanceof \Illuminate\Http\JsonResponse) {
+        //     return $response;
+        // }
 
-        return response()->json($response);
+        // $statusCode = $response['status'] ?? 200;
+
+        // if (isset($response['status'])) {
+        //     unset($response['status']);
+        // }
+
+        // return response()->json($response, $statusCode);
+     return response()->json($response);
+
     }
 
     /*
@@ -485,70 +453,65 @@ class DialerController extends Controller
             'id' => 'required|numeric'
         ]);
         $response = $this->model->hangUp($this->request);
-        // $user = $this->request->auth;
-        //     $db   = "mysql_" . $user->parent_id;
+    //     $user = $this->request->auth;
+    //     $db   = "mysql_" . $user->parent_id;
+    //     $extension = $user->extension;
 
-    /* =======================
-     * 🔹 GET CHANNEL
-     * ======================= */
+    // // Small delay to ensure CDR is inserted
+    // sleep(1);
 
-    // From line_detail
-    // $lineDetail = DB::connection($db)->selectOne(
-    //     "SELECT channel FROM line_detail WHERE extension = :extension",
-    //     ['extension' => $user->extension]
-    // );
-
-    // From local_channel1 (fallback)
-    // $localChannel = DB::connection($db)->selectOne(
-    //     "SELECT local_channel AS channel FROM local_channel1 WHERE confno = :extension",
-    //     ['extension' => $user->extension]
-    // );
-
-    // $channel = null;
-
-    // if (!empty($lineDetail) && !empty($lineDetail->channel)) {
-    //     $channel = $lineDetail->channel;
-    // } elseif (!empty($localChannel) && !empty($localChannel->channel)) {
-    //     $channel = $localChannel->channel;
-    // }
-
-    // // ❌ If no channel found → no billing
-    // if (!$channel) {
-    //     return response()->json($response);
-    // }
-
-    /* =======================
-     * 🔹 GET CDR USING CHANNEL
-     * ======================= */
+    // /* ==========================
+    //  * 🔹 GET LAST OUTBOUND CDR
+    //  * ========================== */
 
     // $cdr = DB::connection($db)->selectOne(
-    //     "SELECT number, duration
+    //     "SELECT id, cli, duration
     //      FROM cdr
-    //      WHERE channel LIKE :channel
+    //      WHERE extension = :extension
+    //        AND route = 'OUT'
     //        AND duration > 0
     //      ORDER BY id DESC
     //      LIMIT 1",
-    //     ['channel' => "%$channel%"]
+    //     ['extension' => $extension]
     // );
 
-    // if (empty($cdr) || empty($cdr->duration) || $cdr->duration <= 0) {
-    //     // ❌ No charge if not connected
+    // // ❌ No CDR found → no billing
+    // if (empty($cdr)) {
+    //     Log::info('No outbound CDR found for billing', [
+    //         'extension' => $extension
+    //     ]);
     //     return response()->json($response);
     // }
 
-    /* =======================
-     * 🔹 CREDIT DEDUCT
-     * ======================= */
+    // Log::info('Outbound CDR found', [
+    //     'cdr_id' => $cdr->id,
+    //     'cli' => $cdr->cli,
+    //     'duration' => $cdr->duration
+    // ]);
+
+
+
+
+    // /* ==========================
+    //  * 🔹 DEDUCT CREDITS
+    //  * ========================== */
 
     // $creditService = new EasifyCreditService();
 
-    // $creditService->deductCredits(
+    // $deductResponse = $creditService->deductCredits(
     //     $user->id,
     //     $user->easify_user_uuid,
     //     'outgoing_call',
-    //     (string) $cdr->number,   // resource
-    //     (int) $cdr->duration     // seconds → Easify converts to minutes
+    //     (string) $cdr->cli,
+    //     (int) $cdr->duration
     // );
+
+    // Log::info('Credit deduction response (hangUp)', [
+    //     'user_id' => $user->id,
+    //     'cdr_id' => $cdr->id,
+    //     'response' => $deductResponse
+    // ]);
+
 
         return response()->json($response);
 
@@ -1337,6 +1300,11 @@ class DialerController extends Controller
     public function logout()
     {
         $response = $this->model->logout($this->request);
+        return response()->json($response);
+    }
+     public function extensionlogout()
+    {
+        $response = $this->model->extensionlogout($this->request);
         return response()->json($response);
     }
 

@@ -888,40 +888,39 @@ class ExtensionController extends Controller
         Log::info('Easify CREATE API request started', [
             'email' => $request->email
         ]);
-  /**
-     * STEP 4 — Easify user creation (MANDATORY)
-     */
-    //Log::info('Easify CREATE API request started', ['email' => $request->email]);
+//   /**
+//      * STEP 4 — Easify user creation (MANDATORY)
+//      */
+//     //Log::info('Easify CREATE API request started', ['email' => $request->email]);
 
-    $create = Http::withHeaders([
-        'X-Application-Token' => env('PHONIFY_APP_TOKEN'),
-        'X-Easify-User-Token' => $easifyUserToken,
-        'Accept' => 'application/json', // Ensure JSON response
-    ])->post('https://easify-auth.on-forge.com/api/users/create', [
-        'email' => $request->email,
-        'password' => $request->password,
-        'first_name' => $request->first_name,
-        'last_name' => $request->last_name,
-        'phone' => $request->phone,
-        'only_validate' => false,
-    ]);
+//     $create = Http::withHeaders([
+//         'X-Application-Token' => env('PHONIFY_APP_TOKEN'),
+//         'X-Easify-User-Token' => $easifyUserToken,
+//         'Accept' => 'application/json', // Ensure JSON response
+//     ])->post('https://easify-auth.on-forge.com/api/users/create', [
+//         'email' => $request->email,
+//         'password' => $request->password,
+//         'first_name' => $request->first_name,
+//         'last_name' => $request->last_name,
+//         'phone' => $request->phone,
+//         'only_validate' => false,
+//     ]);
 
-    // Log CREATE API response safely
-    Log::info('Easify CREATE API response', [
-        'status' => $create->status(),
-        'body' => $create->body() ?: 'empty',
-        'json' => $create->json() ?: 'null',
-    ]);
+//     // Log CREATE API response safely
+//     Log::info('Easify CREATE API response', [
+//         'status' => $create->status(),
+//         'body' => $create->body() ?: 'empty',
+//         'json' => $create->json() ?: 'null',
+//     ]);
 
-    if (!$create->successful()) {
-        // OPTIONAL: rollback local extension if needed
-        return response()->json($create->json(), $create->status());
-    }
+//     if (!$create->successful()) {
+//         // OPTIONAL: rollback local extension if needed
+//         return response()->json($create->json(), $create->status());
+//     }
     /**
      * STEP 5 — Attach Easify UUID (CRITICAL)
      */
     $request->merge([
-        'easify_user_uuid' => $create->json('data.uuid'),
         'user_type' => 'subuser',
         'owner_id' => $request->auth->parent_id,
     ]);
@@ -939,7 +938,51 @@ class ExtensionController extends Controller
     }
 
     $response = $this->model->newExtensionSave($this->request);
+    Log::info('respoinse reached',['response'=>$response]);
+/**
+ * STEP 5 — Easify user creation (MANDATORY)
+ */
+// 👇 Get your local created user ID
+$localUserId = $response['data']['id'] ?? null;
+if (!$localUserId) {
+    return response()->json([
+        'success' => false,
+        'message' => 'Local user creation failed.'
+    ], 500);
+}
 
+$create = Http::withHeaders([
+    'X-Application-Token' => env('PHONIFY_APP_TOKEN'),
+    'X-Easify-User-Token' => $easifyUserToken,
+    'Accept' => 'application/json',
+])->post('https://easify-auth.on-forge.com/api/users/create', [
+    'email' => $request->email,
+    'password' => $request->password,
+    'first_name' => $request->first_name,
+    'last_name' => $request->last_name,
+    'phone' => $request->phone,
+    'application_user_id' => $localUserId, // ✅ ADDED HERE
+    'only_validate' => false,
+]);
+
+Log::info('Easify CREATE API response', [
+    'status' => $create->status(),
+    'body' => $create->body() ?: 'empty',
+    'json' => $create->json() ?: 'null',
+]);
+
+if (!$create->successful()) {
+    // Optional: rollback local user here
+    return response()->json($create->json(), $create->status());
+}
+
+
+/**
+ * STEP 6 — Update Easify UUID in Local DB
+ */
+$user = User::find($localUserId);
+$user->easify_user_uuid = $create->json('data.uuid');
+$user->save();
     // return response()->json([
     //     'status' => $validate->status(),
     //     'response' => $validate->json()
@@ -948,7 +991,7 @@ class ExtensionController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $response,
+            'data' => $user,
             //'data'=> $create->json(),  // full Easify response
         ]);
     }

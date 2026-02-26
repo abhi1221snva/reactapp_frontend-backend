@@ -681,6 +681,7 @@ $totalRows = count($campaign);
      *@param object $request
      *@return array
      */
+    
     public function getLeadCountInTemp(int $campaignId, int $parentId)
     {
         try {
@@ -926,19 +927,32 @@ $totalRows = count($campaign);
                             $modeType['hopper_mode'],
                             $extension,
                             $request->auth->asterisk_server_id,
-                            $request->auth->parent_id
+                            $request->auth->parent_id,
+                            $request->auth->id
                         );
                        if ($response["status"] === false) {
-    return response()->json([
-        'success' => false,
-        'message' => $response["message"]
-    ], 402);
-}
+                        return response()->json([
+                            'success' => false,
+                            'message' => $response["message"]
+                        ], 402);
+                    }
+                    if ($response["status"] === false) {
 
-return response()->json([
-    'success' => true,
-    'message' => 'You are logged in successfully. ' . $response["message"]
-], 200);
+                        // if (isset($response["code"]) && $response["code"] == "NO_LEADS") {
+
+                        //     // ✅ Call common logout function
+                        //     $this->extensionlogout($request);
+                        // }
+
+                        return response()->json([
+                            'success' => false,
+                            'message' => $response["message"]
+                        ], 402);
+                    }
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'You are logged in successfully. ' . $response["message"]
+                    ], 200);
 
                     } elseif ($count == 5) {
                         return array(
@@ -968,8 +982,16 @@ return response()->json([
                         $modeType['hopper_mode'],
                         $extension,
                         $request->auth->asterisk_server_id,
-                        $request->auth->parent_id
+                        $request->auth->parent_id,
+                        $request->auth->id
                     );
+                 if ($response["status"] === false) {
+
+                        return response()->json([
+                            'success' => false,
+                            'message' => $response["message"]
+                        ], 402);
+                    }
                     return array(
                         'success' => $response["status"],
                         'message' => 'You are logged in successfully. ' . $response["message"]
@@ -1063,7 +1085,14 @@ return response()->json([
                 /*close new code implement*/
 
                 $asterisk = $this->getAsterisk($request->auth->asterisk_server_id, $extension, $request->auth->parent_id);
-                $response = $asterisk->click2Call($request->input('number'), $request->input('campaign_id'), $request->input('lead_id'));
+                $response = $asterisk->click2Call($request->input('number'), $request->input('campaign_id'), $request->input('lead_id'),$request->auth->id);
+                  if (is_array($response) && isset($response['success']) && $response['success'] === false) {
+                    return [
+                        'success' => false,
+                        'message' => $response['message'] ?? 'Call failed',
+                        'status'    => $response['status'] ?? 400
+                    ];
+                }
                 if ($response == true) {
                     return array(
                         'success' => 'true',
@@ -1150,7 +1179,7 @@ return response()->json([
      * Fetches lead information
      * @return boolean
      */
-    function addLeadToExtensionLive(int $campaignId, int $hopperMode, int $extension, int $asteriskServerId, int $clientId)
+    function addLeadToExtensionLive(int $campaignId, int $hopperMode, int $extension, int $asteriskServerId, int $clientId ,int $user_id)
     {
 
         $response = [
@@ -1236,7 +1265,16 @@ return response()->json([
                         ]
                     );
                     $asterisk = $this->getAsterisk($asteriskServerId, $extension, $clientId);
-                    $response = $asterisk->click2Call($number, $campaignId, $lead['lead_id']);
+                    $response = $asterisk->click2Call($number, $campaignId, $lead['lead_id'],$user_id);
+                    if (is_array($response) && isset($response['success']) && $response['success'] === false) {
+                        return [
+                        'status' => false,
+                        'message' => $response['message'] ?? 'Call failed',
+                        //'status'    => $response['status'] ?? 400
+                    ];
+                }
+
+
                     if ($response == true) {
                         $this->addToLeadReport('mysql_' . $db, $campaignId, $lead['list_id'], $lead['lead_id'], 0);
                         return array('status' => true, 'message' => "Call connected");
@@ -1245,7 +1283,7 @@ return response()->json([
                     }
                 } else {
 
-                    $addResponse = $this->addLeadToExtensionLive($campaignId, $hopperMode, $extension, $asteriskServerId, $clientId);
+                    $addResponse = $this->addLeadToExtensionLive($campaignId, $hopperMode, $extension, $asteriskServerId, $clientId,$user_id);
                     $response["dail_next_lead"] = $addResponse;
                     //return array('status' => false, 'message' => "Incorrect lead value");
                 }
@@ -1334,6 +1372,7 @@ return response()->json([
                 return array('status' => true, 'message' => "Call connected");
             }
         }
+        $this->extensionLogout($user_id, $clientId, $asteriskServerId);
         return $response;
     }
 
@@ -1806,7 +1845,8 @@ public function getLead(int $parentId, int $extension)
                     $modeType['hopper_mode'],
                     $extension,
                     $request->auth->asterisk_server_id,
-                    $request->auth->parent_id
+                    $request->auth->parent_id,
+                    $request->auth->id
                 );
                 $response["dail_next_lead"] = $addResponse;
             } catch (\Exception $exception) {
@@ -2057,7 +2097,8 @@ public function getLead(int $parentId, int $extension)
                     $modeType['hopper_mode'],
                     $extension,
                     $request->auth->asterisk_server_id,
-                    $request->auth->parent_id
+                    $request->auth->parent_id,
+                    $request->auth->id
                 );
                 $response["dail_next_lead"] = $addResponse;
             } catch (\Exception $exception) {
@@ -2477,7 +2518,61 @@ public function getLead(int $parentId, int $extension)
         curl_close($curl);
         return $result;
     }
+        // public function extensionlogout($request)
+        // {
+        //     Log::info('reached extension logout');
+        //   $extension = $request->auth->extension;
+        // $intWebPhoneSetting = DialerController::getWebPhonestatus($request->auth->id, $request->auth->parent_id);
+        // if ($intWebPhoneSetting == 1) {
+        //     $extension = $request->auth->alt_extension;
+        // }
 
+        // /* new code implement*/
+
+        // $dataUser = User::where('id', $request->auth->id)->get()->first();
+
+        // $dialer_mode = $dataUser->dialer_mode;
+
+        // if ($dialer_mode == 3) {
+        //     $extension = $dataUser->app_extension;
+        // } else
+        //     if ($dialer_mode == 2) {
+        //     $extension = $request->auth->alt_extension;
+        // } else
+        //     if ($dialer_mode == 1) {
+        //     $extension =  $request->auth->extension;
+        // }
+        // $asterisk = $this->getAsterisk($request->auth->asterisk_server_id, $extension, $request->auth->parent_id);
+        // return $asterisk->asteriskLogout($request->auth->parent_id, $extension);
+        // }
+        public function extensionlogout($userId, $clientId, $asteriskServerId)
+{
+   Log::info('reached extension logout');
+   
+    $dataUser = User::find($userId);
+
+    if (!$dataUser) {
+        return false;
+    }
+  $intWebPhoneSetting = DialerController::getWebPhonestatus($userId, $clientId);
+        if ($intWebPhoneSetting == 1) {
+            $extension = $dataUser->extension;
+        }
+    $extension = $dataUser->extension;
+
+    // Resolve correct extension based on dialer mode
+    if ($dataUser->dialer_mode == 3) {
+        $extension = $dataUser->app_extension;
+    } elseif ($dataUser->dialer_mode == 2) {
+        $extension = $dataUser->alt_extension;
+    }elseif ($dataUser->dialer_mode == 1) {
+            $extension =  $dataUser->extension;
+        }
+
+    $asterisk = $this->getAsterisk($asteriskServerId, $extension, $clientId);
+
+    return $asterisk->asteriskLogout($clientId, $extension);
+}
     public function logout($request)
     {
         $extension = $request->auth->extension;
