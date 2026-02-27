@@ -676,7 +676,7 @@ public function getList($request)
 
     if ($twilio && !empty($twilio->twilio_trunk_id)) {
 
-        $client = new Client($twilio->auth_id, $twilio->api_key);
+        $client = new TwilioClient($twilio->auth_id, $twilio->api_key);
 
         $trunkSid = $twilio->twilio_trunk_id;
 
