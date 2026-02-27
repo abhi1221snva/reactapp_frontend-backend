@@ -665,7 +665,7 @@ public function getList($request)
 
         try {
 
-   
+            $connection = 'mysql_' . $request->auth->parent_id;
              $twilio = DB::connection($connection)
     ->table('sms_providers')
     ->where('provider', 'twilio')
