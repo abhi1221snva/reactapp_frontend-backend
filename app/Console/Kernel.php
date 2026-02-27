@@ -34,6 +34,7 @@ use App\Console\Commands\DripCampaignRunProcess;
 use App\Console\Commands\DripCampaignScheduleStatus;
 use App\Console\Commands\DripCampaignScheduleProcess;
 use App\Console\Commands\SendScheduledReminders;
+use App\Console\Commands\MissedCallNotificationCron;
 use Illuminate\Console\Scheduling\Schedule;
 use Laravel\Lumen\Console\Kernel as ConsoleKernel;
 
@@ -79,7 +80,7 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\SendTestFcm::class,
         \App\Console\Commands\BackfillPusherUuid::class,
         \App\Console\Commands\VerifyPusher::class,
-
+        MissedCallNotificationCron::class,
 
     ];
 
@@ -146,6 +147,7 @@ class Kernel extends ConsoleKernel
          //$schedule->command('app:dc:run-process')->everyMinute();
          //$schedule->command('app:dc:schedule-status')->everyMinute();
         //$schedule->command('reminders:send')->everyMinute();
+        $schedule->command('app:missed-call-notification')->everyMinute();
     }
 
 }

@@ -33,6 +33,7 @@ class SmsController extends Controller
      * @return void
      */
     private $request;
+    protected $model;
 
     public function __construct(Request $request, sms $sms)
     {
@@ -312,15 +313,38 @@ if ($hasCredits === false) {
     if (isset($response['success']) && $response['success'] === false) {
         $statusCode = 400;
     }
-        // 🔹 Step 3: DEDUCT CREDITS (after successful SMS)
+    // 🔹 Step 3: DEDUCT CREDITS (after successful SMS)
+    $creditService->deductCredits(
+        $user->id,
+        $user->easify_user_uuid,
+        'outgoing_sms',
+        $this->request->from,
+        $count
+    );
 
- $creditService->deductCredits(
-    $user->id,
-    $user->easify_user_uuid,
-    'outgoing_sms',
-    $this->request->from,
-    $count
-);
+    // 🔹 Step 4: TRIGGER PUSHER NOTIFICATION
+    if (isset($response['success']) && ($response['success'] === true || $response['success'] === 'true')) {
+        try {
+            $this->request->merge([
+                'parent_id' => $user->parent_id,
+                'pusher_uuid' => $user->pusher_uuid ?? null
+            ]);
+
+            PusherService::notify($this->request, [
+                'id'      => 'sent_sms',
+                'name'    => 'SMS Sent',
+                'type'    => 'sms',
+                'module'  => 'sms',
+                'message' => 'SMS sent to ' . $this->request->to,
+                'data'    => $response
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Pusher notification failed in sendSms', [
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
     return response()->json($response, $statusCode);
 }
 
@@ -563,7 +587,7 @@ if ($hasCredits === false) {
                     'name' => 'New SMS',
                     'type' => 'sms',
                     'display_order' => 0,
-                    'created_at' => Carbon::parse($request->date ?? now())->format('Y-m-d H:i:s'),
+                    'created_at' => Carbon::parse($request->date ?? Carbon::now())->format('Y-m-d H:i:s'),
                     'updated_at' => Carbon::now()->format('Y-m-d H:i:s'),
                     'type_sms' => 'sms',
                     'active' => 1,
