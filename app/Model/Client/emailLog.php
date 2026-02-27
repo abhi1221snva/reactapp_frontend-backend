@@ -14,6 +14,7 @@ class emailLog extends Model
     protected $casts = [
         'cc' => 'array',
         'bcc' => 'array',
+         'attachments' => 'array',
     ];
 
 }
