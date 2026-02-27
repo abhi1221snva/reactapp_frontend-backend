@@ -61,21 +61,23 @@ public function index(Request $request)
                 'id' => $email->id,
                 'from' => $email->from,
                 'to' => $email->to,
-                'cc' => collect(
-                is_string($email->cc)
-                    ? json_decode($email->bcc, true)
-                    : $email->bcc
-            )->map(function ($item) {
-                return is_string($item) ? $item : json_decode($item, true);
-            })->flatten()->filter()->values(),      // ✅ auto casted
-                            //'bcc' => $email->bcc ?? [],    // ✅ auto casted
-                'bcc' => collect(
-                is_string($email->bcc)
-                    ? json_decode($email->bcc, true)
-                    : $email->bcc
-            )->map(function ($item) {
-                return is_string($item) ? $item : json_decode($item, true);
-            })->flatten()->filter()->values(),
+            //     'cc' => collect(
+            //     is_string($email->cc)
+            //         ? json_decode($email->cc, true)
+            //         : $email->cc
+            // )->map(function ($item) {
+            //     return is_string($item) ? $item : json_decode($item, true);
+            // })->flatten()->filter()->values(),      // ✅ auto casted
+            //                 //'bcc' => $email->bcc ?? [],    // ✅ auto casted
+            //     'bcc' => collect(
+            //     is_string($email->bcc)
+            //         ? json_decode($email->bcc, true)
+            //         : $email->bcc
+            // )->map(function ($item) {
+            //     return is_string($item) ? $item : json_decode($item, true);
+            // })->flatten()->filter()->values(),
+                'cc' => $this->normalizeEmailArray($email->cc),
+                'bcc' => $this->normalizeEmailArray($email->bcc),
                 'subject' => $email->subject,
                 'snippet' => $email->body,
                 'type' => $email->folder,
