@@ -194,10 +194,14 @@ $users = DB::connection("master")
     ->whereIn('id', $userIds)
     ->pluck('full_name', 'id');   // [id => full_name]
 
+$userTimezone = $request->auth->timezone ?? config('app.timezone');
 
 // --- Attach user_name to each SMS record ---
 foreach ($pagedData as &$row) {
     $row->user_name = $users[$row->user_id] ?? null;
+     $row->date = \Carbon\Carbon::parse($row->date)
+        ->setTimezone($userTimezone)
+        ->format('Y-m-d H:i:s');
 }
     // ✅ Return response
     return [
