@@ -384,22 +384,29 @@ if ($request->auth->level > 5) {
     $orderBy = $request->get('orderBy', 'users.extension');
 
     // prevent SQL injection in orderBy
-    $allowedOrderColumns = ['users.extension', 'users.first_name', 'users.email', 'users.created_at'];
+    $allowedOrderColumns = [
+        'users.extension',
+        'users.first_name',
+        'users.email',
+        'users.created_at'
+    ];
+
     if (!in_array($orderBy, $allowedOrderColumns)) {
         $orderBy = 'users.extension';
     }
 
-    // ---------- COUNT ----------
+    /*
+    |--------------------------------------------------------------------------
+    | COUNT QUERY
+    |--------------------------------------------------------------------------
+    */
     $countSql = "
         SELECT COUNT(*) AS total
         FROM users
         WHERE users.base_parent_id = ?
         AND users.is_deleted = ?
         AND users.status = ?
-        AND (
-            users.user_level < 9
-            OR users.id = ?
-        )
+        AND users.user_level < 9
         $searchSql
     ";
 
@@ -407,30 +414,31 @@ if ($request->auth->level > 5) {
         $parentId,
         $isDeleted,
         $status,
-        $request->auth->id,
     ];
 
     $countBindings = array_merge($countBindings, $searchBindings);
 
     $countResult = DB::connection('master')->selectOne($countSql, $countBindings);
-
     $totalRows = $countResult->total ?? 0;
 
-    // ---------- DATA ----------
+
+    /*
+    |--------------------------------------------------------------------------
+    | DATA QUERY
+    |--------------------------------------------------------------------------
+    */
     $sql = "
-        SELECT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
+        SELECT users.*, 
+               user_extensions.ipaddr, 
+               user_extensions.fullcontact, 
+               user_extensions.secret
         FROM users
-        LEFT JOIN user_extensions ON user_extensions.name = users.extension
+        LEFT JOIN user_extensions 
+            ON user_extensions.name = users.extension
         WHERE users.base_parent_id = ?
         AND users.is_deleted = ?
-        AND (
-            users.status = ?
-            OR users.id = ?
-        )
-        AND (
-            users.user_level < 9
-            OR users.id = ?
-        )
+        AND users.status = ?
+        AND users.user_level < 9
         $searchSql
         ORDER BY {$orderBy}
     ";
@@ -439,12 +447,11 @@ if ($request->auth->level > 5) {
         $parentId,
         $isDeleted,
         $status,
-        $request->auth->id,
-        $request->auth->id,
     ];
 
     $dataBindings = array_merge($dataBindings, $searchBindings);
 
+    // Pagination
     if ($request->has(['start', 'limit'])) {
         $sql .= " LIMIT ?, ?";
         $dataBindings[] = (int) $request->input('start');
