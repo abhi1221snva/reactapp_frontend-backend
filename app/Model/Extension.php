@@ -304,10 +304,7 @@ public function extensionDetail(Request $request, int $extension_id = null)
         $countSql = "
             SELECT COUNT(*) AS total
             FROM users
-            WHERE (
-                users.id IN (SELECT user_id FROM permissions WHERE client_id = ?)
-                OR users.id = ?
-            )
+          WHERE users.base_parent_id = ?
             AND users.is_deleted = ?
             AND users.status = ?
             AND users.base_parent_id = ?
