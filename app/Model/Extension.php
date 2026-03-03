@@ -383,7 +383,6 @@ if ($request->auth->level > 5) {
 
     $orderBy = $request->get('orderBy', 'users.extension');
 
-    // prevent SQL injection in orderBy
     $allowedOrderColumns = [
         'users.extension',
         'users.first_name',
@@ -406,7 +405,10 @@ if ($request->auth->level > 5) {
         WHERE users.base_parent_id = ?
         AND users.is_deleted = ?
         AND users.status = ?
-        AND users.user_level < 9
+        AND (
+            users.user_level < 9
+            OR users.id = ?
+        )
         $searchSql
     ";
 
@@ -414,6 +416,7 @@ if ($request->auth->level > 5) {
         $parentId,
         $isDeleted,
         $status,
+        $request->auth->id,
     ];
 
     $countBindings = array_merge($countBindings, $searchBindings);
@@ -438,7 +441,10 @@ if ($request->auth->level > 5) {
         WHERE users.base_parent_id = ?
         AND users.is_deleted = ?
         AND users.status = ?
-        AND users.user_level < 9
+        AND (
+            users.user_level < 9
+            OR users.id = ?
+        )
         $searchSql
         ORDER BY {$orderBy}
     ";
@@ -447,11 +453,11 @@ if ($request->auth->level > 5) {
         $parentId,
         $isDeleted,
         $status,
+        $request->auth->id,
     ];
 
     $dataBindings = array_merge($dataBindings, $searchBindings);
 
-    // Pagination
     if ($request->has(['start', 'limit'])) {
         $sql .= " LIMIT ?, ?";
         $dataBindings[] = (int) $request->input('start');
