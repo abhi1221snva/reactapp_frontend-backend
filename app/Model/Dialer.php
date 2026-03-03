@@ -575,17 +575,44 @@ if (json_last_error() !== JSON_ERROR_NONE) {
             $end   = $plan['end'] . ':00';
 
             // Normal shift
-            if ($start <= $end) {
-                if ($now_timezone_time >= $start && $now_timezone_time <= $end) {
-                    $filteredCampaign[] = $row;
-                }
-            }
-    // Overnight shift (e.g. 22:00 → 06:00)
-        else {
-            if ($now_timezone_time >= $start || $now_timezone_time <= $end) {
-                $filteredCampaign[] = $row;
-            }
-        }
+    //         if ($start <= $end) {
+    //             if ($now_timezone_time >= $start && $now_timezone_time <= $end) {
+    //                 $filteredCampaign[] = $row;
+    //             }
+    //         }
+    // // Overnight shift (e.g. 22:00 → 06:00)
+    //     else {
+    //         if ($now_timezone_time >= $start || $now_timezone_time <= $end) {
+    //             $filteredCampaign[] = $row;
+    //         }
+    //     }
+    //shikha code
+       // ✅ Check time first
+    $isTimeValid = false;
+
+    if ($start <= $end) {
+        $isTimeValid = ($now_timezone_time >= $start && $now_timezone_time <= $end);
+    } else {
+        $isTimeValid = ($now_timezone_time >= $start || $now_timezone_time <= $end);
+    }
+
+    if (!$isTimeValid) {
+        continue;
+    }
+
+    // ✅ THEN check if campaign has list
+    $hasList = DB::connection($connection)
+        ->table('campaign_list')
+        ->where('campaign_id', $row->id)
+        ->where('is_deleted', 0)
+        ->exists();
+
+    if (!$hasList) {
+        continue;
+    }
+
+    // ✅ Only push once
+    $filteredCampaign[] = $row;
 }
 
 $campaign = $filteredCampaign;

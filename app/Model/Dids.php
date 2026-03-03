@@ -665,7 +665,7 @@ public function getList($request)
 
         try {
 
-   
+            $connection = 'mysql_' . $request->auth->parent_id;
              $twilio = DB::connection($connection)
     ->table('sms_providers')
     ->where('provider', 'twilio')
@@ -676,7 +676,7 @@ public function getList($request)
 
     if ($twilio && !empty($twilio->twilio_trunk_id)) {
 
-        $client = new Client($twilio->auth_id, $twilio->api_key);
+        $client = new TwilioClient($twilio->auth_id, $twilio->api_key);
 
         $trunkSid = $twilio->twilio_trunk_id;
 

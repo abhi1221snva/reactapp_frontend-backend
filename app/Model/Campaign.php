@@ -477,7 +477,60 @@ public function updateCampaign($request)
         $cmpId = $request->input('campaign_id');
         $date_time = date('Y-m-d H:i:s');
         $data['id'] = $cmpId;
+        $status = $request->input('status');
+if ($status == 1) {
 
+    $connection = 'mysql_' . $request->auth->parent_id;
+
+    $sqlLists = "
+        SELECT list_id
+        FROM campaign_list
+        WHERE campaign_id = :campaign_id
+          AND status = 1
+          AND is_deleted = 0
+    ";
+
+    $lists = DB::connection($connection)->select($sqlLists, [
+        'campaign_id' => $cmpId
+    ]);
+
+    $listIds = array_map(fn($l) => $l->list_id, $lists);
+
+    $totalLeads = 0;
+    $dialedLeads = 0;
+
+    if (!empty($listIds)) {
+
+        $listIdsStr = implode(',', $listIds);
+
+        $total = DB::connection($connection)->selectOne("
+            SELECT SUM(lead_count) AS total
+            FROM list
+            WHERE id IN ($listIdsStr)
+        ");
+
+        $totalLeads = $total->total ?? 0;
+
+        $dialed = DB::connection($connection)->selectOne("
+            SELECT COUNT(1) AS total
+            FROM lead_report
+            WHERE campaign_id = :campaign_id
+              AND list_id IN ($listIdsStr)
+        ", [
+            'campaign_id' => $cmpId
+        ]);
+
+        $dialedLeads = $dialed->total ?? 0;
+    }
+
+    if ($totalLeads > 0 && $dialedLeads >= $totalLeads) {
+        return [
+            'success' => false,
+            'message' => 'Campaign cannot be activated. All leads are already dialed. Please add more leads.',
+            'status'  => 422
+        ];
+    }
+}
         DB::connection('mysql_' . $request->auth->parent_id)
             ->update(
                 "UPDATE {$this->table} 
