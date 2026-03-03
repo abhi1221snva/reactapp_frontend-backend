@@ -404,9 +404,8 @@ if ($request->auth->level > 5) {
         FROM users
         WHERE users.base_parent_id = ?
         AND users.is_deleted = ?
-        AND users.status = ?
         AND (
-            users.user_level < 9
+            (users.status = ? AND users.user_level < 9)
             OR users.id = ?
         )
         $searchSql
@@ -440,9 +439,8 @@ if ($request->auth->level > 5) {
             ON user_extensions.name = users.extension
         WHERE users.base_parent_id = ?
         AND users.is_deleted = ?
-        AND users.status = ?
         AND (
-            users.user_level < 9
+            (users.status = ? AND users.user_level < 9)
             OR users.id = ?
         )
         $searchSql
