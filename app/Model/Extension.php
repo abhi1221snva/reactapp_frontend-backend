@@ -419,14 +419,14 @@ if ($request->auth->level > 5) {
 
     // ================= EXECUTE =================
     $records = DB::connection('master')->select($sql, $dataBindings);
-
-    foreach ($records as $row) {
-        if ($row->id == $request->auth->id) {
-            $response[0] = $row;
-        } else {
-            $response[] = $row;
-        }
-    }
+$response = $records;
+    // foreach ($records as $row) {
+    //     if ($row->id == $request->auth->id) {
+    //         $response[0] = $row;
+    //     } else {
+    //         $response[] = $row;
+    //     }
+    // }
 
     return !empty($response)
         ? [
