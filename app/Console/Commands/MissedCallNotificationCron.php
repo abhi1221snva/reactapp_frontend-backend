@@ -66,9 +66,12 @@ class MissedCallNotificationCron extends Command
 
                     if (!empty($columns)) {
                         $implode = implode(',', $columns);
-                        // Quote inbound_number for SQL safety
+                        // Match numbers with or without '+' prefix for robustness
+                        $num1 = ltrim($inbound_number, '+');
+                        $num2 = '+' . $num1;
+                        
                         $listData = DB::connection('mysql_' . $parent_id)
-                            ->selectOne("select id from list_data where '" . $inbound_number . "' IN(" . $implode . ")");
+                            ->selectOne("select id from list_data where '{$num1}' IN({$implode}) OR '{$num2}' IN({$implode})");
                         if ($listData) {
                             $lead_id = $listData->id;
                         }

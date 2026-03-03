@@ -37,13 +37,17 @@ class PusherService
             return;
         }
 
-        $channel = 'dashboard-' . $parentId;
+        // Determine channel and event prefix based on type
+        $isSms = (isset($data['type']) && $data['type'] === 'sms') || (isset($data['module']) && $data['module'] === 'sms');
+        $prefix = $isSms ? 'sms-' : 'dashboard-';
+
+        $channel = $prefix . $parentId;
 
         // Determine event name based on UUID availability
         $uuid = $request->pusher_uuid 
             ?? ($request->auth->pusher_uuid ?? ($request->get('pusher_uuid') ?? null));
             
-        $event = $uuid ? 'dashboard-notification' . $uuid : 'dashboard-notification';
+        $event = $uuid ? $prefix . 'notification' . $uuid : $prefix . 'notification';
 
         // cURL Implementation
         $body = json_encode([
