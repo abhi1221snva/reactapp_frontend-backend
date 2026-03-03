@@ -238,7 +238,7 @@ public function show(Request $request, $id)
         'subject' => $email->subject,
         'body' => $email->body,
         'type' => $email->folder,
-        'attachments' => $email->attachments ?? [],
+        'attachments' => $this->normalizeEmailArray($email->attachments),
         'created_at' => gmdate('c', strtotime($email->created_at))
     ]);
 }
