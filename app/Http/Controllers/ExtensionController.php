@@ -15,6 +15,10 @@ use Illuminate\Support\Facades\Log;
 
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\DB;
 
 class ExtensionController extends Controller
 {
@@ -798,8 +802,221 @@ class ExtensionController extends Controller
      *     )
      * )
      */
-    function saveNewExtension()
+    function saveNewExtension(Request $request)
     {
+/**
+     * STEP 1 — Easify validation only (MANDATORY)
+     */
+    Log::info('Easify VALIDATION API request started', ['email' => $request->email]);
+    $loggedInUser = $request->auth; // or $request->auth if you use custom auth
+
+    $easifyUserToken = $loggedInUser->easify_user_uuid;
+    $easifyAppToken =env('PHONIFY_APP_TOKEN');
+    Log::info('Easify easifyUserToken', ['easifyUserToken' => $easifyUserToken]);
+    //echo $easifyUserToken;
+    //echo $easifyAppToken;
+
+    if (empty($loggedInUser?->easify_user_uuid)) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Easify user token not found for logged-in user'
+        ], 403);
+    }
+    
+    $validate = Http::withHeaders([
+        'X-Application-Token' => env('PHONIFY_APP_TOKEN'),
+        'X-Easify-User-Token' => $easifyUserToken,
+        'Accept' => 'application/json', // Ensure JSON response
+    ])->post('https://easify-auth.on-forge.com/api/users/create', [
+        'email' => $request->email,
+        'password' => $request->password,
+        'first_name' => $request->first_name,
+        'last_name' => $request->last_name,
+        'phone' => $request->phone,
+        'only_validate' => true,
+    ]);
+
+    // Log validation response safely
+    Log::info('Easify VALIDATION API response', [
+        'status' => $validate->status(),
+        'body' => $validate->body() ?: 'empty', // raw body for debugging
+        'json' => $validate->json() ?: 'null', // decoded JSON, null-safe
+    ]);
+
+    if (!$validate->successful()) {
+        return response()->json($validate->json(), $validate->status());
+    }
+        $call_forward = $this->request->call_forward;
+        $twinning = $this->request->twinning;
+        $follow_me = $this->request->follow_me;
+        $country_code = $this->request->country_code;
+
+        $rules = [
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'string|min:1|max:255',
+            'email' => 'required|email|unique:master.users',
+            'password' => 'required|string|min:4',
+            'profile_pic' => ["sometimes", "required", "string", "min:1", "regex:/^.+\.(jpg|png)$/"],
+            'extension' => 'required|int|min:1000|max:9999',
+            'rpm' => 'sometimes|required|string|min:1|max:100',
+            'vm_pin' => 'sometimes|required|int',
+            'voicemail' => 'sometimes|required|int',
+            'voicemail_greeting' => 'sometimes|required|string|min:1|max:255',
+            'asterisk_server_id' => 'required|int',
+            'voicemail_send_to_email' => 'sometimes|required|int',
+            'follow_me' => 'sometimes|required|int',
+            'call_forward' => 'sometimes|required|int',
+            'dialpad' => 'sometimes|required|string|min:1|max:100',
+            'agent_voice_id' => 'sometimes|required|string|min:1|max:255',
+            'cli_setting' => 'sometimes|required|int',
+            'cli' => 'required_if:cli_setting,1|min:1|string|max:14',
+            'local_ip' => 'sometimes|required|ip',
+            'public_ip' => 'sometimes|required|ip',
+            'phone_status' => 'sometimes|required|string|min:1|max:255',
+            'status' => 'sometimes|required|int',
+            'is_deleted' => 'sometimes|required|int',
+            'allowed_ip' => 'sometimes|required|ip',
+            'twinning' => 'sometimes|required|string|min:1|max:3',
+            'directory_name' => 'sometimes|required|string|min:1|max:50',
+            'extension_type' => 'sometimes|required|string|min:1|max:3',
+            'vm_drop' => 'sometimes|required|int',
+            'vm_drop_location' => 'required_if:vm_drop,1|min:1|string|max:255',
+            'timezone' => 'required',
+            'mobile' => Rule::requiredIf(function () use ($call_forward, $twinning, $follow_me) {
+                return ($call_forward == 1 || $twinning == 1 || $follow_me == 1);
+            }),
+        ];
+
+        $messages = [
+            'email.required' => 'The email field is mandatory.',
+            'email.email' => 'Please enter a valid email address.',
+            'email.unique' => 'This email is already registered. Please use another.',
+            'extension.required' => "Extention already assigned"
+        ];
+
+        try {
+            Validator::make($request->all(), $rules, $messages)->validate();
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'errors' => $e->errors()
+            ], 422);
+        }
+    
+        Log::info('Request data before saving extension', $request->all());
+        Log::info('Easify CREATE API request started', [
+            'email' => $request->email
+        ]);
+//   /**
+//      * STEP 4 — Easify user creation (MANDATORY)
+//      */
+//     //Log::info('Easify CREATE API request started', ['email' => $request->email]);
+
+//     $create = Http::withHeaders([
+//         'X-Application-Token' => env('PHONIFY_APP_TOKEN'),
+//         'X-Easify-User-Token' => $easifyUserToken,
+//         'Accept' => 'application/json', // Ensure JSON response
+//     ])->post('https://easify-auth.on-forge.com/api/users/create', [
+//         'email' => $request->email,
+//         'password' => $request->password,
+//         'first_name' => $request->first_name,
+//         'last_name' => $request->last_name,
+//         'phone' => $request->phone,
+//         'only_validate' => false,
+//     ]);
+
+//     // Log CREATE API response safely
+//     Log::info('Easify CREATE API response', [
+//         'status' => $create->status(),
+//         'body' => $create->body() ?: 'empty',
+//         'json' => $create->json() ?: 'null',
+//     ]);
+
+//     if (!$create->successful()) {
+//         // OPTIONAL: rollback local extension if needed
+//         return response()->json($create->json(), $create->status());
+//     }
+    /**
+     * STEP 5 — Attach Easify UUID (CRITICAL)
+     */
+    $request->merge([
+        'user_type' => 'subuser',
+        'owner_id' => $request->auth->parent_id,
+    ]);
+    $extensionKey = $request->auth->parent_id . $request->extension;
+
+    $exists = DB::table('user_extensions')
+        ->where('name', $extensionKey)
+        ->exists();
+
+    if ($exists) {
+        return response()->json([
+            'success' => false,
+            'message' => 'This extension is already assigned for this account.'
+        ], 422);
+    }
+
+    $response = $this->model->newExtensionSave($this->request);
+    Log::info('respoinse reached',['response'=>$response]);
+/**
+ * STEP 5 — Easify user creation (MANDATORY)
+ */
+// 👇 Get your local created user ID
+$localUserId = $response['data']['id'] ?? null;
+if (!$localUserId) {
+    return response()->json([
+        'success' => false,
+        'message' => 'Local user creation failed.'
+    ], 500);
+}
+
+$create = Http::withHeaders([
+    'X-Application-Token' => env('PHONIFY_APP_TOKEN'),
+    'X-Easify-User-Token' => $easifyUserToken,
+    'Accept' => 'application/json',
+])->post('https://easify-auth.on-forge.com/api/users/create', [
+    'email' => $request->email,
+    'password' => $request->password,
+    'first_name' => $request->first_name,
+    'last_name' => $request->last_name,
+    'phone' => $request->phone,
+    'application_user_id' => $localUserId, // ✅ ADDED HERE
+    'only_validate' => false,
+]);
+
+Log::info('Easify CREATE API response', [
+    'status' => $create->status(),
+    'body' => $create->body() ?: 'empty',
+    'json' => $create->json() ?: 'null',
+]);
+
+if (!$create->successful()) {
+    // Optional: rollback local user here
+    return response()->json($create->json(), $create->status());
+}
+
+
+/**
+ * STEP 6 — Update Easify UUID in Local DB
+ */
+$user = User::find($localUserId);
+$user->easify_user_uuid = $create->json('data.uuid');
+$user->save();
+    // return response()->json([
+    //     'status' => $validate->status(),
+    //     'response' => $validate->json()
+    // ]);
+    
+
+        return response()->json([
+            'success' => true,
+            'data' => $user,
+            //'data'=> $create->json(),  // full Easify response
+        ]);
+    }
+    function saveNewExtensionlatest()
+    {
+
         $call_forward = $this->request->call_forward;
         $twinning = $this->request->twinning;
         $follow_me = $this->request->follow_me;
@@ -864,51 +1081,6 @@ class ExtensionController extends Controller
             'success' => true,
             'data' => $response
         ]);
-    }
-    function saveNewExtension_old()
-    {
-        $call_forward = $this->request->call_forward;
-        $twinning = $this->request->twinning;
-        $follow_me = $this->request->follow_me;
-        $country_code = $this->request->country_code;
-        $this->validate($this->request, [
-            'first_name' => 'required|string|max:255',
-            'last_name' => 'string|min:1|max:255',
-            'email' => 'required|email|unique:master.users',
-            'password' => 'required|string|min:4',
-            'profile_pic' => ["sometimes", "required", "string", "min:1", "regex:/^.+\.(jpg|png)$/"],
-            'extension' => 'required|int|min:1000|max:9999',
-            'rpm' => 'sometimes|required|string|min:1|max:100',
-            'vm_pin' => 'sometimes|required|int',
-            'voicemail' => 'sometimes|required|int',
-            'voicemail_greeting' => 'sometimes|required|string|min:1|max:255',
-            'asterisk_server_id' => 'required|int',
-            'voicemail_send_to_email' => 'sometimes|required|int',
-            'follow_me' => 'sometimes|required|int',
-            'call_forward' => 'sometimes|required|int',
-            'dialpad' => 'sometimes|required|string|min:1|max:100',
-            'agent_voice_id' => 'sometimes|required|string|min:1|max:255',
-            'cli_setting' => 'sometimes|required|int',
-            'cli' => 'required_if:cli_setting,1|min:1|string|max:14',
-            'local_ip' => 'sometimes|required|ip',
-            'public_ip' => 'sometimes|required|ip',
-            'phone_status' => 'sometimes|required|string|min:1|max:255',
-            'status' => 'sometimes|required|int',
-            'is_deleted' => 'sometimes|required|int',
-            'allowed_ip' => 'sometimes|required|ip',
-            'twinning' => 'sometimes|required|string|min:1|max:3',
-            'directory_name' => 'sometimes|required|string|min:1|max:50',
-            'extension_type' => 'sometimes|required|string|min:1|max:3',
-            'vm_drop' => 'sometimes|required|int',
-            'vm_drop_location' => 'required_if:vm_drop,1|min:1|string|max:255',
-            'timezone' => 'required',
-            'mobile' => Rule::requiredIf(function () use ($call_forward, $twinning, $follow_me) {
-                return ($call_forward == 1 || $twinning == 1 || $follow_me == 1);
-            })
-        ]);
-        Log::info('Request data:', $this->request->all());
-        $response = $this->model->newExtensionSave($this->request);
-        return response()->json($response);
     }
 
     /**
@@ -1112,4 +1284,111 @@ class ExtensionController extends Controller
         // Return the success response with the roles array
         return $this->successResponse("Role", $rolesArray);
     }
+ 
+
+    // private function validateRequestTokens(Request $request)
+    // {
+    //     $appToken = $request->header('X-Application-Token');
+    //     $userToken = $request->header('X-Easify-User-Token');
+    
+    //     /**
+    //      * ✅ Validate Application Token
+    //      */
+    //     if (!$appToken || $appToken !== config('services.phonify.app_token')) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Invalid application token.'
+    //         ], 401);
+    //     }
+    
+    //     /**
+    //      * ✅ Validate Main User Token
+    //      */
+    //     if (!$userToken) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Unauthenticated.'
+    //         ], 401);
+    //     }
+    
+    //     $mainUser = \DB::table('master.users')
+    //         ->where('easify_user_uuid', $userToken)
+    //         ->first();
+    
+    //     if (!$mainUser) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Unauthenticated.'
+    //         ], 401);
+    //     }
+    
+    //     // Attach main user to request for later use
+    //     $request->merge(['main_user_id' => $mainUser->id]);
+    //    // 🔑 Attach owner id for later use
+
+    //     return null;
+    // }
+    
+
+    
+    // public function validateSubUserRequest(Request $request)
+    // {
+    //     $rules = [
+    //         'email' => 'required|email|max:255|unique:master.users,email',
+    //         'password' => 'required|string|min:8',
+    //         'first_name' => 'required|string|max:255',
+    //         'last_name' => 'required|string|max:255',
+    //         'phone' => 'nullable|string|max:20|regex:/^\+\d{8,20}$/',
+    //     ];
+        
+    //     $messages = [
+    //         'email.unique' => 'Email Already in Use',
+    //         'phone.regex' => 'Invalid Phone Number',
+    //     ];
+        
+    //     try {
+    //         Validator::make($request->all(), $rules, $messages)->validate();
+    //     } catch (ValidationException $e) {
+    //         // Get the first error message to return in 'message'
+    //         $firstError = collect($e->errors())->flatten()->first();
+        
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => $firstError,
+    //         ], 422);
+    //     }
+    //     if ($request->has('main_user_id')) {
+
+    //         $maxUsers =  5; // or from plan table
+    
+    //         $currentCount = \DB::table('master.users')
+    //             ->where('owner_id', $request->main_user_id)
+    //             ->where('user_type', 'subuser')
+    //             ->count();
+    
+    //             if ($currentCount >= $maxUsers) {
+    //                 throw new \Illuminate\Validation\ValidationException(
+    //                     Validator::make([], []),
+    //                     response()->json([
+    //                         'success' => false,
+    //                         'message' => 'You have reached the maximum number of users. Please upgrade your plan to add more users.'
+    //                     ], 422)
+    //                 );
+    //             }
+                
+    //     }
+    //     if ($request->only_validate === true) {
+    //         return response()->json([
+    //             'success' => true,
+    //             'message' => 'User creation validated successfully',
+    //             'data' => [],
+    //         ], 200);
+    //     }
+    
+    //     return null;
+    // }
+    
+    
 }
+
+

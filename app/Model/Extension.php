@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Hash;
 use App\Model\Master\Client;
+use Illuminate\Support\Facades\Http;
 
 
 class Extension extends Model
@@ -296,88 +297,88 @@ public function extensionDetail(Request $request, int $extension_id = null)
     }
 
     // ================= ADMIN =================
-    if ($request->auth->level > 5) {
+ // ================= ADMIN =================
+if ($request->auth->level > 5) {
 
-        $orderBy = $request->get('orderBy', 'users.extension');
+    $orderBy = $request->get('orderBy', 'users.extension');
 
-        // ---------- COUNT (optimized with LEFT JOIN instead of subquery) ----------
-        $countSql = "
-            SELECT COUNT(DISTINCT users.id) AS total
-            FROM users
-            LEFT JOIN permissions p ON p.user_id = users.id AND p.client_id = ?
-            WHERE (
-                p.user_id IS NOT NULL
-                OR users.id = ?
-            )
-            AND users.is_deleted = ?
-            AND users.status = ?
-            AND users.base_parent_id = ?
-            AND (
-                users.user_level < 9
-                OR users.id = ?
-            )
-            $searchSql
-        ";
+    // Prevent SQL injection in orderBy
+    $allowedOrderColumns = [
+        'users.extension',
+        'users.first_name',
+        'users.email',
+        'users.created_at'
+    ];
 
-        $countBindings = [
-            $parentId,              // permissions.client_id
-            $request->auth->id,     // users.id
-            $isDeleted,             // users.is_deleted
-            $status,                // users.status
-            $parentId,              // users.base_parent_id
-            $request->auth->id,     // users.id
-        ];
-
-        $countResult = DB::connection('master')->selectOne(
-            $countSql,
-            array_merge($countBindings, $searchBindings)
-        );
-
-        $totalRows = $countResult->total ?? 0;
-
-        // ---------- DATA (optimized with LEFT JOIN instead of subquery) ----------
-        $sql = "
-            SELECT DISTINCT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
-            FROM users
-            LEFT JOIN permissions p ON p.user_id = users.id AND p.client_id = ?
-            LEFT JOIN user_extensions ON user_extensions.name = users.extension
-            WHERE (
-                p.user_id IS NOT NULL
-                OR users.id = ?
-            )
-            AND users.is_deleted = ?
-            AND (
-                users.status = ?
-                OR users.id = ?
-            )
-            AND users.base_parent_id = ?
-            AND (
-                users.user_level < 9
-                OR users.id = ?
-            )
-            $searchSql
-            ORDER BY {$orderBy}
-        ";
-
-        $dataBindings = [
-            $parentId,              // permissions.client_id
-            $request->auth->id,     // users.id
-            $isDeleted,             // users.is_deleted
-            $status,                // users.status
-            $request->auth->id,     // status bypass
-            $parentId,              // users.base_parent_id
-            $request->auth->id
-        ];
-
-        $dataBindings = array_merge($dataBindings, $searchBindings);
-
-        if ($request->has(['start', 'limit'])) {
-            $sql .= " LIMIT ?, ?";
-            $dataBindings[] = (int) $request->input('start');
-            $dataBindings[] = (int) $request->input('limit');
-        }
-
+    if (!in_array($orderBy, $allowedOrderColumns)) {
+        $orderBy = 'users.extension';
     }
+
+    // ---------- COUNT ----------
+    $countSql = "
+        SELECT COUNT(*) AS total
+        FROM users
+        WHERE users.base_parent_id = ?
+        AND users.is_deleted = 0
+        AND (
+            users.status = 0
+            OR users.id = ?
+        )
+        AND (
+            users.user_level < 9
+            OR users.id = ?
+        )
+        $searchSql
+    ";
+
+    $countBindings = [
+        $parentId,
+        $request->auth->id,
+        $request->auth->id
+    ];
+
+    $countBindings = array_merge($countBindings, $searchBindings);
+
+    $countResult = DB::connection('master')->selectOne(
+        $countSql,
+        $countBindings
+    );
+
+    $totalRows = $countResult->total ?? 0;
+
+    // ---------- DATA ----------
+    $sql = "
+        SELECT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
+        FROM users
+        LEFT JOIN user_extensions ON user_extensions.name = users.extension
+        WHERE users.base_parent_id = ?
+        AND users.is_deleted = 0
+        AND (
+            users.status = 0
+            OR users.id = ?
+        )
+        AND (
+            users.user_level < 9
+            OR users.id = ?
+        )
+        $searchSql
+        ORDER BY {$orderBy}
+    ";
+
+    $dataBindings = [
+        $parentId,
+        $request->auth->id,
+        $request->auth->id
+    ];
+
+    $dataBindings = array_merge($dataBindings, $searchBindings);
+
+    if ($request->has(['start', 'limit'])) {
+        $sql .= " LIMIT ?, ?";
+        $dataBindings[] = (int) $request->input('start');
+        $dataBindings[] = (int) $request->input('limit');
+    }
+}
     // ================= NON-ADMIN =================
     else {
 
@@ -419,14 +420,14 @@ public function extensionDetail(Request $request, int $extension_id = null)
 
     // ================= EXECUTE =================
     $records = DB::connection('master')->select($sql, $dataBindings);
-
-    foreach ($records as $row) {
-        if ($row->id == $request->auth->id) {
-            $response[0] = $row;
-        } else {
-            $response[] = $row;
-        }
-    }
+$response = $records;
+    // foreach ($records as $row) {
+    //     if ($row->id == $request->auth->id) {
+    //         $response[0] = $row;
+    //     } else {
+    //         $response[] = $row;
+    //     }
+    // }
 
     return !empty($response)
         ? [
@@ -652,17 +653,17 @@ public function extensionDetailList(Request $request, int $extension_id = null)
             ? ucfirst($packageName->name) . ' - ' . date('Y-m-d', strtotime($packageName->start_time)) . ' to ' . date('Y-m-d', strtotime($packageName->end_time))
             : null;
     } else {
-        $data['status'] = 0;
+        //$data['status'] = 0;
         $data['is_deleted'] = 0;
 
-        $where = "users.is_deleted = :is_deleted AND users.status = :status";
+        //$where = "users.is_deleted = :is_deleted AND users.status = :status";
+      $where = "users.is_deleted = :is_deleted AND users.status IN (0,1)";
+
         $bindings = $data;
-        $joinClause = "";
 
         if ($request->auth->level >= 7) {
             $bindings['parent_id'] = $request->auth->parent_id;
-            // Optimized: Use JOIN instead of subquery for better performance
-            $joinClause = "INNER JOIN permissions p ON p.user_id = users.id AND p.client_id = :parent_id";
+            $where .= " AND users.id IN (SELECT user_id FROM permissions WHERE client_id = :parent_id)";
         } else {
             $bindings['id'] = $request->auth->id;
             $where .= " AND users.parent_id = :parent_id AND users.id = :id";
@@ -671,11 +672,11 @@ public function extensionDetailList(Request $request, int $extension_id = null)
         // --- Generic search filter ---
         if ($request->filled('search')) {
             $search = '%' . $request->input('search') . '%';
-            $where .= "
+            $where .= " 
                 AND (
-                    users.extension LIKE :search_ext
-                    OR users.first_name LIKE :search_name
-                    OR users.last_name LIKE :search_last
+                    users.extension LIKE :search_ext 
+                    OR users.first_name LIKE :search_name 
+                    OR users.last_name LIKE :search_last 
                     OR users.email LIKE :search_email
                     OR CONCAT(users.first_name, ' ', users.last_name) LIKE :search_full
                 )";
@@ -718,16 +719,15 @@ public function extensionDetailList(Request $request, int $extension_id = null)
         $orderByKey = $request->get('orderBy', 'users.id');
         $orderBy = $allowedOrderBy[$orderByKey] ?? 'users.id';
 
-        // --- total count (optimized with JOIN) ---
-        $countSql = "SELECT COUNT(DISTINCT users.id) AS total FROM users $joinClause WHERE $where";
+        // --- total count ---
+        $countSql = "SELECT COUNT(*) AS total FROM users WHERE $where";
         $totalRow = DB::connection('master')->selectOne($countSql, $bindings);
         $total = (int) ($totalRow->total ?? 0);
 
-        // --- main query (optimized with JOIN) ---
-        $sqlBase = "SELECT DISTINCT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
+        // --- main query ---
+        $sqlBase = "SELECT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
                     FROM users
-                    $joinClause
-                    LEFT JOIN user_extensions ON user_extensions.name = users.extension
+                    LEFT JOIN user_extensions ON user_extensions.fullname = users.extension
                     WHERE $where
                     ORDER BY $orderBy DESC";
 
@@ -808,20 +808,10 @@ public function extensionDetailList(Request $request, int $extension_id = null)
             #if admin or above
             if ($request->auth->level >= 7) {
                 $orderBy = $request->has('orderBy') ? $request->get('orderBy') : "users.extension";
-                // Optimized: Use JOIN instead of subquery for better performance
-                $sql = "SELECT DISTINCT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
-                        FROM " . $this->table . "
-                        INNER JOIN permissions p ON p.user_id = users.id AND p.client_id = :parent_id
-                        LEFT JOIN user_extensions ON user_extensions.name = users.extension
-                        WHERE users.status = :status
-                        ORDER BY $orderBy";
+                $sql = "SELECT users.*,user_extensions.ipaddr , user_extensions.fullcontact,user_extensions.secret FROM " . $this->table . " left join user_extensions on user_extensions.name=users.extension WHERE users.id IN (SELECT user_id FROM permissions WHERE client_id = :parent_id) AND   users.status = :status order by $orderBy";
             } else {
                 $data['id'] = $request->auth->id;
-                $sql = "SELECT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
-                        FROM " . $this->table . "
-                        LEFT JOIN user_extensions ON user_extensions.name = users.extension
-                        WHERE users.parent_id = :parent_id AND users.id = :id AND users.status = :status
-                        ORDER BY users.extension";
+                $sql = "SELECT users.*,user_extensions.ipaddr , user_extensions.fullcontact,user_extensions.secret FROM " . $this->table . " left join user_extensions on user_extensions.name=users.extension WHERE users.parent_id = :parent_id AND users.id=:id AND   users.status = :status order by users.extension";
             }
             $record = DB::connection('master')->select($sql, $data);
             $response = (array)$record;
@@ -1264,9 +1254,87 @@ public function extensionDetailList(Request $request, int $extension_id = null)
 
             //$data['group_id']       = $request->input('group_id');
             // $query = "UPDATE ".$this->table." SET first_name = :first_name , last_name = :last_name , mobile = :mobile , follow_me = :follow_me , call_forward= :call_forward , voicemail= :voicemail , vm_pin= :vm_pin , voicemail_send_to_email= :voicemail_send_to_email, twinning= :twinning , asterisk_server_id= :asterisk_server_id , cli_setting= :cli_setting , cli =:cli, cnam =:cnam, dialpad= :dialpad WHERE id= :id ";
-            $query = "UPDATE " . $this->table . " SET extension_type = :extension_type , first_name = :first_name , last_name = :last_name , mobile = :mobile ,country_code=:country_code, follow_me = :follow_me , call_forward= :call_forward , voicemail= :voicemail , vm_pin= :vm_pin , voicemail_send_to_email= :voicemail_send_to_email, twinning= :twinning , cli_setting= :cli_setting , cli =:cli, cnam =:cnam, dialpad= :dialpad,dialpad_lastname=:dialpad_lastname,sms_setting_id=:sms_setting_id,receive_sms_on_email=:receive_sms_on_email,receive_sms_on_mobile=:receive_sms_on_mobile,ip_filtering=:ip_filtering,app_status=:app_status,enable_2fa=:enable_2fa,voip_configuration_id=:voip_configuration_id,timezone=:timezone  WHERE id= :id ";
+                $query = "UPDATE " . $this->table . " SET extension_type = :extension_type , first_name = :first_name , last_name = :last_name , mobile = :mobile ,country_code=:country_code, follow_me = :follow_me , call_forward= :call_forward , voicemail= :voicemail , vm_pin= :vm_pin , voicemail_send_to_email= :voicemail_send_to_email, twinning= :twinning , cli_setting= :cli_setting , cli =:cli, cnam =:cnam, dialpad= :dialpad,dialpad_lastname=:dialpad_lastname,sms_setting_id=:sms_setting_id,receive_sms_on_email=:receive_sms_on_email,receive_sms_on_mobile=:receive_sms_on_mobile,ip_filtering=:ip_filtering,app_status=:app_status,enable_2fa=:enable_2fa,voip_configuration_id=:voip_configuration_id,timezone=:timezone  WHERE id= :id ";
+       // Step 1: Find user based on request parameters
 
+if ($request->extension_id) {
+
+    // If extension_id exists → match with id
+    $userProfile = User::where('id', $request->extension_id)->first();
+
+} elseif ($request->uuid) {
+
+    // If only uuid exists → match with easify_user_uuid
+    $userProfile = User::where('easify_user_uuid', $request->uuid)->first();
+
+} else {
+
+    return [
+        'success' => false,
+        'message' => 'extension_id or uuid is required'
+    ];
+}
+
+
+// Step 2: Check if user exists
+if (!$userProfile) {
+    return [
+        'success' => false,
+        'message' => 'User not found'
+    ];
+}
+
+$authenticatedUser=User::where('id',$request->auth->id)->first();
+// Step 3: Get UUID for Easify API
+$easify_user_uuid = $authenticatedUser->easify_user_uuid;
+Log::info('reached easify_user_uuid',['easify_user_uuid'=>$easify_user_uuid]);
+
+$apiUrl = env('EASIFY_URL') . '/api/users/update';
+
+$payload = [
+    "id" => $request->extension_id,
+    "email" => $request->email,
+    "first_name" => $request->first_name,
+    "last_name" => $request->last_name,
+    "phone" => $request->mobile,
+    "only_validate" => true
+];
+
+$validateResponse = Http::withHeaders([
+    'X-Application-Token' => env('PHONIFY_APP_TOKEN'),
+    'X-Easify-User-Token' => $easify_user_uuid,
+    'Content-Type' => 'application/json'
+])->post($apiUrl, $payload);
+
+       Log::info('reached easifyresponse',['status' => $validateResponse->status(),
+'validateResponse'=>$validateResponse]);
+
+if (!$validateResponse->successful()) {
+    return [
+        'success' => false,
+        'message' => 'Easify validation failed',
+        'error' => $validateResponse->body()
+    ];
+}
             $update = DB::connection('master')->update($query, $data);
+                    if ($update) {
+
+                $payload["only_validate"] = false;
+
+                $updateResponse = Http::withHeaders([
+                    'X-Application-Token' => env('PHONIFY_APP_TOKEN'),
+                    'X-Easify-User-Token' => $easify_user_uuid,
+                    'Content-Type' => 'application/json'
+                ])->post($apiUrl, $payload);
+
+                Log::info('Easify Update Response', [
+                    'status' => $updateResponse->status(),
+                       'response' => $updateResponse->json(),
+
+                ]);
+                
+            }
+
             if (isset($request->group_id)) {
                 if (count($request->group_id) > 0) {
                     $sql = "SELECT extension, alt_extension FROM " . $this->table . "  WHERE id = :id";
@@ -1752,7 +1820,7 @@ public function checkExtension($request)
     // Add new extension
     public function newExtensionSave(Request $request)
     {
-        Log::info('reached', [$request->timezone]);
+        Log::info('reached', [$request->all()]);
 
         $intGeneratedAltExtension = '';
         $intGeneratedAppExtension = '';
@@ -1883,6 +1951,9 @@ public function checkExtension($request)
         $data['allow_google_authenticator'] = $request->allow_google_authenticator;
         $data['two_factor_authentication'] = $request->two_factor_authentication;
         $data['allow_mobile_login'] = $request->allow_mobile_login;
+        $data['easify_user_uuid'] = $request->input('easify_user_uuid');
+        $data['user_type'] = $request->input('user_type');
+        $data['owner_id'] = $request->input('owner_id');
 
         //generate affiliate links
         $unique_token = $this->generateCode();
@@ -1893,10 +1964,10 @@ public function checkExtension($request)
 
 
         $users_package['user_id'] = $user->id;
-        $users_package['client_package_id'] = $request->input('package_id');
+        // $users_package['client_package_id'] = $request->input('package_id');
 
-        $insertData = "UPDATE user_packages SET user_id= :user_id WHERE client_package_id=:client_package_id and user_id IS NULL LIMIT 1 ";
-        $record_ustext = DB::connection('mysql_' . $request->auth->parent_id)->select($insertData, $users_package);
+        // $insertData = "UPDATE user_packages SET user_id= :user_id WHERE client_package_id=:client_package_id and user_id IS NULL LIMIT 1 ";
+        // $record_ustext = DB::connection('mysql_' . $request->auth->parent_id)->select($insertData, $users_package);
 
 
 

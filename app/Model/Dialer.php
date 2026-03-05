@@ -16,6 +16,7 @@ use App\Services\TimezoneService;
 use App\Model\Master\AsteriskServer;
 use App\Exceptions\RenderableException;
 use App\Model\Client\Schedule;
+use App\Model\Master\Timezone;
 
 
 use DateTime;
@@ -30,13 +31,152 @@ class Dialer extends Model
      */
     protected $guarded = ['id'];
 
+
+    /**
+     * Smart Lead Selection with Timezone & Schedule Check
+     */
+    function addLeadToExtensionLiveOutboundAI(int $campaignId, int $hopperMode, int $extension, int $asteriskServerId, int $clientId, $weekPlan = null, $adminTimezone = null)
+    {
+        $response = ["status" => false, "code" => "NO_LEADS", "message" => "No leads in hopper for campaign", "data" => []];
+        $db = $clientId;
+
+        // Loop to find a VALID lead (Limit 50 tries to prevent infinite loops)
+        for ($i = 0; $i < 50; $i++) {
+            $lead = null;
+
+            // 1. Fetch Candidate Lead (Random/Linear)
+            if ($hopperMode == '2') {
+                // Random
+                $lead = DB::connection('mysql_' . $db)->selectOne(
+                    "SELECT * FROM lead_temp WHERE campaign_id = :campaign_id ORDER BY RAND()",
+                    ['campaign_id' => $campaignId]
+                );
+            } else {
+                // Linear - Use OFFSET to peek
+                $lead = DB::connection('mysql_' . $db)->selectOne(
+                    "SELECT * FROM lead_temp WHERE campaign_id = :campaign_id LIMIT 1 OFFSET :offset",
+                    ['campaign_id' => $campaignId, 'offset' => $i]
+                );
+            }
+
+            if (empty($lead)) {
+                // End of Hopper
+                return $response; 
+            }
+            $lead = (array)$lead;
+
+            // 2. Determine Timezone
+            $leadTimezone = $adminTimezone; // Default
+            
+            // Fetch Phone Number dynamically
+            $phoneNumber = null;
+            if (!empty($lead['list_id']) && !empty($lead['lead_id'])) {
+                 // Get the column name for phone number
+                 $listHeader = DB::connection('mysql_' . $db)->table('list_header')
+                     ->where('list_id', $lead['list_id'])
+                     ->where('is_dialing', 1)
+                     ->select('column_name')
+                     ->first();
+                 
+                 if ($listHeader && !empty($listHeader->column_name)) {
+                     $colName = $listHeader->column_name;
+                     // Get the actual data
+                     $listData = DB::connection('mysql_' . $db)->table('list_data')
+                         ->where('id', $lead['lead_id'])
+                         ->select($colName)
+                         ->first();
+                     
+                     if ($listData && isset($listData->$colName)) {
+                         $phoneNumber = $listData->$colName;
+                     }
+                 }
+            }
+
+            // Fallback checking (if lead_temp has phone_number but valid? Original code checked lead['phone_number']?? no, it didn't.)
+            // Assuming $phoneNumber is now found.
+
+            if (!empty($phoneNumber)) {
+                $phone = preg_replace('/[^0-9]/', '', $phoneNumber);
+                if (strlen($phone) >= 10) {
+                     $cleanPhone = substr($phone, -10); // Last 10 digits
+                     $areaCode = substr($cleanPhone, 0, 3);
+                     
+                     $tzRow = Timezone::where('areacode', $areaCode)->first();
+                     if ($tzRow && !empty($tzRow->timezone)) {
+                         $leadTimezone = $tzRow->timezone;
+                     }
+                }
+            }
+
+            // 3. Check Schedule
+            if ($this->isTimeAllowed($leadTimezone, $weekPlan)) {
+                // ✅ Valid Lead Found!
+                
+                // DELETE specific lead from hopper
+                DB::connection('mysql_' . $db)->delete(
+                    "DELETE FROM lead_temp WHERE campaign_id = :campaign_id AND lead_id = :lead_id",
+                    [
+                        'campaign_id' => $campaignId,
+                        'lead_id' => $lead['lead_id']
+                    ]
+                );
+                
+                // Return Logic
+                $campaignType = DB::connection('mysql_' . $db)->selectOne(
+                    "SELECT dial_mode FROM campaign WHERE id = :id",
+                    ['id' => $campaignId]
+                );
+
+                return $lead;
+            }
+            
+            // 4. If invalid, loop continues to next $i
+        }
+        
+        return $response; // No valid leads found in batch
+    }
+
+    /**
+     * Helper to check if current time in $timezone is allowed by $weekPlan
+     */
+    private function isTimeAllowed($timezone, $weekPlan)
+    {
+        if (empty($weekPlan)) return true; // No schedule = 24/7 allowed
+        
+        try {
+            if (empty($timezone)) $timezone = 'US/Eastern';
+            $now = new DateTime("now", new DateTimeZone($timezone));
+            $currentDay = strtolower($now->format('l')); // monday, tuesday...
+            $currentTime = $now->format('H:i:s'); // 14:30:00
+
+            foreach ($weekPlan as $dayKey => $times) {
+                if (strtolower($dayKey) === $currentDay) {
+                    if (empty($times['start_time']) || empty($times['end_time'])) return false; // Closed
+                    
+                    $start = $times['start_time'];
+                    $end = $times['end_time'];
+                    
+                    if ($currentTime >= $start && $currentTime <= $end) {
+                        return true;
+                    }
+                    return false; // Wrong time
+                }
+            }
+            return false; // Day not found
+            
+        } catch (\Exception $e) {
+            Log::error("Dialer Timezone Check Failed: " . $e->getMessage());
+            return true; // Fail Safe
+        }
+    }
+
     /*
      *Fetch campaign for agent
      *@param object $request
      *@return array
      */
 
-    function addLeadToExtensionLiveOutboundAI(int $campaignId, int $hopperMode, int $extension, int $asteriskServerId, int $clientId)
+    function addLeadToExtensionLiveOutboundAI_bkp(int $campaignId, int $hopperMode, int $extension, int $asteriskServerId, int $clientId)
     {
         $response = ["status" => false, "code" => "NO_LEADS", "message" => "No leads in hopper for campaign", "data" => []];
         $db = $clientId;
@@ -369,42 +509,43 @@ class Dialer extends Model
                 ]);
                 $filteredCampaign = [];
             foreach ($campaign as $row) {
-// 1️⃣ Dialed leads
-$dialed = DB::connection($connection)->selectOne(
-    "SELECT COUNT(1) AS total
-     FROM lead_report
-     WHERE campaign_id = :campaign_id",
-    ['campaign_id' => $row->id]
-);
+// $dialed = DB::connection($connection)->selectOne(
+//     "SELECT COUNT(1) AS total
+//      FROM lead_report
+//      WHERE campaign_id = :campaign_id",
+//     ['campaign_id' => $row->id]
+// );
 
-$dialedLeads = $dialed->total ?? 0;
+// $dialedLeads = $dialed->total ?? 0;
+// Log::info('dialed leads',['dialedLeads'=>$dialedLeads]);
+// $total = DB::connection($connection)->selectOne(
+//     "SELECT COUNT(1) AS total
+//      FROM list_data
+//      WHERE list_id IN (
+//          SELECT list_id
+//          FROM campaign_list
+//          WHERE campaign_id = :campaign_id
+//            AND status = 1
+//            AND is_deleted = 0
+//      )",
+//     ['campaign_id' => $row->id]
+// );
 
+// $totalLeads = $total->total ?? 0;
+// Log::info('total leads',['totalLeads'=>$totalLeads]);
 
-// 2️⃣ Total leads
-$total = DB::connection($connection)->selectOne(
-    "SELECT COUNT(1) AS total
-     FROM list_data
-     WHERE list_id IN (
-         SELECT list_id FROM campaign_list WHERE campaign_id = :campaign_id
-     )",
-    ['campaign_id' => $row->id]
-);
+// if ($totalLeads > 0 && $dialedLeads >= $totalLeads) {
 
-$totalLeads = $total->total ?? 0;
+//     DB::connection($connection)->update(
+//         "UPDATE campaign
+//          SET status = 0
+//          WHERE id = :campaign_id",
+//         ['campaign_id' => $row->id]
+//     );
 
+//     continue;
+// }
 
-// 3️⃣ If exhausted → UPDATE campaign status = 0
-if ($totalLeads > 0 && $dialedLeads >= $totalLeads) {
-
-    DB::connection($connection)->update(
-        "UPDATE campaign
-         SET status = 0
-         WHERE id = :campaign_id",
-        ['campaign_id' => $row->id]
-    );
-
-    continue; // do not show this campaign
-}
 
                $weekPlan = json_decode($row->week_plan, true);
 
@@ -434,17 +575,44 @@ if (json_last_error() !== JSON_ERROR_NONE) {
             $end   = $plan['end'] . ':00';
 
             // Normal shift
-            if ($start <= $end) {
-                if ($now_timezone_time >= $start && $now_timezone_time <= $end) {
-                    $filteredCampaign[] = $row;
-                }
-            }
-    // Overnight shift (e.g. 22:00 → 06:00)
-        else {
-            if ($now_timezone_time >= $start || $now_timezone_time <= $end) {
-                $filteredCampaign[] = $row;
-            }
-        }
+    //         if ($start <= $end) {
+    //             if ($now_timezone_time >= $start && $now_timezone_time <= $end) {
+    //                 $filteredCampaign[] = $row;
+    //             }
+    //         }
+    // // Overnight shift (e.g. 22:00 → 06:00)
+    //     else {
+    //         if ($now_timezone_time >= $start || $now_timezone_time <= $end) {
+    //             $filteredCampaign[] = $row;
+    //         }
+    //     }
+    //shikha code
+       // ✅ Check time first
+    $isTimeValid = false;
+
+    if ($start <= $end) {
+        $isTimeValid = ($now_timezone_time >= $start && $now_timezone_time <= $end);
+    } else {
+        $isTimeValid = ($now_timezone_time >= $start || $now_timezone_time <= $end);
+    }
+
+    if (!$isTimeValid) {
+        continue;
+    }
+
+    // ✅ THEN check if campaign has list
+    $hasList = DB::connection($connection)
+        ->table('campaign_list')
+        ->where('campaign_id', $row->id)
+        ->where('is_deleted', 0)
+        ->exists();
+
+    if (!$hasList) {
+        continue;
+    }
+
+    // ✅ Only push once
+    $filteredCampaign[] = $row;
 }
 
 $campaign = $filteredCampaign;
@@ -540,6 +708,7 @@ $totalRows = count($campaign);
      *@param object $request
      *@return array
      */
+    
     public function getLeadCountInTemp(int $campaignId, int $parentId)
     {
         try {
@@ -739,6 +908,7 @@ $totalRows = count($campaign);
      *@param object $request
      *@return array
      */
+    
     public function extensionLogin($request)
     {
         try {
@@ -784,19 +954,32 @@ $totalRows = count($campaign);
                             $modeType['hopper_mode'],
                             $extension,
                             $request->auth->asterisk_server_id,
-                            $request->auth->parent_id
+                            $request->auth->parent_id,
+                            $request->auth->id
                         );
                        if ($response["status"] === false) {
-    return response()->json([
-        'success' => false,
-        'message' => $response["message"]
-    ], 402);
-}
+                        return response()->json([
+                            'success' => false,
+                            'message' => $response["message"]
+                        ], 402);
+                    }
+                    if ($response["status"] === false) {
 
-return response()->json([
-    'success' => true,
-    'message' => 'You are logged in successfully. ' . $response["message"]
-], 200);
+                        // if (isset($response["code"]) && $response["code"] == "NO_LEADS") {
+
+                        //     // ✅ Call common logout function
+                        //     $this->extensionlogout($request);
+                        // }
+
+                        return response()->json([
+                            'success' => false,
+                            'message' => $response["message"]
+                        ], 402);
+                    }
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'You are logged in successfully. ' . $response["message"]
+                    ], 200);
 
                     } elseif ($count == 5) {
                         return array(
@@ -826,8 +1009,16 @@ return response()->json([
                         $modeType['hopper_mode'],
                         $extension,
                         $request->auth->asterisk_server_id,
-                        $request->auth->parent_id
+                        $request->auth->parent_id,
+                        $request->auth->id
                     );
+                 if ($response["status"] === false) {
+
+                        return response()->json([
+                            'success' => false,
+                            'message' => $response["message"]
+                        ], 402);
+                    }
                     return array(
                         'success' => $response["status"],
                         'message' => 'You are logged in successfully. ' . $response["message"]
@@ -921,7 +1112,14 @@ return response()->json([
                 /*close new code implement*/
 
                 $asterisk = $this->getAsterisk($request->auth->asterisk_server_id, $extension, $request->auth->parent_id);
-                $response = $asterisk->click2Call($request->input('number'), $request->input('campaign_id'), $request->input('lead_id'));
+                $response = $asterisk->click2Call($request->input('number'), $request->input('campaign_id'), $request->input('lead_id'),$request->auth->id);
+                  if (is_array($response) && isset($response['success']) && $response['success'] === false) {
+                    return [
+                        'success' => false,
+                        'message' => $response['message'] ?? 'Call failed',
+                        'status'    => $response['status'] ?? 400
+                    ];
+                }
                 if ($response == true) {
                     return array(
                         'success' => 'true',
@@ -1008,7 +1206,7 @@ return response()->json([
      * Fetches lead information
      * @return boolean
      */
-    function addLeadToExtensionLive(int $campaignId, int $hopperMode, int $extension, int $asteriskServerId, int $clientId)
+    function addLeadToExtensionLive(int $campaignId, int $hopperMode, int $extension, int $asteriskServerId, int $clientId ,int $user_id)
     {
 
         $response = [
@@ -1094,7 +1292,16 @@ return response()->json([
                         ]
                     );
                     $asterisk = $this->getAsterisk($asteriskServerId, $extension, $clientId);
-                    $response = $asterisk->click2Call($number, $campaignId, $lead['lead_id']);
+                    $response = $asterisk->click2Call($number, $campaignId, $lead['lead_id'],$user_id);
+                    if (is_array($response) && isset($response['success']) && $response['success'] === false) {
+                        return [
+                        'status' => false,
+                        'message' => $response['message'] ?? 'Call failed',
+                        //'status'    => $response['status'] ?? 400
+                    ];
+                }
+
+
                     if ($response == true) {
                         $this->addToLeadReport('mysql_' . $db, $campaignId, $lead['list_id'], $lead['lead_id'], 0);
                         return array('status' => true, 'message' => "Call connected");
@@ -1103,7 +1310,7 @@ return response()->json([
                     }
                 } else {
 
-                    $addResponse = $this->addLeadToExtensionLive($campaignId, $hopperMode, $extension, $asteriskServerId, $clientId);
+                    $addResponse = $this->addLeadToExtensionLive($campaignId, $hopperMode, $extension, $asteriskServerId, $clientId,$user_id);
                     $response["dail_next_lead"] = $addResponse;
                     //return array('status' => false, 'message' => "Incorrect lead value");
                 }
@@ -1192,6 +1399,7 @@ return response()->json([
                 return array('status' => true, 'message' => "Call connected");
             }
         }
+        $this->extensionLogout($user_id, $clientId, $asteriskServerId);
         return $response;
     }
 
@@ -1664,7 +1872,8 @@ public function getLead(int $parentId, int $extension)
                     $modeType['hopper_mode'],
                     $extension,
                     $request->auth->asterisk_server_id,
-                    $request->auth->parent_id
+                    $request->auth->parent_id,
+                    $request->auth->id
                 );
                 $response["dail_next_lead"] = $addResponse;
             } catch (\Exception $exception) {
@@ -1915,7 +2124,8 @@ public function getLead(int $parentId, int $extension)
                     $modeType['hopper_mode'],
                     $extension,
                     $request->auth->asterisk_server_id,
-                    $request->auth->parent_id
+                    $request->auth->parent_id,
+                    $request->auth->id
                 );
                 $response["dail_next_lead"] = $addResponse;
             } catch (\Exception $exception) {
@@ -1957,7 +2167,25 @@ public function getLead(int $parentId, int $extension)
             )
         );
     }
-
+    // public function addToLeadReport($db, $campaignId, $listId, $leadId, $dispositionId)
+    // {
+    //     // ✅ 1. Insert / update lead report
+    //   DB::connection($db)->insert(
+    //         "INSERT INTO lead_report (campaign_id, list_id, lead_id, disposition_id)
+    //          VALUES (:campaign_id, :list_id, :lead_id, :disposition_id)
+    //          ON DUPLICATE KEY UPDATE disposition_id = :disposition_id_1",
+    //         [
+    //             'campaign_id' => $campaignId,
+    //             'list_id' => $listId,
+    //             'lead_id' => $leadId,
+    //             'disposition_id' => $dispositionId,
+    //             'disposition_id_1' => $dispositionId
+    //         ]
+    //     );
+    
+    //     return true;
+    // }
+    
     public function addToLeadTempTable($db, $campaignId, $listId, $leadId, $dispositionId)
     {
         $insertSql = "INSERT INTO lead_temp (campaign_id, list_id, lead_id) VALUE (:campaign_id, :list_id, :lead_id) ON DUPLICATE KEY UPDATE lead_id = :lead_id_1";
@@ -2317,7 +2545,61 @@ public function getLead(int $parentId, int $extension)
         curl_close($curl);
         return $result;
     }
+        // public function extensionlogout($request)
+        // {
+        //     Log::info('reached extension logout');
+        //   $extension = $request->auth->extension;
+        // $intWebPhoneSetting = DialerController::getWebPhonestatus($request->auth->id, $request->auth->parent_id);
+        // if ($intWebPhoneSetting == 1) {
+        //     $extension = $request->auth->alt_extension;
+        // }
 
+        // /* new code implement*/
+
+        // $dataUser = User::where('id', $request->auth->id)->get()->first();
+
+        // $dialer_mode = $dataUser->dialer_mode;
+
+        // if ($dialer_mode == 3) {
+        //     $extension = $dataUser->app_extension;
+        // } else
+        //     if ($dialer_mode == 2) {
+        //     $extension = $request->auth->alt_extension;
+        // } else
+        //     if ($dialer_mode == 1) {
+        //     $extension =  $request->auth->extension;
+        // }
+        // $asterisk = $this->getAsterisk($request->auth->asterisk_server_id, $extension, $request->auth->parent_id);
+        // return $asterisk->asteriskLogout($request->auth->parent_id, $extension);
+        // }
+        public function extensionlogout($userId, $clientId, $asteriskServerId)
+{
+   Log::info('reached extension logout');
+   
+    $dataUser = User::find($userId);
+
+    if (!$dataUser) {
+        return false;
+    }
+  $intWebPhoneSetting = DialerController::getWebPhonestatus($userId, $clientId);
+        if ($intWebPhoneSetting == 1) {
+            $extension = $dataUser->extension;
+        }
+    $extension = $dataUser->extension;
+
+    // Resolve correct extension based on dialer mode
+    if ($dataUser->dialer_mode == 3) {
+        $extension = $dataUser->app_extension;
+    } elseif ($dataUser->dialer_mode == 2) {
+        $extension = $dataUser->alt_extension;
+    }elseif ($dataUser->dialer_mode == 1) {
+            $extension =  $dataUser->extension;
+        }
+
+    $asterisk = $this->getAsterisk($asteriskServerId, $extension, $clientId);
+
+    return $asterisk->asteriskLogout($clientId, $extension);
+}
     public function logout($request)
     {
         $extension = $request->auth->extension;

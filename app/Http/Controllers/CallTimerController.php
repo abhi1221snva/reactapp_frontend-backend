@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Model\CallTimer;
 use Illuminate\Http\Request;
+use App\Model\Client\Campaign;
+use Carbon\Carbon;
 
 class CallTimerController extends Controller
 {
@@ -80,17 +82,51 @@ public function index(Request $request)
     $userTimezone = $request->auth->timezone ?? 'Asia/Kolkata';
 
     // ✅ Convert created_at & updated_at for response
-    $timers->transform(function ($timer) use ($userTimezone) {
-        if (!empty($timer->created_at)) {
-            $timer->created_at = convertToUserTimezone($timer->created_at, $userTimezone);
-        }
+$timers = $timers->map(function ($timer) use ($userTimezone) {
 
-        if (!empty($timer->updated_at)) {
-            $timer->updated_at = convertToUserTimezone($timer->updated_at, $userTimezone);
-        }
+   $dayMap = [
+    'monday'    => 1,
+    'tuesday'   => 2,
+    'wednesday' => 3,
+    'thursday'  => 4,
+    'friday'    => 5,
+    'saturday'  => 6,
+    'sunday'    => 7,
+];
 
-        return $timer;
-    });
+// ✅ get today's day name
+$todayName = strtolower(Carbon::now()->format('l')); // e.g. "wednesday"
+$day = null;
+
+if (!empty($timer->week_plan) && is_array($timer->week_plan)) {
+
+    // ✅ If today exists in week_plan, use today
+    if (isset($timer->week_plan[$todayName]) && isset($dayMap[$todayName])) {
+        $day = $dayMap[$todayName];
+    } else {
+        // ✅ fallback: first available valid day
+        foreach ($timer->week_plan as $dayName => $time) {
+            $dayName = strtolower($dayName);
+            if (isset($dayMap[$dayName])) {
+                $day = $dayMap[$dayName];
+                break;
+            }
+        }
+    }
+}
+
+
+    return [
+        'id'          => $timer->id,
+        'title'       => $timer->title,
+        'day'         => $day,              // 👈 BEFORE description
+        'description' => $timer->description,
+        'week_plan'   => $timer->week_plan,
+        'created_at'  => convertToUserTimezone($timer->created_at, $userTimezone),
+        'updated_at'  => convertToUserTimezone($timer->updated_at, $userTimezone),
+    ];
+});
+
     return $this->successResponse("Call Timers", [
         "total_rows"   => $totalRows,
         "start"        => $start,
@@ -221,6 +257,16 @@ public function update(Request $request, $id)
         if (!$timer) {
             return response()->json(['message' => 'Timer not found'], 404);
         }
+          // Check if any campaign is using this timer
+    $isAssigned = Campaign::on($connection)
+        ->where('call_schedule_id', $id)
+        ->exists();
+
+    if ($isAssigned) {
+        return response()->json([
+            'message' => 'Cannot delete timer. It is assigned to a campaign.'
+        ], 400); // 400 Bad Request
+    }
 
         $timer->delete();
 

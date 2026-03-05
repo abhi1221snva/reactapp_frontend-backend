@@ -2,10 +2,10 @@
 
 namespace App\Model;
 
-use App\Http\Helper\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Model;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class RecycleRule extends Model
 {
@@ -813,24 +813,22 @@ public function editRecycleRule1($request)
         ];
     }
 }
-
-
     public function deleteLeadRule($request)
     {
         try {
             $data = array();
             $searchStr = array();
-
+ 
             if ($request->has('list_id') && is_numeric($request->input('list_id'))) {
                 array_push($searchStr, 'list_id = :list_id');
                 $data['list_id'] = $request->input('list_id');
             }
-
+ 
             if ($request->has('disposition_id') && is_numeric($request->input('disposition_id'))) {
                 array_push($searchStr, 'disposition_id = :disposition_id');
                 $data['disposition_id'] = $request->input('disposition_id');
             }
-
+ 
             if (empty($searchStr)) {
                 return array(
                     'success' => 'false',
@@ -838,22 +836,40 @@ public function editRecycleRule1($request)
                     'data'   => array()
                 );
             }
-
+ 
             $connection = DB::connection('mysql_' . $request->auth->parent_id);
+            $rule = $connection->selectOne(
+                "SELECT call_time FROM recycle_rule WHERE list_id = :list_id",
+                ['list_id' => $request->list_id]
+            );
+
+            if (!$rule) {
+                return [
+                    'success' => 'false',
+                    'message' => 'Invalid recycle rule selected.',
+                    'data' => []
+                ];
+            }
+
+            $maxAllowedCalls = (int) $rule->call_time;
+            Log::info('reached max calls',['maxAllowedCalls'=>$maxAllowedCalls]);
 
             $sql = "SELECT * FROM lead_report WHERE " . implode(" AND ", $searchStr);
             $record = $connection->select($sql, $data);
             $leadRecords = (array)$record;
-
+ 
             if (!empty($leadRecords)) {
                 $lead_id_arr = array();
+                $campaignIds = [];
 
                 foreach ($leadRecords as $lead) {
                     $lead_id_arr[] = $lead->lead_id;
+                     $campaignIds[] = $lead->campaign_id;
                 }
-
+ 
                 // Remove duplicates to prevent SQL parameter binding issues
                 $lead_id_arr = array_values(array_unique($lead_id_arr));
+                $campaignIds = array_values(array_unique($campaignIds));
 
                 if (empty($lead_id_arr)) {
                     return array(
@@ -862,30 +878,43 @@ public function editRecycleRule1($request)
                         'data'   => array()
                     );
                 }
-
+ 
                 // Get call counts from CDR for all leads
                 $placeholders = implode(',', array_fill(0, count($lead_id_arr), '?'));
                 $sql = "SELECT lead_id, COUNT(*) as count_calls FROM cdr WHERE lead_id IN(" . $placeholders . ") GROUP BY lead_id";
                 $cdrRecords = $connection->select($sql, $lead_id_arr);
-
+ 
                 // Build a map of lead_id => call_count
                 $callCountMap = [];
                 foreach ($cdrRecords as $cdr) {
                     $callCountMap[$cdr->lead_id] = $cdr->count_calls;
                 }
-
+ 
                 $deleted_lead_count = 0;
-
+ 
                 // Process ALL leads - those in CDR with < 15 calls AND those not in CDR (0 calls)
                 foreach ($lead_id_arr as $leadId) {
                     $callCount = $callCountMap[$leadId] ?? 0; // Default to 0 if not in CDR
+            Log::info('reached call count',['callCount'=>$callCount]);
 
-                    if ($callCount < 15) {
+                    if ($callCount >= $maxAllowedCalls) {
                         $query = "DELETE FROM lead_report WHERE lead_id = :lead_id";
                         $connection->delete($query, ['lead_id' => $leadId]);
                         $deleted_lead_count++;
                     }
                 }
+            if (!empty($campaignIds)) {
+                $placeholders = implode(',', array_fill(0, count($campaignIds), '?'));
+
+                $updateSql = "
+                    UPDATE campaign
+                    SET status = 1
+                    WHERE id IN ($placeholders)
+                    AND status = 0
+                ";
+
+                $connection->update($updateSql, $campaignIds);
+            }
 
                 return array(
                     'success' => 'true',
@@ -893,7 +922,7 @@ public function editRecycleRule1($request)
                     'data'   => $deleted_lead_count
                 );
             }
-
+ 
             return array(
                 'success' => 'false',
                 'message' => 'No leads found matching the recycle rule.',
@@ -915,4 +944,81 @@ public function editRecycleRule1($request)
             );
         }
     }
+
+    // public function deleteLeadRule($request)
+    // {
+
+    //     try {
+
+    //         $data = array();
+    //         $searchStr = array();
+
+    //         if ($request->has('list_id') && is_numeric($request->input('list_id'))) {
+    //             array_push($searchStr, 'list_id = :list_id');
+    //             $data['list_id'] = $request->input('list_id');
+    //         }
+
+    //         if ($request->has('disposition_id') && is_numeric($request->input('disposition_id'))) {
+    //             array_push($searchStr, 'disposition_id = :disposition_id');
+    //             $data['disposition_id'] = $request->input('disposition_id');
+    //         }
+
+
+    //         $sql = "SELECT * FROM lead_report
+    //                 WHERE " . implode(" AND ", $searchStr);
+    //         $record =  DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+    //         $data = (array)$record;
+
+    //         if (!empty($data)) {
+    //             /* return array(
+    //                 'success'=> 'true',
+    //                 'message'=> 'RecycleRules detail.',
+    //                 'data'   => $data
+    //             );*/
+
+    //             $lead_id_arr = array();
+
+    //             foreach ($data as $lead) {
+    //                 $lead_id_arr[] = $lead->lead_id;
+    //             }
+
+    //             $lead_id = "'" . implode("', '", $lead_id_arr) . "'";
+
+    //             /*  SELECT count(*),lead_id from cdr where lead_id IN('1908','1907','1911','1912','1913','1915','1916','1917','1932','1933','1935', '1936') group by lead_id;*/
+
+    //             $data_lead['lead_id'] = $lead_id;
+
+    //             $sql = "SELECT count(*) as count_calls,lead_id FROM cdr  WHERE lead_id IN(" . $lead_id . ") group by lead_id";
+    //             $record =  DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
+    //             $data_lead_id = (array)$record;
+
+    //             $deleted_lead_id = 1;
+
+    //             foreach ($data_lead_id as $deleteLead) {
+    //                 if ($deleteLead->count_calls < 15) {
+    //                     $query = "DELETE FROM lead_report WHERE lead_id = :lead_id";
+    //                     DB::connection('mysql_' . $request->auth->parent_id)->delete($query, array('lead_id' => $deleteLead->lead_id));
+    //                 }
+
+    //                 $deleted_lead_id++;
+    //             }
+
+
+    //             return array(
+    //                 'success' => 'true',
+    //                 'message' => 'Recycle rule has been run successfully for the list.',
+    //                 'data'   => $deleted_lead_id
+    //             );
+    //         }
+    //         return array(
+    //             'success' => 'false',
+    //             'message' => 'Recycle rule Not Found.',
+    //             'data'   => array()
+    //         );
+    //     } catch (Exception $e) {
+    //         Log::log($e->getMessage());
+    //     } catch (InvalidArgumentException $e) {
+    //         Log::log($e->getMessage());
+    //     }
+    // }
 }

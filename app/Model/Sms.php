@@ -18,7 +18,9 @@ use Plivo\RestClient;
 use Twilio\Rest\Client;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
-
+use App\Model\UserFcmToken;
+use App\Services\FirebaseService;
+use Carbon\Carbon;
 class Sms extends Model {
 
     /**
@@ -192,10 +194,14 @@ $users = DB::connection("master")
     ->whereIn('id', $userIds)
     ->pluck('full_name', 'id');   // [id => full_name]
 
+$userTimezone = $request->auth->timezone ?? config('app.timezone');
 
 // --- Attach user_name to each SMS record ---
 foreach ($pagedData as &$row) {
     $row->user_name = $users[$row->user_id] ?? null;
+     $row->date = \Carbon\Carbon::parse($row->date)
+        ->setTimezone($userTimezone)
+        ->format('Y-m-d H:i:s');
 }
     // ✅ Return response
     return [
@@ -302,11 +308,58 @@ public function smsDetailsByDid($request)
     $records = DB::connection("mysql_$clientId")->select($sql, $data);
 
     // ✅ Ensure message & voip_provider are always included
-    $records = collect($records)->map(function ($r) {
-        $r->message = $r->message ?? '';
-        $r->voip_provider = $r->voip_provider ?? '';
-        return $r;
-    })->toArray();
+    // $records = collect($records)->map(function ($r) {
+    //     $r->message = $r->message ?? '';
+    //     $r->voip_provider = $r->voip_provider ?? '';
+    //     return $r;
+    // })->toArray();
+    // ✅ conversation_id = latest SMS id (first record, since ORDER BY s.id DESC)
+// $conversationId = !empty($records) ? (string) $records[0]->id : null;
+
+// $records = collect($records)->map(function ($r) use ($conversationId) {
+
+//     $ordered = [
+//         'id' => $r->id,
+//         'conversation_id' => $conversationId, // ✅ SAME for all
+//     ];
+
+//     foreach ($r as $key => $value) {
+//         if ($key !== 'id') {
+//             $ordered[$key] = $value ?? '';
+//         }
+//     }
+
+//     return $ordered;
+// })->toArray();
+
+$conversationId = !empty($records) ? (string) $records[0]->id : null;
+
+$userTimezone = $request->auth->timezone ?? config('app.timezone');
+
+$records = collect($records)->map(function ($r) use ($conversationId, $userTimezone) {
+
+    $ordered = [
+        'id' => $r->id,
+        'conversation_id' => $conversationId,
+    ];
+
+    foreach ($r as $key => $value) {
+
+        // ✅ Convert date fields to user timezone
+        if (in_array($key, ['created_at', 'updated_at', 'date', 'sent_at']) && !empty($value)) {
+            $ordered[$key] = Carbon::parse($value)
+                ->timezone($userTimezone)
+                ->format('Y-m-d H:i:s');
+        } else {
+            if ($key !== 'id') {
+                $ordered[$key] = $value ?? '';
+            }
+        }
+    }
+
+    return $ordered;
+})->toArray();
+
 
     // ✅ Return final response
     return [
@@ -319,7 +372,7 @@ public function smsDetailsByDid($request)
         ],
         'data' => $records,
     ];
-}
+}  
 
     // public function smsDetailsByDid($request) {
     //     $data = array();
@@ -424,6 +477,7 @@ public function smsDetailsByDidold($request)
     ];
 }
 
+
     public function sendSms(Request $request) {
         Log::info('reached backend sms data',[$request->all()]);
         try {
@@ -437,37 +491,37 @@ public function smsDetailsByDidold($request)
             $data_array['from'] =  $request->from;
             $data_array['text'] = $request->message;
            // $data_array['mms_url'] = $request->mms_url;
-// Handle image file upload if exists
- $mms_url = null;
+           // Handle image file upload if exists
+           $mms_url = null;
 
 
-if ($request->hasFile('mms_file')) {
-    $file = $request->file('mms_file');
+            if ($request->hasFile('mms_file')) {
+                $file = $request->file('mms_file');
 
-    // CLEAN the original name
-    $original = $file->getClientOriginalName();
+                // CLEAN the original name
+                $original = $file->getClientOriginalName();
 
-    // Remove spaces & unsafe characters
-    $cleanName = preg_replace('/[^A-Za-z0-9_\-\.]/', '_', $original);
+                // Remove spaces & unsafe characters
+                $cleanName = preg_replace('/[^A-Za-z0-9_\-\.]/', '_', $original);
 
-    // Final stored filename
-    $fileName = time() . '_' . $cleanName;
+                // Final stored filename
+                $fileName = time() . '_' . $cleanName;
 
-    // Save to public folder
-    $uploadPath = base_path('public/uploads/mms');
-    $file->move($uploadPath, $fileName);
+                // Save to public folder
+                $uploadPath = base_path('public/uploads/mms');
+                $file->move($uploadPath, $fileName);
 
-    // Build URL for Twilio
-    $mms_url = env('APP_URL') . '/uploads/mms/' . $fileName;
-    //    $mms_url="https://api.phonify.app/uploads/mms/1763546502_image%20 (5).png";
-}
+                // Build URL for Twilio
+                $mms_url = env('APP_URL') . '/uploads/mms/' . $fileName;
+                //    $mms_url="https://api.phonify.app/uploads/mms/1763546502_image%20 (5).png";
+            }
 
 
-Log::info('mms url',['mms_url'=>$mms_url]);
+            Log::info('mms url',['mms_url'=>$mms_url]);
 
-$data_array['mms_url'] = $mms_url ?? $request->mms_url;
+            $data_array['mms_url'] = $mms_url ?? $request->mms_url;
 
-Log::info('reached backend from',['from'=>$request->from]);
+            Log::info('reached backend from',['from'=>$request->from]);
             $get_provider = Dids::on("mysql_$clientId")->where("cli",$request->from)->get()->first();
             if (!$get_provider) {
                         return array(
@@ -481,7 +535,11 @@ Log::info('reached backend from',['from'=>$request->from]);
                         );
                     } 
 
-            $voip_provider = $get_provider->voip_provider;
+            //$voip_provider = $get_provider->voip_provider;
+            $voip_provider = strtolower(trim($get_provider->voip_provider));
+
+            Log::info('reached twilio',['voip_provider'=>$voip_provider]);
+
 
             if($voip_provider == 'didforsale')
             {
@@ -502,7 +560,7 @@ Log::info('reached backend from',['from'=>$request->from]);
                 curl_setopt($ch, CURLOPT_HTTPHEADER, array("Content-Type: application/json", "Authorization: Basic " . base64_encode("$auth_id:$api_key")));
                 $result = curl_exec($ch);
                 $res = json_decode($result);
-Log::info('result reached',['res'=>$res]);
+                Log::info('result reached',['res'=>$res]);
                  if ($res->status == 'true') {
 
                 //Billing part
@@ -589,7 +647,10 @@ Log::info('result reached',['res'=>$res]);
                 $client = new RestClient($auth_id,$api_key);
 
                // Check if mms_url is provided
-                if ($request->has('mms_url')) {
+                //if ($request->has('mms_url')) {
+                    // Check if MMS was uploaded or generated
+                if (!empty($data_array['mms_url'])) {
+
                     // Send MMS if mms_url is provided
                     $result = $client->messages->create([
                         "src" => $data_array['from'],                 // Sender's phone number
@@ -598,6 +659,8 @@ Log::info('result reached',['res'=>$res]);
                         "type" => "mms",                              // Explicitly set to MMS
                         "media_urls" => [$data_array['mms_url']]      // Use provided media URL
                     ]);
+                   // $response_id = $result->messageUuid[0] ?? true;
+
                 } else {
                     // Send SMS if mms_url is not provided
                     $result = $client->messages->create([
@@ -605,6 +668,8 @@ Log::info('result reached',['res'=>$res]);
                         "dst" => $data_array['to'],                   // Recipient's phone number
                         "text" => $data_array['text']                 // Text content
                     ]);
+                   // $response_id = $result->messageUuid[0] ?? true;
+
 }
            
 Log::info('result reached',['result'=>$result]);
@@ -654,7 +719,7 @@ Log::info('result reached',['result'=>$result]);
                 $smsObj->type       = 'outgoing';
                 $smsObj->date       = $request->date;
                 $smsObj->extension  = $request->auth->id;
-                if(!empty($$clientPackageId))
+                if(!empty($clientPackageId))
                 $smsObj->currency_code = $clientPackageId;
                 else
                 $smsObj->currency_code = 'USD';
@@ -670,6 +735,14 @@ Log::info('result reached',['result'=>$result]);
                         );
                     }
                 }
+  return [
+    'success' => false,
+    'message' => $result->error 
+        ?? $result->_message 
+        ?? 'Plivo SMS request failed'
+];
+
+
 
                  }
 
@@ -803,6 +876,8 @@ Log::info('result reached',['result'=>$result]);
             else
             if($voip_provider == 'twilio')
             {
+                    Log::info('reached twilio');
+
 
                 // if (app()->environment() == "local") 
                 // {
@@ -818,7 +893,7 @@ Log::info('result reached',['result'=>$result]);
 
 
               
-                $sms_setting = SmsProviders::on("mysql_$clientId")->where("status",'1')->where('provider',$voip_provider)->get()->first();
+                $sms_setting = SmsProviders::on("mysql_$clientId")->where("status",'1')->where('provider',$voip_provider)->orderBy('id', 'desc')->first();
                 //$auth_id = $sms_setting->auth_id;
                 $api_key = $sms_setting->api_key;
 
@@ -857,12 +932,16 @@ try {
     $errorCode = $e->getCode();     // Twilio-specific error code (ex: 20003)
 
     // Authentication errors → 401 or code 20003
-    if ($status == 401 || $errorCode == 20003) {
-        return [
-            'success' => false,
-            'message' => "Authentication failed for Twilio! Please verify your Account SID and Auth Token."
-        ];
-    }
+    // if ($status == 401 || $errorCode == 20003) {
+    //     return [
+    //         'success' => false,
+    //         'message' => "Authentication failed for Twilio! Please verify your Account SID and Auth Token."
+    //     ];
+    // }
+return response()->json([
+    'success' => false,
+    'message' => "Authentication failed for Twilio! Please verify your Account SID and Auth Token."
+], 402);
 
     // Invalid number
     if ($errorCode == 21608) {

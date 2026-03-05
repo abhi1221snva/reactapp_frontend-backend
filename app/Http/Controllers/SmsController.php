@@ -13,9 +13,14 @@ use App\Model\Client\SmtpSetting;
 use App\Mail\GenericMail;
 use App\Services\MailService;
 use App\Services\SmsService;
+use App\Services\EasifyCreditService;
 use Illuminate\Support\Facades\Log;
 use Plivo\RestClient;
-use Pusher\Pusher;
+use Illuminate\Http\JsonResponse;
+use App\Services\PusherService;
+use App\Services\FirebaseService;
+use App\Model\UserFcmToken;
+use Carbon\Carbon;
 
 
 
@@ -28,23 +33,12 @@ class SmsController extends Controller
      * @return void
      */
     private $request;
-    protected $pusher;
+    protected $model;
 
     public function __construct(Request $request, sms $sms)
     {
         $this->request = $request;
         $this->model = $sms;
-
-        // Initialize Pusher for real-time SMS notifications
-        $this->pusher = new Pusher(
-            env('PUSHER_APP_KEY'),
-            env('PUSHER_APP_SECRET'),
-            env('PUSHER_APP_ID'),
-            [
-                'cluster' => env('PUSHER_APP_CLUSTER'),
-                'useTLS' => true
-            ]
-        );
     }
 
 
@@ -244,17 +238,136 @@ class SmsController extends Controller
      *      )
      * )
      */
-    public function sendSms()
-    {
-        $this->validate($this->request, [
-            'to' => 'required|numeric',
-            'from' => 'required|numeric',
-            'date' => 'required',
+public function sendSms()
+{
+    $this->validate($this->request, [
+        'to'   => 'required|numeric',
+        'from'=> 'required|numeric',
+        'date'=> 'required',
+    ]);
+      // 🔹 Step 1: CHECK CREDITS
+       $from = $this->request->from;
+       $message = $this->request->message ?? '';
 
-        ]);
-        $response = $this->model->sendSms($this->request);
-        return response()->json($response);
+        // Detect if message contains Unicode
+        $isUnicode = preg_match('/[^\x00-\x7F]/', $message);
+
+        $length = mb_strlen($message, 'UTF-8');
+
+Log::info('Character Count', ['total_characters' => $length]);
+
+$count = $length;   // Only total characters
+    $creditService = new EasifyCreditService();
+
+  $user = $this->request->auth; // or auth()->user()
+
+    // CHECK
+    $creditCheck = $creditService->checkCredits(
+        $user->id,
+        $user->easify_user_uuid,
+        'outgoing_sms',
+        $this->request->from,
+        $count
+    );
+
+// 🔴 Easify failed (like phone not found)
+if (
+    empty($creditCheck) ||
+    ($creditCheck['status'] ?? false) === false
+) {
+    Log::warning('Easify credit check failed', [
+        'user_id' => $user->id,
+        'action'  => 'outgoing_sms',
+        'to'      => $this->request->from,
+        'response'=> $creditCheck
+    ]);
+
+    return response()->json([
+        'success' => false,
+        'message' => $creditCheck['message'] ?? 'Credit check failed'
+    ], 400);
+}
+
+// 🟡 Credit exists but insufficient
+$hasCredits = $creditCheck['data']['has_sufficient_credits'] ?? false;
+
+if ($hasCredits === false) {
+    return response()->json([
+        'success' => false,
+        'message' => 'Insufficient credits to send SMS'
+    ], 402);
+}
+
+
+
+    $response = $this->model->sendSms($this->request);
+
+
+    // If model already returned a JsonResponse, return it directly
+    if ($response instanceof JsonResponse) {
+        return $response;
     }
+
+    // Set HTTP status based on success
+    $statusCode = 200;
+    if (isset($response['success']) && $response['success'] === false) {
+        $statusCode = 400;
+    }
+    // 🔹 Step 3: DEDUCT CREDITS (after successful SMS)
+    $creditService->deductCredits(
+        $user->id,
+        $user->easify_user_uuid,
+        'outgoing_sms',
+        $this->request->from,
+        $count
+    );
+
+    // 🔹 Step 4: TRIGGER PUSHER NOTIFICATION
+    if (isset($response['success']) && ($response['success'] === true || $response['success'] === 'true')) {
+        try {
+            $this->request->merge([
+                'parent_id' => $user->parent_id,
+                'pusher_uuid' => $user->pusher_uuid ?? null
+            ]);
+
+            PusherService::notify($this->request, [
+                'id'      => 'sent_sms',
+                'name'    => 'SMS Sent',
+                'type'    => 'sms',
+                'module'  => 'sms',
+                'message' => 'SMS sent to ' . $this->request->to,
+                'data'    => $response
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Pusher notification failed in sendSms', [
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    return response()->json($response, $statusCode);
+}
+
+
+// public function sendSms()
+// {
+//     $this->validate($this->request, [
+//         'to' => 'required|numeric',
+//         'from' => 'required|numeric',
+//         'date' => 'required',
+//     ]);
+
+//     $response = $this->model->sendSms($this->request);
+
+//     // If model already returned a JsonResponse, return it directly
+//     if ($response instanceof JsonResponse) {
+//         return $response;
+//     }
+
+//     // Otherwise, convert array to JSON
+//     return response()->json($response);
+// }
+
 
     public function getSmsCountDetails()
     {
@@ -304,45 +417,6 @@ class SmsController extends Controller
         return response()->json($response);
     }
 
-    /**
-     * Mark SMS thread as read.
-     * POST /sms/mark-read
-     * Body: { did_id, contact_number } or { thread_id }
-     */
-    public function markRead()
-    {
-        try {
-            $parentId = $this->request->auth->parent_id;
-            $didId = $this->request->input('did_id');
-            $contactNumber = $this->request->input('contact_number');
-            $threadId = $this->request->input('thread_id');
-
-            $query = \DB::connection('mysql_' . $parentId)->table('sms')
-                ->where('is_read', 0)
-                ->where('direction', 'inbound');
-
-            if ($threadId) {
-                $query->where('id', $threadId);
-            } elseif ($didId && $contactNumber) {
-                $query->where('from_did', $didId)
-                      ->where(function ($q) use ($contactNumber) {
-                          $q->where('from_number', $contactNumber)
-                            ->orWhere('to_number', $contactNumber);
-                      });
-            }
-
-            $updated = $query->update(['is_read' => 1, 'updated_at' => now()]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Messages marked as read',
-                'data'    => ['updated' => $updated],
-            ]);
-        } catch (\Throwable $e) {
-            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
-        }
-    }
-
   public function smsDidList()
 {
     try {
@@ -390,6 +464,7 @@ class SmsController extends Controller
         ]);
 
 
+
         //fetch package details
         $isFree = $intCharge = $currencyCode = $clientPackageId = NULL;
         $clientId = $request->get('client_id');
@@ -398,6 +473,46 @@ class SmsController extends Controller
         $user->id = $request->get('user_id');
         $user->parent_id = $clientId;
         $package = $user->getAssignedUserPackage(true);
+        $message=$request->get('message');
+        $creditService = new EasifyCreditService();
+        $length = mb_strlen($message, 'UTF-8');
+
+        $count = $length;
+        $userDetails=User::where('id',$request->user_id)->first();
+        $easify_user_uuid=$userDetails->easify_user_uuid;
+        $creditCheck = $creditService->checkCredits(
+            $request->get('user_id'),
+            $easify_user_uuid ?? null,
+            'incoming_sms',
+            $request->get('from'),
+            $count
+        );
+
+        // Easify failed (eg. phone not found)
+        if (
+            empty($creditCheck) ||
+            ($creditCheck['status'] ?? false) === false
+        ) {
+            Log::warning('Easify credit check failed (incoming sms)', [
+                'user_id' => $request->get('user_id'),
+                'action'  => 'incoming_sms',
+                'from'    => $request->get('from'),
+                'response'=> $creditCheck
+            ]);
+
+            return [
+                'success' => false,
+                'message' => $creditCheck['message'] ?? 'Credit check failed'
+            ];
+        }
+
+        // Insufficient Easify credits
+        if (($creditCheck['data']['has_sufficient_credits'] ?? false) === false) {
+            return [
+                'success' => false,
+                'message' => 'Insufficient credits to receive SMS'
+            ];
+        }
 
         try {
             if (empty($package)) {
@@ -444,34 +559,71 @@ class SmsController extends Controller
             $smsObj->charge = $intCharge;
             $smsObj->isFree = $isFree;
             $smsObj->save();
-
-            // ========== PUSHER: Real-time SMS notification ==========
-            try {
-                $this->pusher->trigger('my-channel', 'my-event', [
-                    'message' => [
-                        'user_ids' => [$request->get('user_id')],
-                        'platform' => 'text',
-                        'msg' => 'New SMS from ' . $request->get('from'),
-                        'from' => $request->get('from'),
-                        'to' => $request->get('to'),
-                        'body' => substr($request->get('message'), 0, 100),
-                        'sms_id' => $smsObj->id,
-                        'client_id' => $request->get('client_id')
-                    ]
-                ]);
-                Log::info("Pusher SMS notification sent", [
-                    'user_id' => $request->get('user_id'),
-                    'from' => $request->get('from'),
-                    'sms_id' => $smsObj->id
-                ]);
-            } catch (\Exception $e) {
-                Log::error("Pusher SMS notification failed: " . $e->getMessage());
-            }
-            // ========== END PUSHER ==========
-
+                    /* =======================
+                * 🔹 EASIFY CREDIT DEDUCT
+                * ======================= */
+                $creditService->deductCredits(
+                    $request->get('user_id'),
+                    $easify_user_uuid ?? null,
+                    'incoming_sms',
+                    $request->get('from'),
+                    $count
+                );
             //email sender
 
             $userDetails = User::findOrFail($request->get('user_id'));
+            
+            // 👇 ADD THIS
+            $request->merge([
+                'parent_id' => $request->get('client_id')
+            ]);
+
+            // Add pusher_uuid to request for targeting
+            $request->merge(['pusher_uuid' => $userDetails->pusher_uuid ?? null]);
+
+            try {
+                PusherService::notify($request, [
+                    'id' => 'new_sms',
+                    'name' => 'New SMS',
+                    'type' => 'sms',
+                    'display_order' => 0,
+                    'created_at' => Carbon::parse($request->date ?? Carbon::now())->format('Y-m-d H:i:s'),
+                    'updated_at' => Carbon::now()->format('Y-m-d H:i:s'),
+                    'type_sms' => 'sms',
+                    'active' => 1,
+                    'active_sms' => 1,
+                    'subscribers' => [],
+                    'module'  => 'sms',
+                    'message' => 'New SMS from ' . $request->get('from'),
+
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('Pusher notification failed in smsResponse', [
+                    'error' => $e->getMessage()
+                ]);
+            }
+
+            // FCM Notification
+            try {
+                $fcmTokens = UserFcmToken::where('user_id', $request->get('user_id'))->pluck('device_token')->toArray();
+                if (!empty($fcmTokens)) {
+                    FirebaseService::sendNotification(
+                        $fcmTokens,
+                        'New SMS from ' . $request->get('from'),
+                        $request->get('text') ?? 'You have a new SMS message.',
+                        [
+                            'type' => 'new_sms',
+                            'from' => $request->get('from'),
+                            'click_action' => 'FLUTTER_NOTIFICATION_CLICK'
+                        ],
+                        true
+                    );
+                }
+            } catch (\Throwable $e) {
+                Log::error('FCM notification failed in SmsController', [
+                    'error' => $e->getMessage()
+                ]);
+            }
             $receive_sms_on_email = $userDetails->receive_sms_on_email;
             $receive_sms_on_mobile = $userDetails->receive_sms_on_mobile;
             $sms_mobile = $userDetails->mobile;
@@ -566,6 +718,32 @@ class SmsController extends Controller
                     Log::debug("SendNotificationForReceiveSMSMobileDidforsale.sendMessage.response", [$res]);
                 }
             }
+            
+            // Send FCM Push Notification for Incoming SMS
+            try {
+                $fcmTokens = UserFcmToken::where('user_id', $request->get('user_id'))
+                    ->pluck('device_token')
+                    ->toArray();
+                
+                if (!empty($fcmTokens)) {
+                    FirebaseService::sendNotification(
+                        $fcmTokens,
+                        "New SMS from " . $request->get('from'),
+                        $request->get('message'),
+                        [
+                            'type' => 'incoming_sms',
+                            'from' => $request->get('from'),
+                            'did' => $request->get('to'),
+                            'user_id' => $request->get('user_id')
+                        ]
+                    );
+                }
+            } catch (\Exception $e) {
+                Log::error('FCM Incoming SMS Notification failed', [
+                    'error' => $e->getMessage(),
+                    'user_id' => $request->get('user_id')
+                ]);
+            }
 
             return array(
                 'success' => true,
@@ -576,6 +754,27 @@ class SmsController extends Controller
                 'success' => false,
                 'message' => "Failed to update."
             );
+        }
+    }
+
+    public function sendTestSms(Request $request)
+    {
+        $userId = $request->get('user_id');
+        $user = User::find($userId);
+        if (!$user || empty($user->mobile)) {
+            return response()->json(['success' => false, 'message' => 'User not found or mobile missing']);
+        }
+
+        $setting = config("otp.sms");
+        $smsService = new SmsService($setting["url"], $setting["key"], $setting["token"]);
+        $to = ($user->country_code ?? '') . $user->mobile;
+        $message = $request->get('message') ?? "This is a test SMS from " . env('APP_NAME', 'Dialer');
+
+        try {
+            $response = $smsService->sendMessage($setting["from_number"], $to, $message);
+            return response()->json(['success' => true, 'to' => $to, 'response' => json_decode($response) ?? $response]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()]);
         }
     }
 }

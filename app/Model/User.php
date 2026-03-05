@@ -15,6 +15,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Auth\Authenticatable;
 use Illuminate\Contracts\Auth\Access\Authorizable as AuthorizableContract;
 use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
@@ -45,10 +46,22 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
         'password',
     ];
 
-    protected $fillable = ['first_name', 'last_name', 'mobile', 'email', 'password', 'role', 'profile_pic', 'extension', 'rpm', 'vm_pin', 'voicemail', 'voicemail_greeting', 'asterisk_server_id', 'voicemail_send_to_email', 'follow_me', 'call_forward', 'dialpad', 'agent_voice_id', 'cli_setting', 'cli', 'local_ip', 'public_ip', 'phone_status', 'status', 'is_deleted', 'alt_extension', 'allowed_ip', 'twinning', 'directory_name', 'extension_type', 'vm_drop', 'vm_drop_location', 'country_code', 'dialpad_lastname', 'base_parent_id', 'sms_setting_id', 'receive_sms_on_email', 'receive_sms_on_mobile', 'ip_filtering', 'enable_2fa', 'voip_configuration_id', 'app_status', 'app_extension', 'affiliate_link', 'google_id', 'first_google_login', 'twitter_id', 'first_twitter_login', 'is_2fa_google_enabled', 'is_2fa_phone_enabled', 'phone_number','allow_google_authenticator','two_factor_authentication','allow_mobile_login','easify_user_uuid'];
+    protected $fillable = ['first_name', 'last_name', 'mobile', 'email', 'password', 'role', 'profile_pic', 'extension', 'rpm', 'vm_pin', 'voicemail', 'voicemail_greeting', 'asterisk_server_id', 'voicemail_send_to_email', 'follow_me', 'call_forward', 'dialpad', 'agent_voice_id', 'cli_setting', 'cli', 'local_ip', 'public_ip', 'phone_status', 'status', 'is_deleted', 'alt_extension', 'allowed_ip', 'twinning', 'directory_name', 'extension_type', 'vm_drop', 'vm_drop_location', 'country_code', 'dialpad_lastname', 'base_parent_id', 'sms_setting_id', 'receive_sms_on_email', 'receive_sms_on_mobile', 'ip_filtering', 'enable_2fa', 'voip_configuration_id', 'app_status', 'app_extension', 'affiliate_link', 'google_id', 'first_google_login', 'twitter_id', 'first_twitter_login', 'is_2fa_google_enabled', 'is_2fa_phone_enabled', 'phone_number','allow_google_authenticator','two_factor_authentication','allow_mobile_login','easify_user_uuid','user_type','owner_id','google_access_token','google_refresh_token','google_token_expires_at', 'pusher_uuid'];
 
     protected $connection = 'master';
-        public function getTableColumns(array $selected_columns = null)
+
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($user) {
+            if (empty($user->pusher_uuid)) {
+                $user->pusher_uuid = (string) Str::uuid();
+            }
+        });
+    }
+
+    public function getTableColumns(array $selected_columns = null)
     {
         $default_columns = ['first_name', 'last_name', 'email', 'mobile', 'company_name'];
 
@@ -75,6 +88,11 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
 
         $user->extension = $input["extension"];
         $user->asterisk_server_id = $input["asterisk_server_id"];
+        
+        // Auto-generate UUID if not present
+        if (empty($user->pusher_uuid)) {
+            $user->pusher_uuid = (string) Str::uuid();
+        }
 
         $role = RolesService::getById($input['role']);
         $user->user_level = $role["level"];
@@ -119,6 +137,9 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
         if (isset($input['app_extension'])) $user->app_extension = $input['app_extension'];
         if (isset($input['affiliate_link'])) $user->affiliate_link = $input['affiliate_link'];
         if (isset($input['timezone'])) $user->timezone = $input['timezone'];
+        if (isset($input['easify_user_uuid'])) $user->easify_user_uuid = $input['easify_user_uuid'];
+        if (isset($input['user_type'])) $user->user_type = $input['user_type'];
+        if (isset($input['owner_id'])) $user->owner_id = $input['owner_id'];
 
         $user->saveOrFail();
 

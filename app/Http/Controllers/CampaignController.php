@@ -15,6 +15,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
+use App\Services\PusherService;
+use App\Services\FirebaseService;
+use App\Model\UserFcmToken;
 
 class CampaignController extends Controller
 {
@@ -381,8 +384,38 @@ class CampaignController extends Controller
         } else {
             $response = $this->model->addCampaign($this->request);
         }
+        
+        if ($response instanceof \Illuminate\Http\JsonResponse) {
+            return $response; // already has correct status
+        }
+        // ✅ PUSHER TRIGGER (CORRECT PLACE)
+        // ✅ PUSHER TRIGGER (CORRECT PLACE)
+        try {
+            PusherService::notify($request, [
+                'id' => 'campaign_added',
+                'name' => 'Campaign Added',
+                'type' => 'campaign',
+                'display_order' => 0,
+                'created_at' => Carbon::now()->format('Y-m-d H:i:s'),
+                'updated_at' => Carbon::now()->format('Y-m-d H:i:s'),
+                'type_sms' => 'sms',
+                'active' => 1,
+                'active_sms' => 0,
+                'subscribers' => [],
+                'module'  => 'campaign',
+                'message' => "Campaign '{$request->title}' added successfully.",
+            ]);
 
-        return response()->json($response);
+        } catch (\Throwable $e) {
+            Log::error('Pusher notification failed in addCampaign', [
+                'error' => $e->getMessage()
+            ]);
+        }
+
+
+        return response()->json($response, 200);
+
+        //return response()->json($response);
     }
     /*
      * Fetch campaign for agent

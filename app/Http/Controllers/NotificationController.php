@@ -2,8 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Model\UserFcmToken;
+use App\Services\FirebaseService;
 use App\Model\Client\SystemNotification;
 use App\Model\Master\SystemNotificationType;
+use Carbon\Carbon;
+use DateTime;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -18,14 +22,16 @@ use App\Model\Client\CrmEmailTemplate;
 use App\Model\Master\AreaCodeList;
 use App\Model\Client\SystemSetting;
 
-use Carbon\Carbon;
-use DateTime;
 
 
 
 
 class NotificationController extends Controller
 {
+    public $clientId;
+    public $data;
+    public $emailType;
+
     /**
      * @OA\Get(
      *     path="/notifications",
@@ -114,71 +120,125 @@ class NotificationController extends Controller
     //     return $this->successResponse("notifications", $types);
     // }
     public function index(Request $request)
-{
-    $clientId = $request->auth->parent_id;
-    $notifications = SystemNotificationType::all()->sortBy("display_order");
-    $types = $notifications->toArray();
+    {
+        $clientId = $request->auth->parent_id;
+        $userId   = $request->auth->id;
 
-    $result = [];
+        // Fetch Notifications (History)
+        $query = \App\Model\Client\Notification::on("mysql_$clientId")
+            ->where(function($q) use ($userId) {
+                // crm_notifications table is used
+                $q->where('crm_notifications.user_id', $userId)
+                  ->orWhereNull('crm_notifications.user_id');
+            })
+            ->orderBy('crm_notifications.created_at', 'DESC');
 
-    foreach ($types as $key => $type) {
-        $subscriptions = SystemNotification::on("mysql_$clientId")->find($type["id"]);
+        $total_row = $query->count();
 
-        $result[] = [
-            // 'index'        => $key,  // <-- move key inside object
-            'id'           => $type["id"],
-            'name'         => $type["name"],
-            'type'         => $type["type"],
-            'display_order'=> $type["display_order"],
-            'created_at'   => $type["created_at"],
-            'updated_at'   => $type["updated_at"],
-            'type_sms'     => $type["type_sms"],
-            'active'       => $subscriptions ? $subscriptions->active : 0,
-            'active_sms'   => $subscriptions ? $subscriptions->active_sms : 0,
-            'subscribers'  => $subscriptions ? $subscriptions->subscribers : [],
-        ];
-    }
+        // Pagination
+        $start = 0;
+        $limit = 15;
+        if ($request->has('start') && $request->has('limit')) {
+            $start = (int) $request->input('start');
+            $limit = (int) $request->input('limit');
+        }
 
-    // pagination logic
-    if ($request->has('start') && $request->has('limit')) {
-        $total_row = count($result);
-        $start = (int) $request->input('start');
-        $limit = (int) $request->input('limit');
-        $pagedResult = array_slice($result, $start, $limit);
+        $notifications = $query->skip($start)->take($limit)->get();
+        
+        $data = [];
+        foreach ($notifications as $notification) {
+            $payload = $notification->data;
+            if (is_string($payload)) {
+                $payload = json_decode($payload, true);
+            }
+
+            $data[] = [
+                // Legacy Formatting: ID must match SystemNotificationType key if possible for frontend icons
+                'id'            => $payload['id'] ?? (string)$notification->id, // Use payload 'id' (campaign_added) if available, else DB ID
+                'name'          => $notification->title ?? ($payload['name'] ?? 'Notification'),
+                'type'          => $notification->type == '0' ? ($payload['type'] ?? 'system') : $notification->type,
+                'display_order' => 0, 
+                'created_at'    => $notification->created_at ? $notification->created_at->format('Y-m-d H:i:s') : null,
+                'updated_at'    => $notification->updated_at ? $notification->updated_at->format('Y-m-d H:i:s') : null,
+                'type_sms'      => 'sms', 
+                'active'        => 1, 
+                'active_sms'    => 0, 
+                'subscribers'   => [], 
+
+                // Extra fields for History (Frontend may ignore these or use them)
+                'message'       => $notification->message,
+                // 'data'          => $payload,
+                'is_read'       => false,
+            ];
+        }
 
         return $this->successResponse("notifications", [
             'start' => $start,
             'limit' => $limit,
             'total' => $total_row,
-            'data'  => array_values($pagedResult)
+            'data'  => $data
         ]);
     }
 
-    return $this->successResponse("notifications", array_values($result));
-}
-
-
-    public function index_old_code(Request $request)
+    /**
+     * Test FCM Trigger via URL
+     * Example: /test-fcm-trigger?user_id=1&title=Test&body=Hello
+     */
+    public function testFcmTrigger(Request $request)
     {
-        $clientId = $request->auth->parent_id;
-        $notifications = SystemNotificationType::all()->sortBy("display_order");
-        $types = $notifications->toArray();
-        foreach ($types as $key => $type) {
-            $subscriptions = SystemNotification::on("mysql_$clientId")->find($type["id"]);
-            if ($subscriptions) {
-                $types[$key]["active"] = $subscriptions->active;
-                $types[$key]["active_sms"] = $subscriptions->active_sms;
+        $userId   = $request->input('user_id');
+        $title    = $request->input('title', 'Test Notification');
+        $body     = $request->input('body', 'This is a test message from URL trigger.');
+        $priority = $request->input('priority', 1); // Default to high priority
 
-                $types[$key]["subscribers"] = $subscriptions->subscribers;
-            } else {
-                $types[$key]["active"] = 0;
-                $types[$key]["active_sms"] = 0;
-
-                $types[$key]["subscribers"] = [];
-            }
+        if (!$userId) {
+            return response()->json(['error' => 'user_id is required'], 400);
         }
-        return $this->successResponse("notifications", $types);
+
+        // Fetch Tokens
+        $fcmTokens = UserFcmToken::where('user_id', $userId)
+            ->pluck('device_token')
+            ->toArray();
+
+        if (empty($fcmTokens)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No FCM tokens found for this user.',
+                'user_id' => $userId
+            ], 404);
+        }
+
+        // Send Notification
+        try {
+            $response = FirebaseService::sendNotification(
+                $fcmTokens,
+                $title,
+                $body,
+                [
+                    'type' => 'test_trigger',
+                    'click_action' => 'FLUTTER_NOTIFICATION_CLICK',
+                    'user_id' => $userId
+                ],
+                (bool)$priority
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Notification sent successfully.',
+                'user_id' => $userId,
+                'token_count' => count($fcmTokens),
+                'tokens' => $fcmTokens,
+                'firebase_response' => $response
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
+
 
 
 
@@ -342,6 +402,19 @@ class NotificationController extends Controller
             $to =  $finalEmail; //array('abhi4mca@gmail.com','mailme@rohitwanchoo.com');//env('SYSTEM_ADMIN_EMAIL'); //,'mailme@rohitwanchoo.com'
 
             $mailService->sendEmail($to);
+
+            // Send Push Notification
+            try {
+                $fcmTokens = UserFcmToken::whereIn('user_id', User::whereIn('email', $finalEmail)->pluck('id'))->pluck('device_token')->toArray();
+                if (!empty($fcmTokens)) {
+                    FirebaseService::sendNotification($fcmTokens, $subject, strip_tags($message), [
+                        'lead_id' => $requestData['user']['lead_id'],
+                        'type' => 'crm_notification'
+                    ], true);
+                }
+            } catch (\Exception $e) {
+                Log::error('FCM CRM Notification failed', ['error' => $e->getMessage()]);
+            }
         } else
         if ($requestData['action'] == 'lenders_submission') {
             $data = array('subject' => $requestData['user']['subject'], 'content' => $requestData['user']['message']);
@@ -874,5 +947,102 @@ class NotificationController extends Controller
     {
         $d = DateTime::createFromFormat('Y-m-d', $value);
         return $d && $d->format('Y-m-d') === $value;
+    }
+
+    /**
+     * @OA\Post(
+     *     path="/device/token",
+     *     summary="Save or update device token for FCM",
+     *     tags={"Notification"},
+     *     security={{"Bearer": {}}},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             @OA\Property(property="device_token", type="string", example="fcm_token_here"),
+     *             @OA\Property(property="device_type", type="string", enum={"web", "android", "ios"}, example="web")
+     *         )
+     *     ),
+     *     @OA\Response(response=200, description="Token saved successfully")
+     * )
+     */
+    public function saveDeviceToken(Request $request)
+    {
+        $this->validate($request, [
+            'device_token' => 'required|string',
+            'device_type' => 'nullable|in:web,android,ios'
+        ]);
+
+        try {
+            $user = $request->user();
+            $deviceType = $request->device_type ?? 'web';
+
+            // We look up by (user_id, device_type). If found, we update that row's token.
+            // If not found, we create a new row.
+            // This allows User A and User B to have the same device_token if they use the same device.
+            UserFcmToken::updateOrCreate(
+                [
+                    'user_id' => $user->id,
+                    'device_type' => $deviceType
+                ],
+                [
+                    'device_token' => $request->device_token,
+                    'last_used_at' => Carbon::now()
+                ]
+            );
+
+            return $this->successResponse("Device token saved successfully", []);
+        } catch (\Exception $e) {
+            return $this->failResponse("Failed to save device token", [$e->getMessage()], $e);
+        }
+    }
+
+    /**
+     * @OA\Post(
+     *     path="/notifications/send-direct",
+     *     summary="Send direct push notification to specific users",
+     *     tags={"Notification"},
+     *     security={{"Bearer": {}}},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             @OA\Property(property="user_ids", type="array", @OA\Items(type="integer"), example={1, 2}),
+     *             @OA\Property(property="title", type="string", example="Hello"),
+     *             @OA\Property(property="body", type="string", example="This is a test notification"),
+     *             @OA\Property(property="data", type="object", example={"key": "value"})
+     *         )
+     *     ),
+     *     @OA\Response(response=200, description="Notification sent successfully")
+     * )
+     */
+    public function sendDirectNotification(Request $request)
+    {
+        $this->validate($request, [
+            'user_ids' => 'required|array',
+            'user_ids.*' => 'exists:master.users,id',
+            'title' => 'required|string',
+            'body' => 'required|string',
+            'data' => 'nullable|array'
+        ]);
+
+        try {
+            $fcmTokens = UserFcmToken::whereIn('user_id', $request->user_ids)
+                ->pluck('device_token')
+                ->toArray();
+
+            if (empty($fcmTokens)) {
+                return $this->failResponse("No device tokens found for the specified users", [], null, 404);
+            }
+
+            $results = FirebaseService::sendNotification(
+                $fcmTokens,
+                $request->title,
+                $request->body,
+                $request->data ?? []
+            );
+
+            return $this->successResponse("Notification sent successfully", ['results' => $results]);
+        } catch (\Exception $e) {
+            return $this->failResponse("Failed to send direct notification", [$e->getMessage()], $e);
+        }
     }
 }

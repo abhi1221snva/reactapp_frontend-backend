@@ -13,6 +13,8 @@ use Plivo\RestClient;
 use Plivo\Exceptions\PlivoRestException;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Validator;
+use Twilio\Rest\Client as TwilioClient;
+use Twilio\Exceptions\TwilioException;
 
 class Dids extends Model
 {
@@ -527,13 +529,15 @@ public function getList($request)
                 $data['conf_id'] = $data['dest_type'] == 5 ? $request->input('conf_id') : '';
                 $data['ingroup'] = $data['dest_type'] == 8 ? $request->input('ingroup') : '';
                 $data['operator'] = $request->input('operator_check') != '' ? $request->input('operator') : '';
-                $data['default_did'] = $request->input('default_did');
+                // $data['default_did'] = $request->input('default_did');
+                $data['default_did'] = '0';
                 $data['voice'] = $request->input('option_1') == 'v' ? '1' : '';
                 $data['fax'] = $request->input('option_1') == 'f' ? '1' : '';
                 $data['sms'] = $request->input('is_sms');
                 $data['sms_phone'] = $data['sms'] == '1' ? $request->input('sms_phone') : '';
                 $data['sms_email'] = $data['sms'] == '1' ? $request->input('sms_email') : '';
-                $data['set_exclusive_for_user'] = $request->input('set_exclusive_for_user');
+                // $data['set_exclusive_for_user'] = $request->input('set_exclusive_for_user');
+                $data['set_exclusive_for_user'] = 0;
 
                 //call screening audio file
                 $data['call_screening_status'] = $request->input('call_screening_status');
@@ -546,7 +550,8 @@ public function getList($request)
                 $data['prompt_option'] = $request->input('prompt_option');
                 $data['redirect_last_agent'] = $request->input('redirect_last_agent');
                 $data['sms_type'] = $request->input('sms_type');
-                $data['voip_provider'] = $request->input('voip_provider');
+               // $data['voip_provider'] = $request->input('voip_provider');
+               $data['voip_provider'] = strtolower($request->input('voip_provider'));
 
                 if ($data['sms']) //Active and forward SMS for did
                 {
@@ -566,16 +571,18 @@ public function getList($request)
                 $data['forward_number_ooh']     =  $request->input('dest_type_ooh') == 4 ? $request->input('forward_number_ooh') : '';
                 $data['conf_id_ooh']            =  $request->input('dest_type_ooh') == 5 ? $request->input('conf_id_ooh') : '';
                 $data['ingroup_ooh']            =  $request->input('dest_type_ooh') == 8 ? $request->input('ingroup_ooh') : '';
+                $data['phone_number_sid']          =  $request->input('phone_number_sid');
+                $data['sip_trunk_id']          =  "TK3b3e890b0075b08277c86c2a59ad3fbe";
 
                 $query = "INSERT INTO did (cli,cnam,area_code,dest_type,ivr_id,extension,voicemail_id,"
                     . "forward_number,country_code,conf_id,ingroup,operator,default_did,voice,fax,voip_provider,sms,sms_phone,sms_email,"
                     . "call_time_department_id, call_time_holiday, dest_type_ooh, ivr_id_ooh, extension_ooh, "
-                    . "voicemail_id_ooh, forward_number_ooh, conf_id_ooh, ingroup_ooh,set_exclusive_for_user,call_screening_status,call_screening_ivr_id,language,voice_name,ivr_audio_option,speech_text,prompt_option,redirect_last_agent,sms_type) "
+                    . "voicemail_id_ooh, forward_number_ooh, conf_id_ooh, ingroup_ooh,set_exclusive_for_user,call_screening_status,call_screening_ivr_id,language,voice_name,ivr_audio_option,speech_text,prompt_option,redirect_last_agent,sms_type,phone_number_sid,sip_trunk_id) "
                     . "VALUE "
                     . "(:cli,:cnam,:area_code,:dest_type,:ivr_id,:extension,:voicemail_id,:forward_number,:country_code,:conf_id,"
                     . ":ingroup,:operator,:default_did,:voice,:fax,:voip_provider,:sms,:sms_phone,:sms_email,"
                     . ":call_time_department_id, :call_time_holiday, :dest_type_ooh, :ivr_id_ooh, :extension_ooh, "
-                    . ":voicemail_id_ooh, :forward_number_ooh, :conf_id_ooh, :ingroup_ooh ,:set_exclusive_for_user,:call_screening_status,:call_screening_ivr_id,:language,:voice_name,:ivr_audio_option,:speech_text,:prompt_option,:redirect_last_agent,:sms_type"
+                    . ":voicemail_id_ooh, :forward_number_ooh, :conf_id_ooh, :ingroup_ooh ,:set_exclusive_for_user,:call_screening_status,:call_screening_ivr_id,:language,:voice_name,:ivr_audio_option,:speech_text,:prompt_option,:redirect_last_agent,:sms_type,:phone_number_sid,:sip_trunk_id"
                     . ")";
 
                 $add = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
@@ -614,7 +621,94 @@ public function getList($request)
                         $query_default = "UPDATE did set default_did='' WHERE id != :id";
                         DB::connection('mysql_' . $request->auth->parent_id)->update($query_default, $data_default);
                     }
+    // ----------------------------------------
+    // TWILIO SIP TRUNK (SAFE - NON BLOCKING)
+    // ----------------------------------------
+    if ($data['voip_provider'] === 'twilio' && !empty($request->phone_number_sid)) 
+    {
 
+       /* try {
+
+            $twilio = DB::connection('mysql_' . $request->auth->parent_id)
+                ->table('sms_providers')
+                ->where('provider', 'twilio')
+                ->where('status', 1)
+                ->whereNull('deleted_at')
+                ->first();
+
+            if ($twilio) {
+                $client = new Client($twilio->auth_id, $twilio->api_key);
+                $trunkSid = $twilio->twilio_trunk_id;//'TK3b3e890b0075b08277c86c2a59ad3fbe'; // sip2-
+                $client->trunking
+                    ->v1
+                    ->trunks($trunkSid)
+                    ->phoneNumbers
+                    ->create($request->phone_number_sid);
+
+                Log::info('Twilio SIP trunk updated successfully', [
+                    'trunk_sid' => $request->sip_trunk_id,
+                    'phone_sid' => $request->phone_number_sid
+                ]);
+            }
+
+        } catch (TwilioException $e) {
+
+            // IMPORTANT: Only log — DO NOT return or throw
+            Log::error('Twilio SIP trunk update failed', [
+                'error' => $e->getMessage(),
+                'trunk_sid' => $request->sip_trunk_id,
+                'phone_sid' => $request->phone_number_sid
+            ]);
+        }
+
+        */
+
+        try {
+
+            $connection = 'mysql_' . $request->auth->parent_id;
+             $twilio = DB::connection($connection)
+    ->table('sms_providers')
+    ->where('provider', 'twilio')
+    ->where('status', 1)
+    ->whereNull('deleted_at')
+    ->orderByDesc('id')   // 👈 latest by ID
+    ->first();
+
+    if ($twilio && !empty($twilio->twilio_trunk_id)) {
+
+        $client = new TwilioClient($twilio->auth_id, $twilio->api_key);
+
+        $trunkSid = $twilio->twilio_trunk_id;
+
+        $client->trunking
+            ->v1
+            ->trunks($trunkSid)
+            ->phoneNumbers
+            ->create($request->phone_number_sid);
+
+        Log::info('Twilio SIP trunk updated successfully', [
+            'trunk_sid' => $trunkSid,
+            'phone_sid' => $request->phone_number_sid
+        ]);
+
+    } else {
+
+        Log::error('Twilio trunk not configured or missing trunk ID', [
+            'phone_sid' => $request->phone_number_sid
+        ]);
+    }
+
+} catch (TwilioException $e) {
+
+    // Only log — do not break main flow
+    Log::error('Twilio SIP trunk update failed', [
+        'error'     => $e->getMessage(),
+        'trunk_sid' => isset($trunkSid) ? $trunkSid : null,
+        'phone_sid' => $request->phone_number_sid
+    ]);
+}
+
+    }
                     return array(
                         'success' => 'true',
                         'message' => 'Did added successfully.',
@@ -624,7 +718,7 @@ public function getList($request)
             } else {
                 return array(
                     'success' => 'false',
-                    'message' => 'Cli already in list'
+                    'message' => 'Phone Number already in list'
                 );
             }
         }
@@ -719,6 +813,7 @@ $didObj->forward_number = ($request->dest_type == 4) ? $request->forward_number 
 $didObj->country_code   = ($request->dest_type == 4) ? $request->country_code : '';
 $didObj->conf_id        = ($request->dest_type == 5) ? $request->conf_id : '';
 $didObj->ingroup        = ($request->dest_type == 8) ? $request->ingroup : '';
+$didObj->voice_ai       = ($request->dest_type == 12) ? $request->voice_ai : '';
 
 $didObj->operator       = (!empty($request->operator_check)) ? $request->operator : '';
 $didObj->default_did    = $request->default_did ?? 0;
@@ -729,6 +824,7 @@ $didObj->fax            = (empty($request->option_1)) ? 1 : 0;
 $didObj->sms            = (!empty($request->sms)) ? 1 : 0;
 $didObj->sms_phone      = (!empty($request->sms)) ? $request->sms_phone : '';
 $didObj->sms_email      = (!empty($request->sms)) ? $request->sms_email : '';
+//$didObj->enable_sms_ai  = $request->input('enable_sms_ai'); // Added enable_sms_ai
 
                 //$didObj->fax_did            =   $request->input('fax_did;
                 $didObj->set_exclusive_for_user = $request->input('set_exclusive_for_user');
@@ -776,6 +872,7 @@ $didObj->sms_email      = (!empty($request->sms)) ? $request->sms_email : '';
 
                 $didObj->conf_id_ooh            =  $request->dest_type_ooh == 5 ? $request->conf_id_ooh : '';
                 $didObj->ingroup_ooh            =  $request->dest_type_ooh == 8 ? $request->ingroup_ooh : '';
+                $didObj->voice_ai_ooh           =  $request->dest_type_ooh == 12 ? $request->voice_ai_ooh : '';
 
                 $editRecord = $didObj->save();
 
@@ -885,31 +982,116 @@ $didObj->sms_email      = (!empty($request->sms)) ? $request->sms_email : '';
 
 
 
-    public function deleteDid($request)
-    {
-        if ($request->has('did_id')) {
-            $deleteId = $request->input('did_id');
-            $data['did_id'] = $deleteId;
-            $query = "DELETE FROM did WHERE id= :did_id ";
-            $deleteRecord = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
-            if ($deleteRecord == true) {
-                return array(
-                    'success' => 'true',
-                    'message' => 'Phone Number delete successfully.'
-                );
-            } else {
-                return array(
-                    'success' => 'false',
-                    'message' => 'Phone Number not deleted in list'
-                );
-            }
-        } else {
-            return array(
-                'success' => 'false',
-                'message' => 'Phone Number id is missing in list'
-            );
-        }
+    // public function deleteDid($request)
+    // {
+    //     if ($request->has('did_id')) {
+    //         $deleteId = $request->input('did_id');
+    //         $data['did_id'] = $deleteId;
+    //         $query = "DELETE FROM did WHERE id= :did_id ";
+    //         $deleteRecord = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
+    //         if ($deleteRecord == true) {
+    //             return array(
+    //                 'success' => 'true',
+    //                 'message' => 'Phone Number delete successfully.'
+    //             );
+    //         } else {
+    //             return array(
+    //                 'success' => 'false',
+    //                 'message' => 'Phone Number not deleted in list'
+    //             );
+    //         }
+    //     } else {
+    //         return array(
+    //             'success' => 'false',
+    //             'message' => 'Phone Number id is missing in list'
+    //         );
+    //     }
+    // }
+public function deleteDid($request)
+{
+    if (!$request->has('did_id')) {
+        return [
+            'success' => 'false',
+            'message' => 'Phone Number id is missing in list'
+        ];
     }
+
+    $deleteId = $request->input('did_id');
+    $connection = 'mysql_' . $request->auth->parent_id;
+
+    // 🔹 Step 1: Get DID record first
+    $did = DB::connection($connection)
+        ->table('did')
+        ->where('id', $deleteId)
+        ->first();
+
+    if (!$did) {
+        return [
+            'success' => 'false',
+            'message' => 'Phone Number not found'
+        ];
+    }
+
+    // ======================================================
+    // 🔥 REMOVE FROM TWILIO TRUNK
+    // ======================================================
+
+    try {
+
+        $twilio = DB::connection($connection)
+            ->table('sms_providers')
+            ->where('provider', 'twilio')
+            ->where('status', 1)
+            ->whereNull('deleted_at')
+            ->first();
+
+        if ($twilio && !empty($twilio->twilio_trunk_id) && !empty($did->phone_number_sid)) {
+
+            $client = new TwilioClient($twilio->auth_id, $twilio->api_key);
+
+            $client->trunking
+                ->v1
+                ->trunks($twilio->twilio_trunk_id)
+                ->phoneNumbers($did->phone_number_sid)
+                ->delete();
+
+            Log::info('Twilio trunk phone number deleted successfully', [
+                'trunk_sid' => $twilio->twilio_trunk_id,
+                'phone_sid' => $did->phone_number_sid
+            ]);
+        }
+
+    } catch (\Twilio\Exceptions\TwilioException $e) {
+
+        Log::error('Twilio trunk phone number delete failed', [
+            'error'     => $e->getMessage(),
+            'phone_sid' => $did->phone_number_sid ?? null
+        ]);
+
+        // ⚠️ You can return error here if you want strict behavior
+    }
+
+    // ======================================================
+    // 🗑 Delete from DID table
+    // ======================================================
+
+    $deleteRecord = DB::connection($connection)
+        ->table('did')
+        ->where('id', $deleteId)
+        ->delete();
+
+    if ($deleteRecord) {
+        return [
+            'success' => 'true',
+            'message' => 'Phone Number deleted successfully.'
+        ];
+    }
+
+    return [
+        'success' => 'false',
+        'message' => 'Phone Number not deleted'
+    ];
+}
 
     public function getListCount($request)
     {

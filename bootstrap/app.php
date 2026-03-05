@@ -134,12 +134,13 @@ $app->configure('geoip');
 $app->configure('cache');
 $app->configure('otp');
 $app->configure('sms');
+$app->configure('firebase');
 $app->register(Illuminate\Mail\MailServiceProvider::class);
 $app->register(Sichikawa\LaravelSendgridDriver\MailServiceProvider::class);
 $app->register(Maatwebsite\Excel\ExcelServiceProvider::class);
 //$app->register(\SwaggerLume\ServiceProvider::class);
 //$app->register(\Torann\GeoIP\GeoIPServiceProvider::class);
-//$app->register(Illuminate\Redis\RedisServiceProvider::class);
+$app->register(Illuminate\Redis\RedisServiceProvider::class);
 
 $app->routeMiddleware([
     'jwt.auth'       => App\Http\Middleware\JwtMiddleware::class,
@@ -163,6 +164,8 @@ class_alias('Illuminate\Contracts\View\Factory', 'view');
 if ($app->environment() !== 'production') {
     $app->register(\Barryvdh\LaravelIdeHelper\IdeHelperServiceProvider::class);
 }
+// $app->register(Laravel\Socialite\SocialiteServiceProvider::class);
+
 date_default_timezone_set(env('APP_TIMEZONE', 'UTC'));
 $app->withFacades();
 $app->configure('swagger-lume');

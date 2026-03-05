@@ -11,8 +11,8 @@ use App\Model\User;
 use Illuminate\Support\Facades\Log;
 use App\Model\Client\emailLog;
 use App\Services\CrmMailService;
-use App\Jobs\SendCrmNotificationEmail;
-
+use App\Services\FirebaseService;
+use App\Model\UserFcmToken;
 
 
 class SendCrmNotificationEmail extends Job
@@ -130,9 +130,34 @@ class SendCrmNotificationEmail extends Job
 
             $data = array('subject'=>$subject,'content'=>$message);
             $mailService = new CrmMailService($clientId, $mailable, $smtp_setting, $data);
-            $to =  $finalEmail; //array('abhi4mca@gmail.com','mailme@rohitwanchoo.com');//env('SYSTEM_ADMIN_EMAIL'); //,'mailme@rohitwanchoo.com'
-
+            $to = $finalEmail;
             $mailService->sendEmail($to);
+
+            // Send FCM Push Notification
+            try {
+                $recipientUserIds = User::whereIn('email', $finalEmail)->pluck('id');
+                $fcmTokens = UserFcmToken::whereIn('user_id', $recipientUserIds)
+                    ->pluck('device_token')
+                    ->toArray();
+                
+                if (!empty($fcmTokens)) {
+                    FirebaseService::sendNotification(
+                        $fcmTokens,
+                        $subject,
+                        strip_tags($message),
+                        [
+                            'type' => 'crm_notification',
+                            'lead_id' => $requestData['user']['lead_id'] ?? null,
+                            'clientId' => $this->clientId
+                        ]
+                    );
+                }
+            } catch (\Exception $e) {
+                Log::error('FCM CRM Notification failed in Job', [
+                    'error' => $e->getMessage(),
+                    'clientId' => $this->clientId
+                ]);
+            }
 
             /*if(!empty($to))
             {

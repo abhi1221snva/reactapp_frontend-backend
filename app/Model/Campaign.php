@@ -159,6 +159,10 @@ public function campaignDetail($request)
             $request->auth->level,
             $request->auth->groups
         );
+// 🔽 Sort campaigns in DESC order by ID
+usort($campaigns, function ($a, $b) {
+    return $b->id <=> $a->id;
+});
 
         // 🔍 Search by title
         if ($request->has('title') && !empty($request->input('title'))) {
@@ -249,6 +253,25 @@ public function campaignDetail($request)
             } else {
                 $id->dialed_leads = 0;
             }
+/* -------------------------------------------------
+ * 6️⃣ AUTO INACTIVATE CAMPAIGN (GUARDED)
+ * ------------------------------------------------- */
+if (
+    $id->total_leads > 0 &&
+    $id->dialed_leads >= $id->total_leads &&
+    (int) $id->status === 1
+) {
+    DB::connection($connection)->update(
+        "UPDATE campaign
+         SET status = 0
+         WHERE id = :campaign_id
+           AND status = 1",
+        ['campaign_id' => $id->id]
+    );
+
+    // reflect immediately in response
+    $id->status = 0;
+}
 
             /* -------------------------------------------------
              * 4️⃣ HOPPER COUNT (UNCHANGED)
@@ -280,7 +303,7 @@ public function campaignDetail($request)
             'success'     => 'true',
             'message'     => 'Campaign detail.',
             'total_rows'  => $totalRows,
-            'data'        => array_reverse($data_count),
+            'data'        => $data_count,
         ];
 
     } catch (\Throwable $e) {
@@ -454,7 +477,60 @@ public function updateCampaign($request)
         $cmpId = $request->input('campaign_id');
         $date_time = date('Y-m-d H:i:s');
         $data['id'] = $cmpId;
+        $status = $request->input('status');
+if ($status == 1) {
 
+    $connection = 'mysql_' . $request->auth->parent_id;
+
+    $sqlLists = "
+        SELECT list_id
+        FROM campaign_list
+        WHERE campaign_id = :campaign_id
+          AND status = 1
+          AND is_deleted = 0
+    ";
+
+    $lists = DB::connection($connection)->select($sqlLists, [
+        'campaign_id' => $cmpId
+    ]);
+
+    $listIds = array_map(fn($l) => $l->list_id, $lists);
+
+    $totalLeads = 0;
+    $dialedLeads = 0;
+
+    if (!empty($listIds)) {
+
+        $listIdsStr = implode(',', $listIds);
+
+        $total = DB::connection($connection)->selectOne("
+            SELECT SUM(lead_count) AS total
+            FROM list
+            WHERE id IN ($listIdsStr)
+        ");
+
+        $totalLeads = $total->total ?? 0;
+
+        $dialed = DB::connection($connection)->selectOne("
+            SELECT COUNT(1) AS total
+            FROM lead_report
+            WHERE campaign_id = :campaign_id
+              AND list_id IN ($listIdsStr)
+        ", [
+            'campaign_id' => $cmpId
+        ]);
+
+        $dialedLeads = $dialed->total ?? 0;
+    }
+
+    if ($totalLeads > 0 && $dialedLeads >= $totalLeads) {
+        return [
+            'success' => false,
+            'message' => 'Campaign cannot be activated. All leads are already dialed. Please add more leads.',
+            'status'  => 422
+        ];
+    }
+}
         DB::connection('mysql_' . $request->auth->parent_id)
             ->update(
                 "UPDATE {$this->table} 
@@ -749,12 +825,13 @@ if ($request->filled('title')) {
             [strtolower($title)]
         );
 
-    if ($exists) {
-        return [
-            'success' => 'false',
-            'message' => 'Campaign title already exists. Please use a different title.'
-        ];
-    }
+        if ($exists) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Campaign title already exists. Please use a different title.'
+            ], 409);
+        }
+        
 }
 
             if (!$request->has('api_id') || empty($request->api_id)) {
@@ -1360,161 +1437,361 @@ $record->dialed_leads = $record->rowLeadReport ?? 0;
 
   
 
-    function getDispositionAndList($request)
-    {
+    // function getDispositionAndList($request)
+    // {
 
 
 
-        try {
-            $data = array();
-            $searchStr = array();
-            if ($request->has('list_id') && is_numeric($request->input('list_id'))) {
-                $data['list_id'] = $request->input('list_id');
-            }
+    //     try {
+    //         $data = array();
+    //         $searchStr = array();
+    //         if ($request->has('list_id') && is_numeric($request->input('list_id'))) {
+    //             $data['list_id'] = $request->input('list_id');
+    //         }
 
-            $sql = "SELECT l.disposition_id as id, IF(l.disposition_id = 0 , 'Not Dialed', d.title) as name, COUNT(l.list_id) as record_count FROM lead_report as l
-                LEFT JOIN disposition as d ON l.disposition_id = d.id WHERE l.list_id = :list_id group by l.disposition_id";
-            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
-            $data = (array) $record;
-
-
+    //         $sql = "SELECT l.disposition_id as id, IF(l.disposition_id = 0 , 'Not Dialed', d.title) as name, COUNT(l.list_id) as record_count FROM lead_report as l
+    //             LEFT JOIN disposition as d ON l.disposition_id = d.id WHERE l.list_id = :list_id group by l.disposition_id";
+    //         $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+    //         $data = (array) $record;
 
 
 
 
 
-            //return $data;
-            if (!empty($data)) {
-                return array(
-                    'success' => 'true',
-                    'message' => 'Disposition List detail.',
-                    'data' => $data
-                );
-            }
-            return array(
-                'success' => 'false',
-                'message' => 'Disposition List Not Found.',
-                'data' => array()
-            );
-        } catch (Exception $e) {
-            echo $e->getMessage();
-        } catch (InvalidArgumentException $e) {
-            echo $e->getMessage();
+
+
+    //         //return $data;
+    //         if (!empty($data)) {
+    //             return array(
+    //                 'success' => 'true',
+    //                 'message' => 'Disposition List detail.',
+    //                 'data' => $data
+    //             );
+    //         }
+    //         return array(
+    //             'success' => 'false',
+    //             'message' => 'Disposition List Not Found.',
+    //             'data' => array()
+    //         );
+    //     } catch (Exception $e) {
+    //         echo $e->getMessage();
+    //     } catch (InvalidArgumentException $e) {
+    //         echo $e->getMessage();
+    //     }
+    // }
+
+function getDispositionAndList($request)
+{
+    try {
+        $params = [];
+        $where  = [];
+
+        // Filter by list_id
+        if ($request->has('list_id') && is_numeric($request->input('list_id'))) {
+            $where[] = 'l.list_id = :list_id';
+            $params['list_id'] = $request->input('list_id');
         }
+
+        // Filter by campaign_id
+        if ($request->has('campaign_id') && is_numeric($request->input('campaign_id'))) {
+            $where[] = 'l.campaign_id = :campaign_id';
+            $params['campaign_id'] = $request->input('campaign_id');
+        }
+
+        // If no filter provided
+        if (empty($where)) {
+            return [
+                'success' => 'false',
+                'message' => 'list_id or campaign_id is required.',
+                'data'    => []
+            ];
+        }
+
+        $whereSql = implode(' AND ', $where);
+
+        $sql = "
+            SELECT 
+                l.disposition_id AS id,
+                IF(l.disposition_id = 0, 'Not Dialed', d.title) AS name,
+                COUNT(*) AS record_count
+            FROM lead_report l
+            LEFT JOIN disposition d ON l.disposition_id = d.id
+            WHERE $whereSql
+            GROUP BY l.disposition_id
+        ";
+
+        $record = DB::connection('mysql_' . $request->auth->parent_id)
+            ->select($sql, $params);
+
+        return [
+            'success' => 'true',
+            'message' => 'Disposition List detail.',
+            'data'    => $record
+        ];
+
+    } catch (\Exception $e) {
+        return [
+            'success' => 'false',
+            'message' => $e->getMessage(),
+            'data'    => []
+        ];
     }
-
-    function deleteDispositionAndList($request)
-    {
+}
 
 
 
-        try {
-            $data = array();
-            $searchStr = array();
-            if ($request->has('list_id') && is_numeric($request->input('list_id'))) {
-                $data['list_id'] = $request->input('list_id');
+//     public function deleteDispositionAndList($request)
+// {
+//     try {
+//         $parentId   = $request->auth->parent_id;
+//         $campaignId = (int) $request->input('campaign_id');
+//         $listId     = (int) $request->input('list_id');
+ 
+//         $disposition = $request->input('disposition'); // [0 => 144]
+//         $select_id   = $request->input('select_id');   // [0 => 2]
+ 
+//         $count = [];
+//         $count_deletedLeads = 0;
+ 
+//         DB::beginTransaction();
+ 
+//         foreach ($disposition as $dis => $dispositionId) {
+ 
+//             $userCount = (int) ($select_id[$dis] ?? 0);
+ 
+//             /**
+//              * 🔹 SAME LOGIC, FIXED QUERY
+//              * 🔹 disposition-wise call count
+//              * 🔹 using cdr + cdr_archive
+//              */
+//             $sql = "
+//                 SELECT lr.lead_id, COUNT(x.id) AS total
+//                 FROM lead_report lr
+//                 LEFT JOIN (
+//                     SELECT id, lead_id, campaign_id, disposition_id
+//                     FROM cdr
+//                     WHERE campaign_id = ?
+//                       AND disposition_id = ?
+//                     UNION ALL
+//                     SELECT id, lead_id, campaign_id, disposition_id
+//                     FROM cdr_archive
+//                     WHERE campaign_id = ?
+//                       AND disposition_id = ?
+//                 ) x
+//                   ON x.lead_id = lr.lead_id
+//                  AND x.campaign_id = lr.campaign_id
+//                  AND x.disposition_id = lr.disposition_id
+//                 WHERE lr.campaign_id = ?
+//                   AND lr.list_id = ?
+//                   AND lr.disposition_id = ?
+//                 GROUP BY lr.lead_id
+//             ";
+ 
+//             $records = DB::connection('mysql_' . $parentId)->select(
+//                 $sql,
+//                 [
+//                     $campaignId, $dispositionId,
+//                     $campaignId, $dispositionId,
+//                     $campaignId, $listId, $dispositionId
+//                 ]
+//             );
+ 
+//             $deleteId = [];
+ 
+//             foreach ($records as $row) {
+//                 if ((int)$row->total <= $userCount) {
+//                     $deleteId[] = $row->lead_id;
+//                 }
+//             }
+ 
+//             /**
+//              * 🔥 EXACT DELETE (as per your original logic)
+//              */
+//             if (!empty($deleteId)) {
+//                 DB::connection('mysql_' . $parentId)
+//                     ->table('lead_report')
+//                     ->where('campaign_id', $campaignId)
+//                     ->where('list_id', $listId)
+//                     ->whereIn('lead_id', $deleteId)
+//                     ->delete();
+//             }
+ 
+//             $count[$dispositionId] = count($deleteId);
+//             $count_deletedLeads += $count[$dispositionId];
+//         }
+ 
+//         DB::commit();
+ 
+//         dispatch(
+//             new RecycleDeletedNotificationJob(
+//                 $parentId,
+//                 $campaignId,
+//                 [
+//                     'action' => 'Recycle Data',
+//                     'listId' => $listId,
+//                     'records' => $count_deletedLeads,
+//                     'disposition_count' => $count,
+//                     'campaignId' => $campaignId
+//                 ]
+//             )
+//         )->onConnection('database');
+ 
+//         return [
+//             'success' => true,
+//             'message' => 'Disposition List deleted successfully.',
+//             'deleted' => $count_deletedLeads
+//         ];
+ 
+//     } catch (\Exception $e) {
+//         DB::rollBack();
+//         return [
+//             'success' => false,
+//             'message' => $e->getMessage()
+//         ];
+//     }
+// }
+public function deleteDispositionAndList($request)
+{
+    try {
+        $parentId   = $request->auth->parent_id;
+        $campaignId = (int) $request->input('campaign_id');
+        $listId     = (int) $request->input('list_id');
+
+        $disposition = $request->input('disposition'); // [0 => 144]
+        $select_id   = $request->input('select_id');   // [0 => 2] → call limit
+
+        recycleLogicLog("--- Start On-Demand Recycle ---", [
+            'parent_id' => $parentId,
+            'campaign_id' => $campaignId,
+            'list_id' => $listId,
+            'dispositions' => $disposition,
+            'call_limits' => $select_id
+        ]);
+
+        $count = [];
+        $count_deletedLeads = 0;
+
+        DB::beginTransaction();
+
+        foreach ($disposition as $dis => $dispositionId) {
+
+            $maxAllowedCalls = (int) ($select_id[$dis] ?? 0);
+            if ($maxAllowedCalls <= 0) {
+                recycleLogicLog("Skipping disposition due to zero/negative limit", ['disposition_id' => $dispositionId, 'limit' => $maxAllowedCalls]);
+                continue;
             }
 
-            if ($request->has('campaign_id') && is_numeric($request->input('campaign_id'))) {
-                $data['campaign_id'] = $request->input('campaign_id');
+            recycleLogicLog("Processing disposition", ['disposition_id' => $dispositionId, 'limit' => $maxAllowedCalls]);
+
+            /**
+             * ✅ FIXED LOGIC: Count TOTAL campaign calls for the lead
+             * (Removed disposition_id filter from subqueries and join)
+             */
+            $sql = "
+                SELECT lr.lead_id, COUNT(x.id) AS total
+                FROM lead_report lr
+                LEFT JOIN (
+                    SELECT id, lead_id, campaign_id
+                    FROM cdr
+                    WHERE campaign_id = ?
+                    UNION ALL
+                    SELECT id, lead_id, campaign_id
+                    FROM cdr_archive
+                    WHERE campaign_id = ?
+                ) x
+                  ON x.lead_id = lr.lead_id
+                 AND x.campaign_id = lr.campaign_id
+                WHERE lr.campaign_id = ?
+                  AND lr.list_id = ?
+                  AND lr.disposition_id = ?
+                GROUP BY lr.lead_id
+            ";
+
+            $records = DB::connection('mysql_' . $parentId)->select(
+                $sql,
+                [
+                    $campaignId,
+                    $campaignId,
+                    $campaignId, $listId, $dispositionId
+                ]
+            );
+
+            $deleteId = [];
+            foreach ($records as $row) {
+                if ((int)$row->total <= $maxAllowedCalls) {
+                    $deleteId[] = $row->lead_id;
+                    recycleLogicLog("Lead marked for deletion", [
+                        'lead_id' => $row->lead_id,
+                        'total_calls' => $row->total,
+                        'limit' => $maxAllowedCalls
+                    ]);
+                }
             }
-              $parentId   = $request->auth->parent_id;
-                $campaignId = (int) $request->input('campaign_id');
-                $listId     = (int) $request->input('list_id');
 
-        /**
-         * --------------------------------------------------
-         * ✅ STEP 1: Check campaign status before recycling
-         * --------------------------------------------------
-         */
-        $campaign = DB::connection('mysql_' . $parentId)
-            ->table('campaign')
-            ->where('id', $campaignId)
-            ->first();
+            if (!empty($deleteId)) {
+                $deleted = DB::connection('mysql_' . $parentId)
+                    ->table('lead_report')
+                    ->where('campaign_id', $campaignId)
+                    ->where('list_id', $listId)
+                    ->where('disposition_id', $dispositionId)
+                    ->whereIn('lead_id', $deleteId)
+                    ->delete();
+                
+                recycleLogicLog("Successfully deleted leads from lead_report", [
+                    'disposition_id' => $dispositionId,
+                    'count' => $deleted
+                ]);
+            }
 
-        if ($campaign && (int)$campaign->status === 0) {
-            // Activate campaign first
+            $count[$dispositionId] = count($deleteId);
+            $count_deletedLeads += $count[$dispositionId];
+        }
+
+        DB::commit();
+
+        recycleLogicLog("Database transaction committed", ['total_recycled' => $count_deletedLeads]);
+
+        if ($count_deletedLeads > 0) {
             DB::connection('mysql_' . $parentId)
                 ->table('campaign')
                 ->where('id', $campaignId)
                 ->update(['status' => 1]);
+            
+            recycleLogicLog("Campaign status set to active", ['campaign_id' => $campaignId]);
         }
 
-            $disposition = $request->input('disposition');
-            $select_id = $request->input('select_id');
+        recycleLogicLog("Dispatching notification job");
+        dispatch(
+            new RecycleDeletedNotificationJob(
+                $parentId,
+                $campaignId,
+                [
+                    'action' => 'Recycle Data',
+                    'listId' => $listId,
+                    'records' => $count_deletedLeads,
+                    'disposition_count' => $count,
+                    'campaignId' => $campaignId
+                ]
+            )
+        )->onConnection('database');
 
-            $count_deletedLeads = 0;
-            foreach ($disposition as $dis => $dispositionId) {
-                $userCount = $select_id[$dis];
-                $data['disposition_id'] = $dispositionId;
-                $sql = "SELECT lr.list_id, lr.lead_id, if(p.total is null, '0', p.total) as total
-                    FROM lead_report as lr
-                    LEFT JOIN (
-                    SELECT lead_id, count(id) as total, campaign_id FROM cdr WHERE campaign_id = " . $request->input('campaign_id') . " group by lead_id
-                    UNION
-                    SELECT lead_id, count(id) as total, campaign_id FROM cdr WHERE campaign_id = " . $request->input('campaign_id') . " group by lead_id
-                    ) as p
-                    ON p.lead_id = lr.lead_id AND lr.campaign_id = p.campaign_id
-                    WHERE lr.campaign_id = " . $request->input('campaign_id') . " AND lr.list_id = " . $request->input('list_id') . " AND lr.disposition_id = " . $dispositionId . "";
+        recycleLogicLog("--- End On-Demand Recycle ---");
 
-                // $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
-                                $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
+        return [
+            'success' => true,
+            'message' => 'Disposition List deleted successfully.',
+            'deleted' => $count_deletedLeads
+        ];
 
-                //return $data = (array)$record;
-
-                $deleteId = array();
-                foreach ($record as $key => $value) {
-                    if ($value->total <= $userCount) {
-                        array_push($deleteId, $value->lead_id);
-                    }
-                }
-
-                //return $deleteId;
-
-                if (!empty($deleteId)) {
-                    $deleteSql = "DELETE FROM lead_report WHERE lead_id in (" . implode(",", $deleteId) . ")";
-                    DB::connection('mysql_' . $request->auth->parent_id)->update($deleteSql);
-                }
-
-                $count[$dispositionId] = count($deleteId);
-                $count_deletedLeads = $count_deletedLeads + $count[$dispositionId];
-                //Send Email
-            }
-
-            $recycle_data = [
-                "action" => "Recycle Data",
-                "listId" => $request->input('list_id'),
-                "records" => $count_deletedLeads,
-                //"deletedId" => $deleteId,
-                "disposition_count" => $count,
-                "disposition" => $disposition,
-                "campaignId" => $request->input('campaign_id')
-            ];
-            // return $recycle_data;
-
-
-
-           // $campaignId = $request->input('campaign_id');
-            dispatch(new RecycleDeletedNotificationJob($request->auth->parent_id, $campaignId, $recycle_data))->onConnection("database");
-            //return $data;
-            if (!empty($data)) {
-                return array(
-                    'success' => 'true',
-                    'message' => 'Disposition List deleted successfully.',
-                    'data' => $data
-                );
-            }
-            return array(
-                'success' => 'false',
-                'message' => 'Disposition List Not Deleted Successfully.',
-                'data' => array()
-            );
-        } catch (Exception $e) {
-            echo $e->getMessage();
-        } catch (InvalidArgumentException $e) {
-            echo $e->getMessage();
-        }
+    } catch (\Exception $e) {
+        DB::rollBack();
+        recycleLogicLog("ERROR: Exception in recycle logic", ['message' => $e->getMessage()]);
+        return [
+            'success' => false,
+            'message' => $e->getMessage()
+        ];
     }
+}
 
     public function copyCampaign($request)
     {
@@ -1691,10 +1968,10 @@ if (!$campaign) {
     }
 
     // === Lead report count ===
-    $data1['campaign_id'] = $campaign->id;
-    $sql_count_lead_report = "SELECT count(1) as rowCountLeadReport FROM lead_report WHERE campaign_id = :campaign_id ";
-    $record_count_lead = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_count_lead_report, $data1);
-    $campaign->rowLeadReport = $record_count_lead->rowCountLeadReport ?? 0;
+     $data1['campaign_id'] = $campaign->id;
+    // $sql_count_lead_report = "SELECT count(1) as rowCountLeadReport FROM lead_report WHERE campaign_id = :campaign_id ";
+    // $record_count_lead = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_count_lead_report, $data1);
+    // $campaign->rowLeadReport = $record_count_lead->rowCountLeadReport ?? 0;
 
     // === Campaign list ===
     $searchStr = [];
@@ -1722,24 +1999,46 @@ if (!$campaign) {
 // === Total leads (same logic as campaignDetail) ===
 if (!empty($id_list)) {
 
-    $sql_lead_count = "SELECT SUM(lead_count) as totalLeadCount FROM list WHERE id IN (" . implode(',', $id_list) . ")";
-    $lead_count_record = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_lead_count);
+   // === TOTAL LEADS (MATCH campaignDetail) ===
+if (!empty($id_list)) {
 
-    if (!empty($lead_count_record) && $lead_count_record->totalLeadCount > 0) {
-        $campaign->total_leads = (int) $lead_count_record->totalLeadCount;
-    } else {
-        if ($campaign->crm_title_url == 'hubspot') {
-            $sql = "SELECT SUM(size) as total FROM hubspot_lists WHERE list_id IN ('" . implode("','", $id_list) . "')";
-        } else {
-            $sql = "SELECT COUNT(*) as total FROM list_data WHERE list_id IN ('" . implode("','", $id_list) . "')";
-        }
+    $sqlTotalLeads = "
+        SELECT SUM(lead_count) AS total
+        FROM list
+        WHERE id IN (" . implode(',', $id_list) . ")
+    ";
 
-        $record = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql);
-        $campaign->total_leads = (int) ($record->total ?? 0);
-    }
+    $total = DB::connection('mysql_' . $request->auth->parent_id)
+        ->selectOne($sqlTotalLeads);
+
+    $campaign->total_leads = (int) ($total->total ?? 0);
+
 } else {
     $campaign->total_leads = 0;
 }
+
+}
+// === DIALED LEADS (MATCH campaignDetail) ===
+if (!empty($id_list)) {
+
+    $sqlDialed = "
+        SELECT COUNT(1) AS total
+        FROM lead_report
+        WHERE campaign_id = :campaign_id
+          AND list_id IN (" . implode(',', $id_list) . ")
+    ";
+
+    $dialed = DB::connection('mysql_' . $request->auth->parent_id)
+        ->selectOne($sqlDialed, [
+            'campaign_id' => $campaign->id
+        ]);
+
+    $campaign->dialed_leads = (int) ($dialed->total ?? 0);
+
+} else {
+    $campaign->dialed_leads = 0;
+}
+
 
 
     // === Lead temp count ===
@@ -1795,7 +2094,7 @@ if (!empty($id_list)) {
     }
     // === Rename / Map columns for API output ===
 //$campaign->setAttribute('total_leads', $campaign->rowLeadReport ?? 0);
-$campaign->setAttribute('dialed_leads', $campaign->rowLeadReport ?? 0);
+//$campaign->setAttribute('dialed_leads', $campaign->rowLeadReport ?? 0);
 //$campaign->setAttribute('created_date', $campaign->updated ?? null);
 
 // Optionally remove old keys to clean response
@@ -1984,6 +2283,76 @@ if (!empty($campaign->updated)) {
         $listId = $request->input('listId');
         $status = $request->input('status');
         Log::debug('Received status: ', ['status' => $status]);
+         $connection = 'mysql_' . $request->auth->parent_id;
+    /**
+     * 🚫 BLOCK ACTIVATION IF LEADS ARE EXHAUSTED
+     */
+    if ($status === 1) {
+
+        /* -------------------------------------------------
+         * 1️⃣ ACTIVE LIST IDS
+         * ------------------------------------------------- */
+        $sqlLists = "
+            SELECT list_id
+            FROM campaign_list
+            WHERE campaign_id = :campaign_id
+              AND status = 1
+              AND is_deleted = 0
+        ";
+
+        $lists = DB::connection($connection)->select($sqlLists, [
+            'campaign_id' => $listId
+        ]);
+
+        $listIds = array_map(fn($l) => $l->list_id, $lists);
+
+        $totalLeads = 0;
+        $dialedLeads = 0;
+
+        if (!empty($listIds)) {
+
+            $listIdsStr = implode(',', $listIds);
+
+            /* -------------------------------------------------
+             * 2️⃣ TOTAL LEADS
+             * ------------------------------------------------- */
+            $sqlTotalLeads = "
+                SELECT SUM(lead_count) AS total
+                FROM list
+                WHERE id IN ($listIdsStr)
+            ";
+
+            $total = DB::connection($connection)->selectOne($sqlTotalLeads);
+            $totalLeads = $total->total ?? 0;
+
+            /* -------------------------------------------------
+             * 3️⃣ DIALED LEADS
+             * ------------------------------------------------- */
+            $sqlDialed = "
+                SELECT COUNT(1) AS total
+                FROM lead_report
+                WHERE campaign_id = :campaign_id
+                  AND list_id IN ($listIdsStr)
+            ";
+
+            $dialed = DB::connection($connection)->selectOne($sqlDialed, [
+                'campaign_id' => $listId
+            ]);
+
+            $dialedLeads = $dialed->total ?? 0;
+        }
+
+        /* -------------------------------------------------
+         * ❌ VALIDATION
+         * ------------------------------------------------- */
+        if ($totalLeads > 0 && $dialedLeads >= $totalLeads) {
+            return response()->json([
+                'success' => 'false',
+                'status'  => 'false',
+                'message' => 'Campaign cannot be activated. All leads are already dialed. Please add more leads.'
+            ], 422);
+        }
+    }
 
         $saveRecord = Campaign::on('mysql_' . $request->auth->parent_id)
             ->where('id', $listId) // Use the actual listId received from the request

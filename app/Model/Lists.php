@@ -1230,6 +1230,7 @@ public function editListn($request)
 }
 public function editList($request)
 {
+    
     // 🔐 Validation
     if (!$request->has('list_id') || !is_numeric($request->input('list_id'))) {
         return ['success' => 'false', 'message' => 'Invalid list_id'];
@@ -1241,6 +1242,64 @@ public function editList($request)
     DB::connection($parentConn)->beginTransaction();
 
     try {
+                /**
+ * 🔥 DELETE LIST LOGIC (APPLIED FROM EXISTING CODE)
+ */
+if ($request->input('is_deleted') == 1) {
+
+    $conn   = DB::connection($parentConn);
+    $listId = (int) $request->input('list_id');
+
+    // campaign_list
+    $conn->delete(
+        "DELETE FROM campaign_list WHERE list_id = :list_id",
+        ['list_id' => $listId]
+    );
+
+    // list_data
+    $conn->delete(
+        "DELETE FROM list_data WHERE list_id = :list_id",
+        ['list_id' => $listId]
+    );
+
+    // lead_report
+    $conn->delete(
+        "DELETE FROM lead_report WHERE list_id = :list_id",
+        ['list_id' => $listId]
+    );
+
+    // lead_temp
+    $conn->delete(
+        "DELETE FROM lead_temp WHERE list_id = :list_id",
+        ['list_id' => $listId]
+    );
+
+    // list_header
+    $conn->delete(
+        "DELETE FROM list_header WHERE list_id = :list_id",
+        ['list_id' => $listId]
+    );
+
+    // delete list (eloquent)
+    $listModel = Lists::on($parentConn)->findOrFail($listId);
+
+    $notificationData = [
+        "action"   => "List deleted",
+        "listId"   => $listId,
+        "listName" => $listModel->title
+    ];
+
+    $listModel->delete();
+
+  
+
+    DB::connection($parentConn)->commit();
+
+    return [
+        'success' => 'true',
+        'message' => 'List deleted successfully.'
+    ];
+}
 
         /**
          * 0️⃣ HANDLE DELETION (soft delete via is_deleted flag)
@@ -1438,6 +1497,8 @@ public function editList($request)
             'success' => 'true',
             'message' => 'List updated successfully.'
         ];
+
+
 
     } catch (\Throwable $e) {
 
@@ -1777,18 +1838,39 @@ private function isPhoneColumn($conn, $listId, $column)
         $rowData = ['list_id' => $list_id];
         $colIndex = 0;
 
-        foreach ($row as $cell) {
-            $colIndex++;
-            if ($colIndex > 30) continue;
+        // foreach ($row as $cell) {
+        //     $colIndex++;
+        //     if ($colIndex > 30) continue;
 
-            // Date conversion
-            if (isset($date_array[$colIndex]) && is_numeric($cell)) {
-                $cell = date("Y-m-d", (($cell - 25569) * 86400));
-                $cell = date('Y-m-d', strtotime('+1 day', strtotime($cell)));
-            }
+        //     // Date conversion
+        //     if (isset($date_array[$colIndex]) && is_numeric($cell)) {
+        //         $cell = date("Y-m-d", (($cell - 25569) * 86400));
+        //         $cell = date('Y-m-d', strtotime('+1 day', strtotime($cell)));
+        //     }
 
-            $rowData['option_' . $colIndex] = $cell;
+        //     $rowData['option_' . $colIndex] = $cell;
+        // }
+ foreach ($row as $cell) {
+    $colIndex++;
+    if ($colIndex > 30) continue;
+
+    // Date conversion
+    if (isset($date_array[$colIndex]) && is_numeric($cell)) {
+        $cell = date("Y-m-d", (($cell - 25569) * 86400));
+        $cell = date('Y-m-d', strtotime('+1 day', strtotime($cell)));
+    }
+    // 🔥 APPLY FIX ONLY FOR PHONE COLUMN
+    else if ($colIndex === 3) {   // phone column
+        if (is_numeric($cell)) {
+            $cell = number_format($cell, 0, '', '');
         }
+        $cell = preg_replace('/[^0-9]/', '', (string) $cell);
+    }
+
+    $rowData['option_' . $colIndex] = $cell;
+}
+
+
 
         $query_1[] = $rowData;
     }

@@ -10,16 +10,18 @@
   | and give it the Closure to call when that URI is requested.
   |
  */
-$router->get('/list-all-cache', function () {
-    $allCache = externalRedisCacheList();  // No args = all caches, no filter
+$router->get('/list-all-cache', 'RedisCacheController@listAllCache');
+$router->get('/cache-detail', 'RedisCacheController@getCacheDetail');
+$router->get('/cache-detail/{key}', 'RedisCacheController@getCacheDetail');
+$router->post('/delete-cache', 'RedisCacheController@deleteCache');
+$router->delete('/delete-cache', 'RedisCacheController@deleteCache');
+$router->post('/delete-cache-by-age', 'RedisCacheController@deleteCacheByAge');
+$router->get('/test-redis', 'RedisCacheController@testConnection');
 
-    return response()->json([
-        'success' => true,
-        'message' => 'All cached entries retrieved',
-        'count' => count($allCache),
-        'data' => $allCache  // e.g., ['123_456' => 'Some description', '789_101' => 'Another one']
-    ]);
-});
+$router->get('/trigger-pusher-test', 'PusherController@triggerTest');
+$router->get('/test-fcm-trigger', 'NotificationController@testFcmTrigger');
+
+
 
 
 // Rate limited: 10 login attempts per minute per IP
@@ -35,6 +37,10 @@ $router->group([
   $router->post('/credential/create', 'AuthenticationController@createCredential');
   $router->post('/credential/delete', 'AuthenticationController@deleteCredential');
   $router->post('/delete-user', 'AuthenticationController@deleteUser');
+  $router->post('/phone-number/create', 'AuthenticationController@createPhoneNumber');
+  $router->post('/phone-number/update', 'AuthenticationController@updatePhoneNumber');
+  $router->post('/phone-number/delete', 'AuthenticationController@deletePhoneNumber');
+
 
   
 });
@@ -59,6 +65,8 @@ $router->get('/redis-test', function () {
     externalRedisCacheSet(123, 'test-prompt', ['data' => 'value from Redis!']);
     return externalRedisCacheGet(123, 'test-prompt', 'Not found');
 });
+
+$router->get('/test-timezone', 'TimezoneTestController@test');
 $router->get('/', function () use ($router) {
   return $router->app->version();
 });
@@ -70,8 +78,8 @@ $router->POST('authentication_copy', 'AuthenticationController@authentication_co
 
 $router->POST('verify_google_otp', 'TwoFactorController@verify_google_otp');
 //$router->POST('authentication_copy', 'AuthenticationController@authentication_copy');
-$router->get('auth/google/redirect', 'GoogleController@redirectToGoogle');
-$router->post('auth/google/callback', 'GoogleController@handleGoogleCallback');
+// $router->get('auth/google/redirect', 'GoogleController@redirectToGoogle');
+// $router->post('auth/google/callback', 'GoogleController@handleGoogleCallback');
 $router->post('auth/twitter/callback', 'TwitterController@handleTwitterCallback');
 
 //cron job
@@ -136,6 +144,14 @@ $router->group(['middleware' => ['jwt.auth', 'auth.superadmin', 'audit.log']], f
 
 #Routes with admin rights should be added here
 $router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($router) {
+
+  Route::get('/api/emails', 'EmailController@index');
+  Route::get('/api/emails/{id}', 'EmailController@show');
+  Route::post('/api/emails/draft', 'EmailController@storeDraft');
+  Route::put('/api/emails/draft/{id}', 'EmailController@updateDraft');
+  Route::delete('/api/emails/draft/{id}', 'EmailController@deleteDraft');
+  Route::post('/api/emails/archive', 'EmailController@archive');
+  Route::post('/api/emails/unarchive', 'EmailController@unarchive');
   #create user
   $router->put('user', 'ExtensionController@saveNewExtension');
 
@@ -494,6 +510,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($ro
   $router->post('hang-up', 'DialerController@hangUp');
   $router->post('dtmf', 'DialerController@dtmf');
   $router->post('user-logout', 'DialerController@logout');
+  $router->post('extension-logout', 'DialerController@extensionlogout');
   $router->post('disposition-campaign', 'DialerController@dispositionCampaign');
   $router->post('disposition_by_campaignId', 'DialerController@dispositionByCampaignId');
   $router->post('get-lead', 'DialerController@getLead');
@@ -815,6 +832,8 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($ro
   #Notifications
   $router->get("notifications", "NotificationController@index");
   $router->post("notifications", "NotificationController@saveSubscriptions");
+  $router->post("device/token", "NotificationController@saveDeviceToken");
+  $router->post("notifications/send-direct", "NotificationController@sendDirectNotification");
 
   #CDR
   $router->post("active-extension-group-list", "ReportController@getActiveExtensionByGroup");
@@ -1389,7 +1408,8 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($ro
 
   $router->get('lender-label-api-setting', 'LenderApiLabelController@index');
   $router->post('lender-label-api-setting', 'LenderApiLabelController@save');
-
+#pusher
+//$router->get('/pusher-test', 'TestController@test');
 
   #pdf reader
   $router->get('pdf-reader-setting', 'PdfReaderController@index');
@@ -1438,6 +1458,8 @@ $router->post('call-billing', "CallBillingController@prepareBill");
 
 //sms api receiveing from external
 $router->post('receive-sms', 'SmsController@smsResponse');
+$router->get('receive-sms', 'SmsController@smsResponse');
+$router->get('send-test-sms', 'SmsController@sendTestSms');
 
 $router->group(['middleware' => ['websiteclient']], function () use ($router) {
   $router->get('otp/email', 'OtpController@requestEmailOtp');

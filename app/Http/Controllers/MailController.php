@@ -25,7 +25,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
-
+use App\Model\Client\ListData;
+use App\Model\Client\ListHeader;
+use App\Model\Client\Label;
 class MailController extends Controller
 {
 
@@ -103,16 +105,30 @@ class MailController extends Controller
                     "name" => $smtpSetting->from_name
                 ];
             }
+$processedBody = $this->processEmailBody($request, $request->input("body"));
+Log::info('proced email',['processedBody'=>$processedBody]);
+$genericMail = new GenericMail(
+    $request->input("subject"),
+    $from,
+    $processedBody
+);
 
-            $genericMail = new GenericMail(
-                $request->input("subject"),
-                $from,
-                $request->input("body")
-            );
+            // $genericMail = new GenericMail(
+            //     $request->input("subject"),
+            //     $from,
+            //     $request->input("body")
+            // );
+            $cc  = $request->input('cc', []);
+            $bcc = $request->input('bcc', []);
+            //send email
+            // $mailService = new MailService($request->auth->parent_id, $genericMail, $smtpSetting);
+            // $cc  = $request->input('cc', []);
+            // $bcc = $request->input('bcc', []);
+            $attachments = $request->input('attachments', []);
 
             //send email
             $mailService = new MailService($request->auth->parent_id, $genericMail, $smtpSetting);
-            $mailService->sendEmail($request->input("to"));
+            $mailService->sendEmail($request->input("to"),$cc,$bcc, $attachments);
 
             //Billing part for Email from "Start Dialing"
             $isFree = $intCharge = NULL;
@@ -145,6 +161,16 @@ class MailController extends Controller
                 $currencyCode = $package->currency_code;
                 $clientPackageId = $package->id;
             }
+            $draftId = $request->input('draft_id');
+
+            if ($draftId) {
+                EmailLog::on("mysql_" . $request->auth->parent_id)
+                    ->where('id', $draftId)
+                    ->where('folder', 'draft')
+                    ->where('user_id', $request->auth->id)
+                    ->delete();
+            }
+
 
             //entry into client_xxx.email_logs
             $emailLog = new EmailLog();
@@ -160,7 +186,47 @@ class MailController extends Controller
             $emailLog->client_package_id = $clientPackageId;
             $emailLog->isFree = $isFree;
             $emailLog->currency_code = $currencyCode;
+            $emailLog->cc  = json_encode($cc);
+            $emailLog->bcc = json_encode($bcc);
+            $emailLog->attachments = json_encode($attachments);
+
             $emailLog->saveOrFail();
+            $recipients = array_merge(
+                [$request->input('to')],
+                $cc
+            );
+
+
+            // $receiverUser = User::where('email', $request->input('to'))
+            //     ->where('parent_id', $request->auth->parent_id)
+            //     ->first();
+            foreach ($recipients as $email) {
+        $receiverUser = User::where('email', $email)
+        ->where('parent_id', $request->auth->parent_id)
+        ->first();
+
+    if (!$receiverUser) {
+        continue;
+    }
+
+    $emailLogInbox = new EmailLog();
+    $emailLogInbox->setConnection("mysql_" . $request->auth->parent_id);
+    $emailLogInbox->senderType = $senderType;
+    $emailLogInbox->user_id = $receiverUser->id;
+    $emailLogInbox->campaign_id = $request->input("campaign_id");
+    $emailLogInbox->from = $smtpSetting->from_email;
+    $emailLogInbox->to = $email;
+    $emailLogInbox->subject = $request->input("subject");
+    $emailLogInbox->body = $request->input("body");
+    $emailLogInbox->cc = json_encode($cc);
+    $emailLogInbox->bcc = null; // ❌ never show BCC
+    $emailLogInbox->charge = 0;
+    $emailLogInbox->isFree = 1;
+    $emailLogInbox->folder = 'inbox';
+    $emailLogInbox->attachments = json_encode($attachments);
+    $emailLogInbox->saveOrFail();
+}
+
 
             return response()->json(["success" => true]);
         } catch (\Throwable $exception) {
@@ -172,7 +238,8 @@ class MailController extends Controller
             return response()->json([
                 "success" => false,
                 "message" => $exception->getMessage()
-            ]);
+            ], 500); // <-- explicitly set status code
+
         }
     }
 
@@ -487,7 +554,7 @@ class MailController extends Controller
                 $fileName = 'image_' . time() . '.' . $extension;
                 //  $filePath = base_path('public/upload/' . $fileName);
                 // $filePath  ="C:\Users\shikh\Downloads\signed_application_1732268450.pdf";            // Decode and save the file
-                $file_paths = '/var/www/html/branch/frontend_beta/public/uploads/' . $fileName;
+                $filePath = '/var/www/html/branch/frontend_beta/public/uploads/' . $fileName;
 
                 file_put_contents($filePath, base64_decode($base64Data));
 
@@ -611,6 +678,35 @@ class MailController extends Controller
                     'updated_at' => Carbon::now(),
                 ]);
             }
+             // ✅ Log the email sent via CRM (was missing!)
+            foreach ($emailSet as $lenderId => $emailData) {
+                // Determine TO, CC, BCC from the emailData structure used above
+                 $toEmail = $emailData['to'] ?? '';
+                 // Gather CCs
+                 $ccs = [];
+                 if(!empty($emailData['cc1'])) $ccs[] = $emailData['cc1'];
+                 if(!empty($emailData['cc2'])) $ccs[] = $emailData['cc2'];
+                 if(!empty($emailData['cc3'])) $ccs[] = $emailData['cc3'];
+                 if(!empty($emailData['cc4'])) $ccs[] = $emailData['cc4'];
+
+                 if(empty($toEmail)) continue;
+
+                $crmEmailLog = new EmailLog();
+                $crmEmailLog->setConnection("mysql_" . $clientId);
+                $crmEmailLog->senderType = 'user'; // Sent by logged-in user
+                $crmEmailLog->user_id = $request->auth->id;
+                $crmEmailLog->campaign_id = null; // or pass if available
+                $crmEmailLog->from = $request->auth->email; // or SMTP from
+                $crmEmailLog->to = $toEmail;
+                $crmEmailLog->subject = $request->subject;
+                $crmEmailLog->body = $request->editor1;
+                $crmEmailLog->folder = 'sent';
+                $crmEmailLog->cc = json_encode($ccs);
+                $crmEmailLog->attachments = json_encode($file_paths); // Save paths
+                $crmEmailLog->created_at = Carbon::now();
+                $crmEmailLog->save();
+            }
+
         } catch (\Throwable $exception) {
             Log::error("MailController.sendMail.error", [
                 "message" => $exception->getMessage(),
@@ -629,4 +725,149 @@ class MailController extends Controller
             "message" => "Emails sent successfully",
         ]);
     }
+private function processEmailBody(Request $request, $body)
+{
+    if (empty($body)) {
+        return $body;
+    }
+
+    $parentId = $request->auth->parent_id;
+    $userId   = $request->input('user_id') ?? $request->auth->id;
+
+    $list_id = $request->input('list_id');
+    $lead_id = $request->input('lead_id');
+
+    $user = User::find($userId);
+
+    $lead = null;
+    $headers = [];
+
+    if ($lead_id && $list_id) {
+        $lead = ListData::on("mysql_" . $parentId)
+            ->where('id', $lead_id)
+            ->first();
+
+        // Fetch all headers once (optimization)
+        $headers = ListHeader::on("mysql_" . $parentId)
+            ->where("list_id", $list_id)
+            ->where("is_deleted", "0")
+            ->get()
+            ->keyBy('header'); // key by header name
+    }
+
+
+/*
+|--------------------------------------------------------------------------
+| 1️⃣ LEAD PLACEHOLDERS [[Label Title]]
+|--------------------------------------------------------------------------
+*/
+preg_match_all('/\[\[(.*?)\]\]/', $body, $leadMatches);
+
+foreach ($leadMatches[1] as $placeholder) {
+
+    $value = '';
+    $labelTitle = trim($placeholder);
+
+    if ($lead && $list_id) {
+
+        // Step 1️⃣: Find label id from custom_field_labels using title
+        $label = DB::connection("mysql_" . $parentId)
+            ->table('label')
+            ->where('title', $labelTitle)
+            ->where('is_deleted', 0)
+            ->first();
+
+        if ($label) {
+
+            // Step 2️⃣: Find column name in list_header using label_id
+            $listHeader = ListHeader::on("mysql_" . $parentId)
+                ->where("label_id", $label->id)
+                ->where("list_id", $list_id)
+                ->where("is_deleted", "0")
+                ->first();
+
+            if ($listHeader) {
+
+                $column_name = $listHeader->column_name;
+
+                // Step 3️⃣: Get value from list_data
+                if (isset($lead[$column_name])) {
+                    $value = $lead[$column_name];
+                }
+            }
+        }
+    }
+
+    $body = str_replace("[[$placeholder]]", $value, $body);
+}
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | 2️⃣ SENDER PLACEHOLDERS {{first_name}}
+    |--------------------------------------------------------------------------
+    */
+    preg_match_all('/\{\{(.*?)\}\}/', $body, $senderMatches);
+
+    foreach ($senderMatches[1] as $placeholder) {
+
+        $value = '';
+
+        if ($user && isset($user[$placeholder])) {
+            $value = $user[$placeholder];
+        }
+
+        $body = str_replace("{{{$placeholder}}}", $value, $body);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | 3️⃣ CUSTOM PLACEHOLDERS ((4))
+    |--------------------------------------------------------------------------
+    */
+   /*
+|--------------------------------------------------------------------------
+| 3️⃣ CUSTOM PLACEHOLDERS ((Title))
+|--------------------------------------------------------------------------
+*/
+preg_match_all('/\(\((.*?)\)\)/', $body, $customMatches);
+
+foreach ($customMatches[1] as $placeholder) {
+
+    $value = '';
+    $title = trim($placeholder);
+
+    if ($userId) {
+
+        // Step 1️⃣: Get custom label id from custom_field_labels
+        $customLabel = DB::connection("mysql_" . $parentId)
+            ->table('custom_field_labels')
+            ->where('title', $title)
+            ->where('is_deleted', 0)
+            ->first();
+
+        if ($customLabel) {
+
+            // Step 2️⃣: Get title_links from custom_fields_labels_values
+            $customValue = DB::connection("mysql_" . $parentId)
+                ->table('custom_fields_labels_values')
+                ->where('custom_id', $customLabel->id)
+                ->where('user_id', $userId)
+                ->where('is_deleted', 0)
+                ->first();
+
+            if ($customValue && !empty($customValue->title_links)) {
+                $value = $customValue->title_links;
+            }
+        }
+    }
+
+    $body = str_replace("(($placeholder))", $value, $body);
+}
+
+    return $body;
+}
+
+
+
 }

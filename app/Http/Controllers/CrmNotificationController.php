@@ -11,7 +11,10 @@ use App\Model\User;
 use App\Model\Master\Client;
 use App\Jobs\SendCrmNotificationEmail;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\NotificationController;
+use App\Services\FirebaseService;
+use App\Model\UserFcmToken;
 
 
 class CrmNotificationController extends Controller
@@ -76,7 +79,31 @@ class CrmNotificationController extends Controller
            // $this->sendEmailNotification($request);
 
 
-            
+            // Send FCM Push Notification
+            try {
+                $fcmTokens = UserFcmToken::where('user_id', $request->auth->id)
+                    ->pluck('device_token')
+                    ->toArray();
+                
+                if (!empty($fcmTokens)) {
+                    FirebaseService::sendNotification(
+                        $fcmTokens,
+                        "CRM Update for Lead #" . $request->lead_id,
+                        $request->message,
+                        [
+                            'type' => 'crm_notification',
+                            'lead_id' => $request->lead_id,
+                            'user_id' => $request->auth->id
+                        ],
+                        true // High priority for CRM updates
+                    );
+                }
+            } catch (\Exception $e) {
+                \Log::error('FCM CRM Notification failed', [
+                    'error' => $e->getMessage(),
+                    'user_id' => $request->auth->id
+                ]);
+            }
 
 
             return $this->successResponse("Notification Added Successfully", $Notification->toArray());

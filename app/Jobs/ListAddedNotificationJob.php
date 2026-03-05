@@ -10,6 +10,8 @@ use App\Model\User;
 use App\Services\MailService;
 use Illuminate\Support\Carbon;
 use App\Services\SmsService;
+use App\Services\FirebaseService;
+use App\Model\UserFcmToken;
 use Illuminate\Support\Facades\Log;
 use App\Model\Master\Client;
 use Plivo\RestClient;
@@ -53,7 +55,7 @@ class ListAddedNotificationJob extends Job
             return;
         }
 
-        $emails = User::whereIn('id', $subscription->subscribers)->select('email','mobile','country_code','base_parent_id')->get()->all();
+        $emails = User::whereIn('id', $subscription->subscribers)->select('id', 'email','mobile','country_code','base_parent_id')->get()->all();
         if(empty($emails))
         {
             return;
@@ -152,6 +154,44 @@ class ListAddedNotificationJob extends Job
 
             $mailService = new MailService($this->clientId, $mailable, $smtpSetting);
             $mailService->sendEmail($emails);
+
+            // Send FCM Push Notification
+            try {
+                $subscriberIds = array_column($emails, 'id');
+                $fcmTokens = UserFcmToken::whereIn('user_id', $subscriberIds)
+                    ->pluck('device_token')
+                    ->toArray();
+                
+                if (!empty($fcmTokens)) {
+                    $title = $this->data['action'] ?? 'List Notification';
+                    $body = $message ?? "Update for list " . ($this->data['listName'] ?? 'Unknown');
+                    
+                    if (!isset($message)) {
+                        if($this->data['action'] == 'List added') {
+                            $body = "List: ".($this->data['listName'] ?? 'Unknown')." has been created for campaign: ".($campaign->title ?? 'Unknown').".";
+                        } else if($this->data['action'] == 'List deleted') {
+                            $body = "List: ".($this->data['listName'] ?? 'Unknown')." has been deleted from campaign: ".($campaign->title ?? 'Unknown').".";
+                        }
+                    }
+
+                    FirebaseService::sendNotification(
+                        $fcmTokens,
+                        $title,
+                        strip_tags($body),
+                        [
+                            'type' => 'list_notification',
+                            'action' => $this->data['action'],
+                            'campaign_id' => $this->campaignId,
+                            'clientId' => $this->clientId
+                        ]
+                    );
+                }
+            } catch (\Exception $e) {
+                Log::error('FCM List Notification failed', [
+                    'error' => $e->getMessage(),
+                    'clientId' => $this->clientId
+                ]);
+            }
 
             $subscription->last_sent = Carbon::now();
             $subscription->save();
