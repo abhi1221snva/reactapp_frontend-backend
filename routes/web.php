@@ -1444,6 +1444,8 @@ $router->post('call-billing', "CallBillingController@prepareBill");
 
 //sms api receiveing from external
 $router->post('receive-sms', 'SmsController@smsResponse');
+$router->get('receive-sms', 'SmsController@smsResponse');
+$router->get('send-test-sms', 'SmsController@sendTestSms');
 
 $router->group(['middleware' => ['websiteclient']], function () use ($router) {
   $router->get('otp/email', 'OtpController@requestEmailOtp');

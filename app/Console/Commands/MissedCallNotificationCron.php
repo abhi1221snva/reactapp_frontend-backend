@@ -5,6 +5,9 @@ namespace App\Console\Commands;
 use App\Model\Client\ListHeader;
 use App\Model\Client\Notification;
 use App\Services\PusherService;
+use App\Services\SmsService;
+use App\Services\FirebaseService;
+use App\Model\UserFcmToken;
 use Illuminate\Console\Command;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -115,6 +118,48 @@ class MissedCallNotificationCron extends Command
                             'time' => date('Y-m-d H:i:s')
                         ]
                     ]);
+
+                    // Send SMS Notification if user has mobile
+                    if (!empty($user->mobile)) {
+                        try {
+                            $setting = config("otp.sms");
+                            $smsService = new SmsService($setting["url"], $setting["key"], $setting["token"]);
+                            $message = "Missed call from " . $inbound_number . " for extension " . $popup->extension;
+                            $to = ($user->country_code ?? '') . $user->mobile;
+                            $smsService->sendMessage($setting["from_number"], $to, $message);
+                        } catch (\Exception $smsEx) {
+                            Log::error('SMS notification failed for missed call', [
+                                'error' => $smsEx->getMessage(),
+                                'user_id' => $user->id
+                            ]);
+                        }
+                    }
+
+                    // Send FCM Push Notification
+                    try {
+                        $fcmTokens = UserFcmToken::where('user_id', $user->id)
+                            ->pluck('device_token')
+                            ->toArray();
+
+                        if (!empty($fcmTokens)) {
+                            FirebaseService::sendNotification(
+                                $fcmTokens,
+                                'Missed Call',
+                                'Missed call from ' . $inbound_number,
+                                [
+                                    'type' => 'missed_call',
+                                    'number' => $inbound_number,
+                                    'extension' => $popup->extension,
+                                    'lead_id' => $lead_id
+                                ]
+                            );
+                        }
+                    } catch (\Exception $fcmEx) {
+                        Log::error('FCM notification failed for missed call', [
+                            'error' => $fcmEx->getMessage(),
+                            'user_id' => $user->id
+                        ]);
+                    }
                 } catch (\Exception $e) {
                     Log::error('MissedCallNotificationCron failed for popup ID ' . $popup->id, [
                         'error' => $e->getMessage()
