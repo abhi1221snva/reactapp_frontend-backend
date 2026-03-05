@@ -756,4 +756,25 @@ if ($hasCredits === false) {
             );
         }
     }
+
+    public function sendTestSms(Request $request)
+    {
+        $userId = $request->get('user_id');
+        $user = User::find($userId);
+        if (!$user || empty($user->mobile)) {
+            return response()->json(['success' => false, 'message' => 'User not found or mobile missing']);
+        }
+
+        $setting = config("otp.sms");
+        $smsService = new SmsService($setting["url"], $setting["key"], $setting["token"]);
+        $to = ($user->country_code ?? '') . $user->mobile;
+        $message = $request->get('message') ?? "This is a test SMS from " . env('APP_NAME', 'Dialer');
+
+        try {
+            $response = $smsService->sendMessage($setting["from_number"], $to, $message);
+            return response()->json(['success' => true, 'to' => $to, 'response' => json_decode($response) ?? $response]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()]);
+        }
+    }
 }
