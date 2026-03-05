@@ -77,48 +77,47 @@ class GroupController extends Controller
     {
         try {
             $clientId = $request->auth->parent_id;
-            $extGroups = [];
 
-            // Step 1: Fetch all extension groups based on user level
+            // Step 1: Build base query based on user level
+            $query = ExtensionGroup::on("mysql_$clientId")->where("is_deleted", 0);
+
             if ($request->auth->level < 7) {
                 if (!empty($request->auth->groups)) {
-                    $extGroups = ExtensionGroup::on("mysql_$clientId")
-                        ->whereIn("id", $request->auth->groups)
-                        ->where("is_deleted", 0)
-                        ->get()
-                        ->toArray();
+                    $query->whereIn("id", $request->auth->groups);
+                } else {
+                    // No groups assigned, return empty
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Extension Groups',
+                        'data' => [],
+                        'total' => 0,
+                    ]);
                 }
-            } else {
-                $extGroups = ExtensionGroup::on("mysql_$clientId")
-                    ->where("is_deleted", 0)
-                    ->get()
-                    ->toArray();
             }
 
-            // Step 2: Apply search filter (case-insensitive)
+            // Step 2: Apply search filter at database level (case-insensitive)
             if ($request->filled('search')) {
-                $search = strtolower($request->input('search'));
-
-                $extGroups = array_filter($extGroups, function ($group) use ($search) {
-                    return str_contains(strtolower($group['title'] ?? ''), $search);
-                });
+                $search = $request->input('search');
+                $query->whereRaw('LOWER(title) LIKE ?', ['%' . strtolower($search) . '%']);
             }
 
-            // Step 3: Save total before pagination
-            $total = count($extGroups);
+            // Step 3: Get total count at database level
+            $total = $query->count();
 
-            // Step 4: Apply pagination if start and limit exist
+            // Step 4: Apply pagination at database level
             if ($request->has(['start', 'limit'])) {
                 $start = (int) $request->input('start', 0);
                 $limit = (int) $request->input('limit', 10);
-                $extGroups = array_slice($extGroups, $start, $limit);
+                $query->offset($start)->limit($limit);
             }
 
-            // Step 5: Return data with total
+            // Step 5: Execute query and return
+            $extGroups = $query->get()->toArray();
+
             return response()->json([
                 'success' => true,
                 'message' => 'Extension Groups',
-                'data' => array_values($extGroups),
+                'data' => $extGroups,
                 'total' => $total,
             ]);
         } catch (\Throwable $exception) {
@@ -261,44 +260,65 @@ class GroupController extends Controller
     public function patch(Request $request, $id)
     {
         $this->validate($request, [
-            'title'     => 'required|sometimes|string|max:255',
-            'status'    => 'required|sometimes|boolean'
+            'title'      => 'sometimes|string|max:255',
+            'status'     => 'sometimes|boolean',
+            'extensions' => 'nullable|array',
         ]);
 
+        $conn = 'mysql_' . $request->auth->parent_id;
+
         try {
-            $extGroup = ExtensionGroup::on("mysql_" . $request->auth->parent_id)->findOrFail($id);
-            if (!$extGroup->is_deleted) {
-                if ($request->has("title")) $extGroup->title = $request->input("title");
-                if ($request->has("status")) $extGroup->status = $request->input("status");
-                $extGroup->saveOrFail();
+            $extGroup = ExtensionGroup::on($conn)->findOrFail($id);
 
-                $extension = $request->extensions;
-                $data['id'] = $id;
-                $query = "DELETE FROM extension_group_map WHERE group_id = :id";
-                $save = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
-                //return $extension;
-
-                foreach ($extension as $value) {
-
-                    $allTypeExtension = User::where('extension', $value)->first();
-                    $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
-                    $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, array('extension' => $value, 'group_id' => $id));
-
-                    $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
-                    $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, array('extension' => $allTypeExtension->alt_extension, 'group_id' => $id));
-
-                    $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id)";
-                    $updateGroup = DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, array('extension' => $allTypeExtension->app_extension, 'group_id' => $id));
-                }
-
-                return $this->successResponse("Extension group updated", $extGroup->toArray());
-            } else {
+            if ($extGroup->is_deleted) {
                 return $this->failResponse("Extension group not found", ["Invalid extension group id $id"], null, 404);
             }
+
+            DB::connection($conn)->beginTransaction();
+
+            if ($request->has("title")) $extGroup->title = $request->input("title");
+            if ($request->has("status")) $extGroup->status = $request->input("status");
+            $extGroup->saveOrFail();
+
+            // Delete old mappings and re-insert
+            DB::connection($conn)
+                ->table('extension_group_map')
+                ->where('group_id', $id)
+                ->delete();
+
+            $extensions = $request->extensions;
+            if (!empty($extensions) && is_array($extensions)) {
+                foreach ($extensions as $value) {
+                    $user = User::where('extension', $value)->first();
+                    if (!$user) continue;
+
+                    $exts = array_unique(array_filter([
+                        $value,
+                        $user->alt_extension,
+                        $user->app_extension
+                    ]));
+
+                    foreach ($exts as $ext) {
+                        DB::connection($conn)
+                            ->table('extension_group_map')
+                            ->insert([
+                                'extension'  => $ext,
+                                'group_id'   => $id,
+                                'is_deleted' => 0,
+                            ]);
+                    }
+                }
+            }
+
+            DB::connection($conn)->commit();
+
+            return $this->successResponse("Extension group updated", $extGroup->toArray());
+
         } catch (ModelNotFoundException $exception) {
             return $this->failResponse("Extension group not found", ["Invalid extension group id $id"], $exception, 404);
         } catch (\Throwable $exception) {
-            return $this->failResponse("Failed to update extension group", [$exception->getMessage()], $exception, 404);
+            DB::connection($conn)->rollBack();
+            return $this->failResponse("Failed to update extension group", [$exception->getMessage()], $exception, 500);
         }
     }
 //    public function patchNew(Request $request)
@@ -687,8 +707,6 @@ public function patchNew(Request $request)
                             'extension'  => $ext,
                             'group_id'   => $extensionGroup->id,
                             'is_deleted' => 0,
-                            'created_at'=> now(),
-                            'updated_at'=> now(),
                         ]);
                 }
             }

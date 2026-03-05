@@ -15,6 +15,7 @@ use App\Services\MailService;
 use App\Services\SmsService;
 use Illuminate\Support\Facades\Log;
 use Plivo\RestClient;
+use Pusher\Pusher;
 
 
 
@@ -27,11 +28,23 @@ class SmsController extends Controller
      * @return void
      */
     private $request;
+    protected $pusher;
 
     public function __construct(Request $request, sms $sms)
     {
         $this->request = $request;
         $this->model = $sms;
+
+        // Initialize Pusher for real-time SMS notifications
+        $this->pusher = new Pusher(
+            env('PUSHER_APP_KEY'),
+            env('PUSHER_APP_SECRET'),
+            env('PUSHER_APP_ID'),
+            [
+                'cluster' => env('PUSHER_APP_CLUSTER'),
+                'useTLS' => true
+            ]
+        );
     }
 
 
@@ -392,6 +405,30 @@ class SmsController extends Controller
             $smsObj->charge = $intCharge;
             $smsObj->isFree = $isFree;
             $smsObj->save();
+
+            // ========== PUSHER: Real-time SMS notification ==========
+            try {
+                $this->pusher->trigger('my-channel', 'my-event', [
+                    'message' => [
+                        'user_ids' => [$request->get('user_id')],
+                        'platform' => 'text',
+                        'msg' => 'New SMS from ' . $request->get('from'),
+                        'from' => $request->get('from'),
+                        'to' => $request->get('to'),
+                        'body' => substr($request->get('message'), 0, 100),
+                        'sms_id' => $smsObj->id,
+                        'client_id' => $request->get('client_id')
+                    ]
+                ]);
+                Log::info("Pusher SMS notification sent", [
+                    'user_id' => $request->get('user_id'),
+                    'from' => $request->get('from'),
+                    'sms_id' => $smsObj->id
+                ]);
+            } catch (\Exception $e) {
+                Log::error("Pusher SMS notification failed: " . $e->getMessage());
+            }
+            // ========== END PUSHER ==========
 
             //email sender
 

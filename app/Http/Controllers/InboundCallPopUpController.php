@@ -11,16 +11,30 @@ use Illuminate\Support\Facades\DB;
 use App\Model\Client\LocationGroup;
 use App\Model\User;
 use DateTime;
+use Pusher\Pusher;
 
 use App\Model\Cron;
 
 class InboundCallPopUpController extends Controller
 {
     private $request;
+    protected $pusher;
+
     public function __construct(Request $request, Report $report)
     {
         $this->request = $request;
         $this->model = $report;
+
+        // Initialize Pusher for real-time call notifications
+        $this->pusher = new Pusher(
+            env('PUSHER_APP_KEY'),
+            env('PUSHER_APP_SECRET'),
+            env('PUSHER_APP_ID'),
+            [
+                'cluster' => env('PUSHER_APP_CLUSTER'),
+                'useTLS' => true
+            ]
+        );
     }
 
     public function index(Request $request)
@@ -57,6 +71,7 @@ class InboundCallPopUpController extends Controller
 
                 $inbound_number = $this->request->inbound_number;
                 $inbound_calls = [];
+                $userIds = []; // Collect user IDs for Pusher notification
                 foreach($extension_list as $key => $extension)
                 {
                     $user = User::on("master")->where('extension',$extension)->orWhere('alt_extension',$extension)->first();
@@ -68,10 +83,35 @@ class InboundCallPopUpController extends Controller
                         $InboundCallPopup->parent_id = $clientId;
                         $InboundCallPopup->extension = $extension;
                         $InboundCallPopup->save();
-                        $inbound_calls[] =$InboundCallPopup; 
-
+                        $inbound_calls[] =$InboundCallPopup;
+                        $userIds[] = $user->id; // Collect user ID for notification
                     }
                 }
+
+                // ========== PUSHER: Real-time RINGING notification ==========
+                if (!empty($userIds)) {
+                    try {
+                        $this->pusher->trigger('my-channel', 'my-event', [
+                            'message' => [
+                                'user_ids' => $userIds,
+                                'platform' => 'call',
+                                'event' => 'ringing',
+                                'msg' => 'Incoming call from ' . $inbound_number,
+                                'number' => $inbound_number,
+                                'location_id' => $location_id,
+                                'parent_id' => $parent_id
+                            ]
+                        ]);
+                        Log::info("Pusher call RINGING notification sent", [
+                            'user_ids' => $userIds,
+                            'inbound_number' => $inbound_number,
+                            'location_id' => $location_id
+                        ]);
+                    } catch (\Exception $e) {
+                        Log::error("Pusher call RINGING notification failed: " . $e->getMessage());
+                    }
+                }
+                // ========== END PUSHER ==========
 
                 $ListHeader = ListHeader::on("mysql_" . $clientId)->where('is_dialing',1)->get()->all();
                 $column = array();
@@ -186,9 +226,24 @@ class InboundCallPopUpController extends Controller
                 $user = User::on("master")->where('extension',$extension)->orWhere('alt_extension',$extension)->first();
                 if(!empty($user))
                 {
+                    // Get all users who were notified about this call BEFORE deleting
+                    $notifiedPopups = DB::connection('master')
+                        ->table('inbound_call_popup')
+                        ->where('inbound_number', $inbound_number)
+                        ->get();
+
+                    $userIds = [];
+                    foreach($notifiedPopups as $popup) {
+                        $extUser = User::on("master")->where('extension', $popup->extension)
+                            ->orWhere('alt_extension', $popup->extension)->first();
+                        if ($extUser) {
+                            $userIds[] = $extUser->id;
+                        }
+                    }
+
                     $data['extension'] = $extension;
                     $data['inbound_number'] = $inbound_number;
-                    
+
                     $receivedPopUp ="UPDATE inbound_call_popup set confirm=1 WHERE inbound_number=:inbound_number and extension=:extension";
                     $save = DB::connection('master')->update($receivedPopUp, $data);
 
@@ -196,6 +251,32 @@ class InboundCallPopUpController extends Controller
 
                     $query = "DELETE FROM inbound_call_popup WHERE inbound_number = :inbound_number and confirm='0'";
                     $save = DB::connection('master')->update($query, $data_delete);
+
+                    // ========== PUSHER: Real-time RECEIVED notification ==========
+                    if (!empty($userIds)) {
+                        try {
+                            $answeredByName = $user->full_name ?? $user->name ?? $extension;
+                            $this->pusher->trigger('my-channel', 'my-event', [
+                                'message' => [
+                                    'user_ids' => array_unique($userIds),
+                                    'platform' => 'call',
+                                    'event' => 'received',
+                                    'msg' => 'Call answered by ' . $answeredByName,
+                                    'number' => $inbound_number,
+                                    'answered_by' => $user->id,
+                                    'answered_by_name' => $answeredByName
+                                ]
+                            ]);
+                            Log::info("Pusher call RECEIVED notification sent", [
+                                'user_ids' => $userIds,
+                                'inbound_number' => $inbound_number,
+                                'answered_by' => $user->id
+                            ]);
+                        } catch (\Exception $e) {
+                            Log::error("Pusher call RECEIVED notification failed: " . $e->getMessage());
+                        }
+                    }
+                    // ========== END PUSHER ==========
                 }
 
                 //echo "<pre>";print_r($user);die;
@@ -248,5 +329,84 @@ class InboundCallPopUpController extends Controller
             
         }
         return $this->successResponse("Inbound List", [$InboundCallPopup]);
+    }
+
+    /**
+     * Handle call completed notification
+     * Clears ringing notifications for all users
+     */
+    public function completedInboundCallPopUp(Request $request)
+    {
+        $this->validate($request, [
+            "inbound_number" => "required",
+            "token" => "required"
+        ]);
+
+        $tokenENV = env('PREDICTIVE_CALL_TOKEN');
+
+        if($tokenENV == $request->token)
+        {
+            $inbound_number = $request->inbound_number;
+
+            try
+            {
+                // Get all users who were notified about this call
+                $notifiedPopups = DB::connection('master')
+                    ->table('inbound_call_popup')
+                    ->where('inbound_number', $inbound_number)
+                    ->get();
+
+                $userIds = [];
+                foreach($notifiedPopups as $popup) {
+                    $user = User::on("master")->where('extension', $popup->extension)
+                        ->orWhere('alt_extension', $popup->extension)->first();
+                    if ($user) {
+                        $userIds[] = $user->id;
+                    }
+                }
+
+                // ========== PUSHER: Real-time COMPLETED notification ==========
+                if (!empty($userIds)) {
+                    try {
+                        $this->pusher->trigger('my-channel', 'my-event', [
+                            'message' => [
+                                'user_ids' => array_unique($userIds),
+                                'platform' => 'call',
+                                'event' => 'completed',
+                                'msg' => 'Call ended',
+                                'number' => $inbound_number
+                            ]
+                        ]);
+                        Log::info("Pusher call COMPLETED notification sent", [
+                            'user_ids' => $userIds,
+                            'inbound_number' => $inbound_number
+                        ]);
+                    } catch (\Exception $e) {
+                        Log::error("Pusher call COMPLETED notification failed: " . $e->getMessage());
+                    }
+                }
+                // ========== END PUSHER ==========
+
+                // Clean up all records for this inbound number
+                DB::connection('master')
+                    ->table('inbound_call_popup')
+                    ->where('inbound_number', $inbound_number)
+                    ->delete();
+
+                return $this->successResponse("Call completed notification sent", [
+                    'inbound_number' => $inbound_number,
+                    'notified_users' => count($userIds)
+                ]);
+            }
+            catch (\Throwable $exception)
+            {
+                return $this->failResponse("Call completed notification failed", [$exception->getMessage()], null, 200);
+            }
+        }
+        else
+        {
+            $message = 'Invalid Token or parameters';
+            return $this->failResponse("Invalid request", [$message], null, 200);
+        }
     }
 }

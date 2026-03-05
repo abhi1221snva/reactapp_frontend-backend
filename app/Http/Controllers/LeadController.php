@@ -134,6 +134,14 @@ class LeadController extends Controller
             //     array_push($searchString, " (lead_type IN ($result))");
             // }
 
+
+            // Global search across name, phone, email, company
+            if ($request->has("search") && !empty($request->input("search"))) {
+                $globalSearch = $request->input("search");
+                $escaped = addslashes($globalSearch);
+                array_push($searchString, "(first_name LIKE '%".$escaped."%' OR last_name LIKE '%".$escaped."%' OR phone_number LIKE '%".$escaped."%' OR email LIKE '%".$escaped."%' OR company_name LIKE '%".$escaped."%')");
+            }
+
             if ($request->has('first_name') && !empty($request->input('first_name'))) {
                 $search['first_name'] = $request->input('first_name');
                 array_push($searchString, "first_name like CONCAT('%',:first_name)");

@@ -551,13 +551,16 @@ public function getListwithoutCampaign($request)
     /* ---------------- Single List ---------------- */
     if ($request->has('list_id') && is_numeric($request->input('list_id'))) {
 
-        $sql = "SELECT 
+        $sql = "SELECT
                     l.id,
                     l.title AS l_title,
                     l.is_active,
                     l.is_dialing,
                     l.lead_count,
-                    l.updated_at
+                    l.updated_at,
+                    l.created_at,
+                    (SELECT cl2.campaign_id FROM campaign_list cl2 WHERE cl2.list_id = l.id AND cl2.is_deleted = 0 LIMIT 1) AS campaign_id,
+                    (SELECT c2.title FROM campaign c2 INNER JOIN campaign_list cl3 ON c2.id = cl3.campaign_id WHERE cl3.list_id = l.id AND cl3.is_deleted = 0 LIMIT 1) AS campaign
                 FROM list l
                 WHERE l.id = :list_id
                   AND EXISTS (
@@ -618,7 +621,9 @@ public function getListwithoutCampaign($request)
                     l.is_active,
                     l.is_dialing,
                     l.lead_count,
-                    l.updated_at
+                    l.updated_at,
+                    (SELECT cl2.campaign_id FROM campaign_list cl2 WHERE cl2.list_id = l.id AND cl2.is_deleted = 0 LIMIT 1) AS campaign_id,
+                    (SELECT c2.title FROM campaign c2 INNER JOIN campaign_list cl3 ON c2.id = cl3.campaign_id WHERE cl3.list_id = l.id AND cl3.is_deleted = 0 LIMIT 1) AS campaign
                 FROM list l
                 WHERE EXISTS (
                     SELECT 1
@@ -1236,6 +1241,23 @@ public function editList($request)
     DB::connection($parentConn)->beginTransaction();
 
     try {
+
+        /**
+         * 0️⃣ HANDLE DELETION (soft delete via is_deleted flag)
+         */
+        if ($request->has('is_deleted') && (int) $request->input('is_deleted') === 1) {
+            DB::connection($parentConn)->update(
+                "UPDATE campaign_list SET is_deleted = 1 WHERE list_id = ?",
+                [$listId]
+            );
+
+            DB::connection($parentConn)->commit();
+
+            return [
+                'success' => 'true',
+                'message' => 'List deleted successfully.'
+            ];
+        }
 
         /**
          * 1️⃣ UPDATE LIST TITLE

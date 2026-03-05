@@ -817,9 +817,7 @@ public function editRecycleRule1($request)
 
     public function deleteLeadRule($request)
     {
-
         try {
-
             $data = array();
             $searchStr = array();
 
@@ -833,62 +831,88 @@ public function editRecycleRule1($request)
                 $data['disposition_id'] = $request->input('disposition_id');
             }
 
+            if (empty($searchStr)) {
+                return array(
+                    'success' => 'false',
+                    'message' => 'list_id and disposition_id are required.',
+                    'data'   => array()
+                );
+            }
 
-            $sql = "SELECT * FROM lead_report
-                    WHERE " . implode(" AND ", $searchStr);
-            $record =  DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
-            $data = (array)$record;
+            $connection = DB::connection('mysql_' . $request->auth->parent_id);
 
-            if (!empty($data)) {
-                /* return array(
-                    'success'=> 'true',
-                    'message'=> 'RecycleRules detail.',
-                    'data'   => $data
-                );*/
+            $sql = "SELECT * FROM lead_report WHERE " . implode(" AND ", $searchStr);
+            $record = $connection->select($sql, $data);
+            $leadRecords = (array)$record;
 
+            if (!empty($leadRecords)) {
                 $lead_id_arr = array();
 
-                foreach ($data as $lead) {
+                foreach ($leadRecords as $lead) {
                     $lead_id_arr[] = $lead->lead_id;
                 }
 
-                $lead_id = "'" . implode("', '", $lead_id_arr) . "'";
+                // Remove duplicates to prevent SQL parameter binding issues
+                $lead_id_arr = array_values(array_unique($lead_id_arr));
 
-                /*  SELECT count(*),lead_id from cdr where lead_id IN('1908','1907','1911','1912','1913','1915','1916','1917','1932','1933','1935', '1936') group by lead_id;*/
-
-                $data_lead['lead_id'] = $lead_id;
-
-                $sql = "SELECT count(*) as count_calls,lead_id FROM cdr  WHERE lead_id IN(" . $lead_id . ") group by lead_id";
-                $record =  DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data_lead);
-                $data_lead_id = (array)$record;
-
-                $deleted_lead_id = 1;
-
-                foreach ($data_lead_id as $deleteLead) {
-                    if ($deleteLead->count_calls < 15) {
-                        $query = "DELETE FROM lead_report WHERE lead_id = :lead_id";
-                        DB::connection('mysql_' . $request->auth->parent_id)->delete($query, array('lead_id' => $deleteLead->lead_id));
-                    }
-
-                    $deleted_lead_id++;
+                if (empty($lead_id_arr)) {
+                    return array(
+                        'success' => 'false',
+                        'message' => 'No leads found to recycle.',
+                        'data'   => array()
+                    );
                 }
 
+                // Get call counts from CDR for all leads
+                $placeholders = implode(',', array_fill(0, count($lead_id_arr), '?'));
+                $sql = "SELECT lead_id, COUNT(*) as count_calls FROM cdr WHERE lead_id IN(" . $placeholders . ") GROUP BY lead_id";
+                $cdrRecords = $connection->select($sql, $lead_id_arr);
+
+                // Build a map of lead_id => call_count
+                $callCountMap = [];
+                foreach ($cdrRecords as $cdr) {
+                    $callCountMap[$cdr->lead_id] = $cdr->count_calls;
+                }
+
+                $deleted_lead_count = 0;
+
+                // Process ALL leads - those in CDR with < 15 calls AND those not in CDR (0 calls)
+                foreach ($lead_id_arr as $leadId) {
+                    $callCount = $callCountMap[$leadId] ?? 0; // Default to 0 if not in CDR
+
+                    if ($callCount < 15) {
+                        $query = "DELETE FROM lead_report WHERE lead_id = :lead_id";
+                        $connection->delete($query, ['lead_id' => $leadId]);
+                        $deleted_lead_count++;
+                    }
+                }
 
                 return array(
                     'success' => 'true',
-                    'message' => 'Recycle rule has been run successfully for the list.',
-                    'data'   => $deleted_lead_id
+                    'message' => "Recycle rule executed successfully. {$deleted_lead_count} lead(s) recycled.",
+                    'data'   => $deleted_lead_count
                 );
             }
+
             return array(
                 'success' => 'false',
-                'message' => 'Recycle rule Not Found.',
+                'message' => 'No leads found matching the recycle rule.',
                 'data'   => array()
             );
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             Log::log($e->getMessage());
-        } catch (InvalidArgumentException $e) {
+            return array(
+                'success' => 'false',
+                'message' => 'Error: ' . $e->getMessage(),
+                'data'   => array()
+            );
+        } catch (\InvalidArgumentException $e) {
             Log::log($e->getMessage());
+            return array(
+                'success' => 'false',
+                'message' => 'Invalid argument: ' . $e->getMessage(),
+                'data'   => array()
+            );
         }
     }
 }

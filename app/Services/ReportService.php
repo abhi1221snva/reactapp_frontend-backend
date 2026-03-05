@@ -38,7 +38,7 @@ class ReportService
 
         $result_arr['company_name'] = $client->company_name;
 
-        $extensions = DB::select("select extension,alt_extension from users where base_parent_id=".$parent_id);
+        $extensions = DB::select("select extension,alt_extension from users where base_parent_id = ?", [$parent_id]);
 
         foreach($extensions as $list)
         {
@@ -46,13 +46,15 @@ class ReportService
             $extensionsList[] = $list->alt_extension; 
         }
 
-        $extCondition = " AND extension IN (".implode(",", $extensionsList).")";
-        $cliCondition = " AND cli IN (".implode(",", $extensionsList).")";
+        // Use parameterized queries to prevent SQL injection
+        $extPlaceholders = implode(',', array_fill(0, count($extensionsList), '?'));
+        $extCondition = " AND extension IN ($extPlaceholders)";
+        $cliCondition = " AND cli IN ($extPlaceholders)";
 
         $agent_list = array();
 
-        $sql = "select * from users WHERE parent_id=".$parent_id." AND is_deleted=0 $extCondition order by first_name";
-        $agent_list = DB::connection("master")->select($sql);
+        $sql = "select * from users WHERE parent_id = ? AND is_deleted = 0 $extCondition order by first_name";
+        $agent_list = DB::connection("master")->select($sql, array_merge([$parent_id], $extensionsList));
 
         $j = 0;
 
@@ -70,88 +72,83 @@ class ReportService
 
                 $totalCall = 0;
 
-               //dialer_call
-                $agent_call_list_out_dialer_cdr = DB::connection($connection)->select("select count(*) as totalOutCalls from cdr WHERE extension IN('" . $extension . "','" . $alt_extension . "') and route = :route and (type = :type or type = :type1) and start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "'", array('route' => 'OUT','type'=>'dialer','type1'=>'manual'));
+               //dialer_call - Using parameterized queries to prevent SQL injection
+                $agent_call_list_out_dialer_cdr = DB::connection($connection)->select(
+                    "select count(*) as totalOutCalls from cdr WHERE extension IN(?, ?) and route = ? and (type = ? or type = ?) and start_time >= ? and start_time <= ?",
+                    [$extension, $alt_extension, 'OUT', 'dialer', 'manual', $previous_day, $current_day]
+                );
                 $dialer_call_cdr = $agent_call_list_out_dialer_cdr[0]->totalOutCalls;
                 $totalCall += $dialer_call_cdr;
 
-
-              
-
-
-                $agent_call_list_out_archive_dialer = DB::connection($connection)->select("select count(*) as totalOutCalls from cdr_archive WHERE extension IN('" . $extension . "','" . $alt_extension . "') and route = :route and (type = :type or type = :type1) and start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "'", array('route' => 'OUT','type'=>'dialer','type1' => 'manual'));
+                $agent_call_list_out_archive_dialer = DB::connection($connection)->select(
+                    "select count(*) as totalOutCalls from cdr_archive WHERE extension IN(?, ?) and route = ? and (type = ? or type = ?) and start_time >= ? and start_time <= ?",
+                    [$extension, $alt_extension, 'OUT', 'dialer', 'manual', $previous_day, $current_day]
+                );
                 $dialer_call_archive = $agent_call_list_out_archive_dialer[0]->totalOutCalls;
                 $totalCall += $dialer_call_archive;
 
-
                 $result_arr['agent'][$j]['dialer_call'] = $dialer_call_cdr + $dialer_call_archive;
 
-                //close
-
-
                 //c2c calls
-
-          
-
-                $agent_call_list_cdr_c2c = DB::connection($connection)->select("select count(*) as totalOutCalls from cdr WHERE extension IN('" . $extension . "','" . $alt_extension . "') and route = :route and type = :type and start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "'", array('route' => 'OUT','type'=>'c2c'));
+                $agent_call_list_cdr_c2c = DB::connection($connection)->select(
+                    "select count(*) as totalOutCalls from cdr WHERE extension IN(?, ?) and route = ? and type = ? and start_time >= ? and start_time <= ?",
+                    [$extension, $alt_extension, 'OUT', 'c2c', $previous_day, $current_day]
+                );
                 $c2c_call_cdr = $agent_call_list_cdr_c2c[0]->totalOutCalls;
                 $totalCall += $c2c_call_cdr;
 
-                
-
-                    $agent_call_list_out_archive_c2c = DB::connection($connection)->select("select count(*) as totalOutCalls from cdr_archive WHERE extension IN('" . $extension . "','" . $alt_extension . "') and route = :route and type = :type and start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "'", array('route' => 'OUT','type'=>'c2c'));
+                $agent_call_list_out_archive_c2c = DB::connection($connection)->select(
+                    "select count(*) as totalOutCalls from cdr_archive WHERE extension IN(?, ?) and route = ? and type = ? and start_time >= ? and start_time <= ?",
+                    [$extension, $alt_extension, 'OUT', 'c2c', $previous_day, $current_day]
+                );
                 $c2c_call_cdr_archive = $agent_call_list_out_archive_c2c[0]->totalOutCalls;
                 $totalCall += $c2c_call_cdr_archive;
 
-
                 $result_arr['agent'][$j]['c2c_call'] = $c2c_call_cdr + $c2c_call_cdr_archive;
-               
-                //close c2c
 
                 //desktop calls
-
-
-                $agent_call_list_in_cdr = DB::connection($connection)->select("select count(*) as totalInCalls from cdr WHERE extension IN('" . $extension . "','" . $alt_extension . "') and route = :route and start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "'", array('route' => 'IN'));
+                $agent_call_list_in_cdr = DB::connection($connection)->select(
+                    "select count(*) as totalInCalls from cdr WHERE extension IN(?, ?) and route = ? and start_time >= ? and start_time <= ?",
+                    [$extension, $alt_extension, 'IN', $previous_day, $current_day]
+                );
                 $desktop_call_cdr = $agent_call_list_in_cdr[0]->totalInCalls;
                 $totalCall += $desktop_call_cdr;
 
-
-                
-
-
-                $agent_call_list_in_cdr_archive = DB::connection($connection)->select("select count(*) as totalInCalls from cdr_archive WHERE extension IN('" . $extension . "','" . $alt_extension . "') and route = :route and start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "'", array('route' => 'IN'));
+                $agent_call_list_in_cdr_archive = DB::connection($connection)->select(
+                    "select count(*) as totalInCalls from cdr_archive WHERE extension IN(?, ?) and route = ? and start_time >= ? and start_time <= ?",
+                    [$extension, $alt_extension, 'IN', $previous_day, $current_day]
+                );
                 $desktop_call_cdr_archive = $agent_call_list_in_cdr_archive[0]->totalInCalls;
                 $totalCall += $desktop_call_cdr_archive;
 
                 $result_arr['agent'][$j]['desktop_call'] = $desktop_call_cdr + $desktop_call_cdr_archive;
 
-            //desktop close
-
-
                 //dialer calls duration
-
-                $agent_call_list_cdr = DB::connection($connection)->select("select sum(duration) as totalDuration from cdr WHERE extension IN('" . $extension . "','" . $alt_extension . "') and route = :route and (type = :type or type = :type1) and start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "'",array('route' => 'OUT','type'=>'dialer','type1'=>'manual'));
-
+                $agent_call_list_cdr = DB::connection($connection)->select(
+                    "select sum(duration) as totalDuration from cdr WHERE extension IN(?, ?) and route = ? and (type = ? or type = ?) and start_time >= ? and start_time <= ?",
+                    [$extension, $alt_extension, 'OUT', 'dialer', 'manual', $previous_day, $current_day]
+                );
                 $duration_call_list_cdr_dialer = $agent_call_list_cdr[0]->totalDuration;
 
-                $agent_call_list_cdr_archive = DB::connection($connection)->select("select sum(duration) as totalDuration from cdr_archive WHERE extension IN('" . $extension . "','" . $alt_extension . "') and route = :route and (type = :type or type = :type1) and start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "'",array('route' => 'OUT','type'=>'dialer','type1'=>'manual'));
-
+                $agent_call_list_cdr_archive = DB::connection($connection)->select(
+                    "select sum(duration) as totalDuration from cdr_archive WHERE extension IN(?, ?) and route = ? and (type = ? or type = ?) and start_time >= ? and start_time <= ?",
+                    [$extension, $alt_extension, 'OUT', 'dialer', 'manual', $previous_day, $current_day]
+                );
                 $duration_call_list_cdr_archive_dialer = $agent_call_list_cdr_archive[0]->totalDuration;
 
                 $result_arr['agent'][$j]['dialer_call_time_spent_in_second'] = $duration_call_list_cdr_dialer + $duration_call_list_cdr_archive_dialer;
 
-                //close dialer duration
-
-
                 //c2c calls duration
-
-                $agent_call_list_cdr_C2c = DB::connection($connection)->select("select sum(duration) as totalDuration from cdr WHERE extension IN('" . $extension . "','" . $alt_extension . "') and route = :route and type = :type and start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "'",array('route' => 'OUT','type'=>'c2c'));
-
+                $agent_call_list_cdr_C2c = DB::connection($connection)->select(
+                    "select sum(duration) as totalDuration from cdr WHERE extension IN(?, ?) and route = ? and type = ? and start_time >= ? and start_time <= ?",
+                    [$extension, $alt_extension, 'OUT', 'c2c', $previous_day, $current_day]
+                );
                 $duration_call_list_cdr_c2c = $agent_call_list_cdr_C2c[0]->totalDuration;
 
-
-                $agent_call_list_c2c_archive = DB::connection($connection)->select("select sum(duration) as totalDuration from cdr_archive WHERE extension IN('" . $extension . "','" . $alt_extension . "') and route = :route and type = :type and start_time >= '" . $previous_day . "' and start_time <= '" . $current_day . "'",array('route' => 'OUT','type'=>'c2c'));
-
+                $agent_call_list_c2c_archive = DB::connection($connection)->select(
+                    "select sum(duration) as totalDuration from cdr_archive WHERE extension IN(?, ?) and route = ? and type = ? and start_time >= ? and start_time <= ?",
+                    [$extension, $alt_extension, 'OUT', 'c2c', $previous_day, $current_day]
+                );
                 $duration_call_list_cdr_archive_c2c = $agent_call_list_c2c_archive[0]->totalDuration;
 
                 $result_arr['agent'][$j]['c2c_call_time_spent_in_second'] =  $duration_call_list_cdr_c2c + $duration_call_list_cdr_archive_c2c;
@@ -2254,33 +2251,36 @@ public function stateWiseSummary($request, string $startTime, string $endTime)
             'unread' => 0
         ];
 
+        $bindings = [];
+
         if(!empty($request->userId))
         {
-            //$explode = "'" . implode ( "', '", $request->userId ) . "'";
             $user = User::whereIn("id", $request->userId)->get()->all();
             $extensionArray = array();
             foreach($user as $key=> $value)
             {
-                array_push($extensionArray,$value->extension);
-                array_push($extensionArray,$value->alt_extension);
+                array_push($extensionArray, $value->extension);
+                array_push($extensionArray, $value->alt_extension);
             }
-            $srch_input_1 = "'" . implode ( "', '", $extensionArray ) . "'";
 
-            $filter = " WHERE extension IN(".$srch_input_1.") and date_time >= '$startTime' AND date_time <= '$endTime'";
+            // Use parameterized query to prevent SQL injection
+            $placeholders = implode(',', array_fill(0, count($extensionArray), '?'));
+            $filter = " WHERE extension IN($placeholders) and date_time >= ? AND date_time <= ?";
+            $bindings = array_merge($extensionArray, [$startTime, $endTime]);
         }
-
         else
         {
-        $filter = " WHERE date_time >= '$startTime' AND date_time <= '$endTime'";
-
+            $filter = " WHERE date_time >= ? AND date_time <= ?";
+            $bindings = [$startTime, $endTime];
         }
+
         $sql = "SELECT count(id) as voicemails, status FROM mailbox $filter group by status";
         Log::info("ReportService.voicemailCount", [
             "startTime" => $startTime,
             "endTime" => $endTime,
             "sql" => $sql
         ]);
-        $record = DB::connection("mysql_{$this->clientId}")->select($sql);
+        $record = DB::connection("mysql_{$this->clientId}")->select($sql, $bindings);
         $response = (array)$record;
         foreach ( $response as $res ) {
             if ($res->status == 1)
@@ -2294,27 +2294,31 @@ public function stateWiseSummary($request, string $startTime, string $endTime)
     function smsCount($request, string $startTime, string $endTime)
     {
         $data = ['incoming' => 0,'outgoing' => 0];
+        $bindings = [];
+
         if(!empty($request->userId))
         {
             $user = User::whereIn("id", $request->userId)->get()->all();
             $extensionArray = array();
             foreach($user as $key=> $value)
             {
-                array_push($extensionArray,$value->id);
-               // array_push($extensionArray,$value->alt_extension);
+                array_push($extensionArray, $value->id);
             }
 
-            $srch_input_1 = "'" . implode ( "', '", $extensionArray ) . "'";
-            $filter = " WHERE extension IN(".$srch_input_1.") and date >= '$startTime' AND date <= '$endTime'";
+            // Use parameterized query to prevent SQL injection
+            $placeholders = implode(',', array_fill(0, count($extensionArray), '?'));
+            $filter = " WHERE extension IN($placeholders) and date >= ? AND date <= ?";
+            $bindings = array_merge($extensionArray, [$startTime, $endTime]);
         }
         else
         {
-            $filter = " WHERE date >= '$startTime' AND date <= '$endTime'";
+            $filter = " WHERE date >= ? AND date <= ?";
+            $bindings = [$startTime, $endTime];
         }
 
         $sql = "SELECT count(id) as rowCount, type FROM sms $filter group by type";
         Log::info("ReportService.getSmsCounts", ["startTime" => $startTime,"endTime" => $endTime,"sql" => $sql]);
-        $record = DB::connection("mysql_{$this->clientId}")->select($sql);
+        $record = DB::connection("mysql_{$this->clientId}")->select($sql, $bindings);
         $response = (array)$record;
 
         foreach ( $response as $res )
@@ -2329,111 +2333,124 @@ public function stateWiseSummary($request, string $startTime, string $endTime)
         $data = [];
         foreach ($range as $key => $times)
         {
+            $bindings = [];
+            $startTime = $times["startTime"];
+            $endTime = $times["endTime"];
+
             if(!empty($times["userId"]))
             {
                 $user = User::where("id", "=", $times["userId"])->first();
                 $extension = $user->extension;
                 $alt_extension = $user->alt_extension;
-                $sql = "SELECT count(*) as rowCount,area_code from ((SELECT area_code FROM cdr_archive WHERE (extension = '".$extension."' || extension='".$alt_extension."') and start_time >= '$startTime' AND start_time <= '$endTime') UNION ALL (SELECT area_code FROM cdr WHERE (extension = '".$extension."' || extension='".$alt_extension."') and start_time >= '$startTime' AND start_time <= '$endTime') ) as t group by area_code order by rowCount desc";
+                // Using parameterized query to prevent SQL injection
+                $sql = "SELECT count(*) as rowCount, area_code from ((SELECT area_code FROM cdr_archive WHERE (extension = ? OR extension = ?) and start_time >= ? AND start_time <= ?) UNION ALL (SELECT area_code FROM cdr WHERE (extension = ? OR extension = ?) and start_time >= ? AND start_time <= ?) ) as t group by area_code order by rowCount desc";
+                $bindings = [$extension, $alt_extension, $startTime, $endTime, $extension, $alt_extension, $startTime, $endTime];
+                $record = DB::connection("mysql_{$this->clientId}")->select($sql, $bindings);
             }
-            else
-            if($request->auth->level == 1) //show dashboard related to agent 
+            else if($request->auth->level == 1) //show dashboard related to agent
             {
                 $extension = $request->auth->extension;
                 $alt_extension = $request->auth->alt_extension;
-                $filter = " WHERE (extension = '".$extension."' || extension='".$alt_extension."') and  start_time >= '".$times["startTime"]."' AND start_time <= '".$times["endTime"]."'";
+                $sql = "select count(id) as calls, route from ((SELECT id, route FROM cdr_archive WHERE (extension = ? OR extension = ?) and start_time >= ? AND start_time <= ?) UNION ALL (SELECT id, route FROM cdr WHERE (extension = ? OR extension = ?) and start_time >= ? AND start_time <= ?)) as t group by route";
+                $bindings = [$extension, $alt_extension, $startTime, $endTime, $extension, $alt_extension, $startTime, $endTime];
+                $record = DB::connection("mysql_{$this->clientId}")->select($sql, $bindings);
             }
             else
             {
-                $filter = " WHERE start_time >= '".$times["startTime"]."' AND start_time <= '".$times["endTime"]."'";
+                $sql = "select count(id) as calls, route from ((SELECT id, route FROM cdr_archive WHERE start_time >= ? AND start_time <= ?) UNION ALL (SELECT id, route FROM cdr WHERE start_time >= ? AND start_time <= ?)) as t group by route";
+                $bindings = [$startTime, $endTime, $startTime, $endTime];
+                $record = DB::connection("mysql_{$this->clientId}")->select($sql, $bindings);
             }
 
-            $sql = "select count(id) as calls, route from ((SELECT id, route FROM cdr_archive $filter) UNION ALL (SELECT id, route FROM cdr $filter)) as t group by route";
-
-            $record = DB::connection("mysql_{$this->clientId}")->select($sql);
             $data[$key] = ["OUT" => 0,"IN" => 0];
             foreach ($record as $row)
             {
-                $data[$key][$row->route] = $row->calls;
+                if (isset($row->route)) {
+                    $data[$key][$row->route] = $row->calls;
+                }
             }
 
-            Log::info("ReportService.cdrCallsByRange.$key", ["startTime" => $times["startTime"],"endTime" => $times["endTime"],"sql" => $sql,"data.$key" => $data[$key]]);
+            Log::info("ReportService.cdrCallsByRange.$key", ["startTime" => $startTime, "endTime" => $endTime, "sql" => $sql, "data.$key" => $data[$key]]);
         }
         return $data;
     }
     public function cdrCallsByRangeNew($request, array $range)
-{
-    $data = [];
+    {
+        $data = [];
 
-    foreach ($range as $key => $times) {
-        $startTime = $times["startTime"];
-        $endTime = $times["endTime"];
+        foreach ($range as $key => $times) {
+            $startTime = $times["startTime"];
+            $endTime = $times["endTime"];
+            $bindings = [];
 
-        if (!empty($times["userId"])) {
-            $user = User::find($times["userId"]);
+            if (!empty($times["userId"])) {
+                $user = User::find($times["userId"]);
 
-            if (!$user) {
-                // If user not found, skip or add error entry
-                Log::warning("User not found", ['userId' => $times["userId"]]);
-                $data[$key] = ["IN" => 0, "OUT" => 0, "error" => "User not found"];
-                continue;
+                if (!$user) {
+                    Log::warning("User not found", ['userId' => $times["userId"]]);
+                    $data[$key] = ["IN" => 0, "OUT" => 0, "error" => "User not found"];
+                    continue;
+                }
+
+                $extension = $user->extension;
+                $alt_extension = $user->alt_extension;
+
+                // Using parameterized query to prevent SQL injection
+                $sql = "SELECT count(*) as rowCount, area_code FROM (
+                            (SELECT area_code FROM cdr_archive
+                             WHERE (extension = ? OR extension = ?)
+                             AND start_time >= ? AND start_time <= ?)
+                            UNION ALL
+                            (SELECT area_code FROM cdr
+                             WHERE (extension = ? OR extension = ?)
+                             AND start_time >= ? AND start_time <= ?)
+                        ) as t
+                        GROUP BY area_code
+                        ORDER BY rowCount DESC";
+                $bindings = [$extension, $alt_extension, $startTime, $endTime, $extension, $alt_extension, $startTime, $endTime];
+            } elseif ($request->auth->level == 1) {
+                // Agent level - using parameterized query
+                $extension = $request->auth->extension;
+                $alt_extension = $request->auth->alt_extension;
+
+                $sql = "SELECT count(id) as calls, route FROM (
+                            (SELECT id, route FROM cdr_archive WHERE (extension = ? OR extension = ?) AND start_time >= ? AND start_time <= ?)
+                            UNION ALL
+                            (SELECT id, route FROM cdr WHERE (extension = ? OR extension = ?) AND start_time >= ? AND start_time <= ?)
+                        ) as t
+                        GROUP BY route";
+                $bindings = [$extension, $alt_extension, $startTime, $endTime, $extension, $alt_extension, $startTime, $endTime];
+            } else {
+                // Admin level - using parameterized query
+                $sql = "SELECT count(id) as calls, route FROM (
+                            (SELECT id, route FROM cdr_archive WHERE start_time >= ? AND start_time <= ?)
+                            UNION ALL
+                            (SELECT id, route FROM cdr WHERE start_time >= ? AND start_time <= ?)
+                        ) as t
+                        GROUP BY route";
+                $bindings = [$startTime, $endTime, $startTime, $endTime];
             }
 
-            $extension = $user->extension;
-            $alt_extension = $user->alt_extension;
+            // Execute SQL with bindings
+            $record = DB::connection("mysql_{$this->clientId}")->select($sql, $bindings);
+            $data[$key] = ["OUT" => 0, "IN" => 0];
 
-            $sql = "SELECT count(*) as rowCount, area_code FROM (
-                        (SELECT area_code FROM cdr_archive 
-                         WHERE (extension = '$extension' OR extension = '$alt_extension') 
-                         AND start_time >= '$startTime' AND start_time <= '$endTime')
-                        UNION ALL
-                        (SELECT area_code FROM cdr 
-                         WHERE (extension = '$extension' OR extension = '$alt_extension') 
-                         AND start_time >= '$startTime' AND start_time <= '$endTime')
-                    ) as t 
-                    GROUP BY area_code 
-                    ORDER BY rowCount DESC";
-        } elseif ($request->auth->level == 1) {
-            // Agent level
-            $extension = $request->auth->extension;
-            $alt_extension = $request->auth->alt_extension;
+            foreach ($record as $row) {
+                if (isset($row->route)) {
+                    $data[$key][$row->route] = $row->calls;
+                }
+            }
 
-            $filter = "WHERE (extension = '$extension' OR extension = '$alt_extension') 
-                       AND start_time >= '$startTime' AND start_time <= '$endTime'";
-        } else {
-            // Admin level
-            $filter = "WHERE start_time >= '$startTime' AND start_time <= '$endTime'";
+            Log::info("ReportService.cdrCallsByRange.$key", [
+                "startTime" => $startTime,
+                "endTime" => $endTime,
+                "sql" => $sql,
+                "data.$key" => $data[$key]
+            ]);
         }
 
-        // Common SQL for IN/OUT calls
-        if (empty($times["userId"])) {
-            $sql = "SELECT count(id) as calls, route FROM (
-                        (SELECT id, route FROM cdr_archive $filter)
-                        UNION ALL
-                        (SELECT id, route FROM cdr $filter)
-                    ) as t 
-                    GROUP BY route";
-        }
-
-        // Execute SQL
-        $record = DB::connection("mysql_{$this->clientId}")->select($sql);
-        $data[$key] = ["OUT" => 0, "IN" => 0];
-
-        foreach ($record as $row) {
-            $data[$key][$row->route] = $row->calls;
-        }
-
-        // Log info
-        Log::info("ReportService.cdrCallsByRange.$key", [
-            "startTime" => $startTime,
-            "endTime" => $endTime,
-            "sql" => $sql,
-            "data.$key" => $data[$key]
-        ]);
+        return $data;
     }
-
-    return $data;
-}
 public function dispositionSummaryNew($request, string $startTime, string $endTime)
 {
     if (!empty($request->userId)) {

@@ -988,24 +988,16 @@ return response()->json($response, $status);
              // Fetch list headers with label titles
              $arrListHeaders = DB::connection('mysql_' . $request->auth->parent_id)
                  ->table('list_header as l')
-                 ->leftJoin('label as lb', 'l.label_id', '=', 'lb.id')
+                 ->leftJoin('label as lb', function($join) { $join->on('l.label_id', '=', 'lb.id')
+                     ->where('lb.is_deleted', '=', 0); })
                  ->where('l.list_id', $intListId)
                  ->where('l.is_deleted', 0)
-                 ->where('lb.is_deleted', 0)
                  ->orderByRaw('l.column_name + 0 ASC')
-                 ->select('l.column_name', 'lb.title', 'l.label_id')
+                ->selectRaw('l.column_name, COALESCE(lb.title, l.header, l.column_name) as title, l.label_id')
                  ->get();
      
              if ($arrListHeaders->isEmpty()) {
                  return $this->failResponse("No headers found for this list", []);
-             }
-     
-             $allLabelsNull = $arrListHeaders->every(function ($item) {
-                 return empty($item->label_id) || is_null($item->title);
-             });
-     
-             if ($allLabelsNull) {
-                 return $this->failResponse("List headers found but labels are missing or not assigned", []);
              }
      
              // Map column_name => label title

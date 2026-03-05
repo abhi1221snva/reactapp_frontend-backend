@@ -34,6 +34,8 @@ use App\Console\Commands\DripCampaignRunProcess;
 use App\Console\Commands\DripCampaignScheduleStatus;
 use App\Console\Commands\DripCampaignScheduleProcess;
 use App\Console\Commands\SendScheduledReminders;
+use App\Console\Commands\RenewGmailWatchesCommand;
+use App\Console\Commands\CheckGmailEmailsCommand;
 use Illuminate\Console\Scheduling\Schedule;
 use Laravel\Lumen\Console\Kernel as ConsoleKernel;
 
@@ -76,7 +78,8 @@ class Kernel extends ConsoleKernel
         DripCampaignScheduleStatus::class,
         DripCampaignRunProcess::class,
         SendScheduledReminders::class,
-
+        RenewGmailWatchesCommand::class,
+        CheckGmailEmailsCommand::class,
 
     ];
 
@@ -120,9 +123,9 @@ class Kernel extends ConsoleKernel
         $schedule->command('app:send:initiated-non-timezone-rvm-drop-by-sip-trunk')->everyFiveMinutes(); //1 am UTC TImezone
 
         $schedule->command('app:send:vm-full-or-ni-non-timezone-rvm-drop-by-sip-trunk')->everyThirtyMinutes(); //1 am UTC TImezone
-        
 
-
+        // Gmail watch renewal - watches expire after 7 days, run daily to keep them active
+        $schedule->command('gmail:renew-watches')->dailyAt('02:00');
 
         //$schedule->command('app:rvm:schedule-process')->everyMinute();
 

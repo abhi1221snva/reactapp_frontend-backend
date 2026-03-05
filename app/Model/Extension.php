@@ -300,18 +300,19 @@ public function extensionDetail(Request $request, int $extension_id = null)
 
         $orderBy = $request->get('orderBy', 'users.extension');
 
-        // ---------- COUNT ----------
+        // ---------- COUNT (optimized with LEFT JOIN instead of subquery) ----------
         $countSql = "
-            SELECT COUNT(*) AS total
+            SELECT COUNT(DISTINCT users.id) AS total
             FROM users
+            LEFT JOIN permissions p ON p.user_id = users.id AND p.client_id = ?
             WHERE (
-                users.id IN (SELECT user_id FROM permissions WHERE client_id = ?)
+                p.user_id IS NOT NULL
                 OR users.id = ?
             )
             AND users.is_deleted = ?
             AND users.status = ?
             AND users.base_parent_id = ?
-              AND (
+            AND (
                 users.user_level < 9
                 OR users.id = ?
             )
@@ -325,7 +326,6 @@ public function extensionDetail(Request $request, int $extension_id = null)
             $status,                // users.status
             $parentId,              // users.base_parent_id
             $request->auth->id,     // users.id
-
         ];
 
         $countResult = DB::connection('master')->selectOne(
@@ -335,13 +335,14 @@ public function extensionDetail(Request $request, int $extension_id = null)
 
         $totalRows = $countResult->total ?? 0;
 
-        // ---------- DATA ----------
+        // ---------- DATA (optimized with LEFT JOIN instead of subquery) ----------
         $sql = "
-            SELECT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
+            SELECT DISTINCT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
             FROM users
+            LEFT JOIN permissions p ON p.user_id = users.id AND p.client_id = ?
             LEFT JOIN user_extensions ON user_extensions.name = users.extension
             WHERE (
-                users.id IN (SELECT user_id FROM permissions WHERE client_id = ?)
+                p.user_id IS NOT NULL
                 OR users.id = ?
             )
             AND users.is_deleted = ?
@@ -354,7 +355,6 @@ public function extensionDetail(Request $request, int $extension_id = null)
                 users.user_level < 9
                 OR users.id = ?
             )
-
             $searchSql
             ORDER BY {$orderBy}
         ";
@@ -365,8 +365,8 @@ public function extensionDetail(Request $request, int $extension_id = null)
             $isDeleted,             // users.is_deleted
             $status,                // users.status
             $request->auth->id,     // status bypass
-            $parentId,          // users.base_parent_id
-             $request->auth->id
+            $parentId,              // users.base_parent_id
+            $request->auth->id
         ];
 
         $dataBindings = array_merge($dataBindings, $searchBindings);
@@ -657,10 +657,12 @@ public function extensionDetailList(Request $request, int $extension_id = null)
 
         $where = "users.is_deleted = :is_deleted AND users.status = :status";
         $bindings = $data;
+        $joinClause = "";
 
         if ($request->auth->level >= 7) {
             $bindings['parent_id'] = $request->auth->parent_id;
-            $where .= " AND users.id IN (SELECT user_id FROM permissions WHERE client_id = :parent_id)";
+            // Optimized: Use JOIN instead of subquery for better performance
+            $joinClause = "INNER JOIN permissions p ON p.user_id = users.id AND p.client_id = :parent_id";
         } else {
             $bindings['id'] = $request->auth->id;
             $where .= " AND users.parent_id = :parent_id AND users.id = :id";
@@ -669,11 +671,11 @@ public function extensionDetailList(Request $request, int $extension_id = null)
         // --- Generic search filter ---
         if ($request->filled('search')) {
             $search = '%' . $request->input('search') . '%';
-            $where .= " 
+            $where .= "
                 AND (
-                    users.extension LIKE :search_ext 
-                    OR users.first_name LIKE :search_name 
-                    OR users.last_name LIKE :search_last 
+                    users.extension LIKE :search_ext
+                    OR users.first_name LIKE :search_name
+                    OR users.last_name LIKE :search_last
                     OR users.email LIKE :search_email
                     OR CONCAT(users.first_name, ' ', users.last_name) LIKE :search_full
                 )";
@@ -716,15 +718,16 @@ public function extensionDetailList(Request $request, int $extension_id = null)
         $orderByKey = $request->get('orderBy', 'users.id');
         $orderBy = $allowedOrderBy[$orderByKey] ?? 'users.id';
 
-        // --- total count ---
-        $countSql = "SELECT COUNT(*) AS total FROM users WHERE $where";
+        // --- total count (optimized with JOIN) ---
+        $countSql = "SELECT COUNT(DISTINCT users.id) AS total FROM users $joinClause WHERE $where";
         $totalRow = DB::connection('master')->selectOne($countSql, $bindings);
         $total = (int) ($totalRow->total ?? 0);
 
-        // --- main query ---
-        $sqlBase = "SELECT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
+        // --- main query (optimized with JOIN) ---
+        $sqlBase = "SELECT DISTINCT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
                     FROM users
-                    LEFT JOIN user_extensions ON user_extensions.fullname = users.extension
+                    $joinClause
+                    LEFT JOIN user_extensions ON user_extensions.name = users.extension
                     WHERE $where
                     ORDER BY $orderBy DESC";
 
@@ -805,10 +808,20 @@ public function extensionDetailList(Request $request, int $extension_id = null)
             #if admin or above
             if ($request->auth->level >= 7) {
                 $orderBy = $request->has('orderBy') ? $request->get('orderBy') : "users.extension";
-                $sql = "SELECT users.*,user_extensions.ipaddr , user_extensions.fullcontact,user_extensions.secret FROM " . $this->table . " left join user_extensions on user_extensions.name=users.extension WHERE users.id IN (SELECT user_id FROM permissions WHERE client_id = :parent_id) AND   users.status = :status order by $orderBy";
+                // Optimized: Use JOIN instead of subquery for better performance
+                $sql = "SELECT DISTINCT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
+                        FROM " . $this->table . "
+                        INNER JOIN permissions p ON p.user_id = users.id AND p.client_id = :parent_id
+                        LEFT JOIN user_extensions ON user_extensions.name = users.extension
+                        WHERE users.status = :status
+                        ORDER BY $orderBy";
             } else {
                 $data['id'] = $request->auth->id;
-                $sql = "SELECT users.*,user_extensions.ipaddr , user_extensions.fullcontact,user_extensions.secret FROM " . $this->table . " left join user_extensions on user_extensions.name=users.extension WHERE users.parent_id = :parent_id AND users.id=:id AND   users.status = :status order by users.extension";
+                $sql = "SELECT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
+                        FROM " . $this->table . "
+                        LEFT JOIN user_extensions ON user_extensions.name = users.extension
+                        WHERE users.parent_id = :parent_id AND users.id = :id AND users.status = :status
+                        ORDER BY users.extension";
             }
             $record = DB::connection('master')->select($sql, $data);
             $response = (array)$record;

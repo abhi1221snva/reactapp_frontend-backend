@@ -203,6 +203,13 @@ class Report extends Model
                 array_push($searchString1, "number like CONCAT(:number1, '%')");
             }
 
+            if ($request->has('cli_filter') && !empty($request->input('cli_filter'))) {
+                $search['cli_val'] = $request->input('cli_filter');
+                $search['cli_val1'] = $request->input('cli_filter');
+                array_push($searchString, "cli = :cli_val");
+                array_push($searchString1, "cli = :cli_val1");
+            }
+
             if (!empty($request->input('numbers'))) {
                 $numbers = $request->input('numbers');
                 $numbers1 = implode(',', $numbers);
@@ -455,16 +462,21 @@ $query_string = "
         c.lead_id,
         c.type,
         c.disposition_id,
-        disp.title AS dispostion_name
+        disp.title AS dispostion_name,
+        c.billable_minutes,
+        c.billable_charge,
+        c.amd_status
     FROM (
-        (SELECT 
-            id, extension, cli, area_code, number, start_time, end_time, duration, 
-            route, call_recording, campaign_id, lead_id, type, disposition_id 
+        (SELECT
+            id, extension, cli, area_code, number, start_time, end_time, duration,
+            route, call_recording, campaign_id, lead_id, type, disposition_id,
+            billable_minutes, billable_charge, amd_status
          FROM cdr $filter)
-        UNION
-        (SELECT 
-            id, extension, cli, area_code, number, start_time, end_time, duration, 
-            route, call_recording, campaign_id, lead_id, type, disposition_id 
+        UNION ALL
+        (SELECT
+            id, extension, cli, area_code, number, start_time, end_time, duration,
+            route, call_recording, campaign_id, lead_id, type, disposition_id,
+            billable_minutes, billable_charge, amd_status
          FROM cdr_archive $filter1)
     ) AS c
     LEFT JOIN master.areacode_city AS acc 
@@ -483,6 +495,24 @@ $query_string = "
             $recordCount = DB::connection('mysql_' . $parent_id)->selectOne("SELECT FOUND_ROWS() as count");
             $recordCount = (array) $recordCount;
 
+            // Summary aggregate query (same filters, no pagination)
+            $summaryParams = array_filter($search, function ($key) {
+                return !in_array($key, ['lower_limit', 'upper_limit']);
+            }, ARRAY_FILTER_USE_KEY);
+            $summarySql = "
+                SELECT
+                    COUNT(*) as total_calls,
+                    COALESCE(SUM(duration), 0) as total_duration,
+                    COALESCE(SUM(billable_charge), 0) as total_charge,
+                    SUM(CASE WHEN duration > 0 THEN 1 ELSE 0 END) as answered_calls
+                FROM (
+                    (SELECT duration, billable_charge FROM cdr $filter)
+                    UNION ALL
+                    (SELECT duration, billable_charge FROM cdr_archive $filter1)
+                ) as _summary
+            ";
+            $summary = (array) DB::connection('mysql_' . $parent_id)->selectOne($summarySql, $summaryParams);
+
             if (!empty($record)) {
                 $data = (array) $record;
 
@@ -490,6 +520,7 @@ $query_string = "
                     'success' => 'true',
                     'message' => 'Call Data Report.',
                     'record_count' => $recordCount['count'],
+                    'summary' => $summary,
                     'data' => $data
                 );
             } else {
@@ -497,6 +528,7 @@ $query_string = "
                     'success' => 'true',
                     'message' => 'No Call Data Report found.',
                     'record_count' => 0,
+                    'summary' => ['total_calls' => 0, 'total_duration' => 0, 'total_charge' => '0.0000', 'answered_calls' => 0],
                     'data' => array()
                 );
             }

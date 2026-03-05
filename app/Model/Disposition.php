@@ -148,6 +148,12 @@ public function dispositionDetail($request)
             $searchStr[] = '(title LIKE :search)';
         }
 
+        // Filter by status
+        if ($request->has('status') && $request->input('status') !== '' && is_numeric($request->input('status'))) {
+            $searchStr[] = 'status = :status';
+            $data['status'] = (int)$request->input('status');
+        }
+
         $whereClause = implode(" AND ", $searchStr);
 
         // Fetch ONLY from client DB

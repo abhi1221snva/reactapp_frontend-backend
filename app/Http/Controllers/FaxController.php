@@ -133,19 +133,50 @@ class FaxController extends Controller
 
     public function getFax(Request $request)
     {
-        // $dids = FaxDid::on("mysql_" . $request->auth->parent_id)->where('userId', $request->auth->id)->select('did')->pluck('did')->all();
+        $db = 'mysql_' . $request->auth->parent_id;
+        $query = Fax::on($db)->orderBy('id', 'DESC');
 
-        // //$dids = Dids::on("mysql_" . $request->auth->parent_id)->where('sms_email',$request->auth->id)->select('cli')->pluck('cli')->all();
-        // if (empty($dids)) {
-        //     return $this->successResponse("Did Not Find", $dids);
-        // }
+        // Search by dialednumber, callerid, or ref_id
+        if ($request->filled('search')) {
+            $term = $request->input('search');
+            $query->where(function ($q) use ($term) {
+                $q->where('dialednumber', 'LIKE', "%{$term}%")
+                  ->orWhere('callerid', 'LIKE', "%{$term}%")
+                  ->orWhere('ref_id', 'LIKE', "%{$term}%");
+            });
+        }
 
-        //$fax = Fax::on("mysql_" . $request->auth->parent_id)->where('faxstatus','1')->whereIn('callerid',$dids)->orderBy('start_time','DESC')->get()->all();
+        // Filter by faxstatus
+        if ($request->filled('faxstatus')) {
+            $query->where('faxstatus', $request->input('faxstatus'));
+        }
 
-        $fax = Fax::on("mysql_" . $request->auth->parent_id)->where([['extension', '=', $request->auth->extension], ['faxstatus', '=', '1']])->orderBy('id', 'DESC')->get()->all();
+        $total = $query->count();
 
+        // Pagination
+        if ($request->has('start') && $request->has('limit')) {
+            $query->skip((int)$request->input('start'))->take((int)$request->input('limit'));
+        }
 
-        return $this->successResponse("Fax List", $fax);
+        $fax = $query->get()->toArray();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Fax List',
+            'data'    => $fax,
+            'total'   => $total,
+        ]);
+    }
+
+    public function deleteFax(Request $request)
+    {
+        $this->validate($request, ['id' => 'required|numeric']);
+        $db = 'mysql_' . $request->auth->parent_id;
+        $deleted = Fax::on($db)->where('id', $request->input('id'))->delete();
+        if ($deleted) {
+            return $this->successResponse("Fax deleted successfully");
+        }
+        return response()->json(['success' => 'false', 'message' => 'Fax not found or already deleted'], 404);
     }
 
     /*public function getFax() {

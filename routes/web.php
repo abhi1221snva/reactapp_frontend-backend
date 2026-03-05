@@ -556,6 +556,7 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->post('fax', 'FaxController@getFax');
   $router->post('fax/{id}', 'FaxController@getFaxPdf');
   $router->post('send-fax', 'FaxController@sendFax');
+  $router->post('delete-fax', 'FaxController@deleteFax');
   $router->post('receive-fax-list', 'FaxController@receiveFaxList');
   $router->post('get-unread-fax-count', 'FaxController@getUnreadFaxCount');
 
@@ -701,6 +702,9 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   //Dashboard
 
   $router->post('dashboard', 'DashboardController@index');
+  $router->post('dashboard/revenue-metrics', 'DashboardController@getRevenueMetrics');
+  $router->post('dashboard-state', 'DashboardController@setDashboardState');
+  $router->get('dashboard-state', 'DashboardController@getDashboardState');
   $router->get('count-dids', 'DidsController@countDids');
   $router->post('did-count', 'DidsController@getListCount');
   $router->post('user-count', 'ExtensionController@getExtensionCount');
@@ -1332,7 +1336,7 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->post('send-email-crm/generic', 'MailController@sendEmailGenericCRM');
 
 
-  $router->get('users', 'ExtensionController@getExtensionListCRM');
+  $router->get('users', 'ExtensionController@getExtensionListCRMNew');
   $router->get('users-list-new', 'ExtensionController@getExtensionListCRMNew');
 
 
@@ -1359,8 +1363,11 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->get('crm-email-setting', 'CrmEmailSettingController@list');
   $router->post('crm-email-setting', 'CrmEmailSettingController@create');
   $router->post('update-crm-email-setting/{id}', 'CrmEmailSettingController@update');
-  //crm dasboard 
+  //crm dasboard
   $router->get('dashboard-lead-status', 'CrmdashboardController@index');
+
+  // MCA Dashboard Metrics
+  $router->post('mca/dashboard-metrics', 'CrmdashboardController@getMcaDashboardMetrics');
 
   /* Close Contact CRM */
 
@@ -1448,6 +1455,7 @@ $router->get('predictive-dial-call', "CallPredictiveDialController@index");
 $router->get('predictive-dial-call-all-client', "CallPredictiveDialAllClientController@index");
 $router->get('inbound-call-popup-notification', "InboundCallPopUpController@index");
 $router->get('inbound-call-popup-received', "InboundCallPopUpController@receivedInboundCallPopUp");
+$router->get('inbound-call-popup-completed', "InboundCallPopUpController@completedInboundCallPopUp");
 $router->post('inbound-call-popup', "InboundCallPopUpController@inboundCallPopup");
 
 //forgot password
@@ -1601,17 +1609,45 @@ $router->get('ai-coach-api', 'AiCoachController@index');
 
 
 #new apis for phonify
-// Route::prefix('gmail')->group(function () {
+// Gmail OAuth callback (no auth required - user info from state parameter)
+$router->get('gmail/callback', 'GmailOAuthController@callbackNoAuth');
 
-//     Route::get('/mailbox', [GmailController::class, 'mailboxApi']);
+// Gmail routes (auth required)
+$router->group(['middleware' => 'jwt.auth', 'prefix' => 'gmail'], function () use ($router) {
+    // OAuth
+    $router->get('connect', 'GmailOAuthController@connect');
+    $router->post('disconnect', 'GmailOAuthController@disconnect');
+    $router->get('status', 'GmailOAuthController@status');
+    $router->post('refresh-token', 'GmailOAuthController@refreshToken');
 
-//     Route::post('/send', [GmailController::class, 'sendEmailApi']);
+    // Watch (push notifications)
+    $router->post('watch/setup', 'GmailOAuthController@setupWatch');
+    $router->post('watch/stop', 'GmailOAuthController@stopWatch');
+    $router->get('watch/status', 'GmailOAuthController@watchStatus');
 
-//     Route::delete('/delete', [GmailController::class, 'deleteEmailApi']);
+    // Notification Settings
+    $router->get('settings', 'GmailNotificationSettingsController@show');
+    $router->post('settings', 'GmailNotificationSettingsController@update');
+    $router->get('channels', 'GmailNotificationSettingsController@getChannels');
+    $router->post('test', 'GmailNotificationSettingsController@testNotification');
+    $router->get('logs', 'GmailNotificationSettingsController@getLogs');
 
-//     Route::post('/star', [GmailController::class, 'starEmailApi']);
-//     Route::post('/unstar', [GmailController::class, 'unstarEmailApi']);
-// });
+    // Mailbox
+    $router->get('mailbox', 'GmailMailboxController@list');
+    $router->get('mailbox/labels', 'GmailMailboxController@labels');
+    $router->get('mailbox/{messageId}', 'GmailMailboxController@show');
+    $router->post('mailbox/send', 'GmailMailboxController@send');
+    $router->post('mailbox/{messageId}/star', 'GmailMailboxController@star');
+    $router->post('mailbox/{messageId}/unstar', 'GmailMailboxController@unstar');
+    $router->post('mailbox/{messageId}/trash', 'GmailMailboxController@trash');
+    $router->delete('mailbox/{messageId}', 'GmailMailboxController@delete');
+    $router->post('mailbox/{messageId}/read', 'GmailMailboxController@markAsRead');
+    $router->post('mailbox/{messageId}/unread', 'GmailMailboxController@markAsUnread');
+});
+
+// Gmail Pub/Sub Webhook (no auth required - Google sends notifications here)
+$router->post('gmail/webhook', 'GmailPubSubWebhookController@handle');
+$router->get('gmail/webhook/ping', 'GmailPubSubWebhookController@ping');
 
 // $router->post('/api/auth/create-user', 'AuthenticationController@createUser');
 

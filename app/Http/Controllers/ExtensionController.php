@@ -235,36 +235,55 @@ class ExtensionController extends Controller
     public function getExtensionListCRMNew(Request $request)
     {
         $clientId = $request->auth->parent_id;
+        $search   = $request->input('search', '');
+        $start    = (int) $request->input('start', 0);
+        $limit    = (int) $request->input('limit', 25);
+        $status   = $request->input('status', '');
 
-        // Get users with roles
-        $users_all = User::join('roles', 'users.role', '=', 'roles.id')
+        // Base query: client users + admin-level users merged
+        $query = User::join('roles', 'users.role', '=', 'roles.id')
             ->where('users.parent_id', $clientId)
             ->orderBy('users.id', 'DESC')
-            ->get(['users.*', 'roles.name as role_name', 'roles.level']);
+            ->select('users.*', 'roles.name as role_name', 'roles.level');
 
-        // Get admin-level users
-        $users_admin = User::join('roles', 'users.role', '=', 'roles.id')
-            ->where(function ($query) {
-                $query->where('users.user_level', '9')
-                    ->orWhere('users.user_level', '11');
-            })
-            ->orderBy('users.id', 'DESC')
-            ->get(['users.*', 'roles.name as role_name', 'roles.level']);
+        // Apply search
+        if (!empty($search)) {
+            $query->where(function ($q) use ($search) {
+                $q->where('users.first_name', 'LIKE', "%{$search}%")
+                  ->orWhere('users.last_name', 'LIKE', "%{$search}%")
+                  ->orWhere('users.email', 'LIKE', "%{$search}%")
+                  ->orWhere('users.extension', 'LIKE', "%{$search}%");
+            });
+        }
 
-        // Combine both groups
-        $all_users = $users_all->merge($users_admin);
+        // Apply status filter
+        if ($status !== '' && $status !== null) {
+            $query->where('users.status', (int) $status);
+        }
 
-        // Append 'secret' from user_extensions where extension = username
-        $users_with_secret = $all_users->map(function ($user) {
-            $userExtension = \DB::table('user_extensions')
-                ->where('username', $user->extension)
-                ->first();
+        $total_rows = $query->count();
 
-            $user->secret = $userExtension ? $userExtension->secret : null;
+        // Apply pagination
+        $all_users = $query->offset($start)->limit($limit)->get();
+
+        // Fetch secrets in single query
+        $extensions = $all_users->pluck('extension')->toArray();
+        $secrets = \DB::table('user_extensions')
+            ->whereIn('username', $extensions)
+            ->pluck('secret', 'username')
+            ->toArray();
+
+        $users_with_secret = $all_users->map(function ($user) use ($secrets) {
+            $user->secret = $secrets[$user->extension] ?? null;
             return $user;
         });
 
-        return $this->successResponse("Users List", $users_with_secret->toArray());
+        return response()->json([
+            'success'    => true,
+            'message'    => 'Users List',
+            'total_rows' => $total_rows,
+            'data'       => $users_with_secret->values()->toArray(),
+        ]);
     }
 
     /*
