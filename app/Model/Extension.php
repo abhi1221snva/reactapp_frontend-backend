@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Hash;
 use App\Model\Master\Client;
+use Illuminate\Support\Facades\Http;
 
 
 class Extension extends Model
@@ -1253,9 +1254,87 @@ public function extensionDetailList(Request $request, int $extension_id = null)
 
             //$data['group_id']       = $request->input('group_id');
             // $query = "UPDATE ".$this->table." SET first_name = :first_name , last_name = :last_name , mobile = :mobile , follow_me = :follow_me , call_forward= :call_forward , voicemail= :voicemail , vm_pin= :vm_pin , voicemail_send_to_email= :voicemail_send_to_email, twinning= :twinning , asterisk_server_id= :asterisk_server_id , cli_setting= :cli_setting , cli =:cli, cnam =:cnam, dialpad= :dialpad WHERE id= :id ";
-            $query = "UPDATE " . $this->table . " SET extension_type = :extension_type , first_name = :first_name , last_name = :last_name , mobile = :mobile ,country_code=:country_code, follow_me = :follow_me , call_forward= :call_forward , voicemail= :voicemail , vm_pin= :vm_pin , voicemail_send_to_email= :voicemail_send_to_email, twinning= :twinning , cli_setting= :cli_setting , cli =:cli, cnam =:cnam, dialpad= :dialpad,dialpad_lastname=:dialpad_lastname,sms_setting_id=:sms_setting_id,receive_sms_on_email=:receive_sms_on_email,receive_sms_on_mobile=:receive_sms_on_mobile,ip_filtering=:ip_filtering,app_status=:app_status,enable_2fa=:enable_2fa,voip_configuration_id=:voip_configuration_id,timezone=:timezone  WHERE id= :id ";
+                $query = "UPDATE " . $this->table . " SET extension_type = :extension_type , first_name = :first_name , last_name = :last_name , mobile = :mobile ,country_code=:country_code, follow_me = :follow_me , call_forward= :call_forward , voicemail= :voicemail , vm_pin= :vm_pin , voicemail_send_to_email= :voicemail_send_to_email, twinning= :twinning , cli_setting= :cli_setting , cli =:cli, cnam =:cnam, dialpad= :dialpad,dialpad_lastname=:dialpad_lastname,sms_setting_id=:sms_setting_id,receive_sms_on_email=:receive_sms_on_email,receive_sms_on_mobile=:receive_sms_on_mobile,ip_filtering=:ip_filtering,app_status=:app_status,enable_2fa=:enable_2fa,voip_configuration_id=:voip_configuration_id,timezone=:timezone  WHERE id= :id ";
+       // Step 1: Find user based on request parameters
 
+if ($request->extension_id) {
+
+    // If extension_id exists → match with id
+    $userProfile = User::where('id', $request->extension_id)->first();
+
+} elseif ($request->uuid) {
+
+    // If only uuid exists → match with easify_user_uuid
+    $userProfile = User::where('easify_user_uuid', $request->uuid)->first();
+
+} else {
+
+    return [
+        'success' => false,
+        'message' => 'extension_id or uuid is required'
+    ];
+}
+
+
+// Step 2: Check if user exists
+if (!$userProfile) {
+    return [
+        'success' => false,
+        'message' => 'User not found'
+    ];
+}
+
+$authenticatedUser=User::where('id',$request->auth->id)->first();
+// Step 3: Get UUID for Easify API
+$easify_user_uuid = $authenticatedUser->easify_user_uuid;
+Log::info('reached easify_user_uuid',['easify_user_uuid'=>$easify_user_uuid]);
+
+$apiUrl = env('EASIFY_URL') . '/api/users/update';
+
+$payload = [
+    "id" => $request->extension_id,
+    "email" => $request->email,
+    "first_name" => $request->first_name,
+    "last_name" => $request->last_name,
+    "phone" => $request->mobile,
+    "only_validate" => true
+];
+
+$validateResponse = Http::withHeaders([
+    'X-Application-Token' => env('PHONIFY_APP_TOKEN'),
+    'X-Easify-User-Token' => $easify_user_uuid,
+    'Content-Type' => 'application/json'
+])->post($apiUrl, $payload);
+
+       Log::info('reached easifyresponse',['status' => $validateResponse->status(),
+'validateResponse'=>$validateResponse]);
+
+if (!$validateResponse->successful()) {
+    return [
+        'success' => false,
+        'message' => 'Easify validation failed',
+        'error' => $validateResponse->body()
+    ];
+}
             $update = DB::connection('master')->update($query, $data);
+                    if ($update) {
+
+                $payload["only_validate"] = false;
+
+                $updateResponse = Http::withHeaders([
+                    'X-Application-Token' => env('PHONIFY_APP_TOKEN'),
+                    'X-Easify-User-Token' => $easify_user_uuid,
+                    'Content-Type' => 'application/json'
+                ])->post($apiUrl, $payload);
+
+                Log::info('Easify Update Response', [
+                    'status' => $updateResponse->status(),
+                       'response' => $updateResponse->json(),
+
+                ]);
+                
+            }
+
             if (isset($request->group_id)) {
                 if (count($request->group_id) > 0) {
                     $sql = "SELECT extension, alt_extension FROM " . $this->table . "  WHERE id = :id";
