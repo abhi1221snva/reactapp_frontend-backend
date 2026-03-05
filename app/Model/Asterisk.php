@@ -2040,9 +2040,14 @@ class Asterisk extends Model
         }
         if(empty($server))
         {
-            $publicIP = exec("sudo /usr/sbin/asterisk -rx 'sip show peer " . $extension . "' | grep Addr | cut -d ':' -f 2");
-            $localIP = exec("sudo /usr/sbin/asterisk -rx 'sip show peer " . $extension . "' | grep Reg | cut -d '@' -f 2  | cut -d ':' -f 1");
-            $status = exec("sudo /usr/sbin/asterisk -rx 'sip show peer " . $extension . "' | grep Status | cut -d ':' -f2 | cut -c 2-");
+            // Sanitize: extensions must be alphanumeric only (no shell metacharacters)
+            $safeExtension = preg_replace('/[^a-zA-Z0-9_\-]/', '', $extension);
+            if (empty($safeExtension)) {
+                return array('public' => '', 'local' => '', 'status' => 'UNKNOWN');
+            }
+            $publicIP = exec("sudo /usr/sbin/asterisk -rx 'sip show peer " . $safeExtension . "' | grep Addr | cut -d ':' -f 2");
+            $localIP = exec("sudo /usr/sbin/asterisk -rx 'sip show peer " . $safeExtension . "' | grep Reg | cut -d '@' -f 2  | cut -d ':' -f 1");
+            $status = exec("sudo /usr/sbin/asterisk -rx 'sip show peer " . $safeExtension . "' | grep Status | cut -d ':' -f2 | cut -c 2-");
             return array('public' => $publicIP, 'local' => $localIP, 'status' => strtoupper($status));
         }
         else

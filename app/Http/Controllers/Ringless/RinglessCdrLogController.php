@@ -295,7 +295,7 @@ public function getLog(Request $request)
 $filter = (!empty($searchString)) ? " WHERE " . implode(" AND ", $searchString) : '';
 
 // Base query string
-$query_string = "SELECT SQL_CALC_FOUND_ROWS * FROM rvm_cdr_log $filter ORDER BY created_at DESC";
+$query_string = "SELECT * FROM rvm_cdr_log $filter ORDER BY created_at DESC";
 
 // Append LIMIT clause if valid lower and upper limits are provided
 $limitString = '';
@@ -324,7 +324,7 @@ $record = DB::connection('master')->select($sql, $search);
         Log::info('Final Query', ['query' => $query_string, 'bindings' => $search]);
        // Get total record count using FOUND_ROWS()
         $recordCount = DB::connection('master')
-        ->selectOne("SELECT FOUND_ROWS() as count");
+        ->selectOne("SELECT COUNT(*) as count FROM rvm_cdr_log $filter", $search);
         $recordCount = $recordCount ? $recordCount->count : 0;
 
         // $record = DB::connection('master')->select($query_string, $search);

@@ -21,10 +21,10 @@ class ShowHistoryController extends Controller
             $limitString = '';
             $parameters = [];
     
-            $query = "SELECT SQL_CALC_FOUND_ROWS * FROM upload_history_did ";           
-          
-              // Apply filters
-              if (!empty($start_date) && !empty($end_date)) {
+            $query = "SELECT * FROM upload_history_did";
+
+            // Apply filters
+            if (!empty($start_date) && !empty($end_date)) {
                 $query .= " WHERE upload_history_did.created_at >= ? AND upload_history_did.created_at < DATE_ADD(?, INTERVAL 1 DAY)";
                 $parameters[] = $start_date;
                 $parameters[] = $end_date;
@@ -33,6 +33,10 @@ class ShowHistoryController extends Controller
                 $query .= " AND upload_history_did.url_title = ?";
                 $parameters[] = $url_title;
             }
+
+            $countQuery = "SELECT COUNT(*) as count " . substr($query, strpos($query, 'FROM'));
+            $countParameters = $parameters;
+
             $query .= " ORDER BY upload_history_did.id DESC";
 
             if ($request->has('lower_limit') && $request->has('upper_limit') && is_numeric($request->input('lower_limit')) && is_numeric($request->input('upper_limit'))) {
@@ -40,10 +44,10 @@ class ShowHistoryController extends Controller
                 $parameters[] = $request->input('lower_limit');
                 $parameters[] = $request->input('upper_limit');
             }
-    
+
             $record = DB::connection('mysql_' . $request->auth->parent_id)->select($query, $parameters);
-    
-            $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+
+            $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($countQuery, $countParameters);
             $recordCount = (array)$recordCount;
     
             $show_history = [];

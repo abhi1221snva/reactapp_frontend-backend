@@ -175,6 +175,51 @@ class ReportController extends Controller
         $response = $this->model->getReport($this->request);
         return response()->json($response);
     }
+
+    /**
+     * Export CDR report as CSV.
+     * POST /export-report — same filters as /report but streams CSV response.
+     */
+    public function exportReport()
+    {
+        $this->validate($this->request, [
+            'number'     => 'numeric',
+            'campaign'   => 'numeric',
+            'type'       => 'string',
+            'start_date' => 'date',
+            'end_date'   => 'date',
+        ]);
+
+        // Re-use existing report logic with a large limit for export
+        $this->request->merge(['lower_limit' => 0, 'upper_limit' => 50000]);
+        $result = $this->model->getReport($this->request);
+
+        $rows = $result['data'] ?? $result['cdr'] ?? [];
+        if (empty($rows)) {
+            return response()->json(['success' => false, 'message' => 'No data to export'], 404);
+        }
+
+        $filename  = 'cdr_export_' . date('Ymd_His') . '.csv';
+        $headers   = [
+            'Content-Type'        => 'text/csv',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+            'Cache-Control'       => 'no-cache, no-store, must-revalidate',
+        ];
+
+        $callback = function () use ($rows) {
+            $handle = fopen('php://output', 'w');
+            // CSV header row
+            if (!empty($rows)) {
+                fputcsv($handle, array_keys((array) $rows[0]));
+            }
+            foreach ($rows as $row) {
+                fputcsv($handle, (array) $row);
+            }
+            fclose($handle);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
     /**
      * @OA\Post(
      *     path="/login-history",

@@ -43,14 +43,29 @@ class FcsController extends Controller
     {
         try {
             Log::info('reached bank', [$request->all()]);
+
+            $leadId = $request->input('lead_id');
+            $bankId = $request->input('bank_id');
+            $bankName = $request->input('bank_name');
+
+            if (!is_numeric($leadId) || (int) $leadId <= 0) {
+                return $this->failResponse("Invalid lead_id.", [], null, 400);
+            }
+            if (!is_numeric($bankId) || (int) $bankId <= 0) {
+                return $this->failResponse("Invalid bank_id.", [], null, 400);
+            }
+            if (empty($bankName) || !is_string($bankName) || strlen($bankName) > 255) {
+                return $this->failResponse("Invalid bank_name.", [], null, 400);
+            }
+
             $clientId = $request->auth->parent_id;
-    
+
             // Check if the bank name already exists
-            $existingBank = Fcs::on("mysql_$clientId")->where('lead_id', $request->input('lead_id'))->where('bank_id', $request->input('bank_id'))->first();
+            $existingBank = Fcs::on("mysql_$clientId")->where('lead_id', (int) $leadId)->where('bank_id', (int) $bankId)->first();
     
             if ($existingBank) {
                 // Update the bank_name for the existing bank entry
-                $existingBank->bank_name = $request->input('bank_name');
+                $existingBank->bank_name = $bankName;
                 $existingBank->save(); // Save updated bank_name
     
                 $events = $existingBank;
@@ -58,9 +73,9 @@ class FcsController extends Controller
                 // Bank doesn't exist, create a new one
                 $events = new Fcs;
                 $events->setConnection("mysql_$clientId");
-                $events->lead_id = $request->input('lead_id');
-                $events->bank_id = $request->input('bank_id');
-                $events->bank_name = $request->input('bank_name');
+                $events->lead_id = (int) $leadId;
+                $events->bank_id = (int) $bankId;
+                $events->bank_name = $bankName;
                 $events->save(); // Save the new bank first
             }
     
@@ -134,12 +149,19 @@ class FcsController extends Controller
     public function eligibleLender(Request $request, $lead_id, $bank_id)
     {
         try {
+            if (!is_numeric($lead_id) || (int) $lead_id <= 0) {
+                return $this->failResponse("Invalid lead_id.", [], null, 400);
+            }
+            if (!is_numeric($bank_id) || (int) $bank_id <= 0) {
+                return $this->failResponse("Invalid bank_id.", [], null, 400);
+            }
+
             $clientId = $request->auth->parent_id;
-    
+
             // Fetching aggregated data from the Fcs table for a lead and bank
             $fcsData = Fcs::on("mysql_$clientId")
-                        ->where('lead_id', $lead_id)
-                        ->where('bank_id', $bank_id)
+                        ->where('lead_id', (int) $lead_id)
+                        ->where('bank_id', (int) $bank_id)
                         ->selectRaw('
                         COALESCE(SUM(negatives), 0) as max_negatives,
                         COALESCE(MIN(deposits), 0) as monthly_deposits,

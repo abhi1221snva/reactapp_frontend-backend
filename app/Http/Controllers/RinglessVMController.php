@@ -295,11 +295,11 @@ class RinglessVMController extends Controller
             }
 
         $filter = (!empty($searchString)) ? " WHERE " . implode(" AND ", $searchString) : '';
-        $query_string = "SELECT SQL_CALC_FOUND_ROWS id,cli,phone,voicemail_url,start_date,end_date,duration,created_at,updated_at,user_id,voicemail_id,ringless_recording from voicemail_drop_log $filter";
+        $query_string = "SELECT id,cli,phone,voicemail_url,start_date,end_date,duration,created_at,updated_at,user_id,voicemail_id,ringless_recording from voicemail_drop_log $filter";
 
         $sql = $query_string . $limitString;
         $record = DB::connection('master')->select($sql, $search);
-        $recordCount = DB::connection('master')->selectOne("SELECT FOUND_ROWS() as count");
+        $recordCount = DB::connection('master')->selectOne("SELECT COUNT(*) as count FROM voicemail_drop_log $filter", $search);
         $recordCount = (array) $recordCount;
 
         if (!empty($record)) {
@@ -410,11 +410,11 @@ class RinglessVMController extends Controller
             }
 
         $filter = (!empty($searchString)) ? " WHERE " . implode(" AND ", $searchString) : '';
-        $query_string = "SELECT SQL_CALC_FOUND_ROWS id,cli,phone,voicemail_url,start_date,end_date,duration,created_at,updated_at,user_id,voicemail_id,ringless_recording from voicemail_drop_log $filter";
+        $query_string = "SELECT id,cli,phone,voicemail_url,start_date,end_date,duration,created_at,updated_at,user_id,voicemail_id,ringless_recording from voicemail_drop_log $filter";
 
         $sql = $query_string . $limitString;
         $record = DB::connection('master')->select($sql, $search);
-        $recordCount = DB::connection('master')->selectOne("SELECT FOUND_ROWS() as count");
+        $recordCount = DB::connection('master')->selectOne("SELECT COUNT(*) as count FROM voicemail_drop_log $filter", $search);
         $recordCount = (array) $recordCount;
 
         if (!empty($record)) {

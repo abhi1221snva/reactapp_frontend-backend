@@ -1,18 +1,30 @@
 <?php
 require_once __DIR__ . '/../vendor/autoload.php';
 
-/* For CRM WEBPHONE EXAMPLE*/
-
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, x-client, parent-id');
+/* CORS — restrict to known frontend origins */
+$allowedOrigins = [
+    'https://dial.linkswitchcommunications.com',
+    'https://dialer.phonify.app',
+    'http://localhost:3000',
+    'http://localhost:5173',
+];
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if (in_array($origin, $allowedOrigins, true)) {
+    header("Access-Control-Allow-Origin: {$origin}");
+} elseif (empty($origin)) {
+    // Server-to-server or direct API call (no Origin header)
+    header('Access-Control-Allow-Origin: https://dial.linkswitchcommunications.com');
+}
+header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, x-client, parent-id, X-Easify-App-Key, X-Easify-User-Token');
+header('Access-Control-Allow-Credentials: true');
+header('Vary: Origin');
 
 // Handle OPTIONS preflight requests immediately
 if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
 }
-
 /*CLose*/
 
 (new Laravel\Lumen\Bootstrap\LoadEnvironmentVariables(
@@ -130,12 +142,14 @@ $app->register(Maatwebsite\Excel\ExcelServiceProvider::class);
 //$app->register(Illuminate\Redis\RedisServiceProvider::class);
 
 $app->routeMiddleware([
-    'jwt.auth' => App\Http\Middleware\JwtMiddleware::class,
-    'auth.admin' => App\Http\Middleware\AdminAuth::class,
-    'auth.superadmin' => App\Http\Middleware\SuperAdminAuth::class,
-    'websiteclient' => App\Http\Middleware\WebSiteClientAuth::class,
-    'hasComponent' => App\Http\Middleware\HasComponent::class,
-    'easify.appkey' => App\Http\Middleware\EasifyAppKeyMiddleware::class,
+    'jwt.auth'       => App\Http\Middleware\JwtMiddleware::class,
+    'auth.admin'     => App\Http\Middleware\AdminAuth::class,
+    'auth.superadmin'=> App\Http\Middleware\SuperAdminAuth::class,
+    'websiteclient'  => App\Http\Middleware\WebSiteClientAuth::class,
+    'hasComponent'   => App\Http\Middleware\HasComponent::class,
+    'easify.appkey'  => App\Http\Middleware\EasifyAppKeyMiddleware::class,
+    'throttle'       => App\Http\Middleware\RateLimitMiddleware::class,
+    'audit.log'      => App\Http\Middleware\AuditLogMiddleware::class,
 ]);
 
 if (!class_exists('Redis')) {

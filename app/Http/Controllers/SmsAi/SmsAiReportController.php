@@ -65,10 +65,7 @@ class SmsAiReportController extends Controller
 
                 //$query_string = "SELECT * FROM sms_ai WHERE ID IN (Select SQL_CALC_FOUND_ROWS * from sms_ai as crm $filter group by number ) order by created_at desc";
 
-                $query_string = "SELECT SQL_CALC_FOUND_ROWS * FROM sms_ai WHERE id IN (Select  MAX(id) from sms_ai $filter group by number ) order by created_at desc ";
-
-
-
+                $query_string = "SELECT * FROM sms_ai WHERE id IN (Select  MAX(id) from sms_ai $filter group by number ) order by created_at desc ";
 
 
 
@@ -79,9 +76,8 @@ class SmsAiReportController extends Controller
 
 
                 $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $search);
-                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT COUNT(*) as count FROM sms_ai WHERE id IN (Select MAX(id) from sms_ai $filter group by number)", $search);
                 $recordCount = (array) $recordCount;
-                // Log::info('reached',['recordCount'=>$recordCount]);
 
                 if (!empty($record)) {
                     $data = (array) $record;
@@ -111,11 +107,11 @@ class SmsAiReportController extends Controller
 
                 $filter = (!empty($searchString)) ? " WHERE " . implode(" AND ", $searchString) : '';
 
-                $query_string = "Select SQL_CALC_FOUND_ROWS * from crm_lead_data as crm $filter order by created_at desc ";
+                $query_string = "Select * from crm_lead_data as crm $filter order by created_at desc ";
                 $sql = $query_string . $limitString;
 
                 $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $search);
-                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT COUNT(*) as count FROM crm_lead_data $filter", $search);
                 $recordCount = (array) $recordCount;
 
                 if (!empty($record)) {
@@ -411,31 +407,36 @@ class SmsAiReportController extends Controller
             // Query sms_ai for level > 1
             $whereClause = !empty($searchString) ? " WHERE " . implode(" AND ", $searchString) : '';
 
-            $sql = "SELECT SQL_CALC_FOUND_ROWS * FROM sms_ai
+            $sql = "SELECT * FROM sms_ai
                     WHERE id IN (
                         SELECT MAX(id) FROM sms_ai $whereClause GROUP BY number
                     )
                     ORDER BY created_at DESC";
 
+            $countParams = [];
+            if (!empty($dateFilter)) {
+                $countParams = array_merge($countParams, $dateFilter);
+            }
+            if ($searchTerm) {
+                $countParams[] = $searchTermLike;
+                $countParams[] = $searchTermLike;
+            }
+
             if ($applyLimit) {
                 $sql .= " LIMIT ?, ?";
             }
 
-            $params = [];
-            if (!empty($dateFilter)) {
-                $params = array_merge($params, $dateFilter);
-            }
-            if ($searchTerm) {
-                $params[] = $searchTermLike;
-                $params[] = $searchTermLike;
-            }
+            $params = $countParams;
             if ($applyLimit) {
                 $params[] = $start;
                 $params[] = $length;
             }
 
             $records = DB::connection('mysql_' . $clientId)->select($sql, $params);
-            $countObj = DB::connection('mysql_' . $clientId)->selectOne("SELECT FOUND_ROWS() as count");
+            $countObj = DB::connection('mysql_' . $clientId)->selectOne(
+                "SELECT COUNT(*) as count FROM sms_ai WHERE id IN (SELECT MAX(id) FROM sms_ai $whereClause GROUP BY number)",
+                $countParams
+            );
         } else {
             // Query crm_lead_data for level <= 1
             if ($userId) {
@@ -444,28 +445,31 @@ class SmsAiReportController extends Controller
 
             $whereClause = !empty($searchString) ? " WHERE " . implode(" AND ", $searchString) : '';
 
-            $sql = "SELECT SQL_CALC_FOUND_ROWS * FROM crm_lead_data $whereClause ORDER BY created_at DESC";
+            $sql = "SELECT * FROM crm_lead_data $whereClause ORDER BY created_at DESC";
+
+            $countParams = [];
+            if ($userId) {
+                $countParams[] = $userId;
+            }
+            if (!empty($dateFilter)) {
+                $countParams = array_merge($countParams, $dateFilter);
+            }
 
             if ($applyLimit) {
                 $sql .= " LIMIT ?, ?";
             }
 
-            $params = [];
-            if ($userId) {
-                $params[] = $userId;
-            }
-            if (!empty($dateFilter)) {
-                $params = array_merge($params, $dateFilter);
-            }
-            // Note: you can add search for crm_lead_data if needed here
-
+            $params = $countParams;
             if ($applyLimit) {
                 $params[] = $start;
                 $params[] = $length;
             }
 
             $records = DB::connection('mysql_' . $clientId)->select($sql, $params);
-            $countObj = DB::connection('mysql_' . $clientId)->selectOne("SELECT FOUND_ROWS() as count");
+            $countObj = DB::connection('mysql_' . $clientId)->selectOne(
+                "SELECT COUNT(*) as count FROM crm_lead_data $whereClause",
+                $countParams
+            );
         }
 
         $totalRecords = $countObj->count ?? 0;

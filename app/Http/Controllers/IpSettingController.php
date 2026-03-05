@@ -302,7 +302,7 @@ class IpSettingController extends Controller
             if (!$ssh->login('root', $key)) {
                 throw new RenderableException("Failed to whitelist client IP $whitelistIp on server $serverIP. Unable to login.");
             }
-            $output = $ssh->exec("csf -a $whitelistIp");
+            $output = $ssh->exec("csf -a " . escapeshellarg($whitelistIp));
         }
         if (preg_match("/ACCEPT/", $output) || preg_match("/already in the allow file/", $output)) {
             #save in ip_whitelists

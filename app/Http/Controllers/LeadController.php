@@ -207,7 +207,7 @@ class LeadController extends Controller
 
                 // $filter = (!empty($searchString)) ? " WHERE " . implode(" AND ", $searchString) : '';
                 $filter = (!empty($searchString)) ? " AND " . implode(" AND ", $searchString) : '';
-                $query_string = "Select SQL_CALC_FOUND_ROWS * from crm_lead_data as crm WHERE is_deleted = 0 $filter order by updated_at desc ";
+                $query_string = "Select * from crm_lead_data as crm WHERE is_deleted = 0 $filter order by updated_at desc ";
 
                 $sql = $query_string . $limitString;
 
@@ -219,7 +219,7 @@ class LeadController extends Controller
                 );*/
 
                 $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $search);
-                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT COUNT(*) as count FROM crm_lead_data WHERE is_deleted = 0 $filter", $search);
                 $recordCount = (array) $recordCount;
                 Log::info('reached', ['recordCount' => $recordCount]);
 
@@ -251,11 +251,11 @@ class LeadController extends Controller
 
                 // $filter = (!empty($searchString)) ? " WHERE " . implode(" AND ", $searchString) : '';
                 $filter = (!empty($searchString)) ? " AND " . implode(" AND ", $searchString) : '';
-                $query_string = "Select SQL_CALC_FOUND_ROWS * from crm_lead_data as crm WHERE is_deleted = 0 $filter order by updated_at desc ";
+                $query_string = "Select * from crm_lead_data as crm WHERE is_deleted = 0 $filter order by updated_at desc ";
                 $sql = $query_string . $limitString;
 
                 $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $search);
-                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT COUNT(*) as count FROM crm_lead_data WHERE is_deleted = 0 $filter", $search);
                 $recordCount = (array) $recordCount;
 
                 if (!empty($record)) {
@@ -411,7 +411,7 @@ class LeadController extends Controller
 
                 // $filter = (!empty($searchString)) ? " WHERE " . implode(" AND ", $searchString) : '';
                 $filter = (!empty($searchString)) ? " AND " . implode(" AND ", $searchString) : '';
-                $query_string = "Select SQL_CALC_FOUND_ROWS * from crm_lead_data as crm WHERE is_deleted = 0 $filter order by updated_at desc ";
+                $query_string = "Select * from crm_lead_data as crm WHERE is_deleted = 0 $filter order by updated_at desc ";
 
                 $sql = $query_string . $limitString;
 
@@ -423,7 +423,7 @@ class LeadController extends Controller
                 );*/
 
                 $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $search);
-                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT COUNT(*) as count FROM crm_lead_data WHERE is_deleted = 0 $filter", $search);
                 $recordCount = (array) $recordCount;
                 Log::info('reached', ['recordCount' => $recordCount]);
 
@@ -455,11 +455,11 @@ class LeadController extends Controller
 
                 // $filter = (!empty($searchString)) ? " WHERE " . implode(" AND ", $searchString) : '';
                 $filter = (!empty($searchString)) ? " AND " . implode(" AND ", $searchString) : '';
-                $query_string = "Select SQL_CALC_FOUND_ROWS * from crm_lead_data as crm WHERE is_deleted = 0 $filter order by updated_at desc ";
+                $query_string = "Select * from crm_lead_data as crm WHERE is_deleted = 0 $filter order by updated_at desc ";
                 $sql = $query_string . $limitString;
 
                 $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $search);
-                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT COUNT(*) as count FROM crm_lead_data WHERE is_deleted = 0 $filter", $search);
                 $recordCount = (array) $recordCount;
 
                 if (!empty($record)) {
@@ -609,10 +609,10 @@ class LeadController extends Controller
 
             $filter = (!empty($searchString)) ? " AND " . implode(" AND ", $searchString) : '';
 
-            $sql = "SELECT SQL_CALC_FOUND_ROWS * FROM crm_lead_data WHERE is_deleted = 0 $filter ORDER BY created_at DESC $limitString";
+            $sql = "SELECT * FROM crm_lead_data WHERE is_deleted = 0 $filter ORDER BY created_at DESC $limitString";
 
             $records = DB::connection('mysql_' . $clientId)->select($sql, $search);
-            $recordCount = DB::connection('mysql_' . $clientId)->selectOne("SELECT FOUND_ROWS() as count");
+            $recordCount = DB::connection('mysql_' . $clientId)->selectOne("SELECT COUNT(*) as count FROM crm_lead_data WHERE is_deleted = 0 $filter", $search);
             $recordCount = (array) $recordCount;
 
             return [
@@ -765,10 +765,10 @@ if ($request->has('start') && $request->has('limit')) {
 
             $filter = (!empty($searchString)) ? " AND " . implode(" AND ", $searchString) : '';
 
-            $sql = "SELECT SQL_CALC_FOUND_ROWS * FROM crm_lead_data WHERE is_deleted = 0 AND lead_parent_id != 0 $filter ORDER BY created_at DESC $limitString";
+            $sql = "SELECT * FROM crm_lead_data WHERE is_deleted = 0 AND lead_parent_id != 0 $filter ORDER BY created_at DESC $limitString";
 
             $records = DB::connection('mysql_' . $clientId)->select($sql, $search);
-            $recordCount = DB::connection('mysql_' . $clientId)->selectOne("SELECT FOUND_ROWS() as count");
+            $recordCount = DB::connection('mysql_' . $clientId)->selectOne("SELECT COUNT(*) as count FROM crm_lead_data WHERE is_deleted = 0 AND lead_parent_id != 0 $filter", $search);
             $recordCount = (array) $recordCount;
 
             return [

@@ -152,8 +152,7 @@ public function getMailbox($request)
         $filter = count($where) ? " WHERE " . implode(" AND ", $where) : "";
 
         $sql = "
-            SELECT SQL_CALC_FOUND_ROWS
-                id, ani, vm_file_location, status, extension, date_time
+            SELECT id, ani, vm_file_location, status, extension, date_time
             FROM mailbox
             $filter
             ORDER BY date_time DESC
@@ -163,7 +162,7 @@ public function getMailbox($request)
         $db = DB::connection("mysql_" . $request->auth->parent_id);
 
         $records = $db->select($sql, $search);
-        $count   = $db->selectOne("SELECT FOUND_ROWS() AS count");
+        $count   = $db->selectOne("SELECT COUNT(*) AS count FROM mailbox $filter", $search);
 
         return [
             'success' => 'true',

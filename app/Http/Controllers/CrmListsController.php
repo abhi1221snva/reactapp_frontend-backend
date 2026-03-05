@@ -19,24 +19,27 @@ class CrmListsController extends Controller
             $limitString = '';
             $parameters = [];
     
-            $query = "SELECT SQL_CALC_FOUND_ROWS * FROM crm_lists WHERE deleted_at IS NULL";
-    
+            $query = "SELECT * FROM crm_lists WHERE deleted_at IS NULL";
+
             if (!empty($searchTerm)) {
                 $query .=" AND (title LIKE CONCAT(?, '%') OR title_url LIKE CONCAT(?, '%') OR url LIKE CONCAT(?, '%'))";
                 $parameters[] = $searchTerm;
                 $parameters[] = $searchTerm;
                 $parameters[] = $searchTerm;
             }
-    
+
+            $countQuery = "SELECT COUNT(*) as count " . substr($query, strpos($query, 'FROM'));
+            $countParameters = $parameters;
+
             if ($request->has('lower_limit') && $request->has('upper_limit') && is_numeric($request->input('lower_limit')) && is_numeric($request->input('upper_limit'))) {
                 $query .= " LIMIT ?, ?";
                 $parameters[] = $request->input('lower_limit');
                 $parameters[] = $request->input('upper_limit');
             }
-    
+
             $record = DB::connection('mysql_' . $request->auth->parent_id)->select($query, $parameters);
-    
-            $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+
+            $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($countQuery, $countParameters);
             $recordCount = (array)$recordCount;
     
             $crm_list = (array)$record;

@@ -22,7 +22,10 @@ $router->get('/list-all-cache', function () {
 });
 
 
-$router->POST('authentication', 'AuthenticationController@authentication');
+// Rate limited: 10 login attempts per minute per IP
+$router->group(['middleware' => ['throttle:10,1']], function () use ($router) {
+    $router->post('authentication', 'AuthenticationController@authentication');
+});
 
 $router->group([
     'prefix' => 'v2',
@@ -89,7 +92,7 @@ $router->post('prospect/verify/mobile', 'RegisterController@verifyOtpMobile');
 
 
 #Routes with super admin rights should be added here
-$router->group(['middleware' => ['jwt.auth', 'auth.superadmin']], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'auth.superadmin', 'audit.log']], function () use ($router) {
   #create client
   $router->put('client', 'ClientController@create');
   $router->get('clients', 'ClientController@index');
@@ -132,7 +135,7 @@ $router->group(['middleware' => ['jwt.auth', 'auth.superadmin']], function () us
 
 
 #Routes with admin rights should be added here
-$router->group(['middleware' => ['jwt.auth']], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($router) {
   #create user
   $router->put('user', 'ExtensionController@saveNewExtension');
 
@@ -195,7 +198,7 @@ $router->POST('merchants', 'Merchant\AuthController@get');
 // Team Chat Widget Public Routes (No Auth Required)
 $router->get('team-chat/widget/validate', 'TeamChatWidgetController@validateToken');
 
-$router->group(['middleware' => 'jwt.auth'], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($router) {
   // $router->post('auth/google/callback', 'UserMailController@googlecallback');
   //profile
   $router->get('profile', 'ProfileController@index');
@@ -265,6 +268,8 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->get('daily-call-report', 'ReportController@getDailyCallReportLogs');
 
   $router->post('live-call', 'ReportController@getLiveCall');
+  $router->get('live-calls', 'ReportController@getLiveCall');
+  $router->post('export-report', 'ReportController@exportReport');
   $router->post('transfer-report', 'ReportController@getTransferReport');
   $router->get('get-timezone-list', 'ReportController@getTimeZoneList');
 
@@ -505,6 +510,11 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
 
   $router->post('listen-call', 'DialerController@listenCall');
   $router->post('barge-call', 'DialerController@bargeCall');
+
+  // Frontend API aliases (added for frontend compatibility)
+  $router->post('extension-logout', 'DialerController@logout');
+  $router->post('send-dtmf', 'DialerController@dtmf');
+  $router->post('disposition-by-campaign-id', 'DialerController@dispositionByCampaignId');
   $router->post('add-new-lead-pd', 'DialerController@addNewLeadPd');
   $router->post('webphone/switch-access', 'DialerController@switchWebPhoneUse');
   $router->get('webphone/status', 'DialerController@webPhoneStatus');
@@ -526,6 +536,7 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   $router->get('unread-sms-count', 'SmsController@getUnreadSms');
   $router->post('unread-sms-count', 'SmsController@getUnreadSms');
   $router->post('unread-sms-count-openai', 'SmsController@getUnreadSmsOpenAI');
+  $router->post('sms/mark-read', 'SmsController@markRead');
 
   #sms ai
   $router->post('add-open-ai-setting', 'OpenAiController@create');
@@ -1038,9 +1049,11 @@ $router->group(['middleware' => 'jwt.auth'], function () use ($router) {
   #call transfer
 
   $router->post('direct-call-transfer', 'DialerController@directCallTransfer');
-  //$router->post('warm-call-transfer', 'DialerController@warmCallTransfer');
+  $router->post('warm-call-transfer', 'DialerController@warmCallTransfer');
   $router->post('warm-call-transfer-c2c-crm', 'DialerController@warmCallTransfer');
   $router->post('merge-call-with-transfer', 'DialerController@mergeCallWithTransfer');
+  $router->post('merge-call-transfer', 'DialerController@mergeCallWithTransfer');
+  $router->post('leave-call-transfer', 'DialerController@leaveConferenceTransfer');
 
 
   $router->post('check-line-details', 'DialerController@checkLineDetails');
@@ -1613,7 +1626,7 @@ $router->get('ai-coach-api', 'AiCoachController@index');
 $router->get('gmail/callback', 'GmailOAuthController@callbackNoAuth');
 
 // Gmail routes (auth required)
-$router->group(['middleware' => 'jwt.auth', 'prefix' => 'gmail'], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'audit.log'], 'prefix' => 'gmail'], function () use ($router) {
     // OAuth
     $router->get('connect', 'GmailOAuthController@connect');
     $router->post('disconnect', 'GmailOAuthController@disconnect');

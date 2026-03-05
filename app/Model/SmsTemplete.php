@@ -630,7 +630,7 @@ class SmsTemplete  extends Model
 
             $new_file = $filenameDb . ".wav";
 
-            shell_exec("sox $rootPath$tmpFilename -r 8000 -c 1 $convertedFilename -q");
+            shell_exec("sox " . escapeshellarg($rootPath . $tmpFilename) . " -r 8000 -c 1 " . escapeshellarg($convertedFilename) . " -q");
             if(file_exists($convertedFilename))
             {
                 unlink($rootPath . $tmpFilename);

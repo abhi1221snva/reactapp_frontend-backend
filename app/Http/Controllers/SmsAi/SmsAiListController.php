@@ -149,8 +149,13 @@ class SmsAiListController extends Controller
     public function create(Request $request)
     {
         if ($request->has('file_name')) {
-            //$filePath = base_path()."/upload/sms-ai/".$request->input('file_name');
-            $filePath = env('SMS_AI_LIST_FILE_UPLOAD_PATH') . $request->input('file_name');
+            // basename() strips any directory components to prevent path traversal
+            $safeFileName = basename($request->input('file_name'));
+            if (empty($safeFileName) || $safeFileName === '.') {
+                return $this->failResponse("Invalid file name.", [], null, 400);
+            }
+            //$filePath = base_path()."/upload/sms-ai/".$safeFileName;
+            $filePath = env('SMS_AI_LIST_FILE_UPLOAD_PATH') . $safeFileName;
         }
 
         if (!empty($filePath) && file_exists($filePath)) {

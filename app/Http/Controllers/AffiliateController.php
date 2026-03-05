@@ -138,7 +138,7 @@ class AffiliateController extends Controller
             {
                 
                 $filter = (!empty($searchString)) ? " WHERE " . implode(" AND ", $searchString) : '';
-                $query_string = "Select SQL_CALC_FOUND_ROWS * from crm_lead_data as crm $filter order by created_at desc ";
+                $query_string = "Select * from crm_lead_data as crm $filter order by created_at desc ";
                 $sql = $query_string . $limitString;
 
                /*  return array(
@@ -149,7 +149,7 @@ class AffiliateController extends Controller
                 );*/
 
                 $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $search);
-                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT COUNT(*) as count FROM crm_lead_data $filter", $search);
                 $recordCount = (array) $recordCount;
 
                 if (!empty($record))
@@ -187,11 +187,11 @@ class AffiliateController extends Controller
 
                 $filter = (!empty($searchString)) ? " WHERE " . implode(" AND ", $searchString) : '';
 
-                $query_string = "Select SQL_CALC_FOUND_ROWS * from crm_lead_data as crm $filter order by created_at desc ";
+                $query_string = "Select * from crm_lead_data as crm $filter order by created_at desc ";
                 $sql = $query_string . $limitString;
 
                 $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $search);
-                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT COUNT(*) as count FROM crm_lead_data $filter", $search);
                 $recordCount = (array) $recordCount;
 
                 if (!empty($record))

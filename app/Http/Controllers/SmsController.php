@@ -304,6 +304,45 @@ class SmsController extends Controller
         return response()->json($response);
     }
 
+    /**
+     * Mark SMS thread as read.
+     * POST /sms/mark-read
+     * Body: { did_id, contact_number } or { thread_id }
+     */
+    public function markRead()
+    {
+        try {
+            $parentId = $this->request->auth->parent_id;
+            $didId = $this->request->input('did_id');
+            $contactNumber = $this->request->input('contact_number');
+            $threadId = $this->request->input('thread_id');
+
+            $query = \DB::connection('mysql_' . $parentId)->table('sms')
+                ->where('is_read', 0)
+                ->where('direction', 'inbound');
+
+            if ($threadId) {
+                $query->where('id', $threadId);
+            } elseif ($didId && $contactNumber) {
+                $query->where('from_did', $didId)
+                      ->where(function ($q) use ($contactNumber) {
+                          $q->where('from_number', $contactNumber)
+                            ->orWhere('to_number', $contactNumber);
+                      });
+            }
+
+            $updated = $query->update(['is_read' => 1, 'updated_at' => now()]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Messages marked as read',
+                'data'    => ['updated' => $updated],
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
   public function smsDidList()
 {
     try {

@@ -17,13 +17,16 @@ class SipChannelController extends Controller
         $limitString = '';
         $parameters = [];
 
-        $query = "SELECT SQL_CALC_FOUND_ROWS * FROM sip_channel_provider  WHERE deleted_at IS NULL";
+        $query = "SELECT * FROM sip_channel_provider  WHERE deleted_at IS NULL";
 
         if (!empty($searchTerm)) {
             $query .= " AND (title LIKE CONCAT(?, '%') OR channel_provider LIKE CONCAT(?, '%'))";
             $parameters[] = $searchTerm;
-            $parameters[] = $searchTerm;                
+            $parameters[] = $searchTerm;
         }
+
+        $countQuery = "SELECT COUNT(*) as count " . substr($query, strpos($query, 'FROM'));
+        $countParameters = $parameters;
 
         if ($request->has('lower_limit') && $request->has('upper_limit') && is_numeric($request->input('lower_limit')) && is_numeric($request->input('upper_limit'))) {
             $query .= " LIMIT ?, ?";
@@ -33,7 +36,7 @@ class SipChannelController extends Controller
 
         $record = DB::connection('mysql_' . $request->auth->parent_id)->select($query, $parameters);
 
-        $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+        $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($countQuery, $countParameters);
         $recordCount = (array)$recordCount;
         $campaignTypes = DB::connection('mysql_' . $request->auth->parent_id)->select("SELECT * FROM campaign_types WHERE status = '1'");
 

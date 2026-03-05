@@ -124,15 +124,15 @@ class ApiLogsController extends Controller
 
         // Combine filters
         $filter = (!empty($searchString)) ? " WHERE " . implode(" AND ", $searchString) : '';
-        $query_string = "SELECT SQL_CALC_FOUND_ROWS * FROM api_logs AS crm $filter ORDER BY created_at DESC $limitString";
+        $query_string = "SELECT * FROM api_logs AS crm $filter ORDER BY created_at DESC $limitString";
 
         Log::info('Final Query', ['query' => $query_string, 'bindings' => $search]);
 
         // Execute query
         $record = DB::connection('master')->select($query_string, $search);
 
-        // Fetch the total count using FOUND_ROWS
-        $recordCount = DB::connection('master')->selectOne("SELECT FOUND_ROWS() as count");
+        // Fetch total count without LIMIT
+        $recordCount = DB::connection('master')->selectOne("SELECT COUNT(*) as count FROM api_logs $filter", $search);
 
         if (!empty($record)) {
             return [

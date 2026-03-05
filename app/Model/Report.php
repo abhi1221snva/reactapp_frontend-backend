@@ -38,13 +38,16 @@ class Report extends Model
             $limitString = '';
             $parameters = [];
 
-            $query = "SELECT SQL_CALC_FOUND_ROWS * FROM ivr_log";
+            $query = "SELECT * FROM ivr_log";
 
             if (!empty($searchTerm)) {
                 $query .= " WHERE (number LIKE CONCAT(?, '%') OR extension LIKE CONCAT(?, '%'))";
                 $parameters[] = $searchTerm;
                 $parameters[] = $searchTerm;
             }
+
+            $countQuery = "SELECT COUNT(*) as count " . substr($query, strpos($query, 'FROM'));
+            $countParameters = $parameters;
 
             if ($request->has('lower_limit') && $request->has('upper_limit') && is_numeric($request->input('lower_limit')) && is_numeric($request->input('upper_limit'))) {
                 $query .= " LIMIT ?, ?";
@@ -54,7 +57,7 @@ class Report extends Model
 
             $record = DB::connection('mysql_' . $request->auth->parent_id)->select($query, $parameters);
 
-            $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+            $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($countQuery, $countParameters);
             $recordCount = (array)$recordCount;
 
             $data = (array)$record;
@@ -137,14 +140,12 @@ class Report extends Model
                     $limitString = "LIMIT :lower_limit , :upper_limit";
                 }
                 $filter = (!empty($searchString)) ? " WHERE " . implode(" AND ", $searchString) : '';
-                $sql = "SELECT
-                          SQL_CALC_FOUND_ROWS c.id,  c.extension, c.number, c.start_time, c.end_time, c.duration, c.route, c.call_recording,c.campaign_id, c.lead_id,c.type, d.title as disposition
-                        FROM
-                          cdr as c
+                $sql = "SELECT c.id, c.extension, c.number, c.start_time, c.end_time, c.duration, c.route, c.call_recording, c.campaign_id, c.lead_id, c.type, d.title as disposition
+                        FROM cdr as c
                         LEFT JOIN disposition as d ON c.disposition_id = d.id"
                     . $filter . " ORDER BY start_time DESC " . $limitString;
                 $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $search);
-                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT COUNT(*) as count FROM cdr as c LEFT JOIN disposition as d ON c.disposition_id = d.id $filter", $search);
                 $recordCount = (array) $recordCount;
                 if (!empty($record)) {
                     $data = (array) $record;
@@ -443,8 +444,7 @@ class Report extends Model
             //                 ) as c ORDER BY start_time DESC ";
 
 $query_string = "
-    SELECT 
-        SQL_CALC_FOUND_ROWS 
+    SELECT
         c.id,
         c.extension,
         c.cli,
@@ -492,7 +492,10 @@ $query_string = "
             $sql = $query_string . $limitString;
 
             $record = DB::connection('mysql_' . $parent_id)->select($sql, $search);
-            $recordCount = DB::connection('mysql_' . $parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+            $recordCount = DB::connection('mysql_' . $parent_id)->selectOne(
+                "SELECT COUNT(*) as count FROM ((SELECT id FROM cdr $filter) UNION ALL (SELECT id FROM cdr_archive $filter1)) AS c",
+                $search
+            );
             $recordCount = (array) $recordCount;
 
             // Summary aggregate query (same filters, no pagination)
@@ -795,16 +798,15 @@ $query_string = "
             $filter = (!empty($searchString)) ? " WHERE " . implode(" AND ", $searchString) : '';
             //$filter1 = (!empty($searchString1)) ? " WHERE " . implode(" AND ", $searchString1) : '';
 
+            $clientId = $request->auth->parent_id;
             $query_string = "
-                                SELECT SQL_CALC_FOUND_ROWS login_logs.created_at,login_logs.ip,login_logs.user_agent,users.first_name,users.last_name FROM login_logs inner join users on users.id=login_logs.user_id $filter and client_id='" . $request->auth->parent_id . "'
+                                SELECT login_logs.created_at,login_logs.ip,login_logs.user_agent,users.first_name,users.last_name FROM login_logs inner join users on users.id=login_logs.user_id $filter and client_id='$clientId'
                                 ORDER BY login_logs.created_at DESC ";
 
             $sql = $query_string . $limitString;
 
-            //return $search;
-
             $record = DB::connection('master')->select($sql, $search);
-            $recordCount = DB::connection('master')->selectOne("SELECT FOUND_ROWS() as count");
+            $recordCount = DB::connection('master')->selectOne("SELECT COUNT(*) as count FROM login_logs INNER JOIN users ON users.id=login_logs.user_id $filter AND client_id='$clientId'", $search);
             $recordCount = (array) $recordCount;
 
             if (!empty($record)) {
@@ -889,7 +891,7 @@ public function loginHistory($request)
         $filter = (!empty($searchString)) ? " WHERE " . implode(" AND ", $searchString) : '';
 
         $query_string = "
-            SELECT SQL_CALC_FOUND_ROWS 
+            SELECT
                 login_logs.created_at,
                 login_logs.ip,
                 login_logs.user_agent,
@@ -908,7 +910,10 @@ public function loginHistory($request)
         $sql = $query_string . ' ' . $limitString;
 
         $record = DB::connection('master')->select($sql, $search);
-        $recordCount = DB::connection('master')->selectOne("SELECT FOUND_ROWS() as count");
+        $recordCount = DB::connection('master')->selectOne(
+            "SELECT COUNT(*) as count FROM login_logs INNER JOIN users ON users.id = login_logs.user_id $filter AND login_logs.client_id = :client_id",
+            $search
+        );
         $recordCount = (array) $recordCount;
 
         if (!empty($record)) {
@@ -1010,8 +1015,7 @@ public function getLiveCall($request)
         }
 
         // 🔹 Main SQL with total count
-        $sql = "SELECT SQL_CALC_FOUND_ROWS *,
-                       TIMEDIFF(start_time, UTC_TIMESTAMP()) AS duration
+        $sql = "SELECT *, TIMEDIFF(start_time, UTC_TIMESTAMP()) AS duration
                 FROM line_detail
                 " . $search . "
                 ORDER BY start_time DESC
@@ -1022,9 +1026,9 @@ public function getLiveCall($request)
         // 🔹 Fetch paginated data
         $records = $connection->select($sql);
 
-        // 🔹 Fetch total rows (ignores LIMIT)
-        $totalRows = $connection->select("SELECT FOUND_ROWS() AS total_count");
-        $totalCount = $totalRows[0]->total_count ?? 0;
+        // 🔹 Fetch total rows
+        $countRow = $connection->selectOne("SELECT COUNT(*) AS total_count FROM line_detail " . $search);
+        $totalCount = $countRow->total_count ?? 0;
 
         // 🔹 Prepare response
         if (count($records) > 0) {
@@ -1100,15 +1104,13 @@ public function getLiveCall($request)
                     $limitString = "LIMIT :lower_limit , :upper_limit";
                 }
                 $filter = (!empty($searchString)) ? " WHERE " . implode(" AND ", $searchString) : '';
-                $sql = "SELECT
-                          SQL_CALC_FOUND_ROWS t.id,  t.extension, t.number, t.start_time, t.transfer_extension,  t.call_recording, t.call_recording_transfer, c.title as campaign, ts.title as status
-                        FROM
-                          transfer_log as t
+                $sql = "SELECT t.id, t.extension, t.number, t.start_time, t.transfer_extension, t.call_recording, t.call_recording_transfer, c.title as campaign, ts.title as status
+                        FROM transfer_log as t
                         LEFT JOIN campaign as c ON t.campaign_id = c.id
                         LEFT JOIN transfer_status as ts ON t.transfer_status_id = ts.id"
                     . $filter . " ORDER BY start_time DESC " . $limitString;
                 $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $search);
-                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+                $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT COUNT(*) as count FROM transfer_log as t LEFT JOIN campaign as c ON t.campaign_id = c.id LEFT JOIN transfer_status as ts ON t.transfer_status_id = ts.id $filter", $search);
                 $recordCount = (array) $recordCount;
                 if (!empty($record)) {
                     $data = (array) $record;
@@ -1195,7 +1197,6 @@ public function getTransferReport($request)
         $filter = !empty($searchString) ? ' WHERE ' . implode(' AND ', $searchString) : '';
 
         $sql = "SELECT
-                    SQL_CALC_FOUND_ROWS
                     t.id,
                     t.extension,
                     t.number,
@@ -1217,7 +1218,10 @@ Log::info('Transfer Report SQL:', [
 ]);
 
         $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $search);
-        $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() AS count");
+        $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne(
+            "SELECT COUNT(*) as count FROM transfer_log AS t LEFT JOIN campaign AS c ON t.campaign_id = c.id LEFT JOIN transfer_status AS ts ON t.transfer_status_id = ts.id $filter",
+            $search
+        );
         $recordCount = (array) $recordCount;
 
         if (!empty($record)) {
@@ -1967,7 +1971,7 @@ public function getReportPress1Campaign($request)
 
         // ⚙️ Main query
         $sql = "
-            SELECT SQL_CALC_FOUND_ROWS 
+            SELECT
                 MAX(ivl.id) as id,
                 ivl.lead_id,
                 ivl.number,
@@ -1988,7 +1992,9 @@ public function getReportPress1Campaign($request)
         $records = DB::connection($parentConn)->select($sql);
 
         // 🧮 Total count
-        $recordCountObj = DB::connection($parentConn)->selectOne("SELECT FOUND_ROWS() AS count");
+        $recordCountObj = DB::connection($parentConn)->selectOne(
+            "SELECT COUNT(*) AS count FROM (SELECT ivl.lead_id FROM ivr_log ivl LEFT JOIN campaign c ON ivl.campaign_id = c.id $filter GROUP BY ivl.lead_id) AS sub"
+        );
         $recordCount = $recordCountObj->count ?? 0;
 
         // 🧠 Resolve DTMF titles
@@ -2121,7 +2127,7 @@ public function getReportPress1Campaign($request)
             // $filter1 = (!empty($searchString1)) ? " WHERE " . implode(" AND ", $searchString1) : '';
 
 
-            $query_string = "SELECT SQL_CALC_FOUND_ROWS lead_id from ivr_log $filter  group by lead_id ";
+            $query_string = "SELECT lead_id from ivr_log $filter  group by lead_id ";
 
             /// $query_string = "SELECT MAX(id) AS max_id,number,cli,dtmf,campaign_id,created_at,route,lead_id FROM ivr_log  $filter  GROUP BY lead_id ";
 
@@ -2133,7 +2139,10 @@ public function getReportPress1Campaign($request)
             $data = array();
 
             //return $data;
-            $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+            $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne(
+                "SELECT COUNT(*) as count FROM (SELECT lead_id FROM ivr_log $filter GROUP BY lead_id) AS sub",
+                $search
+            );
             $recordCount = (array) $recordCount;
 
             foreach ($record as $key =>  $r) {

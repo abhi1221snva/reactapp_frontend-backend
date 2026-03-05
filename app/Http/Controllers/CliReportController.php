@@ -81,13 +81,16 @@ class CliReportController extends Controller
         $limitString = '';
         $parameters = [];
 
-        $query = "SELECT SQL_CALC_FOUND_ROWS * FROM cli_report";
+        $query = "SELECT * FROM cli_report";
 
         if (!empty($searchTerm)) {
             $query .= " WHERE (cli LIKE CONCAT(?, '%') OR cnam LIKE CONCAT(?, '%'))";
             $parameters[] = $searchTerm;
             $parameters[] = $searchTerm;
         }
+
+        $countQuery = "SELECT COUNT(*) as count " . substr($query, strpos($query, 'FROM'));
+        $countParameters = $parameters;
 
         if ($request->has('lower_limit') && $request->has('upper_limit') && is_numeric($request->input('lower_limit')) && is_numeric($request->input('upper_limit'))) {
             $query .= " LIMIT ?, ?";
@@ -97,7 +100,7 @@ class CliReportController extends Controller
 
         $record = DB::connection('mysql_' . $request->auth->parent_id)->select($query, $parameters);
 
-        $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+        $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($countQuery, $countParameters);
         $recordCount = (array)$recordCount;
 
         $cli_report = (array)$record;
@@ -261,6 +264,11 @@ class CliReportController extends Controller
     try {
         $cli = $request->number;
 
+        // Validate: CLI must be a phone number (digits, +, -, spaces only)
+        if (!preg_match('/^\+?[\d\s\-\(\)]{7,20}$/', $cli)) {
+            return $this->failResponse('Invalid CLI number format.');
+        }
+
         // ✅ Step 1: Save CNAM CLI record
         $CnamCliReport = new CnamCliReport();
         $CnamCliReport->setConnection("master");
@@ -294,7 +302,7 @@ class CliReportController extends Controller
                 $domain = $server['domain'] ?? null;
                 if ($domain) {
                     $strAsteriskPath = "root@" . $domain . ":/var/spool/asterisk/outgoing/";
-                    $cmd = "scp -P 10347 $localFile $strAsteriskPath";
+                    $cmd = "scp -P 10347 " . escapeshellarg($localFile) . " " . escapeshellarg($strAsteriskPath);
                     shell_exec($cmd);
                 }
             }
@@ -314,7 +322,7 @@ class CliReportController extends Controller
     return response()->json([
         'status' => false,
         'message' => 'Failed to create manual call.',
-        'error' => $e->getMessage()  // 👈 this will show the actual PHP error in response
+        // Do not expose internal error details to the client
     ], 500);
 }
 
@@ -368,13 +376,20 @@ class CliReportController extends Controller
         $cli = $request->did_value;
         $phone_number = $request->number;
 
+        // Validate: DID value and phone number must be numeric strings
+        if (!preg_match('/^\+?[\d\s\-\(\)]{7,20}$/', $cli) || !preg_match('/^\+?[\d\s\-\(\)]{7,20}$/', $phone_number)) {
+            return $this->failResponse('Invalid DID or phone number format.');
+        }
+
         $content = "Channel: SIP/voxox1/1$phone_number\nCallerId: $cli\nContext: callfile-detect-play-message\nExtension: s\nPriority: 1\n";
         $file_name = $cli;
 
-        $file = fopen($file_name.".call", 'w');
-        fwrite($file, $content);
-        $rootPath = '/var/www/html/branch/backend/public/';
+        $rootPath = base_path('public') . '/';
         $convertedFilename = $rootPath . $file_name . ".call";
+
+        $file = fopen($convertedFilename, 'w');
+        fwrite($file, $content);
+        fclose($file);
 
         $AsteriskServer = AsteriskServer::list();
         if($AsteriskServer)
@@ -382,13 +397,13 @@ class CliReportController extends Controller
             foreach($AsteriskServer as $server)
             {
                 $strAsteriskPath = "root@" . $server['domain'] .":/var/spool/asterisk/outgoing/";
-                shell_exec("scp -P 10347 $convertedFilename $strAsteriskPath");
+                shell_exec("scp -P 10347 " . escapeshellarg($convertedFilename) . " " . escapeshellarg($strAsteriskPath));
             }
         }
 
-        $path=$rootPath.$file_name . ".call";
-        if(unlink($path)){
-        } 
+        if (file_exists($convertedFilename)) {
+            unlink($convertedFilename);
+        }
     } 
     // function fetch_data(Request $request)
     // {

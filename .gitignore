@@ -7,6 +7,7 @@ Homestead.yaml
 /perl.exe.stackdump
 /_ide_helper.php
 /config/database.php
+/config/database_clients.php
 /.phpstorm.meta.php
 /upload
 upload

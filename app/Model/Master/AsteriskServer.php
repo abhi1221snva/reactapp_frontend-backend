@@ -51,7 +51,7 @@ class AsteriskServer extends Model
             if (!$ssh->login('root', $key)) {
                 throw new RenderableException("Failed to whitelist client IP $ip on server " . $this->host . " Unable to login.");
             }
-            $output = $ssh->exec("csf -a $ip");
+            $output = $ssh->exec("csf -a " . escapeshellarg($ip));
         }
 
         if (preg_match("/ACCEPT/", $output) || preg_match("/already in the allow file/", $output)) {
@@ -135,6 +135,11 @@ class AsteriskServer extends Model
 
     public function hangupConferences(int $clientId, string $extension)
     {
+        // Validate: extensions are numeric (4-6 digits)
+        if (!preg_match('/^\d{1,10}$/', $extension)) {
+            throw new RenderableException("Invalid extension format: $extension");
+        }
+
         if (app()->environment()==="local")
         {
             $output = "Hangup on channel";
@@ -149,7 +154,7 @@ class AsteriskServer extends Model
                 throw new RenderableException("Failed to clean conferences for $extension on server " . $this->host . " Unable to login.");
             }
             //sh /tmp/reset_conf.sh 89999
-            $output = $ssh->exec("sh /tmp/reset_conf.sh $extension");
+            $output = $ssh->exec("sh /tmp/reset_conf.sh " . escapeshellarg($extension));
         }
         if (preg_match("/Hangup on channel/", $output))
         {

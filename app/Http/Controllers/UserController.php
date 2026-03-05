@@ -1102,8 +1102,15 @@ public function assignableRolesNew(Request $request)
         try {
             $input = $request->all();
 
+            if (empty($input['auto_id']) || !is_numeric($input['auto_id']) || (int) $input['auto_id'] <= 0) {
+                return $this->failResponse("Invalid auto_id.", [], null, 400);
+            }
+            if (!empty($input['file_name']) && basename($input['file_name']) !== $input['file_name']) {
+                return $this->failResponse("Invalid file_name.", [], null, 400);
+            }
+
             $VoiceAi = VoiceAi::on('master')
-                ->where('id', $input['auto_id'])
+                ->where('id', (int) $input['auto_id'])
                 ->firstOrFail();
             Log::info('retrieved value', ['VoiceAi' => $VoiceAi]);
             if (!empty($input["file_name"])) $VoiceAi->file_name = $input["file_name"];

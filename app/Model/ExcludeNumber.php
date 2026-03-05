@@ -28,7 +28,7 @@ class ExcludeNumber extends Model
         $limitString = '';
         $parameters = [];
 
-        $query = "SELECT SQL_CALC_FOUND_ROWS * FROM  $this->table";
+        $query = "SELECT * FROM  $this->table";
 
         if (!empty($searchTerm)) {
             $query .= " WHERE (first_name LIKE CONCAT(?, '%') OR last_name LIKE CONCAT(?, '%') OR company_name LIKE CONCAT(?, '%') OR number LIKE CONCAT(?, '%'))";
@@ -38,6 +38,9 @@ class ExcludeNumber extends Model
             $parameters[] = $searchTerm;
         }
 
+        $countQuery = "SELECT COUNT(*) as count " . substr($query, strpos($query, 'FROM'));
+        $countParameters = $parameters;
+
         if ($request->has('lower_limit') && $request->has('upper_limit') && is_numeric($request->input('lower_limit')) && is_numeric($request->input('upper_limit'))) {
             $query .= " LIMIT ?, ?";
             $parameters[] = $request->input('lower_limit');
@@ -46,7 +49,7 @@ class ExcludeNumber extends Model
 
         $record = DB::connection('mysql_' . $request->auth->parent_id)->select($query, $parameters);
 
-        $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+        $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($countQuery, $countParameters);
         $recordCount = (array)$recordCount;
 
         $data = (array)$record;
@@ -107,7 +110,8 @@ class ExcludeNumber extends Model
                 $data['company_name'] = $request->input('company_name');
             }
             $str = !empty($searchStr) ? "  WHERE ".implode(" AND ", $searchStr) : '';
-             
+            $countData = $data; // capture params before LIMIT is added
+
         $limitString = '';
         if ($request->has('lower_limit') && $request->has('upper_limit') && is_numeric($request->input('lower_limit')) && is_numeric($request->input('upper_limit'))) {
             $data['lower_limit'] = $request->input('lower_limit');
@@ -115,9 +119,9 @@ class ExcludeNumber extends Model
             $limitString = " LIMIT :lower_limit, :upper_limit";
         }
 
-        $sql = "SELECT SQL_CALC_FOUND_ROWS * FROM " . $this->table . $str . $limitString;
+        $sql = "SELECT * FROM " . $this->table . $str . $limitString;
             $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
-            $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+            $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT COUNT(*) as count FROM " . $this->table . $str, $countData);
             $recordCount = (array) $recordCount;
             $data = (array)$record;
             if(!empty($data))

@@ -34,13 +34,16 @@ class Dnc extends Model
             $limitString = '';
             $parameters = [];
 
-            $query = "SELECT SQL_CALC_FOUND_ROWS * FROM dnc";
+            $query = "SELECT * FROM dnc";
 
             if (!empty($searchTerm)) {
                 $query .= " WHERE (number LIKE CONCAT(?, '%') OR extension LIKE CONCAT(?, '%'))";
                 $parameters[] = $searchTerm;
                 $parameters[] = $searchTerm;
             }
+
+            $countQuery = "SELECT COUNT(*) as count " . substr($query, strpos($query, 'FROM'));
+            $countParameters = $parameters;
 
             if ($request->has('lower_limit') && $request->has('upper_limit') && is_numeric($request->input('lower_limit')) && is_numeric($request->input('upper_limit'))) {
                 $query .= " LIMIT ?, ?";
@@ -50,7 +53,7 @@ class Dnc extends Model
 
             $record = DB::connection('mysql_' . $request->auth->parent_id)->select($query, $parameters);
 
-            $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT FOUND_ROWS() as count");
+            $recordCount = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($countQuery, $countParameters);
             $recordCount = (array)$recordCount;
 
             $data = (array)$record;

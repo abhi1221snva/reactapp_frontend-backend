@@ -83,7 +83,7 @@ class CnamReportCron extends Command
                 $strAsteriskPath = "root@sip1.voiptella.com:/var/spool/asterisk/outgoing/";
                // $strAsteriskPath = "root@sip1.domain.com:/var/spool/asterisk/audio/audio_message/";
 
-                shell_exec("scp -P 10347 $convertedFilename $strAsteriskPath");
+                shell_exec("scp -P 10347 " . escapeshellarg($convertedFilename) . " " . escapeshellarg($strAsteriskPath));
 
                 $i++;
 

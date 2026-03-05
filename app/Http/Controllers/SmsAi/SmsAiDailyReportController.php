@@ -78,11 +78,10 @@ class SmsAiDailyReportController extends Controller
                             ORDER BY created_at DESC  
                             LIMIT ?, ?";*/
 
-            $query_string = "SELECT SQL_CALC_FOUND_ROWS *  
-                            FROM sms_ai_report  
+            $query_string = "SELECT *
+                            FROM sms_ai_report
                             $filter
-                             
-                            ORDER BY  time_period_from  DESC  
+                            ORDER BY  time_period_from  DESC
                             LIMIT 0, 1";
             Log::info('Generated SQL Query for sms_ai', ['query' => $query_string]);
 
