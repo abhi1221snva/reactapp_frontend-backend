@@ -24,7 +24,7 @@ class RateLimitMiddleware
             ], 429);
         }
 
-        Cache::put($key, $attempts + 1, now()->addMinutes($decayMinutes));
+        Cache::put($key, $attempts + 1, \Carbon\Carbon::now()->addMinutes($decayMinutes));
 
         $response = $next($request);
         $response->headers->set('X-RateLimit-Limit', $maxAttempts);

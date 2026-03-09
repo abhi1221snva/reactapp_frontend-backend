@@ -1888,12 +1888,19 @@ private function isPhoneColumn($conn, $listId, $column)
 
     DB::connection($dataBase)->table('list_data')->where('option_1', '=', '')->delete();
 
+    // Count actual rows after cleanup and update lead_count on the list
+    $actualCount = DB::connection($dataBase)->table('list_data')
+        ->where('list_id', $list_id)
+        ->count();
+
+    DB::connection($dataBase)->table('list')->where('id', $list_id)->update(['lead_count' => $actualCount]);
+
     // SEND NOTIFICATION
     $data = [
         "action" => "List added",
         "listId" => $listId,
         "listName" => $request->input('title'),
-        "records" => count($query_1),
+        "records" => $actualCount,
         "columns" => $header_list
     ];
 
@@ -1905,6 +1912,245 @@ private function isPhoneColumn($conn, $listId, $column)
         'message' => 'List added successfully.',
         'list_id' => $listId,
         'campaign_id' => $campaignId
+    ];
+}
+
+public function addListWithMapping($request, $filePath, array $mapping, string $dialColumn = '')
+{
+    ini_set('max_execution_time', 1800);
+    ini_set('memory_limit', '-1');
+
+    $dataBase   = 'mysql_' . $request->auth->parent_id;
+    $campaignId = $request->input('campaign');
+
+    try {
+        $spreadsheet = IOFactory::load($filePath);
+        $excelData   = $spreadsheet->getActiveSheet()->toArray(null, true, true, true);
+    } catch (\Exception $e) {
+        return ['success' => false, 'message' => 'Unable to read file.'];
+    }
+
+    if (empty($excelData)) {
+        return ['success' => false, 'message' => 'File is empty.'];
+    }
+
+    $header       = array_shift($excelData);
+    $headerValues = array_values($header);
+
+    // Dedup
+    if ($request->input('duplicate_check') == 1) {
+        $seen = [];
+        $unique = [];
+        foreach ($excelData as $row) {
+            $k = md5(json_encode(array_values($row)));
+            if (!isset($seen[$k])) {
+                $seen[$k] = true;
+                $unique[] = $row;
+            }
+        }
+        $excelData = $unique;
+    }
+
+    // Build per-column metadata (1-based index)
+    // Phone column = the column whose header matches $dialColumn (is_dialing = 1)
+    $colLabelIds  = [];
+    $phoneColumns = []; // colIndex => true
+    $date_array   = [];
+    $colIndex = 0;
+    foreach ($headerValues as $headerValue) {
+        $colIndex++;
+        if ($colIndex > 30) break;
+
+        $labelId = isset($mapping[$headerValue]) && is_numeric($mapping[$headerValue]) ? (int)$mapping[$headerValue] : null;
+        $colLabelIds[$colIndex] = ($labelId && $labelId > 0) ? $labelId : null;
+
+        // Mark dial column for phone sanitization
+        if ($dialColumn !== '' && (string)$headerValue === $dialColumn) {
+            $phoneColumns[$colIndex] = true;
+        }
+
+        if (strpos(strtolower((string)$headerValue), 'date') !== false) {
+            $date_array[$colIndex] = true;
+        }
+    }
+
+    // INSERT LIST
+    $now = Carbon::now();
+    $add = DB::connection($dataBase)->insert(
+        "INSERT INTO list (title, is_active, duplicate_check, created_at, updated_at) VALUES (:title, 1, :duplicate_check, :created_at, :updated_at)",
+        [
+            'title'           => $request->input('title'),
+            'duplicate_check' => $request->input('duplicate_check') ?? 0,
+            'created_at'      => $now,
+            'updated_at'      => $now,
+        ]
+    );
+
+    if (!$add) {
+        return ['success' => false, 'message' => 'Unable to create list.'];
+    }
+
+    $record = DB::connection($dataBase)->selectOne("SELECT id FROM list ORDER BY id DESC LIMIT 1");
+    $listId = $record->id;
+
+    DB::connection($dataBase)->insert(
+        "INSERT INTO campaign_list (campaign_id, list_id) VALUE (:campaign_id, :list_id)",
+        ['campaign_id' => $campaignId, 'list_id' => $listId]
+    );
+
+    // Build list_header rows with is_dialing flag
+    $header_list = [];
+    $colIndex    = 0;
+    foreach ($headerValues as $headerValue) {
+        $colIndex++;
+        if ($colIndex > 30) break;
+        $header_list[] = [
+            'list_id'     => $listId,
+            'column_name' => 'option_' . $colIndex,
+            'header'      => $headerValue,
+            'label_id'    => $colLabelIds[$colIndex] ?? null,
+            'is_dialing'  => isset($phoneColumns[$colIndex]) ? 1 : 0,
+        ];
+    }
+
+    // Build list_data rows
+    $query_1 = [];
+    foreach ($excelData as $row) {
+        if (trim(implode('', array_values($row))) === '') continue;
+        if (empty($row['A']) && empty($row['B']) && empty($row['C'])) continue;
+
+        $rowData  = ['list_id' => $listId];
+        $colIndex = 0;
+        foreach ($row as $cell) {
+            $colIndex++;
+            if ($colIndex > 30) continue;
+
+            if (isset($date_array[$colIndex]) && is_numeric($cell)) {
+                $cell = date('Y-m-d', (($cell - 25569) * 86400));
+                $cell = date('Y-m-d', strtotime('+1 day', strtotime($cell)));
+            } elseif (isset($phoneColumns[$colIndex])) {
+                if (is_numeric($cell)) {
+                    $cell = number_format($cell, 0, '', '');
+                }
+                $cell = preg_replace('/[^0-9]/', '', (string)$cell);
+            }
+
+            $rowData['option_' . $colIndex] = $cell;
+        }
+        $query_1[] = $rowData;
+    }
+
+    foreach (array_chunk($header_list, 2000) as $chunk) {
+        DB::connection($dataBase)->table('list_header')->insert($chunk);
+    }
+    foreach (array_chunk($query_1, 2000) as $chunk) {
+        DB::connection($dataBase)->table('list_data')->insert($chunk);
+    }
+    DB::connection($dataBase)->table('list_data')->where('option_1', '=', '')->delete();
+
+    // Count actual rows after cleanup and update lead_count on the list
+    $actualCount = DB::connection($dataBase)->table('list_data')
+        ->where('list_id', $listId)
+        ->count();
+
+    $listUpdate = ['lead_count' => $actualCount];
+
+    // Sync list.is_dialing = 1 if a dialing column was selected
+    if (!empty($dialColumn)) {
+        $listUpdate['is_dialing'] = 1;
+    }
+
+    DB::connection($dataBase)->table('list')->where('id', $listId)->update($listUpdate);
+
+    dispatch(new ListAddedNotificationJob($request->auth->parent_id, $campaignId, [
+        'action'   => 'List added',
+        'listId'   => $listId,
+        'listName' => $request->input('title'),
+        'records'  => $actualCount,
+        'columns'  => $header_list,
+    ]))->onConnection('database');
+
+    return [
+        'success'     => 'true',
+        'message'     => 'List imported successfully.',
+        'list_id'     => $listId,
+        'campaign_id' => $campaignId,
+        'imported'    => $actualCount,
+    ];
+}
+
+public function getListMapping($request)
+{
+    $listId   = (int) $request->input('list_id');
+    $dataBase = 'mysql_' . $request->auth->parent_id;
+
+    $rows = DB::connection($dataBase)->select("
+        SELECT
+            lh.id,
+            lh.header,
+            lh.column_name,
+            lh.label_id,
+            lh.is_dialing,
+            lh.is_search,
+            l.title AS label_title
+        FROM list_header lh
+        LEFT JOIN label l ON l.id = lh.label_id AND l.is_deleted = 0
+        WHERE lh.list_id = :list_id AND lh.is_deleted = 0
+        ORDER BY lh.id ASC
+    ", ['list_id' => $listId]);
+
+    return [
+        'success' => true,
+        'message' => 'List mapping fetched.',
+        'data'    => $rows,
+    ];
+}
+
+public function updateListMapping($request)
+{
+    $listId   = (int) $request->input('list_id');
+    $columns  = $request->input('columns', []);
+    $dataBase = 'mysql_' . $request->auth->parent_id;
+
+    // Reset all is_dialing flags for this list
+    DB::connection($dataBase)
+        ->table('list_header')
+        ->where('list_id', $listId)
+        ->update(['is_dialing' => 0]);
+
+    foreach ($columns as $col) {
+        $headerId  = (int) ($col['id'] ?? 0);
+        $labelId   = isset($col['label_id']) && is_numeric($col['label_id']) ? (int)$col['label_id'] : null;
+        $isDialing = !empty($col['is_dialing']) ? 1 : 0;
+
+        if ($headerId <= 0) continue;
+
+        DB::connection($dataBase)
+            ->table('list_header')
+            ->where('id', $headerId)
+            ->where('list_id', $listId)
+            ->update([
+                'label_id'   => $labelId,
+                'is_dialing' => $isDialing,
+                'updated_at' => Carbon::now(),
+            ]);
+    }
+
+    // Recalculate list.is_dialing based on whether any header is now the dial column
+    $hasDialColumn = DB::connection($dataBase)
+        ->table('list_header')
+        ->where('list_id', $listId)
+        ->where('is_dialing', 1)
+        ->exists();
+
+    DB::connection($dataBase)
+        ->table('list')
+        ->where('id', $listId)
+        ->update(['is_dialing' => $hasDialColumn ? 1 : 0]);
+
+    return [
+        'success' => true,
+        'message' => 'Column mapping updated successfully.',
     ];
 }
 
@@ -2072,12 +2318,19 @@ $add = DB::connection($dataBase)->insert($query, [
 
     DB::connection($dataBase)->table('list_data')->where('option_1', '=', '')->delete();
 
+    // Count actual rows after cleanup and update lead_count on the list
+    $actualCount = DB::connection($dataBase)->table('list_data')
+        ->where('list_id', $list_id)
+        ->count();
+
+    DB::connection($dataBase)->table('list')->where('id', $list_id)->update(['lead_count' => $actualCount]);
+
     // SEND NOTIFICATION
     $data = [
         "action" => "List added",
         "listId" => $listId,
         "listName" => $request->input('title'),
-        "records" => count($query_1),
+        "records" => $actualCount,
         "columns" => $header_list
     ];
 

@@ -39,7 +39,7 @@ class AuditLogMiddleware
                 'path'       => substr($request->path(), 0, 500),
                 'payload'    => $this->sanitizePayload($request->except(self::REDACTED_KEYS)),
                 'ip'         => $request->ip(),
-                'created_at' => now(),
+                'created_at' => \Carbon\Carbon::now(),
             ]);
         } catch (\Throwable $e) {
             // Non-blocking — log the error but never fail the request

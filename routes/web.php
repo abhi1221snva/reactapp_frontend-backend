@@ -79,7 +79,7 @@ $router->POST('authentication_copy', 'AuthenticationController@authentication_co
 $router->POST('verify_google_otp', 'TwoFactorController@verify_google_otp');
 //$router->POST('authentication_copy', 'AuthenticationController@authentication_copy');
 // $router->get('auth/google/redirect', 'GoogleController@redirectToGoogle');
-// $router->post('auth/google/callback', 'GoogleController@handleGoogleCallback');
+$router->post('auth/google/callback', 'GoogleController@handleGoogleCallback');
 $router->post('auth/twitter/callback', 'TwitterController@handleTwitterCallback');
 
 //cron job
@@ -485,6 +485,10 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($ro
   $router->post('edit-list', 'ListsController@editList');  //done for delete not edit
   $router->post('add-list', 'ListsController@addList');
   $router->post('add-list-api',  'ListsController@addListUsingApi');//done
+  $router->post('parse-list-headers',       'ListsController@parseListHeaders');
+  $router->post('import-list-with-mapping', 'ListsController@importListWithMapping');
+  $router->post('get-list-mapping',         'ListsController@getListMapping');
+  $router->post('update-list-mapping',      'ListsController@updateListMapping');
   $router->post('search-leads', 'ListsController@searchLeads');
   $router->post('list-header', 'ListsController@getListHeader');
   $router->post('status-update-list', 'ListsController@updateListStatus'); //done
@@ -1239,7 +1243,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($ro
   $router->post('change-lender-status', 'LenderController@changeLenderStatus');
   $router->get('crm-lender-apis/{id}', 'LenderController@crmLenderApi');
 
-  //crm lead status
+  //crm lead status (legacy routes — kept for backward compat)
   $router->get('leadStatus', 'LeadStatusController@list');
   $router->put('add-lead-status', 'LeadStatusController@create');
   $router->post('update-lead-status/{id}', 'LeadStatusController@update');
@@ -1247,6 +1251,13 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($ro
   $router->get('delete-lead-status/{id}', 'LeadStatusController@delete');
   $router->post('/lead-status/updateDisplayOrder', 'LeadStatusController@updateDisplayOrder');
   $router->post('change-view-on-dashboard-status', 'LeadStatusController@changeViewOnLead');
+
+  // CRM Lead Status — REST API with pagination
+  $router->get('crm/lead-status', 'LeadStatusController@paginatedList');
+  $router->post('crm/lead-status', 'LeadStatusController@create');
+  $router->put('crm/lead-status/{id}', 'LeadStatusController@update');
+  $router->delete('crm/lead-status/{id}', 'LeadStatusController@delete');
+  $router->patch('crm/lead-status/{id}/toggle', 'LeadStatusController@toggleStatusById');
   //document
   $router->get('documents', 'DocumentController@list');
   $router->get('documents/{lead_id}', 'DocumentController@listByLeadId');
@@ -1450,8 +1461,70 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($ro
   $router->post('attendance/report/monthly', 'AttendanceReportController@getMonthlyReport');
   $router->post('attendance/report/summary', 'AttendanceReportController@getSummaryReport');
   $router->post('attendance/report/alerts', 'AttendanceReportController@getLateEarlyAlerts');
+
+  // ── CRM HubSpot-Style Upgrade Routes ─────────────────────────────────────
+
+  // Activity Timeline
+  $router->get('crm/lead/{id}/activity',            'CrmLeadActivityController@timeline');
+  $router->put('crm/lead/{id}/activity',            'CrmLeadActivityController@addManualEntry');
+  $router->post('crm/lead/{id}/activity/{aid}/pin', 'CrmLeadActivityController@pin');
+  $router->get('crm/lead/{id}/status-history',      'CrmLeadStatusHistoryController@index');
+
+  // Pipeline Board & Saved Views
+  $router->get('crm/pipeline/board',            'CrmPipelineController@board');
+  $router->get('crm/pipeline/views',            'CrmPipelineController@listViews');
+  $router->put('crm/pipeline/views',            'CrmPipelineController@createView');
+  $router->post('crm/pipeline/views/{id}',      'CrmPipelineController@updateView');
+  $router->delete('crm/pipeline/views/{id}',   'CrmPipelineController@deleteView');
+
+  // Approvals (review requires user_level >= 5)
+  $router->put('crm/lead/{id}/approval/request',          'CrmApprovalController@request');
+  $router->post('crm/lead/{id}/approval/{aid}/review',    'CrmApprovalController@review');
+  $router->post('crm/lead/{id}/approval/{aid}/withdraw',  'CrmApprovalController@withdraw');
+  $router->get('crm/lead/{id}/approvals',                 'CrmApprovalController@list');
+  $router->get('crm/approvals',                           'CrmApprovalController@listAll');
+
+  // Affiliate Links
+  $router->get('crm/affiliate-links',             'CrmAffiliateLinkController@list');
+  $router->put('crm/affiliate-links',             'CrmAffiliateLinkController@create');
+  $router->post('crm/affiliate-links/{id}',       'CrmAffiliateLinkController@update');
+  $router->delete('crm/affiliate-links/{id}',     'CrmAffiliateLinkController@deactivate');
+  $router->get('crm/affiliate-links/{id}/stats',  'CrmAffiliateLinkController@stats');
+
+  // Merchant Portals
+  $router->post('crm/lead/{id}/merchant-portal/generate',     'CrmMerchantPortalController@generate');
+  $router->get('crm/lead/{id}/merchant-portal',               'CrmMerchantPortalController@show');
+  $router->post('crm/lead/{id}/merchant-portal/{pid}/revoke', 'CrmMerchantPortalController@revoke');
+
+  // Bulk Operations
+  $router->post('crm/leads/bulk/assign',         'CrmBulkController@bulkAssign');
+  $router->post('crm/leads/bulk/status-change',  'CrmBulkController@bulkStatusChange');
+  $router->post('crm/leads/bulk/delete',         'CrmBulkController@bulkDelete');
+  $router->post('crm/leads/bulk/export',         'CrmBulkController@bulkExport');
+
+  // Advanced Search
+  $router->post('crm/leads/search', 'CrmSearchController@search');
+
+  // Analytics
+  $router->get('crm/analytics/status-distribution', 'CrmAnalyticsController@statusDistribution');
+  $router->get('crm/analytics/lead-velocity',        'CrmAnalyticsController@leadVelocity');
+  $router->get('crm/analytics/agent-performance',    'CrmAnalyticsController@agentPerformance');
+  $router->get('crm/analytics/conversion-funnel',    'CrmAnalyticsController@conversionFunnel');
+  $router->get('crm/analytics/lender-performance',   'CrmAnalyticsController@lenderPerformance');
+
+  // Documents
+  $router->get('crm/lead/{id}/documents',          'CrmDocumentController@index');
+  $router->post('crm/lead/{id}/documents',         'CrmDocumentController@store');
+  $router->delete('crm/lead/{id}/documents/{did}', 'CrmDocumentController@destroy');
+
+  // Send to Lender
+  $router->get('crm/lead/{id}/lender-submissions', 'LeadController@lenderSubmissions');
+  $router->post('crm/lead/{id}/send-to-lender',    'LeadController@sendToLender');
 });
 
+
+// Public CRM affiliate token check (no auth required — increments click count)
+$router->get('crm/affiliate/{token}/check', 'CrmAffiliateLinkController@checkByToken');
 
 //phone charges deduction
 $router->post('call-billing', "CallBillingController@prepareBill");

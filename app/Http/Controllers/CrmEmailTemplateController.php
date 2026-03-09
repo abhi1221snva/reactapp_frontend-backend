@@ -310,6 +310,14 @@ class CrmEmailTemplateController extends Controller
                 $lead_record = Lead::on("mysql_" . $request->auth->parent_id)->where('id', "=", $lead_id)->first();
                 //return $this->successResponse("Template Info",  [$lead_record]);
 
+                // Merge EAV dynamic field values into lead_record
+                $eavRows = \Illuminate\Support\Facades\DB::connection("mysql_" . $request->auth->parent_id)
+                    ->table('crm_lead_field_values')
+                    ->where('lead_id', $lead_id)
+                    ->get(['column_name', 'value_text']);
+                foreach ($eavRows as $eavRow) {
+                    $lead_record->{$eavRow->column_name} = $eavRow->value_text;
+                }
 
                 // if (! empty($lead_record->list_id)) {
                 $list_header = CrmLabel::on("mysql_" . $request->auth->parent_id)->get();
@@ -318,7 +326,7 @@ class CrmEmailTemplateController extends Controller
 
 
                 foreach ($list_header as $key => $val) {
-                    $new_array[$val['label_title_url']] = $lead_record[$val['column_name']];
+                    $new_array[$val['label_title_url']] = $lead_record[$val['column_name']] ?? $lead_record->{$val['column_name']} ?? '';
                 }
 
 
@@ -496,16 +504,28 @@ class CrmEmailTemplateController extends Controller
                 $lead_record = Lead::on("mysql_" . $request->auth->parent_id)->where('id', "=", $lead_id)->first();
                 //return $this->successResponse("Template Info",  [$lead_record]);
 
+                // Merge EAV dynamic field values into lead_record
+                $eavRows = \Illuminate\Support\Facades\DB::connection("mysql_" . $request->auth->parent_id)
+                    ->table('crm_lead_field_values')
+                    ->where('lead_id', $lead_id)
+                    ->get(['column_name', 'value_text']);
+                foreach ($eavRows as $eavRow) {
+                    $lead_record->{$eavRow->column_name} = $eavRow->value_text;
+                }
+
                 $list_header = CrmLabel::on("mysql_" . $request->auth->parent_id)->get();
                 //return $this->successResponse("Template Info",  [$list_header]);
 
                 foreach ($list_header as $key => $val) {
-                    $new_array[$val['label_title_url']] = $lead_record[$val['column_name']];
+                    $new_array[$val['label_title_url']] = $lead_record[$val['column_name']] ?? $lead_record->{$val['column_name']} ?? '';
                 }
 
                 //return $this->successResponse("Template Info",  $new_array);
 
-                $tpl_record = PdfTemplates::on("mysql_" . $request->auth->parent_id)->where('document_type', 'signature_application')->get()->first();
+                // PdfTemplates model not yet implemented — return early
+                return $this->failResponse("Signed application feature not yet available", [], null, 501);
+                /** @phpstan-ignore-next-line */
+                $tpl_record = null; // placeholder — unreachable
 
                 //return $this->successResponse("Template Info",  [$tpl_record]);
 

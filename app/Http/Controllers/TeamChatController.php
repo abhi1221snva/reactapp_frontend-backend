@@ -471,6 +471,7 @@ class TeamChatController extends Controller
                 $readAt = $firstReadReceipt ? $firstReadReceipt->read_at : null;
 
                 return [
+                    'id' => $message->id,
                     'uuid' => $message->uuid,
                     'sender' => [
                         'id' => $message->sender_id,
@@ -542,6 +543,7 @@ class TeamChatController extends Controller
             $sender = User::find($userId);
 
             $messageData = [
+                'id' => $message->id,
                 'uuid' => $message->uuid,
                 'conversation_uuid' => $uuid,
                 'sender' => [
@@ -551,7 +553,11 @@ class TeamChatController extends Controller
                 'message_type' => $message->message_type,
                 'body' => $message->body,
                 'attachments' => [],
+                'is_edited' => false,
                 'is_mine' => false,
+                'is_read' => false,
+                'is_delivered' => false,
+                'read_by' => [],
                 'created_at' => $message->created_at->toIso8601String(),
             ];
 
@@ -933,6 +939,7 @@ class TeamChatController extends Controller
             $sender = User::find($userId);
 
             $messageData = [
+                'id' => $message->id,
                 'uuid' => $message->uuid,
                 'conversation_uuid' => $uuid,
                 'sender' => [
@@ -948,7 +955,11 @@ class TeamChatController extends Controller
                     'file_size' => $attachment->getFileSizeFormatted(),
                     'is_image' => $attachment->isImage(),
                 ]],
+                'is_edited' => false,
                 'is_mine' => false,
+                'is_read' => false,
+                'is_delivered' => false,
+                'read_by' => [],
                 'created_at' => $message->created_at->toIso8601String(),
             ];
 

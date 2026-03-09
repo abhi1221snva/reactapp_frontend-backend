@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\NotificationController;
 use App\Services\FirebaseService;
 use App\Model\UserFcmToken;
+use App\Model\Client\CrmLeadActivity;
 
 
 class CrmNotificationController extends Controller
@@ -105,6 +106,19 @@ class CrmNotificationController extends Controller
                 ]);
             }
 
+
+            // ── Mirror to unified activity timeline (additive) ──
+            try {
+                $activity = new CrmLeadActivity();
+                $activity->setConnection("mysql_$clientId");
+                $activity->lead_id       = $request->lead_id;
+                $activity->user_id       = $request->auth->id;
+                $activity->activity_type = ($request->input("type") == '1') ? 'note_added' : 'system';
+                $activity->subject       = $request->message;
+                $activity->source_type   = 'crm_notifications';
+                $activity->source_id     = $Notification->id;
+                $activity->save();
+            } catch (\Throwable $e) {}
 
             return $this->successResponse("Notification Added Successfully", $Notification->toArray());
         }

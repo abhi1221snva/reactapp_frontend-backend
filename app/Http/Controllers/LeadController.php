@@ -24,7 +24,10 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Support\Facades\Log;
 use App\Model\Client\CrmScheduledTask;
+use App\Model\Client\CrmLeadStatusHistory;
+use App\Model\Client\CrmLeadActivity;
 use App\Jobs\SendReminderEmail;
+use App\Jobs\SendLeadByLenderApi;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
@@ -224,6 +227,13 @@ class LeadController extends Controller
                 Log::info('reached', ['recordCount' => $recordCount]);
 
                 if (!empty($record)) {
+                    $leadIds = array_column($record, 'id');
+                    $eavMap  = $this->loadEavForLeads($clientId, $leadIds);
+                    foreach ($record as $row) {
+                        if (isset($eavMap[$row->id])) {
+                            foreach ($eavMap[$row->id] as $col => $val) { $row->$col = $val; }
+                        }
+                    }
                     $data = (array) $record;
                     return array(
                         'success' => 'true',
@@ -259,6 +269,13 @@ class LeadController extends Controller
                 $recordCount = (array) $recordCount;
 
                 if (!empty($record)) {
+                    $leadIds = array_column($record, 'id');
+                    $eavMap  = $this->loadEavForLeads($clientId, $leadIds);
+                    foreach ($record as $row) {
+                        if (isset($eavMap[$row->id])) {
+                            foreach ($eavMap[$row->id] as $col => $val) { $row->$col = $val; }
+                        }
+                    }
                     $data = (array) $record;
                     return array(
                         'success' => 'true',
@@ -1171,6 +1188,22 @@ if ($request->has('start') && $request->has('limit')) {
             $lead->closer_id = $closer_id_value;
 
             $lead->save();
+
+            // Save EAV dynamic fields
+            $this->saveEavFields($clientId, $lastId, $request->all());
+
+            // ── CRM Activity: log lead creation (additive — never breaks existing response) ──
+            try {
+                $activity = new CrmLeadActivity();
+                $activity->setConnection("mysql_$clientId");
+                $activity->lead_id       = $lastId;
+                $activity->user_id       = $request->auth->id;
+                $activity->activity_type = 'lead_created';
+                $activity->subject       = 'Lead created by ' . ($request->auth->first_name ?? 'user');
+                $activity->source_type   = 'api';
+                $activity->save();
+            } catch (\Throwable $e) {}
+
             return $this->successResponse("Lead Added Successfully", $objLead->toArray());
         } catch (\Exception $exception) {
             return $this->failResponse("Failed to create Lead ", [
@@ -1252,15 +1285,36 @@ if ($request->has('start') && $request->has('limit')) {
 
 
             $arrFormatLeadInfo = $this->formatLeadInfo($request->all(), $clientId);
+            // Capture changed fields for activity log
+            $changedFields = [];
             foreach ($arrFormatLeadInfo as $strLeadLabel => $strLeadValue) {
-                //if ($objLead->$strLeadLabel != $strLeadValue)
+                $oldVal = $objLead->getOriginal($strLeadLabel);
+                if ((string)$oldVal !== (string)$strLeadValue) {
+                    $changedFields[$strLeadLabel] = ['old' => $oldVal, 'new' => $strLeadValue];
+                }
                 $objLead->$strLeadLabel = $strLeadValue;
             }
 
             $oldlead_status = $objLead->getOriginal('lead_status');
             Log::info('reached', ['objLead' => $objLead]);
             $objLead->group_id = $request->get('group_id');
+            $objLead->updated_by = $request->auth->id;
             $objLead->saveOrFail();
+            $this->saveEavFields($clientId, (int)$id, $request->all());
+
+            // ── CRM Activity: log field updates (additive — never breaks existing response) ──
+            try {
+                $activity = new CrmLeadActivity();
+                $activity->setConnection("mysql_$clientId");
+                $activity->lead_id       = (int)$id;
+                $activity->user_id       = $request->auth->id;
+                $activity->activity_type = 'field_update';
+                $activity->subject       = 'Lead updated by ' . ($request->auth->first_name ?? 'user');
+                $activity->meta          = json_encode(['changed_fields' => $changedFields]);
+                $activity->source_type   = 'api';
+                $activity->save();
+            } catch (\Throwable $e) {}
+
             $objLead['old_lead_status'] =  $oldlead_status;
             return $this->successResponse("Lead Updated Successfully", $objLead->toArray());
         } catch (ModelNotFoundException $exception) {
@@ -1366,6 +1420,39 @@ if ($request->has('start') && $request->has('limit')) {
             $objLead['old_lead_type']   =  $oldlead_type;
             $objLead['old_assigned_to']   =  $user_old;
 
+            // ── CRM History & Activity: additive — never breaks existing response ──
+            try {
+                $history = new CrmLeadStatusHistory();
+                $history->setConnection("mysql_$clientId");
+                $history->lead_id          = $id;
+                $history->user_id          = $request->auth->id;
+                $history->from_status      = $oldlead_status;
+                $history->to_status        = $request->lead_status;
+                $history->from_assigned_to = $oldassigned_to;
+                $history->to_assigned_to   = $request->assigned_to;
+                $history->from_lead_type   = $oldlead_type;
+                $history->to_lead_type     = $request->lead_type;
+                $history->triggered_by     = 'agent';
+                $history->created_at       = now();
+                $history->save();
+            } catch (\Throwable $e) {}
+
+            try {
+                $activity = new CrmLeadActivity();
+                $activity->setConnection("mysql_$clientId");
+                $activity->lead_id       = $id;
+                $activity->user_id       = $request->auth->id;
+                $activity->activity_type = 'status_change';
+                $activity->subject       = "Status changed from {$oldlead_status} to {$request->lead_status}";
+                $activity->meta          = json_encode([
+                    'from_status'      => $oldlead_status,
+                    'to_status'        => $request->lead_status,
+                    'from_assigned_to' => $oldassigned_to,
+                    'to_assigned_to'   => $request->assigned_to,
+                ]);
+                $activity->source_type = 'api';
+                $activity->save();
+            } catch (\Throwable $e) {}
 
             return $this->successResponse("Lead Updated Successfully", $objLead->toArray());
         } catch (ModelNotFoundException $exception) {
@@ -1439,6 +1526,18 @@ if ($request->has('start') && $request->has('limit')) {
             // $sql = "DELETE FROM crm_lead_data WHERE id = :id";
             // DB::connection("mysql_$clientId")->delete($sql, ['id' => $id]);
             // Delete from crm_notifications table based on lead_id
+            // ── CRM Activity: log lead deletion (additive — never breaks existing response) ──
+            try {
+                $activity = new CrmLeadActivity();
+                $activity->setConnection("mysql_$clientId");
+                $activity->lead_id       = (int)$id;
+                $activity->user_id       = $request->auth->id;
+                $activity->activity_type = 'system';
+                $activity->subject       = 'Lead deleted by ' . ($request->auth->first_name ?? 'user');
+                $activity->source_type   = 'api';
+                $activity->save();
+            } catch (\Throwable $e) {}
+
             // Soft delete from crm_lead_data table
             $sqlLeadData = "UPDATE crm_lead_data SET deleted_at = NOW(), is_deleted = 1 WHERE id = :id";
             DB::connection("mysql_$clientId")->update($sqlLeadData, ['id' => $id]);
@@ -1499,6 +1598,26 @@ if ($request->has('start') && $request->has('limit')) {
         $clientId = $request->auth->parent_id;
         try {
             $arrLead = Lead::on("mysql_$clientId")->findorfail($id)->toArray();
+            // Merge EAV dynamic field values
+            $eavMap = $this->loadEavForLeads($clientId, [$id]);
+            if (isset($eavMap[$id])) {
+                $arrLead = array_merge($arrLead, $eavMap[$id]);
+            }
+            // Resolve assigned_to / created_by / updated_by display names
+            try {
+                if (!empty($arrLead['assigned_to'])) {
+                    $assignee = User::find($arrLead['assigned_to']);
+                    $arrLead['assigned_name'] = $assignee ? trim($assignee->first_name . ' ' . $assignee->last_name) : null;
+                }
+                if (!empty($arrLead['created_by'])) {
+                    $creator = User::find($arrLead['created_by']);
+                    $arrLead['created_by_name'] = $creator ? trim($creator->first_name . ' ' . $creator->last_name) : null;
+                }
+                if (!empty($arrLead['updated_by'])) {
+                    $updater = User::find($arrLead['updated_by']);
+                    $arrLead['updated_by_name'] = $updater ? trim($updater->first_name . ' ' . $updater->last_name) : null;
+                }
+            } catch (\Throwable $e) {}
             return $this->successResponse("Lead info", $arrLead);
         } catch (ModelNotFoundException $exception) {
             throw new NotFoundHttpException("No Lead with id $id");
@@ -1561,17 +1680,64 @@ if ($request->has('start') && $request->has('limit')) {
 
     public function formatLeadInfo($arrInputLeadInfo, $clientId)
     {
-        //$arrLabels = CrmLabel::on("mysql_$clientId")->where(["status" => 1])->get()->toArray();
+        // Only process column-backed labels; EAV labels are saved via saveEavFields()
+        $arrLabels = CrmLabel::on("mysql_$clientId")
+            ->where('label_title_url', '!=', "unique_url")
+            ->where('status', 1)
+            ->where('storage_type', 'column')
+            ->get()->toArray();
 
-        $arrLabels = CrmLabel::on("mysql_$clientId")->where('label_title_url', '!=', "unique_url")->where(["status" => 1])->get()->toArray();
-
-        foreach ($arrLabels as $key => $arrLabel) {
-            /* if ($arrLabel['data_type'] == 'phone_number')
-                $arrInputLeadInfo[$arrLabel['column_name']] = str_replace(array('(',')', '_', '-',' '), array(''), $arrInputLeadInfo[$arrLabel['column_name']]);*/
-
+        foreach ($arrLabels as $arrLabel) {
             $arrInputLeadInfo[$arrLabel['column_name']] = (!empty($arrInputLeadInfo[$arrLabel['column_name']])) ? trim($arrInputLeadInfo[$arrLabel['column_name']]) : '';
         }
         return $arrInputLeadInfo;
+    }
+
+    /**
+     * Upsert EAV dynamic field values for a lead.
+     */
+    private function saveEavFields(string $clientId, int $leadId, array $input): void
+    {
+        try {
+            $eavLabels = \Illuminate\Support\Facades\DB::connection("mysql_$clientId")
+                ->table('crm_label')
+                ->where('storage_type', 'eav')
+                ->where('status', '1')
+                ->where('is_deleted', 0)
+                ->get(['id', 'column_name']);
+
+            foreach ($eavLabels as $label) {
+                if (!array_key_exists($label->column_name, $input)) continue;
+                $val = $input[$label->column_name];
+                if ($val === null || $val === '') continue;
+                \Illuminate\Support\Facades\DB::connection("mysql_$clientId")
+                    ->table('crm_lead_field_values')
+                    ->upsert(
+                        ['lead_id' => $leadId, 'label_id' => $label->id, 'column_name' => $label->column_name,
+                         'value_text' => trim((string)$val), 'created_at' => now(), 'updated_at' => now()],
+                        ['lead_id', 'label_id'],
+                        ['value_text', 'updated_at']
+                    );
+            }
+        } catch (\Throwable $e) {}
+    }
+
+    /**
+     * Load EAV field values for a set of lead IDs.
+     * Returns [leadId => [column_name => value_text]]
+     */
+    private function loadEavForLeads(string $clientId, array $leadIds): array
+    {
+        if (empty($leadIds)) return [];
+        $rows = \Illuminate\Support\Facades\DB::connection("mysql_$clientId")
+            ->table('crm_lead_field_values')
+            ->whereIn('lead_id', $leadIds)
+            ->get(['lead_id', 'column_name', 'value_text']);
+        $map = [];
+        foreach ($rows as $row) {
+            $map[$row->lead_id][$row->column_name] = $row->value_text;
+        }
+        return $map;
     }
 
     /**
@@ -1645,6 +1811,7 @@ if ($request->has('start') && $request->has('limit')) {
             }
 
             $objLead->saveOrFail();
+            $this->saveEavFields($clientId, (int)$id, $request->all());
             return $this->successResponse("Lead Updated Successfully", $objLead->toArray());
         } catch (ModelNotFoundException $exception) {
             return $this->failResponse("Lead Not Found", [
@@ -2801,6 +2968,114 @@ if ($request->has('start') && $request->has('limit')) {
             throw new NotFoundHttpException("No Lead found with ID $id");
         } catch (\Throwable $exception) {
             return $this->failResponse("Failed to process webhook", [$exception->getMessage()], $exception);
+        }
+    }
+
+    /**
+     * GET /crm/lead/{id}/lender-submissions
+     */
+    public function lenderSubmissions(Request $request, $id)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+
+            $submissions = DB::connection("mysql_$clientId")
+                ->table('crm_send_lead_to_lender_record as r')
+                ->leftJoin('crm_lender as l', 'l.id', '=', DB::raw('CAST(r.lender_id AS UNSIGNED)'))
+                ->where('r.lead_id', $id)
+                ->orderBy('r.created_at', 'desc')
+                ->select('r.id', 'r.lead_id', 'r.lender_id', 'r.notes', 'r.lender_status_id', 'r.user_id', 'r.created_at', 'l.lender_name')
+                ->get();
+
+            $result = $submissions->map(function ($s) {
+                $arr = (array) $s;
+                $arr['submitted_date'] = $arr['created_at'];
+                return $arr;
+            });
+
+            return $this->successResponse("Lender Submissions", $result->values()->toArray());
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to load lender submissions", [$e->getMessage()], $e, 500);
+        }
+    }
+
+    /**
+     * POST /crm/lead/{id}/send-to-lender
+     */
+    public function sendToLender(Request $request, $id)
+    {
+        $this->validate($request, ['lender_id' => 'required|integer']);
+
+        try {
+            $clientId = $request->auth->parent_id;
+            $userId   = $request->auth->id;
+            $lenderId = (int) $request->input('lender_id');
+            $notes    = $request->input('notes');
+
+            $lender = DB::connection("mysql_$clientId")
+                ->table('crm_lender')
+                ->where('id', $lenderId)
+                ->first();
+
+            if (!$lender) {
+                return $this->failResponse("Lender not found", [], null, 404);
+            }
+
+            $recordId = DB::connection("mysql_$clientId")
+                ->table('crm_send_lead_to_lender_record')
+                ->insertGetId([
+                    'lead_id'   => $id,
+                    'lender_id' => $lenderId,
+                    'notes'     => $notes,
+                    'user_id'   => $userId,
+                    'created_at'=> Carbon::now(),
+                    'updated_at'=> Carbon::now(),
+                ]);
+
+            // Log activity
+            DB::connection("mysql_$clientId")
+                ->table('crm_lead_activity')
+                ->insert([
+                    'lead_id'       => $id,
+                    'user_id'       => $userId,
+                    'activity_type' => 'lender_submitted',
+                    'subject'       => 'Lead sent to lender: ' . $lender->lender_name,
+                    'body'          => $notes,
+                    'created_at'    => Carbon::now(),
+                    'updated_at'    => Carbon::now(),
+                ]);
+
+            // If this lender has API integration enabled, dispatch the API submission job
+            $apiQueued = false;
+            if (!empty($lender->api_status) && $lender->api_status == '1') {
+                $hasApiCreds = DB::connection("mysql_$clientId")
+                    ->table('crm_lender_apis')
+                    ->where('crm_lender_id', $lenderId)
+                    ->exists();
+
+                if ($hasApiCreds) {
+                    $jobData = [
+                        'lead_id'     => $id,
+                        'lender_id'   => [['lender_id' => $lenderId]],
+                        'lender_name' => [['lender_name' => $lender->lender_name]],
+                        'user_id'     => $userId,
+                    ];
+                    dispatch(new SendLeadByLenderApi($clientId, $jobData, 'lender_api'))
+                        ->onConnection('lender_api_schedule_job');
+                    $apiQueued = true;
+                }
+            }
+
+            return $this->successResponse("Lead sent to lender successfully", [
+                'id'          => $recordId,
+                'lead_id'     => $id,
+                'lender_id'   => $lenderId,
+                'lender_name' => $lender->lender_name,
+                'notes'       => $notes,
+                'api_queued'  => $apiQueued,
+            ]);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to send lead to lender", [$e->getMessage()], $e, 500);
         }
     }
 }

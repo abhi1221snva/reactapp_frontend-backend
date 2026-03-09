@@ -92,18 +92,42 @@ class LenderController extends Controller
     {
         try {
             $clientId = $request->auth->parent_id;
-            $lender = [];
+
+            // Support page/per_page (new frontend) and start/limit (legacy)
+            if ($request->has('page') || $request->has('per_page')) {
+                $page    = max(1, (int)$request->input('page', 1));
+                $perPage = min((int)$request->input('per_page', 25), 200);
+                $status  = $request->input('status');
+
+                $query = Lender::on("mysql_$clientId");
+                if ($status !== null) {
+                    $query->where('status', $status);
+                }
+
+                $total   = $query->count();
+                $lenders = $query->skip(($page - 1) * $perPage)->take($perPage)->get();
+
+                return $this->successResponse("View List of Lenders", [
+                    'data'         => $lenders,
+                    'total'        => $total,
+                    'per_page'     => $perPage,
+                    'current_page' => $page,
+                    'last_page'    => (int)ceil($total / $perPage),
+                ]);
+            }
+
+            // Legacy start/limit pagination
             $lender = Lender::on("mysql_$clientId")->get()->all();
             if ($request->has('start') && $request->has('limit')) {
                 $total_row = count($lender);
-                $start = (int)$request->input('start'); // Start index (0-based)
-                $limit = (int)$request->input('limit'); // Limit number of records to fetch
+                $start = (int)$request->input('start');
+                $limit = (int)$request->input('limit');
                 $lender = array_slice($lender, $start, $limit, false);
                 return $this->successResponse("View List of Lenders", [
                     'start' => $start,
                     'limit' => $limit,
                     'total' => $total_row,
-                    'data' => $lender
+                    'data'  => $lender,
                 ]);
             }
 

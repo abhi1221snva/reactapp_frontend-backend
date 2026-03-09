@@ -202,35 +202,9 @@ $Label->values = is_array($request->values)
             $Label->saveOrFail();
             $lastId = $Label->id;
 
-            $strDataType = $Label->data_type;
-            $Label->column_name = $strColumnName = 'option_' . $lastId;
+            $Label->column_name   = 'option_' . $lastId;
+            $Label->storage_type  = 'eav'; // All new labels use EAV — no ALTER TABLE
             $Label->save();
-
-            //DDL for client_*.crm_lead_data
-            Schema::connection("mysql_$clientId")->table('crm_lead_data', function (Blueprint $table) use ($clientId, $strColumnName, $strDataType) {
-                if (!Schema::connection("mysql_$clientId")->hasColumn('crm_lead_data', $strColumnName)) {
-                    switch ($strDataType) {
-                        case "text":
-                        case "select_option":
-                        case "email":
-                            $table->string($strColumnName)->nullable();
-                            break;
-                        case "number":
-                            $table->string($strColumnName)->nullable();
-                            break;
-                        // case "number":
-                        case "phone_number":
-                            $table->string($strColumnName)->nullable();
-                            break;
-                        case "date":
-                            $table->timestamp($strColumnName)->nullable();
-                            break;
-                        default:
-                            $table->string($strColumnName)->nullable();
-                    }
-                }
-            });
-
 
             return $this->successResponse("Label Added Successfully", $Label->toArray());
         } catch (\Exception $exception) {
@@ -371,8 +345,7 @@ $Label->values = is_array($request->values)
 
         Schema::connection("mysql_$clientId")->table('crm_lead_data', function (Blueprint $table) use ($columnName, $newDataType) {
             // Log or print debug statements
-            Log:
-            info("Updating column type for $columnName to $newDataType");
+            \Illuminate\Support\Facades\Log::info("Updating column type for $columnName to $newDataType");
 
             // Modify the existing column to the updated data type
             switch ($newDataType) {

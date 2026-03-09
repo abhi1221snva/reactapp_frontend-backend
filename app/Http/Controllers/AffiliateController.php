@@ -465,8 +465,9 @@ Log::info('reached',[$request->all()]);
 
             $lead->save();
 
-       
-           
+            // Save EAV dynamic fields
+            $this->saveEavFields($client_id, (int)$lastId, $request->all());
+
             $clientId = $client_id;
             $Notification = new Notification();
             $Notification->setConnection("mysql_$clientId");
@@ -557,6 +558,7 @@ Log::info('reached',[$request->all()]);
 
             $oldlead_status = $objLead->getOriginal('lead_status');
             $objLead->saveOrFail();
+            $this->saveEavFields($clientId, (int)$id, $request->all());
             $objLead['old_lead_status'] =  $oldlead_status ;
             return $this->successResponse("Lead Updated Successfully", $objLead->toArray());
         } catch (ModelNotFoundException $exception) {
@@ -707,17 +709,43 @@ Log::info('reached',[$request->all()]);
     }
 
     public function formatLeadInfo($arrInputLeadInfo, $clientId){
-        //$arrLabels = CrmLabel::on("mysql_$clientId")->where(["status" => 1])->get()->toArray();
+        // Only process column-backed labels; EAV labels are saved via saveEavFields()
+        $arrLabels = CrmLabel::on("mysql_$clientId")
+            ->where('label_title_url', '!=', "unique_url")
+            ->where('status', 1)
+            ->where('storage_type', 'column')
+            ->get()->toArray();
 
-        $arrLabels = CrmLabel::on("mysql_$clientId")->where('label_title_url', '!=' , "unique_url")->where(["status" => 1])->get()->toArray();
-
-        foreach ($arrLabels as $key => $arrLabel) {
-           /* if ($arrLabel['data_type'] == 'phone_number')
-                $arrInputLeadInfo[$arrLabel['column_name']] = str_replace(array('(',')', '_', '-',' '), array(''), $arrInputLeadInfo[$arrLabel['column_name']]);*/
-
+        foreach ($arrLabels as $arrLabel) {
             $arrInputLeadInfo[$arrLabel['column_name']] = (!empty($arrInputLeadInfo[$arrLabel['column_name']])) ? trim($arrInputLeadInfo[$arrLabel['column_name']]) : '';
         }
         return $arrInputLeadInfo;
+    }
+
+    private function saveEavFields(string $clientId, int $leadId, array $input): void
+    {
+        try {
+            $eavLabels = \Illuminate\Support\Facades\DB::connection("mysql_$clientId")
+                ->table('crm_label')
+                ->where('storage_type', 'eav')
+                ->where('status', '1')
+                ->where('is_deleted', 0)
+                ->get(['id', 'column_name']);
+
+            foreach ($eavLabels as $label) {
+                if (!array_key_exists($label->column_name, $input)) continue;
+                $val = $input[$label->column_name];
+                if ($val === null || $val === '') continue;
+                \Illuminate\Support\Facades\DB::connection("mysql_$clientId")
+                    ->table('crm_lead_field_values')
+                    ->upsert(
+                        ['lead_id' => $leadId, 'label_id' => $label->id, 'column_name' => $label->column_name,
+                         'value_text' => trim((string)$val), 'created_at' => now(), 'updated_at' => now()],
+                        ['lead_id', 'label_id'],
+                        ['value_text', 'updated_at']
+                    );
+            }
+        } catch (\Throwable $e) {}
     }
 
     public function view(Request $request, $id)

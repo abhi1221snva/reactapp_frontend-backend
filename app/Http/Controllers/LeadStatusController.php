@@ -490,4 +490,56 @@ class LeadStatusController extends Controller
             ], $exception, 404);
         }
     }
+
+    /**
+     * Paginated list of lead statuses for the CRM management page.
+     * GET /crm/lead-status?page=1&per_page=20&search=...
+     */
+    public function paginatedList(Request $request)
+    {
+        $clientId = $request->auth->parent_id;
+        $page     = max(1, (int) $request->input('page', 1));
+        $perPage  = min(100, max(5, (int) $request->input('per_page', 20)));
+        $search   = trim($request->input('search', ''));
+
+        try {
+            $query = LeadStatus::on("mysql_$clientId")->orderBy('display_order', 'ASC');
+
+            if ($search !== '') {
+                $query->where('title', 'LIKE', '%' . $search . '%');
+            }
+
+            $total = $query->count();
+            $items = $query->skip(($page - 1) * $perPage)->take($perPage)->get();
+
+            return $this->successResponse("Lead Status", [
+                'data'         => $items,
+                'total'        => $total,
+                'per_page'     => $perPage,
+                'current_page' => $page,
+                'last_page'    => (int) ceil($total / max(1, $perPage)),
+            ]);
+        } catch (\Throwable $exception) {
+            return $this->failResponse("Failed to list", [$exception->getMessage()], $exception);
+        }
+    }
+
+    /**
+     * Toggle active/inactive by path param.
+     * PATCH /crm/lead-status/{id}/toggle
+     */
+    public function toggleStatusById(Request $request, $id)
+    {
+        $clientId = $request->auth->parent_id;
+        $this->validate($request, ['status' => 'required|in:0,1']);
+
+        try {
+            $LeadStatus = LeadStatus::on("mysql_$clientId")->findOrFail($id);
+            $LeadStatus->status = (int) $request->input('status');
+            $LeadStatus->saveOrFail();
+            return $this->successResponse("Lead Status Updated", $LeadStatus->toArray());
+        } catch (\Throwable $exception) {
+            return $this->failResponse("Failed to update status", [$exception->getMessage()], $exception);
+        }
+    }
 }

@@ -440,6 +440,140 @@ return response()->json($response, $status);
     ]);
 }
 
+/**
+ * Step 1 of 2-step upload: parse headers and return them for mapping.
+ * POST /parse-list-headers
+ */
+public function parseListHeaders()
+{
+    $this->validate($this->request, [
+        'title'    => 'required|string|max:255',
+        'file'     => 'required|file',
+        'campaign' => 'required|numeric',
+    ]);
+
+    if (!$this->request->hasFile('file')) {
+        return response()->json(['success' => false, 'message' => 'No file uploaded.'], 400);
+    }
+
+    $tmpPath = base_path('upload/tmp');
+    if (!file_exists($tmpPath)) {
+        mkdir($tmpPath, 0777, true);
+    }
+
+    $originalName = basename($this->request->file('file')->getClientOriginalName());
+    $tempKey      = uniqid('list_', true) . '_' . $originalName;
+    $this->request->file('file')->move($tmpPath, $tempKey);
+    $filePath = $tmpPath . DIRECTORY_SEPARATOR . $tempKey;
+
+    if (!file_exists($filePath)) {
+        return response()->json(['success' => false, 'message' => 'Failed to save uploaded file.'], 500);
+    }
+
+    try {
+        $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($filePath);
+        $excelData   = $spreadsheet->getActiveSheet()->toArray(null, true, true, true);
+    } catch (\Exception $e) {
+        @unlink($filePath);
+        return response()->json(['success' => false, 'message' => 'Unable to read file: ' . $e->getMessage()], 422);
+    }
+
+    if (empty($excelData)) {
+        @unlink($filePath);
+        return response()->json(['success' => false, 'message' => 'File is empty.'], 422);
+    }
+
+    $headerRow = array_values(reset($excelData));
+    $headers   = array_values(array_filter($headerRow, fn($v) => $v !== null && $v !== ''));
+    $headers   = array_slice($headers, 0, 30);
+    $rowCount  = max(0, count($excelData) - 1);
+
+    $dataBase = 'mysql_' . $this->request->auth->parent_id;
+    $labels   = DB::connection($dataBase)
+        ->table('label')
+        ->where('is_deleted', 0)
+        ->orderBy('display_order')
+        ->get(['id', 'title'])
+        ->toArray();
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Headers parsed successfully.',
+        'data'    => [
+            'temp_key'  => $tempKey,
+            'headers'   => $headers,
+            'labels'    => $labels,
+            'row_count' => $rowCount,
+        ],
+    ]);
+}
+
+/**
+ * Step 2 of 2-step upload: import with column mapping.
+ * POST /import-list-with-mapping
+ */
+public function importListWithMapping()
+{
+    $this->validate($this->request, [
+        'temp_key'   => 'required|string',
+        'title'      => 'required|string|max:255',
+        'campaign'   => 'required|numeric',
+        'mapping'    => 'required|string',
+        'dial_column'=> 'required|string',
+    ]);
+
+    $safeKey  = basename($this->request->input('temp_key'));
+    $filePath = base_path('upload/tmp') . DIRECTORY_SEPARATOR . $safeKey;
+
+    if (!file_exists($filePath)) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Session expired or file not found. Please re-upload.',
+        ], 404);
+    }
+
+    $mapping = json_decode($this->request->input('mapping'), true);
+    if (!is_array($mapping)) {
+        @unlink($filePath);
+        return response()->json(['success' => false, 'message' => 'Invalid mapping format.'], 400);
+    }
+
+    $dialColumn = $this->request->input('dial_column');
+    $response   = $this->model->addListWithMapping($this->request, $filePath, $mapping, $dialColumn);
+    @unlink($filePath);
+
+    return response()->json($response);
+}
+
+/**
+ * Fetch column mapping for an existing list.
+ * POST /get-list-mapping
+ */
+public function getListMapping()
+{
+    $this->validate($this->request, [
+        'list_id' => 'required|numeric',
+    ]);
+
+    $response = $this->model->getListMapping($this->request);
+    return response()->json($response);
+}
+
+/**
+ * Update column mapping (label_id, is_dialing) for an existing list.
+ * POST /update-list-mapping
+ */
+public function updateListMapping()
+{
+    $this->validate($this->request, [
+        'list_id' => 'required|numeric',
+        'columns' => 'required|array',
+    ]);
+
+    $response = $this->model->updateListMapping($this->request);
+    return response()->json($response);
+}
+
 
     /**
      * @OA\Post(
@@ -992,8 +1126,12 @@ return response()->json($response, $status);
                      ->where('lb.is_deleted', '=', 0); })
                  ->where('l.list_id', $intListId)
                  ->where('l.is_deleted', 0)
+                 ->where(function($q) {
+                     // Only show columns that are mapped to a label OR marked as dialing column
+                     $q->whereNotNull('l.label_id')->orWhere('l.is_dialing', 1);
+                 })
                  ->orderByRaw('l.column_name + 0 ASC')
-                ->selectRaw('l.column_name, COALESCE(lb.title, l.header, l.column_name) as title, l.label_id')
+                 ->selectRaw('l.column_name, COALESCE(lb.title, l.header) as title, l.label_id, l.is_dialing')
                  ->get();
      
              if ($arrListHeaders->isEmpty()) {
