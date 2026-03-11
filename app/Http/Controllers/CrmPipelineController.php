@@ -232,4 +232,125 @@ class CrmPipelineController extends Controller
             return $this->failResponse("Failed to delete view", [$e->getMessage()], $e, 500);
         }
     }
+
+    /**
+     * PATCH /crm/pipeline/leads/{id}/move
+     * Persist drag-and-drop card movement to a new pipeline status.
+     * Body: { status_slug: 'new-status-slug' }
+     */
+    public function moveLead(Request $request, $id)
+    {
+        $this->validate($request, [
+            'status_slug' => 'required|string',
+        ]);
+
+        try {
+            $clientId  = $request->auth->parent_id;
+            $userId    = $request->auth->id;
+            $userLevel = $request->auth->user_level ?? 0;
+            $db        = DB::connection("mysql_$clientId");
+            $newSlug   = $request->input('status_slug');
+
+            // Verify lead exists and user has access
+            $lead = $db->table('crm_lead_data')
+                ->where('id', $id)
+                ->where('is_deleted', 0)
+                ->first(['id', 'lead_status', 'assigned_to']);
+
+            if (!$lead) {
+                return $this->failResponse("Lead not found", [], null, 404);
+            }
+
+            // Agents can only move their own leads
+            if ($userLevel <= 1 && $lead->assigned_to != $userId) {
+                return $this->failResponse("Unauthorized to move this lead", [], null, 403);
+            }
+
+            // Verify the target status exists and is active
+            $newStatus = $db->table('crm_lead_status')
+                ->where('lead_title_url', $newSlug)
+                ->where('status', '1')
+                ->first(['id', 'title', 'lead_title_url', 'webhook_status', 'webhook_method', 'webhook_url', 'webhook_token']);
+
+            if (!$newStatus) {
+                return $this->failResponse("Invalid or inactive pipeline status", [], null, 422);
+            }
+
+            $oldSlug = $lead->lead_status;
+
+            // No-op if already in target status
+            if ($oldSlug === $newSlug) {
+                return $this->successResponse("Lead already in this status", ['lead_id' => (int) $id]);
+            }
+
+            // Update the lead
+            $db->table('crm_lead_data')
+                ->where('id', $id)
+                ->update(['lead_status' => $newSlug, 'updated_at' => now()]);
+
+            // Log to status history
+            try {
+                $db->table('crm_lead_status_history')->insert([
+                    'lead_id'    => (int) $id,
+                    'old_status' => $oldSlug,
+                    'new_status' => $newSlug,
+                    'changed_by' => $userId,
+                    'changed_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            } catch (\Throwable $e) {}
+
+            // Log to activity timeline
+            try {
+                $db->table('crm_lead_activity')->insert([
+                    'lead_id'       => (int) $id,
+                    'user_id'       => $userId,
+                    'activity_type' => 'status_change',
+                    'subject'       => "Moved from \"{$oldSlug}\" to \"{$newSlug}\"",
+                    'source_type'   => 'pipeline',
+                    'created_at'    => now(),
+                    'updated_at'    => now(),
+                ]);
+            } catch (\Throwable $e) {}
+
+            // Bust cached counts for both affected columns
+            Cache::forget("pipeline_board_{$clientId}_{$oldSlug}_count");
+            Cache::forget("pipeline_board_{$clientId}_{$newSlug}_count");
+
+            // Fire webhook if the new status has one configured
+            if ($newStatus->webhook_status && $newStatus->webhook_url) {
+                try {
+                    $payload = json_encode([
+                        'lead_id'    => (int) $id,
+                        'old_status' => $oldSlug,
+                        'new_status' => $newSlug,
+                        'moved_by'   => $userId,
+                        'timestamp'  => now()->toIso8601String(),
+                    ]);
+                    $ch = curl_init($newStatus->webhook_url);
+                    curl_setopt_array($ch, [
+                        CURLOPT_POST           => true,
+                        CURLOPT_POSTFIELDS     => $payload,
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_TIMEOUT        => 5,
+                        CURLOPT_HTTPHEADER     => [
+                            'Content-Type: application/json',
+                            'X-Webhook-Token: ' . $newStatus->webhook_token,
+                        ],
+                    ]);
+                    curl_exec($ch);
+                    curl_close($ch);
+                } catch (\Throwable $e) {}
+            }
+
+            return $this->successResponse("Lead moved", [
+                'lead_id'    => (int) $id,
+                'old_status' => $oldSlug,
+                'new_status' => $newSlug,
+            ]);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to move lead", [$e->getMessage()], $e, 500);
+        }
+    }
 }

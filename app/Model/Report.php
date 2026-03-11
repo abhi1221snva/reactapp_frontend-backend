@@ -491,17 +491,19 @@ $query_string = "
 
             $sql = $query_string . $limitString;
 
-            $record = DB::connection('mysql_' . $parent_id)->select($sql, $search);
-            $recordCount = DB::connection('mysql_' . $parent_id)->selectOne(
-                "SELECT COUNT(*) as count FROM ((SELECT id FROM cdr $filter) UNION ALL (SELECT id FROM cdr_archive $filter1)) AS c",
-                $search
-            );
-            $recordCount = (array) $recordCount;
-
-            // Summary aggregate query (same filters, no pagination)
+            // Params without pagination keys — used for COUNT and summary queries
+            // (COUNT/summary SQL has no LIMIT clause so :lower_limit/:upper_limit
+            //  would cause SQLSTATE[HY093] "Invalid parameter number")
             $summaryParams = array_filter($search, function ($key) {
                 return !in_array($key, ['lower_limit', 'upper_limit']);
             }, ARRAY_FILTER_USE_KEY);
+
+            $record = DB::connection('mysql_' . $parent_id)->select($sql, $search);
+            $recordCount = DB::connection('mysql_' . $parent_id)->selectOne(
+                "SELECT COUNT(*) as count FROM ((SELECT id FROM cdr $filter) UNION ALL (SELECT id FROM cdr_archive $filter1)) AS c",
+                $summaryParams
+            );
+            $recordCount = (array) $recordCount;
             $summarySql = "
                 SELECT
                     COUNT(*) as total_calls,
@@ -541,9 +543,9 @@ $query_string = "
                 'message' => 'Call Data Report doesn\'t exist.'
             );
         } catch (Exception $e) {
-            Log::log($e->getMessage());
+            Log::error('getReport: ' . $e->getMessage());
         } catch (InvalidArgumentException $e) {
-            Log::log($e->getMessage());
+            Log::error('getReport: ' . $e->getMessage());
         }
     }
 

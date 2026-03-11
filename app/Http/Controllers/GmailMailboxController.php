@@ -29,7 +29,11 @@ class GmailMailboxController extends Controller
             $result = $this->mailboxService->listEmails($userId, $folder, $maxResults, $pageToken, $query);
 
             if ($result === null) {
-                return $this->failResponse("Gmail not connected or token expired", [], null, 401);
+                return $this->failResponse("Gmail not connected or token expired. Please reconnect Gmail from your profile.", [], null, 400);
+            }
+
+            if (isset($result['error'])) {
+                return $this->failResponse($result['error'], [], null, 400);
             }
 
             return $this->successResponse("Emails retrieved", $result);
@@ -232,7 +236,7 @@ class GmailMailboxController extends Controller
             $labels = $this->mailboxService->getLabels($userId);
 
             if ($labels === null) {
-                return $this->failResponse("Gmail not connected", [], null, 401);
+                return $this->failResponse("Gmail not connected", [], null, 400);
             }
 
             return $this->successResponse("Labels retrieved", ['labels' => $labels]);

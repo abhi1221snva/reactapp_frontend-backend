@@ -47,7 +47,7 @@ class CampaignController extends Controller
 
     public function CampaignList(Request $request)
     {
-        $campaign = Campaign::on("mysql_" . $request->auth->parent_id)->where('is_deleted', '0')->get()->all();
+        $campaign = Campaign::on($this->tenantDb($request))->where('is_deleted', '0')->get()->all();
         return $this->successResponse("Campaign List", $campaign);
     }
 
@@ -76,7 +76,7 @@ class CampaignController extends Controller
      */
     public function CampaignTypeList(Request $request)
     {
-        $CampaignTypes = CampaignTypes::on("mysql_" . $request->auth->parent_id)->where('status', '1')->get()->all();
+        $CampaignTypes = CampaignTypes::on($this->tenantDb($request))->where('status', '1')->get()->all();
         return $this->successResponse("Campaign Type List", $CampaignTypes);
     }
 
@@ -503,7 +503,7 @@ class CampaignController extends Controller
 
     public function getCampaignAndList()
     {
-        $campaign = Campaign::on("mysql_" . $this->request->auth->parent_id)->where('id', $this->request->campaign_id)->get()->first();
+        $campaign = Campaign::on($this->tenantDb($this->request))->where('id', $this->request->campaign_id)->get()->first();
 
         if ($campaign->crm_title_url == 'hubspot') {
             $response = $this->hubspot->getCampaignAndListHubspot($this->request);
@@ -517,7 +517,7 @@ class CampaignController extends Controller
     {
 
 
-        $campaign = Campaign::on("mysql_" . $this->request->auth->parent_id)->where('id', $this->request->campaign_id)->get()->first();
+        $campaign = Campaign::on($this->tenantDb($this->request))->where('id', $this->request->campaign_id)->get()->first();
         if ($campaign->crm_title_url == 'hubspot') {
             $response = $this->hubspot->getCampaignAndListHubspot($this->request);
         } else {
@@ -817,7 +817,7 @@ class CampaignController extends Controller
     function deleteCampaign(Request $request)
     {
         $campaign_id = $request->campaign_id;
-        $Campaign = Campaign::on("mysql_" . $request->auth->parent_id)->findOrFail($campaign_id);
+        $Campaign = Campaign::on($this->tenantDb($request))->findOrFail($campaign_id);
         $Campaign->is_deleted = 1;
         $deleted = $Campaign->update();
 
@@ -913,7 +913,7 @@ class CampaignController extends Controller
      $campaignId = $id;
     try {
         // Fetch the campaign
-        $campaign = DB::connection('mysql_' . $request->auth->parent_id)
+        $campaign = DB::connection($this->tenantDb($request))
                       ->table('campaign')
                       ->where('id', $campaignId)
                       ->first();
@@ -926,7 +926,7 @@ class CampaignController extends Controller
         }
 
         // Fetch the campaign schedules
-        $schedules = DB::connection('mysql_' . $request->auth->parent_id)
+        $schedules = DB::connection($this->tenantDb($request))
                        ->table('campaign_schedules')
                        ->where('campaign_id', $campaignId)
                        ->get()
@@ -984,7 +984,7 @@ public function assignLists(Request $request)
     $leadListIds = $request->input('lead_list_ids');
 
     // 2. Check if campaign exists
-    $campaignExists = DB::connection('mysql_' . $request->auth->parent_id)->table('campaign')->where('id', $campaignId)->exists();
+    $campaignExists = DB::connection($this->tenantDb($request))->table('campaign')->where('id', $campaignId)->exists();
     if (!$campaignExists) {
         return response()->json([
             'success' => false,
@@ -995,7 +995,7 @@ public function assignLists(Request $request)
     // 3. Check each lead list id exists
     $invalidLists = [];
     foreach ($leadListIds as $listId) {
-        $exists = DB::connection('mysql_' . $request->auth->parent_id)->table('list')->where('id', $listId)->exists();
+        $exists = DB::connection($this->tenantDb($request))->table('list')->where('id', $listId)->exists();
         if (!$exists) {
             $invalidLists[] = $listId;
         }
@@ -1009,7 +1009,7 @@ public function assignLists(Request $request)
         ], 404);
     }
         // 4. Deactivate all existing assigned lists (DO NOT DELETE)
-    DB::connection('mysql_' . $request->auth->parent_id)
+    DB::connection($this->tenantDb($request))
         ->table('campaign_list')
         ->where('campaign_id', $campaignId)
         ->update([
@@ -1019,7 +1019,7 @@ public function assignLists(Request $request)
 
     // 4. Insert/update mapping
     foreach ($leadListIds as $listId) {
-        DB::connection('mysql_' . $request->auth->parent_id)->table('campaign_list')->updateOrInsert(
+        DB::connection($this->tenantDb($request))->table('campaign_list')->updateOrInsert(
             [
                 'campaign_id' => $campaignId,
                 'list_id'     => $listId,

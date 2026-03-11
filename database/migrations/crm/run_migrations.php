@@ -38,6 +38,8 @@ $sqlFiles = [
     '008_create_crm_pipeline_views.sql',
     // 009 is PHP (uses PDO for column-exists check and Duplicate key)
     '015_alter_crm_documents_add_columns.sql',
+    '016_add_placeholder_to_crm_label.sql',
+    '017_upgrade_crm_label.sql',
 ];
 
 $phpScripts = [

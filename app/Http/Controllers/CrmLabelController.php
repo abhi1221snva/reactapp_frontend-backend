@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Model\Client\CrmLabel;
+use App\Services\LeadFieldService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use App\Model\Role;
@@ -194,10 +195,10 @@ class CrmLabelController extends Controller
             $Label->number_length = $request->number_length;
             $Label->icons = $request->icons;
             $Label->heading_type = $request->heading_type;
-            // $Label->values = $request->values;
-$Label->values = is_array($request->values)
-    ? json_encode($request->values)
-    : $request->values;
+            $Label->values = is_array($request->values)
+                ? json_encode($request->values)
+                : $request->values;
+            $Label->placeholder = $request->placeholder;
 
             $Label->saveOrFail();
             $lastId = $Label->id;
@@ -314,7 +315,11 @@ $Label->values = is_array($request->values)
                 $Label->heading_type = $request->input("heading_type");
 
             if ($request->has("values"))
-                $Label->values = $request->input("values");
+                $Label->values = is_array($request->input("values"))
+                    ? json_encode($request->input("values"))
+                    : $request->input("values");
+            if ($request->has("placeholder"))
+                $Label->placeholder = $request->input("placeholder");
             if ($request->has("icons"))
                 $Label->icons = $request->input("icons");
             if ($request->input("data_type") === "number") {
@@ -525,6 +530,104 @@ $Label->values = is_array($request->values)
             return $this->failResponse("Failed to update Lead", [
                 $exception->getMessage()
             ], $exception, 404);
+        }
+    }
+
+    // ─── REST-style Lead Fields API (uses crm_labels — new EAV architecture) ──
+
+    /**
+     * GET /crm/lead-fields
+     * Returns all active field definitions from crm_labels for dynamic form rendering.
+     */
+    public function leadFieldsList(Request $request)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            $svc      = new LeadFieldService();
+            $fields   = $svc->getAllFields($clientId)['data'];
+            return $this->successResponse("Lead fields retrieved successfully", $fields);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to retrieve lead fields", [$e->getMessage()], $e);
+        }
+    }
+
+    /**
+     * POST /crm/lead-fields
+     * Create a new dynamic field in crm_labels.
+     *
+     * Request body:
+     *   label_name  string  required  Display label (e.g. "First Name")
+     *   field_key   string  required  Unique key (e.g. "first_name"); used as EAV key in crm_lead_values
+     *   field_type  string  required  text|number|email|phone_number|date|textarea|dropdown|checkbox|radio
+     *   section     string  optional  owner|contact|business|address|general
+     *   options     array   optional  For dropdown/radio/checkbox fields
+     *   placeholder string  optional
+     *   conditions  mixed   optional  Conditional visibility JSON
+     *   required    bool    optional
+     *   display_order int   optional
+     */
+    public function leadFieldsCreate(Request $request)
+    {
+        $clientId = $request->auth->parent_id;
+
+        $this->validate($request, [
+            'label_name' => [
+                'required', 'string', 'max:255',
+            ],
+            'field_key'  => [
+                'required', 'string', 'max:100', 'alpha_dash',
+                Rule::unique("mysql_{$clientId}.crm_labels", 'field_key'),
+            ],
+            'field_type' => 'required|string|in:text,number,email,phone_number,date,textarea,dropdown,checkbox,radio',
+        ]);
+
+        try {
+            $svc   = new LeadFieldService();
+            $field = $svc->create($clientId, $request->all());
+            return $this->successResponse("Field created successfully", (array) $field);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to create field", [$e->getMessage()], $e, 500);
+        }
+    }
+
+    /**
+     * POST /crm/lead-fields/{id}
+     * Update an existing field definition in crm_labels.
+     */
+    public function leadFieldsUpdate(Request $request, $id)
+    {
+        $clientId = $request->auth->parent_id;
+
+        $this->validate($request, [
+            'label_name' => 'sometimes|required|string|max:255',
+            'field_type' => 'sometimes|string|in:text,number,email,phone_number,date,textarea,dropdown,checkbox,radio',
+            'section'    => 'sometimes|string|max:100',
+            'required'   => 'sometimes|boolean',
+            'status'     => 'sometimes|boolean',
+        ]);
+
+        try {
+            $svc   = new LeadFieldService();
+            $field = $svc->update($clientId, (int) $id, $request->all());
+            return $this->successResponse("Field updated successfully", (array) $field);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to update field", [$e->getMessage()], $e, 500);
+        }
+    }
+
+    /**
+     * DELETE /crm/lead-fields/{id}
+     * Hard-delete a field definition and all its stored values.
+     */
+    public function leadFieldsDelete(Request $request, $id)
+    {
+        $clientId = $request->auth->parent_id;
+        try {
+            $svc = new LeadFieldService();
+            $svc->delete($clientId, (int) $id);
+            return $this->successResponse("Field deleted successfully", []);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to delete field", [$e->getMessage()], $e, 500);
         }
     }
 }

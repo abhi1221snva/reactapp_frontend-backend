@@ -4,10 +4,25 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Redis;
+use Predis\Client as PredisClient;
 
 class RedisCacheController extends Controller
 {
+    private function getRedis(): PredisClient
+    {
+        $url = env('REDIS_URL');
+        if ($url) {
+            return new PredisClient($url);
+        }
+        return new PredisClient([
+            'scheme'   => 'tcp',
+            'host'     => env('REDIS_HOST', '127.0.0.1'),
+            'port'     => (int) env('REDIS_PORT', 6379),
+            'password' => env('REDIS_PASSWORD') ?: null,
+            'database' => (int) env('REDIS_DB', 0),
+        ]);
+    }
+
     /**
      * List all Redis cache entries with pagination and search support
      * 
@@ -41,14 +56,16 @@ class RedisCacheController extends Controller
 
             // Build Redis pattern based on search
             $pattern = $search ? "*{$search}*" : '*';
-            
+
+            $redis = $this->getRedis();
+
             // Fetch keys from Redis
-            $keys = Redis::keys($pattern);
+            $keys = $redis->keys($pattern);
 
             // Fetch and decode cache entries
             $allCache = [];
             foreach ($keys as $key) {
-                $value = Redis::get($key);
+                $value = $redis->get($key);
                 if ($value && is_string($value) && json_decode($value) !== null) {
                     $value = json_decode($value, true);
                 }
@@ -135,27 +152,28 @@ class RedisCacheController extends Controller
             $notFoundKeys = [];
             $protectedKeys = [];
             $freedMemory = 0;
+            $redis = $this->getRedis();
 
             // Delete each key
             foreach ($keys as $keyToDelete) {
                 // Protection: Do not delete keys with only 2 segments (format: 23_23)
                 // Only delete keys with 3+ segments (format: 23_232_23232_23)
                 $segmentCount = substr_count($keyToDelete, '_') + 1;
-                
+
                 if ($segmentCount <= 2) {
                     $protectedKeys[] = $keyToDelete;
                     continue; // Skip this key
                 }
-                
+
                 // Check if key exists and get its memory usage before deletion
-                if (Redis::exists($keyToDelete)) {
+                if ($redis->exists($keyToDelete)) {
                     // Get memory usage of the key (approximate)
-                    $value = Redis::get($keyToDelete);
+                    $value = $redis->get($keyToDelete);
                     $memoryUsed = strlen(serialize($value));
-                    
+
                     // Delete the key
-                    $result = Redis::del($keyToDelete);
-                    
+                    $result = $redis->del($keyToDelete);
+
                     if ($result > 0) {
                         $deletedKeys[] = $keyToDelete;
                         $freedMemory += $memoryUsed;
@@ -246,8 +264,10 @@ class RedisCacheController extends Controller
                 $maxAgeSeconds = (int)$days * 86400;
             }
 
+            $redis = $this->getRedis();
+
             // Fetch keys from Redis based on pattern
-            $keys = Redis::keys($pattern);
+            $keys = $redis->keys($pattern);
 
             if (empty($keys)) {
                 return response()->json([
@@ -276,30 +296,30 @@ class RedisCacheController extends Controller
                     // Protection: Do not delete keys with only 2 segments (format: 23_23)
                     // Only delete keys with 3+ segments (format: 23_232_23232_23)
                     $segmentCount = substr_count($key, '_') + 1;
-                    
+
                     if ($segmentCount <= 2) {
                         $protectedKeys[] = $key;
                         continue; // Skip this key
                     }
-                    
+
                     // Get the cached value
-                    $value = Redis::get($key);
-                    
+                    $value = $redis->get($key);
+
                     if (!$value) {
                         continue; // Key doesn't exist, skip
                     }
-                    
+
                     // Try to parse JSON and find creation timestamp
                     $creationTime = null;
                     $ageInSeconds = null;
-                    
+
                     if (is_string($value)) {
                         $decoded = json_decode($value, true);
-                        
+
                         if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
                             // Look for common timestamp fields
                             $timestampFields = ['created_at', 'updated_at', 'timestamp', 'time', 'cache_time'];
-                            
+
                             foreach ($timestampFields as $field) {
                                 if (isset($decoded[$field])) {
                                     // Try to parse the timestamp
@@ -316,28 +336,28 @@ class RedisCacheController extends Controller
                             }
                         }
                     }
-                    
+
                     // If we couldn't determine creation time, use Redis OBJECT IDLETIME as fallback
                     if ($ageInSeconds === null) {
-                        $idleTime = Redis::object('idletime', $key);
+                        $idleTime = $redis->object('idletime', $key);
                         if ($idleTime !== null) {
                             $ageInSeconds = $idleTime;
                         }
                     }
-                    
+
                     // If age is still null, skip this key
                     if ($ageInSeconds === null) {
                         $keptKeys[] = $key;
                         continue;
                     }
-                    
+
                     // If age is greater than max age, delete it
                     if ($ageInSeconds >= $maxAgeSeconds) {
                         // Get memory usage before deletion
                         $memoryUsed = strlen(serialize($value));
-                        
+
                         // Delete the key
-                        $result = Redis::del($key);
+                        $result = $redis->del($key);
                         
                         if ($result > 0) {
                             $deletedKeys[] = [
@@ -438,8 +458,10 @@ class RedisCacheController extends Controller
                 ], 400);
             }
 
+            $redis = $this->getRedis();
+
             // Check if key exists
-            if (!Redis::exists($cacheKey)) {
+            if (!$redis->exists($cacheKey)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Key not found in Redis cache',
@@ -448,14 +470,14 @@ class RedisCacheController extends Controller
             }
 
             // Get raw value
-            $rawValue = Redis::get($cacheKey);
-            
+            $rawValue = $redis->get($cacheKey);
+
             // Get Redis metadata
-            $ttl = Redis::ttl($cacheKey);
-            $type = Redis::type($cacheKey);
-            $idleTime = Redis::object('idletime', $cacheKey);
-            $encoding = Redis::object('encoding', $cacheKey);
-            $refcount = Redis::object('refcount', $cacheKey);
+            $ttl = $redis->ttl($cacheKey);
+            $type = $redis->type($cacheKey);
+            $idleTime = $redis->object('idletime', $cacheKey);
+            $encoding = $redis->object('encoding', $cacheKey);
+            $refcount = $redis->object('refcount', $cacheKey);
             
             // Calculate memory usage
             $memoryBytes = strlen(serialize($rawValue));
@@ -570,28 +592,26 @@ class RedisCacheController extends Controller
         try {
             // Start timer
             $start = microtime(true);
-            
-            // Check connection
-            $ping = Redis::ping();
+
+            $redis = $this->getRedis();
+            $ping = $redis->ping();
             $connectionTime = round((microtime(true) - $start) * 1000, 2);
-            
-            // Get connection info
+
+            // Get connection info (mask credentials)
             $config = config('database.redis.default');
-            
-            // Mask password
             if (isset($config['password']) && $config['password']) {
                 $config['password'] = '******';
             }
             if (isset($config['url'])) {
                 $config['url'] = preg_replace('/:[^:@]+@/', ':******@', $config['url']);
             }
-            
+
             return response()->json([
                 'success' => true,
                 'message' => 'Redis connection successful',
                 'ping_response' => $ping,
                 'latency_ms' => $connectionTime,
-                'client' => Redis::client(),
+                'client' => 'predis',
                 'connection_config' => $config
             ]);
         } catch (\Exception $e) {

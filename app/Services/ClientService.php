@@ -37,6 +37,9 @@ class ClientService
             return $clients[$id];
         }
         $clients = self::cache();
-        return $clients[$id];
+        if (isset($clients[$id])) {
+            return $clients[$id];
+        }
+        return ['company_name' => 'Unknown', 'logo' => null, 'mca_crm' => '0'];
     }
 }

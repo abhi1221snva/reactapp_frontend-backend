@@ -19,6 +19,7 @@ class GmailMailboxService
 
     /**
      * List emails from a specific folder/label.
+     * Returns null on token failure, or ['error' => '...'] on Gmail API failure.
      */
     public function listEmails(int $userId, string $labelId = 'INBOX', int $maxResults = 20, ?string $pageToken = null, ?string $query = null): ?array
     {
@@ -42,15 +43,18 @@ class GmailMailboxService
             }
 
             $response = Http::withToken($accessToken)
+                ->timeout(30)
                 ->get(self::GMAIL_API_URL . '/messages', $params);
 
             if (!$response->successful()) {
+                $errorBody = $response->json();
+                $errorMsg = $errorBody['error']['message'] ?? $response->body();
                 Log::error('Gmail API: Failed to list emails', [
                     'user_id' => $userId,
                     'status' => $response->status(),
                     'body' => $response->body(),
                 ]);
-                return null;
+                return ['error' => "Gmail API error ({$response->status()}): {$errorMsg}"];
             }
 
             $data = $response->json();

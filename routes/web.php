@@ -61,6 +61,14 @@ $router->post('v2/validate-email', 'AuthenticationController@checkEmail');
 
 
 
+// ─── System Health & Observability ───────────────────────────────────────────
+$router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($router) {
+    $router->get('system/health',              'SystemHealthController@health');
+    $router->get('system/queue-stats',         'SystemHealthController@queueStats');
+    $router->get('system/error-trends',        'SystemHealthController@errorTrends');
+    $router->get('system/performance-metrics', 'SystemHealthController@performanceMetrics');
+});
+
 $router->get('/redis-test', function () {
     externalRedisCacheSet(123, 'test-prompt', ['data' => 'value from Redis!']);
     return externalRedisCacheGet(123, 'test-prompt', 'Not found');
@@ -77,6 +85,22 @@ $router->post('receiver-fax', 'FaxController@receiverFax');
 $router->POST('authentication_copy', 'AuthenticationController@authentication_copy');
 
 $router->POST('verify_google_otp', 'TwoFactorController@verify_google_otp');
+
+// ─── TOTP 2FA Routes ─────────────────────────────────────────────────────────
+$router->group(['middleware' => ['throttle:10,1']], function () use ($router) {
+    // No JWT auth — called after partial login when 2FA is required
+    $router->post('2fa/verify', 'TwoFactorAuthController@verify');
+});
+
+$router->group(['middleware' => ['jwt.auth', 'throttle:10,1']], function () use ($router) {
+    $router->get('2fa/status',                   'TwoFactorAuthController@status');
+    $router->post('2fa/setup',                   'TwoFactorAuthController@setup');
+    $router->post('2fa/enable',                  'TwoFactorAuthController@enable');
+    $router->post('2fa/disable',                 'TwoFactorAuthController@disable');
+    $router->post('2fa/backup-codes/regenerate', 'TwoFactorAuthController@regenerateBackupCodes');
+    // JWT token revocation — blacklists the token in Redis
+    $router->post('logout', 'AuthenticationController@logout');
+});
 //$router->POST('authentication_copy', 'AuthenticationController@authentication_copy');
 // $router->get('auth/google/redirect', 'GoogleController@redirectToGoogle');
 $router->post('auth/google/callback', 'GoogleController@handleGoogleCallback');
@@ -89,18 +113,47 @@ $router->get('cron-email', 'CronController@cronEmail');
 
 //pusher
 $router->post('check-and-get-user-id-for-pusher', 'PusherController@checkAndGetUserIdForPusher');
-#register code
+// ─── Legacy Registration V1 (Rate-limited: 10 requests per minute per IP) ──
+$router->group(['middleware' => ['throttle:10,1']], function () use ($router) {
+    $router->post('prospect/register', 'RegisterController@saveInitialData');
+    $router->post('prospect/resend', 'RegisterController@resendOtp');
+    $router->post('prospect/verify', 'RegisterController@verifyOtp');
+    $router->post('prospect/sendotp/mobile', 'RegisterController@sendOtpMobile');
+    $router->post('prospect/resend/mobile', 'RegisterController@resendOtpMobile');
+    $router->post('prospect/verify/mobile', 'RegisterController@verifyOtpMobile');
+});
 
-$router->post('prospect/register', 'RegisterController@saveInitialData');
-$router->post('prospect/resend', 'RegisterController@resendOtp');
-$router->post('prospect/verify', 'RegisterController@verifyOtp');
-$router->post('prospect/sendotp/mobile', 'RegisterController@sendOtpMobile');
-$router->post('prospect/resend/mobile', 'RegisterController@resendOtpMobile');
-$router->post('prospect/verify/mobile', 'RegisterController@verifyOtpMobile');
+// ─── Multi-step Registration V2 ─────────────────────────────────────────────
+// Rate-limited: 10 requests per minute per IP
+$router->group(['middleware' => ['throttle:10,1']], function () use ($router) {
+    // Step 1 — Account details (name, business_name, password)
+    $router->post('register/init', 'RegistrationController@init');
+
+    // Step 2 — Email OTP
+    $router->post('register/email/send-otp',   'RegistrationController@sendEmailOtp');
+    $router->post('register/email/verify-otp', 'RegistrationController@verifyEmailOtp');
+
+    // Step 3 — Phone OTP + final user + client DB creation
+    $router->post('register/phone/send-otp',   'RegistrationController@sendPhoneOtp');
+    $router->post('register/phone/verify-otp', 'RegistrationController@verifyPhoneOtp');
+
+    // Google OAuth registration — verifies token, skips email OTP
+    $router->post('register/google', 'RegistrationController@googleRegister');
+});
 
 
 #Routes with super admin rights should be added here
 $router->group(['middleware' => ['jwt.auth', 'auth.superadmin', 'audit.log']], function () use ($router) {
+
+  // ── Admin Client Management ─────────────────────────────────────────────
+  $router->get('admin/clients',                   'AdminClientController@index');
+  $router->get('admin/clients/{id}',              'AdminClientController@show');
+  $router->post('admin/clients',                  'AdminClientController@store');
+  $router->put('admin/clients/{id}',              'AdminClientController@update');
+  $router->post('admin/clients/{id}/activate',    'AdminClientController@activate');
+  $router->post('admin/clients/{id}/deactivate',  'AdminClientController@deactivate');
+  $router->post('admin/clients/{id}/switch',      'AdminClientController@switchTo');
+
   #create client
   $router->put('client', 'ClientController@create');
   $router->get('clients', 'ClientController@index');
@@ -214,10 +267,11 @@ $router->POST('merchants', 'Merchant\AuthController@get');
 // Team Chat Widget Public Routes (No Auth Required)
 $router->get('team-chat/widget/validate', 'TeamChatWidgetController@validateToken');
 
-$router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function () use ($router) {
   // $router->post('auth/google/callback', 'UserMailController@googlecallback');
   //profile
   $router->get('profile', 'ProfileController@index');
+  $router->post('/profile/upload-avatar', 'UserController@uploadAvatar');
   $router->post('/profile/update-two-factor', 'ProfileController@updateTwoFactor');
   $router->post('/profile/update-google-auth', 'ProfileController@updateGoogleAuthenticator');
   $router->post('verify-google_otp', 'ProfileController@verifyGoogleAuthenticator');
@@ -280,12 +334,34 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($ro
 
   $router->post('report-lead-id', 'ReportController@getReportByLeadId');
   $router->post('daily-call-report', 'ReportController@dailyCallReport');
+
+  // ─── Fast Dashboard (pre-aggregated snapshots, < 100ms) ──────────────────
+  $router->get('dashboard/fast-stats',           'DashboardController@getFastStats');
+  $router->post('dashboard/trigger-aggregation', 'DashboardController@triggerAggregation');
   $router->get('daily-call-report/{logId}', 'ReportController@getDailyCallReportView');
   $router->get('daily-call-report', 'ReportController@getDailyCallReportLogs');
 
   $router->post('live-call', 'ReportController@getLiveCall');
   $router->get('live-calls', 'ReportController@getLiveCall');
+
+  // ─── Real-time Call Monitoring (listen / whisper / barge) ────────────────
+  $router->post('monitoring/listen',   'CallMonitoringController@listen');
+  $router->post('monitoring/whisper',  'CallMonitoringController@whisper');
+  $router->post('monitoring/barge',    'CallMonitoringController@barge');
+  $router->post('monitoring/stop',     'CallMonitoringController@stop');
+  $router->get('monitoring/active',    'CallMonitoringController@activeMonitors');
+
+  // ─── Telecom Failover Management ─────────────────────────────────────────
+  $router->get('telecom/failover/status',       'TelecomFailoverController@status');
+  $router->post('telecom/failover/switch',      'TelecomFailoverController@switchProvider');
+  $router->post('telecom/failover/reset-stats', 'TelecomFailoverController@resetStats');
   $router->post('export-report', 'ReportController@exportReport');
+
+  // --- Advanced Reports ---
+  $router->post('reports/campaign-performance', 'AdvancedReportController@campaignPerformance');
+  $router->post('reports/agent-productivity',   'AdvancedReportController@agentProductivity');
+  $router->post('reports/hourly-volume',        'AdvancedReportController@hourlyVolume');
+  $router->post('reports/export',               'AdvancedReportController@export');
   $router->post('transfer-report', 'ReportController@getTransferReport');
   $router->get('get-timezone-list', 'ReportController@getTimeZoneList');
 
@@ -317,9 +393,23 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($ro
   $router->post('status-update-campaign', 'CampaignController@updateCampaignStatus');
   $router->post('status-update-hopper', 'CampaignController@updateCampaignHopper');
 
+  // ─── Predictive Dialer Pacing ─────────────────────────────────────────────
+  $router->get('dialer/pacing/{campaignId}',                 'DialerPacingController@snapshot');
+  $router->post('dialer/pacing/{campaignId}/agent-state',    'DialerPacingController@updateAgentState');
+  $router->post('dialer/pacing/{campaignId}/heartbeat',      'DialerPacingController@heartbeat');
+  $router->post('dialer/pacing/{campaignId}/record-outcome', 'DialerPacingController@recordOutcome');
+  $router->post('dialer/pacing/{campaignId}/reset',          'DialerPacingController@reset');
+
 //campaign assign list
 
   $router->post('/campaign/assign-lists', 'CampaignController@assignLists');
+
+  // ─── Lead Management (Deduplication + Assignment) ─────────────────────────
+  $router->post('leads/check-duplicate',   'LeadManagementController@checkDuplicate');
+  $router->post('leads/scan-duplicates',   'LeadManagementController@scanDuplicates');
+  $router->post('leads/assign',            'LeadManagementController@assignLeads');
+  $router->post('leads/auto-distribute',   'LeadManagementController@autoDistribute');
+  $router->post('leads/dedup-batch',       'LeadManagementController@dedupBatch');
 
 
 
@@ -1338,6 +1428,12 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($ro
 
   $router->post('/crm-label/updateDisplayOrder', 'CrmLabelController@updateDisplayOrder');
 
+  // REST-style Lead Fields API
+  $router->get('crm/lead-fields',         'CrmLabelController@leadFieldsList');
+  $router->post('crm/lead-fields',         'CrmLabelController@leadFieldsCreate');
+  $router->post('crm/lead-fields/{id}',    'CrmLabelController@leadFieldsUpdate');
+  $router->delete('crm/lead-fields/{id}',  'CrmLabelController@leadFieldsDelete');
+
   //notes and updates
 
   $router->get('notifications-crm', 'CrmNotificationController@list');
@@ -1462,6 +1558,37 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($ro
   $router->post('attendance/report/summary', 'AttendanceReportController@getSummaryReport');
   $router->post('attendance/report/alerts', 'AttendanceReportController@getLateEarlyAlerts');
 
+  // ── Workforce Management System ──────────────────────────────────────────
+  // Phase 1: Supervisor real-time dashboard
+  $router->get('workforce/dashboard',              'WorkforceDashboardController@index');
+  $router->get('workforce/agent-status/{id}',      'WorkforceDashboardController@agentStatus');
+
+  // Phase 3: Dialer status sync (supervisor override)
+  $router->post('workforce/agent-status',          'AgentStatusController@update');
+  $router->get('workforce/agents-online',          'AgentStatusController@agentsOnline');
+
+  // Phase 4: Campaign staffing requirements
+  $router->get('workforce/campaign-staffing',      'CampaignStaffingController@index');
+  $router->post('workforce/campaign-staffing',     'CampaignStaffingController@upsert');
+  $router->delete('workforce/campaign-staffing/{campaign_id}', 'CampaignStaffingController@destroy');
+
+  // Phase 5: Break throttle policies
+  $router->get('workforce/break-policy',           'BreakPolicyController@index');
+  $router->post('workforce/break-policy',          'BreakPolicyController@upsert');
+  $router->delete('workforce/break-policy/{id}',   'BreakPolicyController@destroy');
+
+  // Phase 8: Workforce reports (productivity, staffing, idle)
+  $router->post('workforce/report/productivity',   'WorkforceReportController@productivity');
+  $router->post('workforce/report/staffing',       'WorkforceReportController@staffing');
+  $router->post('workforce/report/idle',           'WorkforceReportController@idle');
+
+  // Phase 9: Workforce analytics charts
+  $router->get('workforce/analytics/attendance-trend',    'WorkforceAnalyticsController@attendanceTrend');
+  $router->get('workforce/analytics/call-vs-availability','WorkforceAnalyticsController@callVsAvailability');
+  $router->get('workforce/analytics/break-distribution',  'WorkforceAnalyticsController@breakDistribution');
+  $router->get('workforce/analytics/utilization-trend',   'WorkforceAnalyticsController@utilizationTrend');
+  $router->get('workforce/analytics/leaderboard',         'WorkforceAnalyticsController@leaderboard');
+
   // ── CRM HubSpot-Style Upgrade Routes ─────────────────────────────────────
 
   // Activity Timeline
@@ -1472,6 +1599,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($ro
 
   // Pipeline Board & Saved Views
   $router->get('crm/pipeline/board',            'CrmPipelineController@board');
+  $router->patch('crm/pipeline/leads/{id}/move','CrmPipelineController@moveLead');
   $router->get('crm/pipeline/views',            'CrmPipelineController@listViews');
   $router->put('crm/pipeline/views',            'CrmPipelineController@createView');
   $router->post('crm/pipeline/views/{id}',      'CrmPipelineController@updateView');
@@ -1524,7 +1652,8 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($ro
 
 
 // Public CRM affiliate token check (no auth required — increments click count)
-$router->get('crm/affiliate/{token}/check', 'CrmAffiliateLinkController@checkByToken');
+// Rate-limited to 60 requests/min per IP to prevent click inflation attacks
+$router->get('crm/affiliate/{token}/check', ['middleware' => 'throttle:60,1', 'uses' => 'CrmAffiliateLinkController@checkByToken']);
 
 //phone charges deduction
 $router->post('call-billing', "CallBillingController@prepareBill");
@@ -1574,11 +1703,31 @@ $router->post('reset-password', 'UserController@resetPassword');
 $router->post('forgot-password', 'UserController@forgotPassword');
 $router->get('verify-token/{token}', 'UserController@verifyResetToken');
 $router->post('resetPasswordUser', 'UserController@resetPasswordUser');
+$router->post('reset_password', 'UserController@resetPasswordUser');   // alias for React frontend
 $router->post('forgot-password-mobile', 'UserController@forgotPasswordMobile');
 $router->post('verify-token-mobile/{otp_id}', 'UserController@verifyResetTokenMobile');
 $router->post('resetPasswordUserMobile', 'UserController@resetPasswordUserMobile');
 $router->post('forgot-password-resend', 'UserController@forgotPasswordMobileResend');
 
+
+// ─── Agent Management (JWT required, admin-level 7+) ──────────────────────────
+$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant'], 'prefix' => 'agents'], function () use ($router) {
+    $router->get('/',                    'AgentController@index');           // GET  /agents
+    $router->get('/roles',               'AgentController@roles');           // GET  /agents/roles
+    $router->post('/',                   'AgentController@store');           // POST /agents
+    $router->get('/{id:[0-9]+}',         'AgentController@show');            // GET  /agents/{id}
+    $router->put('/{id:[0-9]+}',         'AgentController@update');          // PUT  /agents/{id}
+    $router->delete('/{id:[0-9]+}',      'AgentController@destroy');         // DELETE /agents/{id}
+    $router->post('/{id:[0-9]+}/activate',       'AgentController@activate');       // POST /agents/{id}/activate
+    $router->post('/{id:[0-9]+}/reset-password', 'AgentController@resetPassword');  // POST /agents/{id}/reset-password
+});
+
+// ─── Onboarding Wizard (JWT required) ─────────────────────────────────────────
+$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant'], 'prefix' => 'onboarding'], function () use ($router) {
+    $router->get('/',        'OnboardingController@getProgress');  // GET  /onboarding
+    $router->post('/complete', 'OnboardingController@completeStep'); // POST /onboarding/complete
+    $router->post('/reset',    'OnboardingController@reset');        // POST /onboarding/reset (admin)
+});
 
 //check cli report
 
@@ -1721,7 +1870,7 @@ $router->get('ai-coach-api', 'AiCoachController@index');
 $router->get('gmail/callback', 'GmailOAuthController@callbackNoAuth');
 
 // Gmail routes (auth required)
-$router->group(['middleware' => ['jwt.auth', 'audit.log'], 'prefix' => 'gmail'], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant'], 'prefix' => 'gmail'], function () use ($router) {
     // OAuth
     $router->get('connect', 'GmailOAuthController@connect');
     $router->post('disconnect', 'GmailOAuthController@disconnect');
@@ -1757,6 +1906,125 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log'], 'prefix' => 'gmail'],
 $router->post('gmail/webhook', 'GmailPubSubWebhookController@handle');
 $router->get('gmail/webhook/ping', 'GmailPubSubWebhookController@ping');
 
+// ─── Unified Integrations API (Profile page) ──────────────────────────────────
+// Google Calendar OAuth callback (no auth required - user info from state)
+$router->get('integrations/google-calendar/callback', 'GoogleCalendarOAuthController@callbackNoAuth');
+
+// JWT-protected integration endpoints
+$router->group(['middleware' => ['jwt.auth', 'tenant']], function () use ($router) {
+    $router->get('integrations',           'IntegrationController@index');
+    $router->post('connect-integration',   'IntegrationController@connect');
+    $router->post('disconnect-integration','IntegrationController@disconnect');
+});
+
+// ─── Google Calendar Events API ───────────────────────────────────────────────
+$router->group(['middleware' => ['jwt.auth', 'tenant'], 'prefix' => 'calendar'], function () use ($router) {
+    $router->get('status',              'GoogleCalendarEventsController@status');
+    $router->get('events',              'GoogleCalendarEventsController@list');
+    $router->post('events',             'GoogleCalendarEventsController@create');
+    $router->put('events/{eventId}',    'GoogleCalendarEventsController@update');
+    $router->delete('events/{eventId}', 'GoogleCalendarEventsController@delete');
+});
+
+// ─── Twilio Telecom Infrastructure ────────────────────────────────────────────
+// JWT-protected management endpoints (Admin level enforced in controllers)
+$router->group(['middleware' => ['jwt.auth', 'tenant']], function () use ($router) {
+
+    // Account management
+    $router->post('twilio/connect',              'TwilioAccountController@connect');
+    $router->get('twilio/account',               'TwilioAccountController@getAccount');
+    $router->delete('twilio/account',            'TwilioAccountController@disconnect');
+    $router->post('twilio/subaccount',           'TwilioAccountController@createSubaccount');
+    $router->get('twilio/subaccounts',           'TwilioAccountController@listSubaccounts');
+    $router->post('twilio/subaccount/suspend',   'TwilioAccountController@suspendSubaccount');
+    $router->get('twilio/usage',                 'TwilioAccountController@usage');
+
+    // Phone numbers
+    $router->get('twilio/numbers/search',        'TwilioNumberController@search');
+    $router->post('twilio/numbers/purchase',     'TwilioNumberController@purchase');
+    $router->delete('twilio/numbers/{sid}',      'TwilioNumberController@release');
+    $router->get('twilio/numbers',               'TwilioNumberController@list');
+    $router->post('twilio/numbers/assign',       'TwilioNumberController@assignToCampaign');
+    $router->get('twilio/numbers/campaign/{id}', 'TwilioNumberController@getByCampaign');
+    $router->post('twilio/numbers/unassign',     'TwilioNumberController@unassignFromCampaign');
+
+    // Voice calls
+    $router->post('twilio/calls/make',           'TwilioCallController@makeCall');
+    $router->get('twilio/calls',                 'TwilioCallController@list');
+    $router->get('twilio/calls/{sid}',           'TwilioCallController@getById');
+    $router->post('twilio/calls/sync',             'TwilioCallController@sync');
+    $router->get('twilio/recordings',            'TwilioCallController@getRecordings');
+
+    // SMS
+    $router->post('twilio/sms/send',             'TwilioSmsController@send');
+    $router->post('twilio/sms/bulk',             'TwilioSmsController@bulkSend');
+    $router->get('twilio/sms',                   'TwilioSmsController@list');
+
+    // SIP Trunks
+    $router->get('twilio/trunks',                'TwilioTrunkController@list');
+    $router->post('twilio/trunks',               'TwilioTrunkController@create');
+    $router->delete('twilio/trunks/{sid}',       'TwilioTrunkController@delete');
+    $router->post('twilio/trunks/{sid}/url',     'TwilioTrunkController@updateOriginationUrl');
+    $router->post('twilio/trunks/sync',            'TwilioTrunkController@sync');
+});
+
+// Twilio Webhooks — signature validated, no JWT
+$router->group(['middleware' => ['twilio.webhook']], function () use ($router) {
+    $router->post('twilio/webhook/inbound-call',     'TwilioWebhookController@inboundCall');
+    $router->post('twilio/webhook/inbound-sms',      'TwilioWebhookController@inboundSms');
+    $router->post('twilio/webhook/call-status',      'TwilioWebhookController@callStatus');
+    $router->post('twilio/webhook/recording-status', 'TwilioWebhookController@recordingStatus');
+});
+
 // $router->post('/api/auth/create-user', 'AuthenticationController@createUser');
 
 
+
+// ─── Plivo Telecom Infrastructure ─────────────────────────────────────────────
+// JWT-protected management endpoints (Admin level enforced in controllers)
+$router->group(['middleware' => ['jwt.auth', 'tenant']], function () use ($router) {
+
+    // Account management
+    $router->post('plivo/connect',                'PlivoAccountController@connect');
+    $router->get('plivo/account',                 'PlivoAccountController@getAccount');
+    $router->delete('plivo/account',              'PlivoAccountController@disconnect');
+    $router->post('plivo/subaccount',             'PlivoAccountController@createSubaccount');
+    $router->get('plivo/subaccounts',             'PlivoAccountController@listSubaccounts');
+    $router->post('plivo/subaccount/suspend',     'PlivoAccountController@suspendSubaccount');
+    $router->get('plivo/usage',                   'PlivoAccountController@usage');
+
+    // Phone numbers
+    $router->get('plivo/numbers/search',          'PlivoNumberController@search');
+    $router->post('plivo/numbers/purchase',       'PlivoNumberController@purchase');
+    $router->delete('plivo/numbers/{number}',     'PlivoNumberController@release');
+    $router->get('plivo/numbers',                 'PlivoNumberController@list');
+    $router->post('plivo/numbers/assign',         'PlivoNumberController@assignToCampaign');
+    $router->get('plivo/numbers/campaign/{id}',   'PlivoNumberController@getByCampaign');
+    $router->post('plivo/numbers/unassign',       'PlivoNumberController@unassignFromCampaign');
+
+    // Voice calls
+    $router->post('plivo/calls/make',             'PlivoCallController@makeCall');
+    $router->post('plivo/calls/{uuid}/hangup',    'PlivoCallController@hangup');
+    $router->get('plivo/calls',                   'PlivoCallController@list');
+    $router->get('plivo/calls/{uuid}',            'PlivoCallController@getById');
+    $router->get('plivo/recordings',              'PlivoCallController@getRecordings');
+
+    // SMS
+    $router->post('plivo/sms/send',               'PlivoSmsController@send');
+    $router->post('plivo/sms/bulk',               'PlivoSmsController@bulkSend');
+    $router->get('plivo/sms',                     'PlivoSmsController@list');
+
+    // SIP Trunks (Applications)
+    $router->get('plivo/trunks',                  'PlivoTrunkController@list');
+    $router->post('plivo/trunks',                 'PlivoTrunkController@create');
+    $router->put('plivo/trunks/{appId}',          'PlivoTrunkController@update');
+    $router->delete('plivo/trunks/{appId}',       'PlivoTrunkController@delete');
+});
+
+// Plivo Webhooks — signature validated, no JWT
+$router->group(['middleware' => ['plivo.webhook']], function () use ($router) {
+    $router->post('plivo/webhook/inbound-call',   'PlivoWebhookController@inboundCall');
+    $router->post('plivo/webhook/inbound-sms',    'PlivoWebhookController@inboundSms');
+    $router->post('plivo/webhook/call-status',    'PlivoWebhookController@callStatus');
+    $router->post('plivo/webhook/sms-status',     'PlivoWebhookController@smsStatus');
+});

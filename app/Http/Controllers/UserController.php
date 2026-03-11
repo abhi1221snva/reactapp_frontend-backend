@@ -43,6 +43,7 @@ use App\Services\MailService;
 use App\Mail\SystemNotificationMail;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 class UserController extends Controller
 {
     /**
@@ -2164,15 +2165,18 @@ public function assignableRolesNew(Request $request)
     public function forgotPassword(Request $request)
     {
         $email = $request->input('email');
-        $user = User::where('email', $email)->first();
-        Log::info('email get', ['user' => $user]);
+        $user  = User::where('email', $email)->first();
 
-        $base_parent_id = $user->base_parent_id;
-        $client = Client::where('id', $base_parent_id)->first();
-        $client_id = $client->id;
+        // Null check BEFORE accessing user properties
         if (!$user) {
             return response()->json(['message' => 'User not found'], 404);
         }
+
+        Log::info('email get', ['user' => $user]);
+
+        $base_parent_id = $user->base_parent_id;
+        $client  = Client::where('id', $base_parent_id)->first();
+        $client_id = $client ? $client->id : $base_parent_id;
         Log::info('client get', ['client' => $client]);
 
         //Log::debug('user',['user'=>$user]);
@@ -2230,8 +2234,7 @@ public function assignableRolesNew(Request $request)
             'password' => $client->sendgrid_key,
         ]);
 
-        $expiresAt = Carbon::now()->addMinutes(30);
-        $resetLink = env('PORTAL_NAME') . '/verify-token/' . $token . '?expires=' . $expiresAt->timestamp;
+        $resetLink = env('PORTAL_NAME') . '/reset-password?token=' . $token . '&email=' . urlencode($email);
 
         $data = [
             'resetLink' => $resetLink,
@@ -2327,15 +2330,20 @@ public function assignableRolesNew(Request $request)
 
     public function verifyResetToken(Request $request, $token)
     {
-
         $passwordReset = PasswordReset::where('token', $token)->first();
 
         if (!$passwordReset) {
             return response()->json(['message' => 'Invalid reset token'], 404);
         }
 
-        // Token is valid and matches the user's email
-        return response()->json(['message' => 'Reset token verified']);
+        // Enforce 30-minute expiry on the token
+        $createdAt  = Carbon::parse($passwordReset->created_at);
+        $expiresAt  = $createdAt->addMinutes(30);
+        if (Carbon::now()->gt($expiresAt)) {
+            return response()->json(['message' => 'Reset link has expired. Please request a new one.'], 410);
+        }
+
+        return response()->json(['message' => 'Reset token verified', 'email' => $passwordReset->email]);
     }
 
     /**
@@ -2468,10 +2476,40 @@ public function assignableRolesNew(Request $request)
     public function resetPasswordUser(Request $request)
     {
         $token = $request->input('token');
-        $passwordReset = PasswordReset::where('token', $token)
-            ->first();
-        $email =  $passwordReset->email;
+        $emailInput = $request->input('email');
         $newPassword = $request->input('password');
+        $confirmation = $request->input('password_confirmation');
+
+        if (!$token || !$newPassword) {
+            return response()->json(['message' => 'Token and password are required.'], 422);
+        }
+
+        if ($newPassword !== $confirmation) {
+            return response()->json(['message' => 'Passwords do not match.'], 422);
+        }
+
+        if (strlen($newPassword) < 8) {
+            return response()->json(['message' => 'Password must be at least 8 characters.'], 422);
+        }
+
+        $passwordReset = PasswordReset::where('token', $token)->first();
+
+        if (!$passwordReset) {
+            return response()->json(['message' => 'Invalid or expired reset token.'], 404);
+        }
+
+        // 30-minute expiry check
+        if (Carbon::parse($passwordReset->created_at)->addMinutes(30)->isPast()) {
+            $passwordReset->delete();
+            return response()->json(['message' => 'Reset link has expired. Please request a new one.'], 422);
+        }
+
+        $email = $passwordReset->email;
+
+        // Verify email matches the token record (when provided)
+        if ($emailInput && strtolower($emailInput) !== strtolower($email)) {
+            return response()->json(['message' => 'Invalid or expired reset token.'], 404);
+        }
 
         $user = User::where('email', $email)->first();
         $user->password = Hash::make($newPassword);
@@ -2803,6 +2841,41 @@ public function assignableRolesNew(Request $request)
             return response()->json($permissions);
         } catch (ModelNotFoundException $modelNotFoundException) {
             throw new NotFoundHttpException("Resource with userId $userId not found");
+        }
+    }
+
+    /**
+     * Upload / replace profile picture for the authenticated user.
+     * POST /profile/upload-avatar
+     */
+    public function uploadAvatar()
+    {
+        $this->validate($this->request, [
+            'avatar' => 'required|file|image|mimes:jpeg,jpg,png,gif,webp|max:4096',
+        ]);
+
+        $userId = $this->request->auth->id;
+
+        try {
+            $file     = $this->request->file('avatar');
+            $ext      = $file->getClientOriginalExtension();
+            $path     = "avatars/user_{$userId}_" . time() . '.' . $ext;
+
+            Storage::disk('public')->put($path, file_get_contents($file->getRealPath()));
+            $url = Storage::disk('public')->url($path);
+
+            DB::connection('master')->table('users')
+                ->where('id', $userId)
+                ->update(['profile_pic' => $url]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Profile picture updated.',
+                'data'    => ['profile_pic' => $url],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('uploadAvatar error', ['msg' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => 'Upload failed.'], 500);
         }
     }
 }

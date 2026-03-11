@@ -146,7 +146,7 @@ class CrmBulkController extends Controller
                         ->table('crm_lead_data')
                         ->where('id', $leadId)
                         ->where('is_deleted', 0)
-                        ->update(['is_deleted' => 1, 'deleted_at' => now()]);
+                        ->update(['is_deleted' => 1, 'deleted_at' => \Carbon\Carbon::now()]);
 
                     $this->logActivity($clientId, $leadId, $request->auth->id,
                         'system',
@@ -227,7 +227,7 @@ class CrmBulkController extends Controller
             $h->to_assigned_to   = $data['to_assigned_to'] ?? null;
             $h->reason           = $data['reason'] ?? null;
             $h->triggered_by     = $data['triggered_by'] ?? 'bulk_operation';
-            $h->created_at       = now();
+            $h->created_at       = \Carbon\Carbon::now();
             $h->save();
         } catch (\Throwable $e) {}
     }

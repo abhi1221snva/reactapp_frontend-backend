@@ -36,6 +36,7 @@ use DB;
 use App\Model\Client\Did;
 use Twilio\Rest\Client as TwilioClient;
 use Twilio\Exceptions\TwilioException;
+use App\Services\LoginOtpService;
 
 class AuthenticationController extends Controller
 {
@@ -167,24 +168,43 @@ class AuthenticationController extends Controller
                     }
                 }
 
-                //call google authenticator //
-if (!empty($data['is_2fa_phone_enabled']) && $data['is_2fa_phone_enabled'] == 1) {
-                    //  $otp_value = mt_rand(100000, 999999);
-                    $otp_value = 123456;
-                    $otp = new OtpVerification();
-                    $otp->id = Str::uuid()->toString();
-                    $otp->user_id = $data['id'];
-                    $otp->country_code = $data['country_code'];
-                    $otp->phone_number = $data['mobile'];
-                    $otp->code = $otp_value;
-                    $otp->expiry = (new \DateTime())->modify("+15 minutes");
-                    //$otp->status = 2;//self::REQUESTED;
-                    $otp->saveOrFail();
-                    //throw new RenderableException('Enable 2FA', [$res], 401);
-                    $data["otpId"] = $otp->id;
+                //call google totp authenticator //
+                if (!empty($data['is_2fa_google_enabled']) && $data['is_2fa_google_enabled'] == 1) {
+                    return response()->json([
+                        'status'  => true,
+                        'message' => 'Two-factor authentication required.',
+                        'data'    => [
+                            'requires_2fa' => 'google_totp',
+                            'user_id'      => $data['id'],
+                        ],
+                    ]);
                 }
 
-                //call when enable_2fa is active
+                //call google authenticator //
+if (!empty($data['is_2fa_phone_enabled']) && $data['is_2fa_phone_enabled'] == 1) {
+                    // Rate-limit: max 3 OTP requests per 5 minutes
+                    if (LoginOtpService::isRateLimited($data['id'])) {
+                        return response()->json([
+                            'status'  => false,
+                            'message' => 'Too many OTP requests. Please wait a few minutes before trying again.',
+                        ], 429);
+                    }
+
+                    $phoneOrEmail = $data['country_code'] . $data['mobile'];
+                    $otpRecord    = LoginOtpService::send((int) $data['id'], $phoneOrEmail);
+                    LoginOtpService::incrementRateLimit((int) $data['id']);
+
+                    // Keep backward-compatible otpId in response (UUID string from old flow
+                    // is replaced by integer id — frontend only needs to send the code back)
+                    $data["otpId"] = (string) $otpRecord->id;
+
+                    if (app()->environment('local', 'testing')) {
+                        // Expose OTP in response for dev/QA convenience
+                        $data["otp_dev"] = $otpRecord->otp_code;
+                    }
+                }
+
+                 //call when enable_2fa is active
 
 if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
                     if (empty($data['country_code'])) {
@@ -195,34 +215,45 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
                         throw new RenderableException('Mobile Number not found for otp varification', [], 401);
                     }
 
+                    // --- Rate limiting ---
+                    if (LoginOtpService::isRateLimited((int) $data['id'])) {
+                        return response()->json([
+                            'status'  => false,
+                            'message' => 'Too many OTP requests. Please wait a few minutes before trying again.',
+                        ], 429);
+                    }
 
                     $to = $data['country_code'] . $data['mobile'];
 
-                    $data_array = array();
-                    $data_array['to'] = $to;
-                    $otp_value = mt_rand(100000, 999999);
-                    $data_array['text'] = "Your Verification OTP for " . env('SITE_NAME') . " is " . $otp_value;
-                    $json_data_to_send = json_encode($data_array);
+                    // --- Generate secure random OTP and persist it ---
+                    $otpRecord = LoginOtpService::send((int) $data['id'], $to);
+                    LoginOtpService::incrementRateLimit((int) $data['id']);
 
+                    $otp_value = $otpRecord->otp_code;
+
+                    // --- Dispatch SMS via configured platform ---
+                    $data_array             = [];
+                    $data_array['to']       = $to;
+                    $data_array['text']     = "Your Verification OTP for " . env('SITE_NAME') . " is " . $otp_value;
+                    $json_data_to_send      = json_encode($data_array);
 
                     if ($client->sms_plateform == 'plivo') {
                         $data_array['from'] = env('PLIVO_SMS_NUMBER');
                         $plivo_user = env('PLIVO_USER');
                         $plivo_pass = env('PLIVO_PASS');
 
-                        $client = new RestClient($plivo_user, $plivo_pass);
-                        $result = $client->messages->create([
-                            "src" => $data_array['from'],
-                            "dst" => $data_array['to'],
-                            "text"  => $data_array['text'],
-                            "url" => ""
+                        $plivoClient = new RestClient($plivo_user, $plivo_pass);
+                        $result = $plivoClient->messages->create([
+                            "src"  => $data_array['from'],
+                            "dst"  => $data_array['to'],
+                            "text" => $data_array['text'],
+                            "url"  => ""
                         ]);
-                    } else
-                    if ($client->sms_plateform == 'didforsale') {
+                    } elseif ($client->sms_plateform == 'didforsale') {
                         $data_array['from'] = env('SMS_NUMBER');
-                        $api = config('sms.sms_api.value');
-                        $access = config('sms.sms_access.value');
-                        $sms_url = config('sms.sms_access_url.value');
+                        $api      = config('sms.sms_api.value');
+                        $access   = config('sms.sms_access.value');
+                        $sms_url  = config('sms.sms_access_url.value');
 
                         $json_data_to_send = json_encode($data_array);
 
@@ -231,68 +262,53 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
                         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
                         curl_setopt($ch, CURLOPT_POSTFIELDS, $json_data_to_send);
                         curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
-                        curl_setopt($ch, CURLOPT_HTTPHEADER, array("Content-Type: application/json", "Authorization: Basic " . base64_encode("$api:$access")));
+                        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                            "Content-Type: application/json",
+                            "Authorization: Basic " . base64_encode("$api:$access"),
+                        ]);
 
                         $result = curl_exec($ch);
-                        $res = json_decode($result);
+                        $res    = json_decode($result);
                     }
 
                     Log::info("sms otp", [
-                        "result" => $result,
-                        "smsTo" => $data_array['to'],
-                        "from" => $data_array['from'],
-                        "message" => $data_array['text']
+                        "smsTo"   => $data_array['to'],
+                        "from"    => $data_array['from'] ?? null,
+                        "message" => $data_array['text'],
                     ]);
-                    //return $result;
 
-                    $otp = new OtpVerification();
-                    $otp->id = Str::uuid()->toString();
-                    $otp->user_id = $data['id'];
-                    $otp->country_code = $data['country_code'];
-                    $otp->phone_number = $data['mobile'];
-                    $otp->code = $otp_value;
-                    $otp->expiry = (new \DateTime())->modify("+15 minutes");
-                    //$otp->status = 2;//self::REQUESTED;
-                    $otp->saveOrFail();
-                    //throw new RenderableException('Enable 2FA', [$res], 401);
-
-                    $data["otpId"] = $otp->id;
-
-                    //email
-
+                    // --- Dispatch email OTP as well ---
                     $smtpSetting = new SmtpSetting;
-                    $smtpSetting->mail_driver = "SMTP";
-                    $smtpSetting->mail_host = env("PORTAL_MAIL_HOST");
-                    $smtpSetting->mail_port = env("PORTAL_MAIL_PORT");
-                    $smtpSetting->mail_username = env("PORTAL_MAIL_USERNAME");
-                    $smtpSetting->mail_password = env("PORTAL_MAIL_PASSWORD");
-                    $smtpSetting->from_name = env("PORTAL_MAIL_SENDER_NAME");
-                    $smtpSetting->from_email = env("PORTAL_MAIL_SENDER_EMAIL");
+                    $smtpSetting->mail_driver    = "SMTP";
+                    $smtpSetting->mail_host      = env("PORTAL_MAIL_HOST");
+                    $smtpSetting->mail_port      = env("PORTAL_MAIL_PORT");
+                    $smtpSetting->mail_username  = env("PORTAL_MAIL_USERNAME");
+                    $smtpSetting->mail_password  = env("PORTAL_MAIL_PASSWORD");
+                    $smtpSetting->from_name      = env("PORTAL_MAIL_SENDER_NAME");
+                    $smtpSetting->from_email     = env("PORTAL_MAIL_SENDER_EMAIL");
                     $smtpSetting->mail_encryption = env("PORTAL_MAIL_ENCRYPTION");
-
-                    /*$from = [
-                        "address" => empty($smtpSetting->from_email) ? "support@domain.com" : $smtpSetting->from_email,
-                        "name" => empty($smtpSetting->from_name) ? "Domain Notification" : $smtpSetting->from_name,
-                    ];*/
 
                     $from = [
                         "address" => empty($smtpSetting->from_email) ? env('DEFAULT_EMAIL') : $smtpSetting->from_email,
-                        "name" => empty($smtpSetting->from_name) ? env('DEFAULT_NAME') : $smtpSetting->from_name,
+                        "name"    => empty($smtpSetting->from_name)  ? env('DEFAULT_NAME')  : $smtpSetting->from_name,
                     ];
 
                     $data["action"] = 'Verification Code - ' . date('Y-m-d H:i:s');
-                    $data['otp'] = $otp_value;
-                    $mailable = new SystemNotificationMail($from, "emails.verificationCode", $data["action"], $data);
+                    $data['otp']    = $otp_value;
+                    $mailable       = new SystemNotificationMail($from, "emails.verificationCode", $data["action"], $data);
 
                     $mailService = new MailService($data['parent_id'], $mailable, $smtpSetting);
-                    $emails = $mailService->sendEmail($data['email']);
+                    $emails      = $mailService->sendEmail($data['email']);
 
                     Log::debug("SendOtpEmailVerification.sendEmailOtp.responseEmail", [$emails, $otp_value]);
+                    Log::info("email otp", ["result" => $emails]);
 
+                    // Expose OTP record id (integer) in the response — backward-compatible
+                    $data["otpId"] = (string) $otpRecord->id;
 
-                    Log::info("email otp", [
-                        "result" => $emails,
-                    ]);
+                    if (app()->environment('local', 'testing')) {
+                        $data["otp_dev"] = $otp_value;
+                    }
                 }
 
                 //close enable 2fa
@@ -317,7 +333,7 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
 
 
             $objUserExtension = UserExtension::where("username", $data['alt_extension'])->first();
-            $data['secret'] = $objUserExtension->secret;
+            $data['secret'] = $objUserExtension->secret ?? null;
 
             $server = AsteriskServer::find($data["asterisk_server_id"]);
             if (!empty($server->host)) {
@@ -368,8 +384,7 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
                     "server" => $data["server"],
                     "domain" => $data["domain"],
                     "did" => $data["did"],
-                    "secret" => base64_encode(convert_uuencode($objUserExtension->secret))
-                    
+                    "secret" => $objUserExtension ? base64_encode(convert_uuencode($objUserExtension->secret)) : null,
                 ];
                 if ($server) {
                     try {
@@ -565,7 +580,7 @@ if ($device === 'mobile_app') {
             "server" => $data["server"],
             "domain" => $data["domain"],
             "did" => $data["did"],
-            "secret" => base64_encode(convert_uuencode($objUserExtension->secret))
+            "secret" => $objUserExtension ? base64_encode(convert_uuencode($objUserExtension->secret)) : null,
         ];
 
         // ---------- LOGIN LOG ----------
@@ -1367,6 +1382,32 @@ $phone = preg_replace('/\D/', '', $request->phone_number);
             'message' => 'Phone number deleted successfully',
         ]);
     }
+    /**
+     * @OA\Post(
+     *     path="/logout",
+     *     summary="Revoke the current JWT token",
+     *     tags={"Authentication"},
+     *     security={{"bearerAuth":{}}},
+     *     @OA\Response(
+     *         response=200,
+     *         description="Logged out successfully"
+     *     )
+     * )
+     *
+     * Blacklists the bearer token in Redis so it cannot be reused.
+     * The blacklist key auto-expires when the token's own exp would have fired.
+     */
+    public function logout(Request $request)
+    {
+        $token = $request->bearerToken() ?? $request->get('token');
+
+        if ($token) {
+            \App\Http\Helper\JwtToken::blacklist($token);
+        }
+
+        return $this->successResponse('Logged out successfully.');
+    }
+
 }
 
 

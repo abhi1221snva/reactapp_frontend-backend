@@ -86,9 +86,10 @@ $app->singleton(
 |
 */
 
-// $app->middleware([
-//     App\Http\Middleware\ExampleMiddleware::class
-// ]);
+// Global middleware — runs on every request
+$app->middleware([
+    App\Http\Middleware\SecurityHeadersMiddleware::class,
+]);
 
 // $app->routeMiddleware([
 //     'auth' => App\Http\Middleware\Authenticate::class,
@@ -105,7 +106,7 @@ $app->singleton(
 |
 */
 
-// $app->register(App\Providers\AppServiceProvider::class);
+$app->register(App\Providers\AppServiceProvider::class);
 // $app->register(App\Providers\AuthServiceProvider::class);
 // $app->register(App\Providers\EventServiceProvider::class);
 
@@ -140,17 +141,20 @@ $app->register(Sichikawa\LaravelSendgridDriver\MailServiceProvider::class);
 $app->register(Maatwebsite\Excel\ExcelServiceProvider::class);
 //$app->register(\SwaggerLume\ServiceProvider::class);
 //$app->register(\Torann\GeoIP\GeoIPServiceProvider::class);
-//$app->register(Illuminate\Redis\RedisServiceProvider::class);
+$app->register(Illuminate\Redis\RedisServiceProvider::class);
 
 $app->routeMiddleware([
-    'jwt.auth'       => App\Http\Middleware\JwtMiddleware::class,
-    'auth.admin'     => App\Http\Middleware\AdminAuth::class,
-    'auth.superadmin'=> App\Http\Middleware\SuperAdminAuth::class,
-    'websiteclient'  => App\Http\Middleware\WebSiteClientAuth::class,
-    'hasComponent'   => App\Http\Middleware\HasComponent::class,
-    'easify.appkey'  => App\Http\Middleware\EasifyAppKeyMiddleware::class,
-    'throttle'       => App\Http\Middleware\RateLimitMiddleware::class,
-    'audit.log'      => App\Http\Middleware\AuditLogMiddleware::class,
+    'jwt.auth'        => App\Http\Middleware\JwtMiddleware::class,
+    'auth.admin'      => App\Http\Middleware\AdminAuth::class,
+    'auth.superadmin' => App\Http\Middleware\SuperAdminAuth::class,
+    'websiteclient'   => App\Http\Middleware\WebSiteClientAuth::class,
+    'hasComponent'    => App\Http\Middleware\HasComponent::class,
+    'easify.appkey'   => App\Http\Middleware\EasifyAppKeyMiddleware::class,
+    'throttle'        => App\Http\Middleware\RateLimitMiddleware::class,
+    'audit.log'       => App\Http\Middleware\AuditLogMiddleware::class,
+    'twilio.webhook'  => App\Http\Middleware\TwilioWebhookMiddleware::class,
+    'plivo.webhook'   => App\Http\Middleware\PlivoWebhookMiddleware::class,
+    'tenant'          => App\Http\Middleware\TenantIsolationMiddleware::class,
 ]);
 
 if (!class_exists('Redis')) {

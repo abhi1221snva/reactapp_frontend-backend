@@ -65,7 +65,7 @@
             background-color: #1da1f2;
             border: 1px solid #1da1f2;
             color: #fff;
-            text-decoration: none;" href="{{ $resetLink }}}">Reset Password</a>
+            text-decoration: none;" href="{{ $resetLink }}">Reset Password</a>
             <br>
          
             Remember this link is valid only for 30 minutes.Please reset your password before it expires.We hope you'll find our service easy and convenient to use.

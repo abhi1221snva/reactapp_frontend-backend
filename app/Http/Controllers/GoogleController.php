@@ -57,8 +57,9 @@ class GoogleController extends Controller
                     Log::warning('Google login: no matching user', ['email' => $email]);
                     return response()->json([
                         'success' => false,
-                        'message' => 'No account found for this Google email. Contact your administrator.',
-                    ], 401);
+                        'code'    => 'ACCOUNT_NOT_FOUND',
+                        'message' => 'This Google account is not registered in the system. Please sign up first.',
+                    ], 422);
                 }
 
                 // Link Google ID to the existing account on first use
@@ -90,7 +91,11 @@ class GoogleController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Google login exception', ['message' => $e->getMessage()]);
+            Log::error('Google login exception', [
+                'message' => $e->getMessage(),
+                'file'    => $e->getFile(),
+                'line'    => $e->getLine(),
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Login failed. Please try again.',

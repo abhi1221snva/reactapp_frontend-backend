@@ -85,8 +85,8 @@ class ShiftController extends Controller
     {
         $this->validate($this->request, [
             'name' => 'required|string|max:100',
-            'start_time' => 'required|date_format:H:i:s',
-            'end_time' => 'required|date_format:H:i:s',
+            'start_time' => 'required|date_format:H:i,H:i:s',
+            'end_time' => 'required|date_format:H:i,H:i:s',
             'user_id' => 'numeric',
             'grace_period_minutes' => 'numeric|min:0|max:120',
             'early_departure_minutes' => 'numeric|min:0|max:120',
@@ -131,8 +131,8 @@ class ShiftController extends Controller
         $this->validate($this->request, [
             'shift_id' => 'required|numeric',
             'name' => 'string|max:100',
-            'start_time' => 'date_format:H:i:s',
-            'end_time' => 'date_format:H:i:s',
+            'start_time' => 'date_format:H:i,H:i:s',
+            'end_time' => 'date_format:H:i,H:i:s',
             'grace_period_minutes' => 'numeric|min:0|max:120',
             'early_departure_minutes' => 'numeric|min:0|max:120',
             'working_days' => 'array',

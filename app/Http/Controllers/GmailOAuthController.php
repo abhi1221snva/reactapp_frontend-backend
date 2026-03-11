@@ -287,7 +287,7 @@ class GmailOAuthController extends Controller
      */
     public function callbackNoAuth(Request $request)
     {
-        $frontendUrl = 'https://dial.linkswitchcommunications.com/gmail-settings';
+        $frontendUrl = 'https://dial.linkswitchcommunications.com/gmail-mailbox';
 
         // Check for error from Google
         if ($request->has('error')) {
@@ -325,10 +325,17 @@ class GmailOAuthController extends Controller
                 return redirect($frontendUrl . '?status=error&message=' . urlencode('Failed to exchange authorization code'));
             }
 
-            // Create default notification settings if not exists
+            // Create default notification settings if not exists (non-fatal)
             $parentId = $user->parent_id ?? 0;
             if ($parentId > 0) {
-                GmailNotificationSetting::getOrCreateForUser($userId, "mysql_{$parentId}");
+                try {
+                    GmailNotificationSetting::getOrCreateForUser($userId, "mysql_{$parentId}");
+                } catch (\Throwable $settingsEx) {
+                    \Illuminate\Support\Facades\Log::warning('Gmail notification settings creation skipped', [
+                        'user_id' => $userId,
+                        'error'   => $settingsEx->getMessage(),
+                    ]);
+                }
             }
 
             // Auto-enable Gmail Watch for real-time push notifications

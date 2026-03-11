@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Model\Client\Attendance;
 use App\Model\Client\AttendanceBreak;
+use App\Model\Client\AgentStatus;
+use App\Model\Client\BreakPolicy;
 use Illuminate\Http\Request;
 
 class AttendanceController extends Controller
@@ -39,8 +41,15 @@ class AttendanceController extends Controller
      */
     public function clockIn()
     {
-        $userId = $this->request->auth->id;
+        $userId   = $this->request->auth->id;
+        $parentId = $this->request->auth->parent_id ?: $this->request->auth->id;
         $response = $this->model->clockIn($this->request, $userId);
+
+        // Phase 3: Sync attendance → dialer status
+        if (($response['success'] ?? '') === 'true') {
+            AgentStatus::setStatus($userId, AgentStatus::AVAILABLE, null, $parentId);
+        }
+
         return response()->json($response);
     }
 
@@ -64,8 +73,15 @@ class AttendanceController extends Controller
      */
     public function clockOut()
     {
-        $userId = $this->request->auth->id;
+        $userId   = $this->request->auth->id;
+        $parentId = $this->request->auth->parent_id ?: $this->request->auth->id;
         $response = $this->model->clockOut($this->request, $userId);
+
+        // Phase 3: Sync attendance → dialer status (offline = cannot receive calls)
+        if (($response['success'] ?? '') === 'true') {
+            AgentStatus::setStatus($userId, AgentStatus::OFFLINE, null, $parentId);
+        }
+
         return response()->json($response);
     }
 
@@ -120,8 +136,34 @@ class AttendanceController extends Controller
             'break_type' => 'in:lunch,short,personal,other',
             'notes' => 'string|max:500'
         ]);
-        $userId = $this->request->auth->id;
+        $userId   = $this->request->auth->id;
+        $parentId = $this->request->auth->parent_id ?: $this->request->auth->id;
+
+        // Phase 5: Break throttle check — enforce max concurrent breaks per campaign
+        $agentStatus = \App\Model\Client\AgentStatus::where('user_id', $userId)->first();
+        $campaignId  = $agentStatus ? $agentStatus->campaign_id : null;
+        $policy      = BreakPolicy::forCampaign($campaignId);
+        $current     = BreakPolicy::currentBreakCount($campaignId);
+
+        if ($current >= $policy->max_concurrent_breaks) {
+            return response()->json([
+                'success' => 'false',
+                'message' => "Break limit reached. Max {$policy->max_concurrent_breaks} agents can be on break simultaneously."
+                    . " Currently: {$current}. Please wait for an agent to return.",
+                'data'    => [
+                    'max_concurrent_breaks' => $policy->max_concurrent_breaks,
+                    'current_on_break'      => $current,
+                ],
+            ]);
+        }
+
         $response = $this->breakModel->startBreak($this->request, $userId);
+
+        // Phase 3: Sync dialer status to on_break
+        if (($response['success'] ?? '') === 'true') {
+            AgentStatus::setStatus($userId, AgentStatus::ON_BREAK, $campaignId, $parentId);
+        }
+
         return response()->json($response);
     }
 
@@ -143,8 +185,17 @@ class AttendanceController extends Controller
      */
     public function endBreak()
     {
-        $userId = $this->request->auth->id;
+        $userId   = $this->request->auth->id;
+        $parentId = $this->request->auth->parent_id ?: $this->request->auth->id;
         $response = $this->breakModel->endBreak($this->request, $userId);
+
+        // Phase 3: Restore dialer status to available
+        if (($response['success'] ?? '') === 'true') {
+            $agentStatus = AgentStatus::where('user_id', $userId)->first();
+            $campaignId  = $agentStatus ? $agentStatus->campaign_id : null;
+            AgentStatus::setStatus($userId, AgentStatus::AVAILABLE, $campaignId, $parentId);
+        }
+
         return response()->json($response);
     }
 

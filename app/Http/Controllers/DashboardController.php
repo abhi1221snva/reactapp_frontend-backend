@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Log;
 use App\Model\Dids;
 use App\Model\Lists;
 use App\Services\ReportService;
+use App\Services\CacheService;
 use Carbon\Carbon;
 
 
@@ -81,12 +82,8 @@ class DashboardController extends Controller
         $leadstatus = [];
         $level = $request->auth->user_level;
 
-        // Cache key based on client ID (5 minute cache for dashboard metrics)
-        $cacheKey = "dashboard_metrics_{$clientId}";
-        $cacheDuration = 300; // 5 minutes in seconds
-
-        // Get cached basic counts or fetch fresh data
-        $cachedCounts = Cache::remember($cacheKey, $cacheDuration, function () use ($request) {
+        // Get cached basic counts or fetch fresh data (5-minute TTL, tenant-scoped)
+        $cachedCounts = CacheService::tenantRemember($clientId, CacheService::KEY_DASHBOARD_STATS, CacheService::TTL_MEDIUM, function () use ($request) {
             $extensionCountResult = $this->getExtensionCount($request);
             $extensionCount = ($extensionCountResult['success'] === true) ? $extensionCountResult['data'] : 0;
 
@@ -221,10 +218,8 @@ function getExtensionCount(Request $request)
 }
 private function getDidCount(Request $request)
 {
-   
-$dids = Dids::on("mysql_" . $request->auth->parent_id)->where('is_deleted', '=', '0')->get();
-        $didsCount = $dids->count();
-    return $didsCount;
+    // Use ->count() to issue a COUNT(*) SQL query instead of fetching all rows
+    return Dids::on("mysql_" . $request->auth->parent_id)->where('is_deleted', '=', '0')->count();
 }
 
 function getLeadCount(Request $request) {
@@ -256,9 +251,8 @@ function getLeadCount(Request $request) {
 
     public function countList(Request $request)
     {
-        $lists = Lists::on("mysql_" . $request->auth->parent_id)->where('is_active', '=', 1)->get();
-        $listCount = $lists->count();
-         return $listCount;
+        // Use ->count() to issue a COUNT(*) SQL query instead of fetching all rows
+        return Lists::on("mysql_" . $request->auth->parent_id)->where('is_active', '=', 1)->count();
     }
  public function getSmsCount(Request $request, $startTime, $endTime)
 {
@@ -920,6 +914,119 @@ function getLeadCount(Request $request) {
         } catch (\Throwable $exception) {
             Log::error('Dashboard State Error: ' . $exception->getMessage());
             return $this->failResponse("Failed to get dashboard state", [$exception->getMessage()], $exception, 500);
+        }
+    }
+
+    // ─── Fast stats from pre-aggregated snapshots ────────────────────────────────
+
+    /**
+     * GET /dashboard/fast-stats?days=7
+     *
+     * Returns pre-aggregated metrics from daily_metric_snapshots.
+     * Target response time: < 100ms (data served from Redis cache or snapshot table).
+     *
+     * @param Request $request
+     */
+    public function getFastStats(Request $request)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            $days     = min(90, max(1, (int) $request->input('days', 7)));
+            $cacheKey = "dashboard:fast:{$clientId}:{$days}";
+
+            $data = Cache::remember($cacheKey, 300, function () use ($clientId, $days) {
+                $db    = DB::connection('mysql_' . $clientId);
+                $since = Carbon::today()->subDays($days)->toDateString();
+                $today = Carbon::today()->toDateString();
+
+                // Overall summary from snapshots
+                $overall = $db->table('daily_metric_snapshots')
+                    ->where('granularity', 'day')
+                    ->whereBetween('snapshot_date', [$since, $today])
+                    ->selectRaw("
+                        COALESCE(SUM(total_calls), 0)     AS total_calls,
+                        COALESCE(SUM(answered_calls), 0)  AS answered_calls,
+                        COALESCE(SUM(missed_calls), 0)    AS missed_calls,
+                        COALESCE(SUM(inbound_calls), 0)   AS inbound_calls,
+                        COALESCE(SUM(outbound_calls), 0)  AS outbound_calls,
+                        COALESCE(SUM(total_talk_time), 0) AS total_talk_time,
+                        COALESCE(AVG(answer_rate), 0)     AS avg_answer_rate
+                    ")
+                    ->first();
+
+                // Daily trend for charts
+                $trend = $db->table('daily_metric_snapshots')
+                    ->where('granularity', 'day')
+                    ->whereBetween('snapshot_date', [$since, $today])
+                    ->orderBy('snapshot_date')
+                    ->select(['snapshot_date', 'total_calls', 'answered_calls', 'answer_rate'])
+                    ->get();
+
+                // Top 5 campaigns by call volume
+                $campaigns = $db->table('daily_metric_snapshots')
+                    ->where('granularity', 'campaign')
+                    ->whereBetween('snapshot_date', [$since, $today])
+                    ->whereNotNull('campaign_id')
+                    ->groupBy('campaign_id')
+                    ->selectRaw("campaign_id,
+                        SUM(total_calls) AS total_calls,
+                        SUM(answered_calls) AS answered_calls,
+                        AVG(answer_rate) AS answer_rate")
+                    ->orderByRaw('SUM(total_calls) DESC')
+                    ->limit(5)
+                    ->get();
+
+                // Top 10 agents by talk time
+                $agents = $db->table('daily_metric_snapshots')
+                    ->where('granularity', 'agent')
+                    ->whereBetween('snapshot_date', [$since, $today])
+                    ->whereNotNull('agent_id')
+                    ->groupBy('agent_id')
+                    ->selectRaw("agent_id,
+                        SUM(total_calls) AS total_calls,
+                        SUM(answered_calls) AS answered_calls,
+                        SUM(total_talk_time) AS total_talk_time,
+                        AVG(answer_rate) AS answer_rate")
+                    ->orderByRaw('SUM(total_talk_time) DESC')
+                    ->limit(10)
+                    ->get();
+
+                return [
+                    'period_days'    => $days,
+                    'overall'        => $overall,
+                    'daily_trend'    => $trend,
+                    'top_campaigns'  => $campaigns,
+                    'top_agents'     => $agents,
+                    'from_snapshots' => true,
+                    'generated_at'   => now()->toIso8601String(),
+                ];
+            });
+
+            return response()->json(['status' => true, 'data' => $data]);
+
+        } catch (\Throwable $exception) {
+            Log::error('FastStats Error: ' . $exception->getMessage());
+            return response()->json(['status' => false, 'message' => $exception->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /dashboard/trigger-aggregation
+     * Manually dispatch MetricsAggregationJob for today.
+     */
+    public function triggerAggregation(Request $request)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            $date     = $request->input('date', Carbon::today()->toDateString());
+
+            \App\Jobs\MetricsAggregationJob::dispatch($clientId, $date);
+
+            return response()->json(['status' => true, 'message' => "Aggregation queued for {$date}"]);
+
+        } catch (\Throwable $exception) {
+            Log::error('TriggerAggregation Error: ' . $exception->getMessage());
+            return response()->json(['status' => false, 'message' => $exception->getMessage()], 500);
         }
     }
 

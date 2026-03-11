@@ -5,6 +5,7 @@ namespace App\Console;
 use App\Console\Commands\ArchiveCdr;
 use App\Console\Commands\CreateDatabaseConfig;
 use App\Console\Commands\MigrateAllCommand;
+use App\Console\Commands\MigrateLeadDataToEav;
 use App\Console\Commands\ResetUserPackageFreeCounter;
 use App\Console\Commands\RollbackClientMigrationCommand;
 use App\Console\Commands\ScheduleDailyCallReport;
@@ -35,6 +36,7 @@ use App\Console\Commands\DripCampaignScheduleStatus;
 use App\Console\Commands\DripCampaignScheduleProcess;
 use App\Console\Commands\SendScheduledReminders;
 use App\Console\Commands\MissedCallNotificationCron;
+use App\Console\Commands\AutoClockoutCommand;
 use Illuminate\Console\Scheduling\Schedule;
 use Laravel\Lumen\Console\Kernel as ConsoleKernel;
 
@@ -47,6 +49,7 @@ class Kernel extends ConsoleKernel
      */
     protected $commands = [
         MigrateAllCommand::class,
+        MigrateLeadDataToEav::class,
         RollbackClientMigrationCommand::class,
         CreateDatabaseConfig::class,
         TruncateLeadTemp::class,
@@ -81,7 +84,7 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\BackfillPusherUuid::class,
         \App\Console\Commands\VerifyPusher::class,
         MissedCallNotificationCron::class,
-
+        AutoClockoutCommand::class,
     ];
 
     /**
@@ -148,6 +151,7 @@ class Kernel extends ConsoleKernel
          //$schedule->command('app:dc:schedule-status')->everyMinute();
         //$schedule->command('reminders:send')->everyMinute();
         $schedule->command('app:missed-call-notification')->everyMinute();
+        $schedule->command('workforce:auto-clockout')->everyFifteenMinutes();
     }
 
 }

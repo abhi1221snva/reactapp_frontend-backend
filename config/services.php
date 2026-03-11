@@ -21,6 +21,13 @@ return [
             'email',
             'profile',
         ],
+        'calendar_redirect' => env('GOOGLE_CALENDAR_REDIRECT_URI', env('GOOGLE_REDIRECT_URI')),
+        'calendar_scopes' => [
+            'https://www.googleapis.com/auth/calendar',
+            'https://www.googleapis.com/auth/calendar.events',
+            'email',
+            'profile',
+        ],
     ]
     
 ];

@@ -8,6 +8,8 @@ use App\Model\Master\ProspectInitialData;
 
 use Illuminate\Support\Facades\Mail;
 use App\Mail\VerificationMail;
+use App\Mail\SystemNotificationMail;
+use App\Model\Client\SmtpSetting;
 
 use App\Model\Master\EmailVerification;
 use App\Model\Master\PhoneVerification;
@@ -24,6 +26,9 @@ use App\Jobs\ConvertProspectToClient;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Config;
 use App\Services\OtpServices;
+use App\Services\SmsGatewayService;
+use App\Services\WelcomeEmailService;
+use App\Services\MailService;
 use App\Model\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Artisan;
@@ -38,42 +43,51 @@ class RegisterController extends Controller
         try
         {
             $validator = Validator::make($request->all(), [
-                'email' => 'required|email|unique:master.users,email',
-                'name' => 'required|string|max:255',
-                'company_name' => 'nullable||unique:master.clients,company_name|string|max:255',
+                'email'        => 'required|email|unique:master.users,email|unique:master.prospect_initial_data,email',
+                'name'         => 'required|string|max:255',
+                'company_name' => 'nullable|string|max:255',
                 'country_code' => 'nullable|string|max:10',
                 'phone_number' => 'nullable|string|max:20',
+                'password'     => 'nullable|string|min:8|max:64',
+            ], [
+                'email.unique'   => 'This email is already registered. Please log in or use a different email.',
+                'password.min'   => 'Password must be at least 8 characters.',
             ]);
 
             if ($validator->fails())
             {
                 return response()->json([
                     'success' => false,
-                    'errors' => $validator->errors()
+                    'errors'  => $validator->errors()
                 ], 422);
             }
 
             $prospectInitialData = new ProspectInitialData();
-            $prospectInitialData->email = $request->input('email', '');
-            $prospectInitialData->name = $request->input('name', '');
+            $prospectInitialData->email        = $request->input('email', '');
+            $prospectInitialData->name         = $request->input('name', '');
             $prospectInitialData->company_name = $request->input('company_name', '');
             $prospectInitialData->country_code = $request->input('country_code', '');
             $prospectInitialData->phone_number = $request->input('phone_number', '');
-            $prospectInitialData->password = $request->input('password') ? Hash::make($request->input('password')) : null;
+            $prospectInitialData->password     = $request->input('password')
+                ? Hash::make($request->input('password'))
+                : null;
             $prospectInitialData->save();
 
-            $verificationCode = "123456";
-            //rand(100000, 999999);
+            // Generate a real 6-digit OTP (configurable override for dev/testing)
+            $verificationCode = env('DEV_STATIC_OTP')
+                ? env('DEV_STATIC_OTP')
+                : (string) mt_rand(100000, 999999);
 
             EmailVerification::create([
                 'id'     => (string) Str::uuid(),
                 'email'  => $prospectInitialData->email,
                 'code'   => $verificationCode,
-                'expiry' => Carbon::now()->addMinutes(15), // 15 min expiry
+                'expiry' => Carbon::now()->addMinutes(15),
                 'status' => '3',
             ]);
 
-            //Mail::to($prospectInitialData->email)->send(new VerificationMail($verificationCode));
+            // Send OTP email
+            $this->sendVerificationEmail($prospectInitialData->email, $request->input('name'), $verificationCode);
 
             return $this->successResponse("Prospect saved & verification email sent", [
                 "prospect" => $prospectInitialData,
@@ -86,6 +100,44 @@ class RegisterController extends Controller
                 [],
                 $exception
             );
+        }
+    }
+
+    /**
+     * Send email verification OTP using portal SMTP settings.
+     */
+    private function sendVerificationEmail(string $email, string $name, string $code): void
+    {
+        try {
+            $smtpSetting                  = new SmtpSetting();
+            $smtpSetting->mail_driver     = 'SMTP';
+            $smtpSetting->mail_host       = env('PORTAL_MAIL_HOST');
+            $smtpSetting->mail_port       = env('PORTAL_MAIL_PORT');
+            $smtpSetting->mail_username   = env('PORTAL_MAIL_USERNAME');
+            $smtpSetting->mail_password   = env('PORTAL_MAIL_PASSWORD');
+            $smtpSetting->from_name       = env('PORTAL_MAIL_SENDER_NAME');
+            $smtpSetting->from_email      = env('PORTAL_MAIL_SENDER_EMAIL');
+            $smtpSetting->mail_encryption = env('PORTAL_MAIL_ENCRYPTION');
+
+            $from = [
+                'address' => empty($smtpSetting->from_email) ? env('DEFAULT_EMAIL') : $smtpSetting->from_email,
+                'name'    => empty($smtpSetting->from_name)  ? env('DEFAULT_NAME')  : $smtpSetting->from_name,
+            ];
+
+            $data     = ['name' => $name, 'code' => $code];
+            $subject  = 'Verify your email — ' . env('SITE_NAME', 'Dialer');
+            $mailable = new SystemNotificationMail($from, 'emails.email-verification-otp', $subject, $data);
+
+            $mailService = new MailService(0, $mailable, $smtpSetting);
+            $mailService->sendEmail($email);
+
+            Log::info('RegisterController: verification email sent', ['email' => $email]);
+        } catch (\Throwable $e) {
+            // Log failure but don't break registration
+            Log::error('RegisterController: verification email failed', [
+                'email' => $email,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
@@ -104,9 +156,7 @@ class RegisterController extends Controller
             ], 404);
         }
 
-        $createdAt = Carbon::parse($verification->expiry);
-
-        if ($createdAt->diffInMinutes(Carbon::now()) > 15)
+        if (Carbon::now()->gt(Carbon::parse($verification->expiry)))
         {
             return response()->json([
                 'status' => false,
@@ -133,20 +183,35 @@ class RegisterController extends Controller
     {
         try
         {
-            $verificationCode = "123456";
-            //rand(100000, 999999);
-            EmailVerification::create([
-                'id'     => (string) Str::uuid(),
-                'email'  => $request->email,
-                'code'   => $verificationCode,
-                'expiry' => Carbon::now()->addMinutes(15), // 15 min expiry
-                'status' => 3,
+            $this->validate($request, [
+                'email' => 'required|email',
             ]);
 
-            //Mail::to($request->input('email'))->send(new VerificationMail($verificationCode));
+            $email = $request->input('email');
+
+            // Invalidate previous pending codes
+            EmailVerification::where('email', $email)
+                ->where('status', '3')
+                ->update(['status' => '6']);
+
+            $verificationCode = env('DEV_STATIC_OTP')
+                ? env('DEV_STATIC_OTP')
+                : (string) mt_rand(100000, 999999);
+
+            EmailVerification::create([
+                'id'     => (string) Str::uuid(),
+                'email'  => $email,
+                'code'   => $verificationCode,
+                'expiry' => Carbon::now()->addMinutes(15),
+                'status' => '3',
+            ]);
+
+            $prospect = ProspectInitialData::where('email', $email)->latest('id')->first();
+            $name     = $prospect ? $prospect->name : 'User';
+            $this->sendVerificationEmail($email, $name, $verificationCode);
+
             return $this->successResponse("Verification email resent", []);
         }
-
         catch (\Throwable $exception)
         {
             return $this->failResponse(
@@ -165,37 +230,41 @@ class RegisterController extends Controller
             'phone'        => 'required|string|min:7|max:15',
         ]);
 
-        $rawPhone = $request->country_code . $request->phone;
+        $rawPhone = ltrim($request->country_code, '+') !== ''
+            ? '+' . ltrim($request->country_code, '+') . $request->phone
+            : $request->phone;
 
-        Log::info('Sending mobile OTP request', [
-            'raw_phone' => $rawPhone,
-        ]);
+        Log::info('Sending mobile OTP request', ['raw_phone' => $rawPhone]);
 
         try {
+            // Generate OTP — use static value only when DEV_STATIC_OTP is set in .env
+            $otpCode = env('DEV_STATIC_OTP')
+                ? env('DEV_STATIC_OTP')
+                : (string) mt_rand(100000, 999999);
 
-            $result['otp'] = '123456';
-            //rand(100000, 999999);
+            // Send via SMS gateway abstraction layer
+            $smsService = new SmsGatewayService();
+            $smsResult  = $smsService->sendOtp($rawPhone, $otpCode);
 
-            
-            // $result = $otpService->sendOtp($rawPhone);
-            // Log::info('otp log', [$result]);
+            if (!$smsResult['success']) {
+                Log::warning('RegisterController: SMS OTP send failed', $smsResult);
+                // Do NOT block registration if SMS fails in dev — still create record
+            }
 
-            // if (!isset($result['success']) || !$result['success']) {
-            //     return response()->json([
-            //         'success' => false,
-            //         'message' => 'Failed to send OTP. Please try again later.',
-            //     ], 500);
-            // }
-            
+            // Invalidate previous pending OTPs for this phone
+            PhoneVerification::where('phone_number', $request->phone)
+                ->where('country_code', $request->country_code)
+                ->where('status', '3')
+                ->update(['status' => '6']);
 
             // Store verification entry
             PhoneVerification::create([
                 'id'           => (string) Str::uuid(),
                 'phone_number' => $request->phone,
                 'country_code' => $request->country_code,
-                'code'         => $result['otp'], // consider hashing if security needed
+                'code'         => $otpCode,
                 'expiry'       => Carbon::now()->addMinutes(15),
-                'status'       => '3', // pending
+                'status'       => '3',
             ]);
 
             return response()->json([
@@ -204,9 +273,7 @@ class RegisterController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Error sending mobile OTP', [
-                'error' => $e->getMessage(),
-            ]);
+            Log::error('Error sending mobile OTP', ['error' => $e->getMessage()]);
 
             return response()->json([
                 'success' => false,
@@ -217,59 +284,56 @@ class RegisterController extends Controller
 
 
     public function resendOtpMobile(Request $request, OtpServices $otpService)
-{
-    $this->validate($request, [
-    'country_code' => 'required|string|max:5',
-    'phone'        => 'required|string|min:7|max:15',
-]);
-    $rawPhone = $request->country_code . $request->phone;
-
-    try {
-
-        $result['otp'] = "123456";
-        //rand(100000, 999999);
-    //    $result = $otpService->sendOtp($rawPhone);
-
-    //     if (!isset($result['success']) || !$result['success']) {
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'Failed to resend OTP. Please try again later.',
-    //         ], 500);
-    //     }
-
-        // Optional: Invalidate old codes for this phone
-        PhoneVerification::where('phone_number', $request->phone)
-            ->where('country_code', $request->country_code)
-            ->where('status', '3') // pending
-            ->update(['status' => '6']); // expired/invalid
-
-        // Save new OTP
-        PhoneVerification::create([
-            'id'           => (string) Str::uuid(),
-            'phone_number' => $request->phone,
-            'country_code' => $request->country_code,
-            'code'         => $result['otp'], // same as sendOtpMobile
-            'expiry'       => Carbon::now()->addMinutes(5),
-            'status'       => '3', // pending
+    {
+        $this->validate($request, [
+            'country_code' => 'required|string|max:5',
+            'phone'        => 'required|string|min:7|max:15',
         ]);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'OTP resent successfully',
-        ]);
+        $rawPhone = '+' . ltrim($request->country_code, '+') . $request->phone;
 
-    } catch (\Throwable $exception) {
-        \Log::error('Error resending OTP', [
-            'error' => $exception->getMessage(),
-            'phone' => $rawPhone,
-        ]);
+        try {
+            $otpCode = env('DEV_STATIC_OTP')
+                ? env('DEV_STATIC_OTP')
+                : (string) mt_rand(100000, 999999);
 
-        return response()->json([
-            'success' => false,
-            'message' => 'Error in sending OTP: ' . $exception->getMessage(),
-        ], 500);
+            // Invalidate old pending codes
+            PhoneVerification::where('phone_number', $request->phone)
+                ->where('country_code', $request->country_code)
+                ->where('status', '3')
+                ->update(['status' => '6']);
+
+            // Save new OTP
+            PhoneVerification::create([
+                'id'           => (string) Str::uuid(),
+                'phone_number' => $request->phone,
+                'country_code' => $request->country_code,
+                'code'         => $otpCode,
+                'expiry'       => Carbon::now()->addMinutes(15),
+                'status'       => '3',
+            ]);
+
+            // Send via SMS gateway
+            $smsService = new SmsGatewayService();
+            $smsService->sendOtp($rawPhone, $otpCode);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'OTP resent successfully',
+            ]);
+
+        } catch (\Throwable $exception) {
+            Log::error('Error resending OTP', [
+                'error' => $exception->getMessage(),
+                'phone' => $rawPhone,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error in sending OTP: ' . $exception->getMessage(),
+            ], 500);
+        }
     }
-}
 
 
     public function verifyOtpMobile(Request $request)
@@ -284,8 +348,7 @@ class RegisterController extends Controller
             ], 404);
         }
 
-        $createdAt = Carbon::parse($verification->expiry);
-        if ($createdAt->diffInMinutes(Carbon::now()) > 15)
+        if (Carbon::now()->gt(Carbon::parse($verification->expiry)))
         {
             return response()->json([
                 'status' => false,
@@ -390,72 +453,19 @@ class RegisterController extends Controller
 
         if ($user) {
             try {
-                // Send welcome email to user
-                $userData = [
-                    'name' => $user->name ?? 'User',
-                    'username' => $user->email,
-                    'password' => $request->input('password') ?? '******'
-                ];
-
-                // Mail::send('emails.user_credentials', $userData, function ($message) use ($user) {
-                //     $message->to($user->email)
-                //         ->subject('Welcome to Your Account!');
-                // });
-
-                Log::info('User email sent successfully', ['email' => $user->email]);
+                // Send welcome email with login credentials
+                $welcomeService = new WelcomeEmailService();
+                $welcomeService->sendWelcome(
+                    email:    $user->email,
+                    name:     $user->name ?? 'User',
+                    loginUrl: env('PORTAL_NAME', '#'),
+                    password: $request->input('raw_password') // plain-text if available
+                );
+                Log::info('User welcome email sent', ['email' => $user->email]);
             } catch (\Exception $e) {
-                Log::error('Failed to send user email', [
+                Log::error('Failed to send welcome email', [
                     'email' => $user->email,
-                    'error' => $e->getMessage()
-                ]);
-                // Continue execution even if email fails
-            }
-
-            try {
-                // Send notification to admins
-                $adminData = [
-                    'prospect_id' => $prospectId,
-                    'user_name' => $user->name ?? 'User',
-                    'user_email' => $user->email,
-                    'phone_number' => $user->phone_number,
-                    'country_code' => $user->country_code,
-                    'company_name' => $user->company_name ?? 'N/A',
-                    'signup_time' => Carbon::now()->toDateTimeString()
-                ];
-
-                $adminUserIds = [1]; // Example IDs, update as needed
-                $adminEmails = [];
-
-                // Fetch admin emails safely
-                try {
-                    $adminEmails = User::whereIn('id', $adminUserIds)->pluck('email')->toArray();
-                    if (empty($adminEmails)) {
-                        Log::warning('No admin emails found for IDs', ['admin_ids' => $adminUserIds]);
-                    }
-                } catch (\Exception $e) {
-                    Log::error('Failed to fetch admin emails', [
-                        'admin_ids' => $adminUserIds,
-                        'error' => $e->getMessage()
-                    ]);
-                }
-
-                // foreach ($adminEmails as $adminEmail) {
-                //     try {
-                //         Mail::send('emails.admin_notification', $adminData, function ($message) use ($adminEmail) {
-                //             $message->to($adminEmail)
-                //                 ->subject('New User Registration Notification');
-                //         });
-                //         Log::info('Admin email sent successfully', ['email' => $adminEmail]);
-                //     } catch (\Exception $e) {
-                //         Log::error('Failed to send admin email', [
-                //             'email' => $adminEmail,
-                //             'error' => $e->getMessage()
-                //         ]);
-                //     }
-                // }
-            } catch (\Exception $e) {
-                Log::error('Error in admin notification process', [
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
                 ]);
             }
         }
@@ -475,10 +485,10 @@ class RegisterController extends Controller
         $this->validate($request, [
             "first_name"    => "required|string|max:255",
             "last_name"     => "nullable|string|max:255",
-            "company_name"  => "required|string|max:255",
-            "country_code"  => "nullable|numeric|min:1|max:9999",
-            "mobile"        => "nullable|digits_between:7,10",
-            "email"         => "required|email|unique:master.users,email",
+            "company_name"  => "nullable|string|max:255",
+            "country_code"  => "nullable|string|max:10",
+            "mobile"        => "nullable|string|max:20",
+            "email"         => "required|email",
             "password"      => "required|string|min:6|max:64",
             "address_1"     => "nullable|string|max:255",
             "address_2"     => "nullable|string|max:255",

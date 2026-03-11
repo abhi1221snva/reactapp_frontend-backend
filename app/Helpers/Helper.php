@@ -1,7 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Redis;
+use Predis\Client as PredisClient;
 use App\Model\User;
 use App\Model\Client\ListData;
 use App\Model\Client\ListHeader;
@@ -12,6 +12,23 @@ use App\Model\SmsTemplete;
 use App\Model\Client\EmailTemplete;
 use App\Model\Client\Label;
 use Carbon\Carbon;
+
+if (!function_exists('getRedisClient')) {
+    function getRedisClient(): PredisClient
+    {
+        $url = env('REDIS_URL');
+        if ($url) {
+            return new PredisClient($url);
+        }
+        return new PredisClient([
+            'scheme'   => 'tcp',
+            'host'     => env('REDIS_HOST', '127.0.0.1'),
+            'port'     => (int) env('REDIS_PORT', 6379),
+            'password' => env('REDIS_PASSWORD') ?: null,
+            'database' => (int) env('REDIS_DB', 0),
+        ]);
+    }
+}
 
 if (!function_exists('convertToUserTimezone')) {
     function convertToUserTimezone($datetime, $timezone = null, $format = 'Y-m-d H:i:s')
@@ -230,8 +247,8 @@ if (!function_exists('externalRedisCacheSet')) {
                 return false;
             }
 
-            $success = (bool) Redis::set($key, $value);
-            Redis::persist($key);
+            $success = (bool) getRedisClient()->set($key, $value);
+            getRedisClient()->persist($key);
 
             redisDebugLog('externalRedisCacheSet: Success', ['key' => $key, 'success' => $success, 'value_length' => strlen($value)]);
             return $success;
@@ -252,7 +269,7 @@ if (!function_exists('externalRedisCacheGet')) {
         $key = "{$client_id}_{$prompt_id}";
 
         try {
-            $value = Redis::get($key);
+            $value = getRedisClient()->get($key);
 
             if ($value && is_string($value) && json_decode($value) !== null) {
                 $value = json_decode($value, true);
@@ -274,11 +291,11 @@ if (!function_exists('externalRedisCacheList')) {
         try {
             // Use search pattern if provided, otherwise get all keys
             $pattern = $searchPattern ? "*{$searchPattern}*" : '*';
-            $keys = Redis::keys($pattern);
+            $keys = getRedisClient()->keys($pattern);
 
             $cacheList = [];
             foreach ($keys as $key) {
-                $value = Redis::get($key);
+                $value = getRedisClient()->get($key);
                 if ($value && is_string($value) && json_decode($value) !== null) {
                     $value = json_decode($value, true);
                 }
@@ -568,8 +585,8 @@ if (!function_exists('clientCampaignLeadPromptRedisCacheSet_old')) {
             $value = preg_replace('/[[:cntrl:]]/', '', $value);
             $value = trim($value);
 
-            $success = (bool) Redis::set($key, $value);
-            Redis::persist($key);
+            $success = (bool) getRedisClient()->set($key, $value);
+            getRedisClient()->persist($key);
 
             Log::info('Redis multi cache set (forever)', [
                 'key'     => $key,
@@ -898,8 +915,8 @@ if (!function_exists('clientCampaignLeadPromptRedisCacheSet_success')) {
             $value = preg_replace('/[[:cntrl:]]/', '', $value);
             $value = trim($value);
 
-            $success = (bool) Redis::set($key, $value);
-            Redis::persist($key);
+            $success = (bool) getRedisClient()->set($key, $value);
+            getRedisClient()->persist($key);
 
             Log::info('Redis multi cache set (forever)', [
                 'key'     => $key,
@@ -1303,7 +1320,7 @@ if (!function_exists('clientCampaignLeadPromptRedisCacheSet_log')) {
 
             logRedisCacheSet('Setting Redis key', ['key' => $key]);
             $ttlSeconds = 3 * 60 * 60; // 3 hours TTL
-            $success = (bool) Redis::setex($key, $ttlSeconds, $value);
+            $success = (bool) getRedisClient()->setex($key, $ttlSeconds, $value);
             logRedisCacheSet('Redis operation completed', ['success' => $success, 'ttl_hours' => 3]);
 
             Log::info('Redis multi cache set (3 hour TTL)', [
@@ -1489,7 +1506,7 @@ if (!function_exists('clientCampaignLeadPromptRedisCacheSet_2')) {
 
             Log::debug('Step 8: Writing to Redis', ['key' => $key, 'value' => $value]);
             $ttlSeconds = 3 * 60 * 60; // 3 hours TTL
-            $success = (bool) Redis::setex($key, $ttlSeconds, $value);
+            $success = (bool) getRedisClient()->setex($key, $ttlSeconds, $value);
 
             Log::info('Step 9: Redis cache set complete (3 hour TTL)', [
                 'key' => $key, 'success' => $success, 'dynamic' => $dynamic, 'ttl_seconds' => $ttlSeconds
@@ -1928,7 +1945,7 @@ if (!function_exists('clientCampaignLeadPromptRedisCacheSet')) {
             $value = trim($value);
 
             $ttlSeconds = 3 * 60 * 60; // 3 hours TTL
-            $success = (bool) Redis::setex($key, $ttlSeconds, $value);
+            $success = (bool) getRedisClient()->setex($key, $ttlSeconds, $value);
 
             Log::info('Redis multi cache set (3 hour TTL)', [
                 'key'     => $key,

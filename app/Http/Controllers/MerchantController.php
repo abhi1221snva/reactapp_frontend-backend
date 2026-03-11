@@ -398,7 +398,7 @@ class MerchantController extends Controller
                     ->table('crm_lead_field_values')
                     ->upsert(
                         ['lead_id' => $leadId, 'label_id' => $label->id, 'column_name' => $label->column_name,
-                         'value_text' => trim((string)$val), 'created_at' => now(), 'updated_at' => now()],
+                         'value_text' => trim((string)$val), 'created_at' => \Carbon\Carbon::now(), 'updated_at' => \Carbon\Carbon::now()],
                         ['lead_id', 'label_id'],
                         ['value_text', 'updated_at']
                     );

@@ -45,6 +45,15 @@ class JwtMiddleware
             ], 401);
         }
 
+        // Check token revocation blacklist (Redis)
+        if (\App\Http\Helper\JwtToken::isBlacklisted($token)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Token has been revoked.',
+                'data'    => []
+            ], 401);
+        }
+
         $user = User::find($credentials->sub);
 
         if (!$user || $user->is_deleted) {
@@ -81,6 +90,14 @@ class JwtMiddleware
             $role = RolesService::getById($user->role);
             $userData["level"] = $role["level"];
             $userData["groups"] = [0];
+        }
+
+        // ── Client override (system admin switching into a client workspace) ──
+        // If the JWT carries a `client_override` claim and the authenticated user
+        // is a superadmin (level ≥ 9), swap parent_id so all controllers query
+        // the target client's DB. The user's identity and level stay unchanged.
+        if (isset($credentials->client_override) && ($userData["level"] ?? 0) >= 9) {
+            $userData["parent_id"] = (int) $credentials->client_override;
         }
 
         $request->setUserResolver(fn () => $user);

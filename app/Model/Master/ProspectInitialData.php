@@ -12,4 +12,8 @@ class ProspectInitialData extends Model
     protected $connection = 'master';
 
     protected $table = 'prospect_initial_data';
+
+    protected $fillable = [
+        'name', 'email', 'company_name', 'password', 'phone_number', 'country_code',
+    ];
 }

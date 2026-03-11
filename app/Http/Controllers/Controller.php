@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\TenantAware;
 use Illuminate\Support\Facades\Log;
 use Laravel\Lumen\Routing\Controller as BaseController;
 
@@ -43,6 +44,8 @@ use Laravel\Lumen\Routing\Controller as BaseController;
  */
 class Controller extends BaseController
 {
+    use TenantAware;
+
     protected function successResponse(string $message, array $data = [])
     {
         return response()->json([

@@ -1,6 +1,8 @@
 <?php
 namespace App\Model\Client;
+
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Builder;
 
 class Lead extends Model
 {
@@ -18,4 +20,17 @@ class Lead extends Model
     ];
 
     protected $dates = ['deleted_at'];
+
+    /**
+     * Global scope: always exclude soft-deleted leads.
+     * Use ->withoutGlobalScope('active') when you intentionally need deleted records.
+     */
+    protected static function boot(): void
+    {
+        parent::boot();
+
+        static::addGlobalScope('active', function (Builder $q) {
+            $q->where('is_deleted', 0);
+        });
+    }
 }
