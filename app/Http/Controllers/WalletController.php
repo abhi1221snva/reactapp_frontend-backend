@@ -5,6 +5,26 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * @OA\Get(
+ *   path="/wallet/balance",
+ *   summary="Get client wallet balance",
+ *   operationId="walletBalance",
+ *   tags={"Wallet"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Wallet balance"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Get(
+ *   path="/wallet/transactions",
+ *   summary="Get wallet transaction history",
+ *   operationId="walletTransactions",
+ *   tags={"Wallet"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Wallet transactions")
+ * )
+ */
 class WalletController extends Controller
 {
     function getWalletBalance(Request $request)

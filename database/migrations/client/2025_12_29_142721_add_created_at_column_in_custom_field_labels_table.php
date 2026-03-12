@@ -11,10 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (!Schema::hasColumn('custom_field_labels', 'created_at')) {
             DB::statement("
-        ALTER TABLE `custom_field_labels`
-        ADD COLUMN `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
-    ");
+            ALTER TABLE `custom_field_labels`
+            ADD COLUMN `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
+        ");
+        }
     }
 
     /**

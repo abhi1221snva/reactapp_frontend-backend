@@ -8,6 +8,91 @@ use App\Services\TwilioService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * @OA\Get(
+ *   path="/twilio/numbers/search",
+ *   summary="Search available Twilio phone numbers",
+ *   operationId="twilioSearchNumbers",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="country", in="query", @OA\Schema(type="string", default="US")),
+ *   @OA\Parameter(name="area_code", in="query", @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Available numbers")
+ * )
+ *
+ * @OA\Post(
+ *   path="/twilio/numbers/purchase",
+ *   summary="Purchase a Twilio phone number",
+ *   operationId="twilioPurchaseNumber",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"phone_number"},
+ *     @OA\Property(property="phone_number", type="string", example="+15551234567")
+ *   )),
+ *   @OA\Response(response=200, description="Number purchased"),
+ *   @OA\Response(response=422, description="Validation error")
+ * )
+ *
+ * @OA\Delete(
+ *   path="/twilio/numbers/{sid}",
+ *   summary="Release a Twilio phone number",
+ *   operationId="twilioReleaseNumber",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="sid", in="path", required=true, @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Number released"),
+ *   @OA\Response(response=404, description="Not found")
+ * )
+ *
+ * @OA\Get(
+ *   path="/twilio/numbers",
+ *   summary="List purchased Twilio numbers",
+ *   operationId="twilioListNumbers",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="search", in="query", @OA\Schema(type="string")),
+ *   @OA\Parameter(name="campaign_id", in="query", @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Number list")
+ * )
+ *
+ * @OA\Post(
+ *   path="/twilio/numbers/assign-campaign",
+ *   summary="Assign a Twilio number to a campaign",
+ *   operationId="twilioAssignNumberToCampaign",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"phone_number_sid","campaign_id"},
+ *     @OA\Property(property="phone_number_sid", type="string"),
+ *     @OA\Property(property="campaign_id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Number assigned")
+ * )
+ *
+ * @OA\Get(
+ *   path="/twilio/numbers/campaign/{campaignId}",
+ *   summary="Get Twilio numbers assigned to a campaign",
+ *   operationId="twilioGetNumbersByCampaign",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="campaignId", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Campaign numbers")
+ * )
+ *
+ * @OA\Post(
+ *   path="/twilio/numbers/unassign-campaign",
+ *   summary="Unassign a Twilio number from a campaign",
+ *   operationId="twilioUnassignNumber",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"phone_number_sid"},
+ *     @OA\Property(property="phone_number_sid", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Number unassigned")
+ * )
+ */
 class TwilioNumberController extends Controller
 {
     // ── Search available numbers ───────────────────────────────────────────

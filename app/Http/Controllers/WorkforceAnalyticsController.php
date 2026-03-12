@@ -9,6 +9,59 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * @OA\Get(
+ *   path="/workforce/analytics/attendance-trend",
+ *   summary="Workforce attendance trend over time",
+ *   operationId="workforceAttendanceTrend",
+ *   tags={"Workforce"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="days", in="query", @OA\Schema(type="integer", default=30)),
+ *   @OA\Response(response=200, description="Attendance trend data"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Get(
+ *   path="/workforce/analytics/call-availability",
+ *   summary="Call vs availability analytics",
+ *   operationId="workforceCallVsAvailability",
+ *   tags={"Workforce"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="start_date", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Parameter(name="end_date", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Response(response=200, description="Call vs availability data")
+ * )
+ *
+ * @OA\Get(
+ *   path="/workforce/analytics/break-distribution",
+ *   summary="Agent break distribution analytics",
+ *   operationId="workforceBreakDistribution",
+ *   tags={"Workforce"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Break distribution data")
+ * )
+ *
+ * @OA\Get(
+ *   path="/workforce/analytics/utilization",
+ *   summary="Agent utilization trend",
+ *   operationId="workforceUtilizationTrend",
+ *   tags={"Workforce"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="start_date", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Parameter(name="end_date", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Response(response=200, description="Utilization trend data")
+ * )
+ *
+ * @OA\Get(
+ *   path="/workforce/analytics/leaderboard",
+ *   summary="Agent performance leaderboard",
+ *   operationId="workforceLeaderboard",
+ *   tags={"Workforce"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="period", in="query", @OA\Schema(type="string", enum={"today","week","month"})),
+ *   @OA\Response(response=200, description="Agent leaderboard")
+ * )
+ */
 class WorkforceAnalyticsController extends Controller
 {
     private $request;

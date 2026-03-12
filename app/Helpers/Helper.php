@@ -52,6 +52,13 @@ if (!function_exists('hhmmss')) {
     }
 }
 
+if (!function_exists('now')) {
+    function now($tz = null): \Illuminate\Support\Carbon
+    {
+        return \Illuminate\Support\Carbon::now($tz);
+    }
+}
+
 function buildContext(\Throwable $throwable, array $context = []): array
 {
     $context["message"] = $throwable->getMessage();

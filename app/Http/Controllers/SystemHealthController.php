@@ -10,6 +10,44 @@ use Illuminate\Support\Facades\Cache;
 use Carbon\Carbon;
 
 /**
+ * @OA\Get(
+ *   path="/system/health",
+ *   summary="System health check",
+ *   operationId="systemHealth",
+ *   tags={"System"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Overall system health status"),
+ *   @OA\Response(response=401, description="Unauthenticated"),
+ *   @OA\Response(response=403, description="Insufficient permissions")
+ * )
+ *
+ * @OA\Get(
+ *   path="/system/queue-stats",
+ *   summary="Queue depth and job statistics",
+ *   operationId="systemQueueStats",
+ *   tags={"System"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Queue stats per queue name")
+ * )
+ *
+ * @OA\Get(
+ *   path="/system/error-trends",
+ *   summary="Error and warning count trends",
+ *   operationId="systemErrorTrends",
+ *   tags={"System"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Error/warning trends over 24h")
+ * )
+ *
+ * @OA\Get(
+ *   path="/system/performance-metrics",
+ *   summary="Response time and performance data",
+ *   operationId="systemPerformanceMetrics",
+ *   tags={"System"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Per-endpoint response time stats")
+ * )
+ *
  * System health and observability endpoints.
  * Admin access only (level >= 7).
  */
@@ -17,8 +55,8 @@ class SystemHealthController extends Controller
 {
     private function requireAdmin(Request $request): void
     {
-        if ($request->auth->level < 7) {
-            abort(403, 'Admin access required');
+        if ($request->auth->level < 11) {
+            abort(403, 'System administrator access required');
         }
     }
 

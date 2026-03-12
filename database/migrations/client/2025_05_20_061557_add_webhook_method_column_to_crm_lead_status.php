@@ -14,7 +14,7 @@ class AddWebhookMethodColumnToCrmLeadStatus extends Migration
     public function up()
     {
         Schema::table('crm_lead_status', function (Blueprint $table) {
-            $table->enum('webhook_method', array('get','post'))->default('post');
+            if (!Schema::hasColumn('crm_lead_status', 'webhook_method')) $table->enum('webhook_method', array('get','post'))->default('post');
         });
     }
 

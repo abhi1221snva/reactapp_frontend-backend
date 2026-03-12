@@ -19,6 +19,91 @@ use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
 use App\Model\User;
 
+/**
+ * @OA\Post(
+ *   path="/get-report",
+ *   summary="Get CDR / call detail records",
+ *   operationId="getReport",
+ *   tags={"Report"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="start_date", type="string", format="date"),
+ *     @OA\Property(property="end_date", type="string", format="date"),
+ *     @OA\Property(property="campaign_id", type="integer"),
+ *     @OA\Property(property="agent_id", type="integer"),
+ *     @OA\Property(property="disposition", type="string"),
+ *     @OA\Property(property="start", type="integer", default=0),
+ *     @OA\Property(property="limit", type="integer", default=25)
+ *   )),
+ *   @OA\Response(response=200, description="Report data"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/export-report",
+ *   summary="Export CDR report as CSV/Excel",
+ *   operationId="exportReport",
+ *   tags={"Report"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="start_date", type="string", format="date"),
+ *     @OA\Property(property="end_date", type="string", format="date"),
+ *     @OA\Property(property="format", type="string", enum={"csv","excel"}, default="csv")
+ *   )),
+ *   @OA\Response(response=200, description="File download"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/get-live-call",
+ *   summary="Get live calls in progress",
+ *   operationId="getLiveCall",
+ *   tags={"Report"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Active call list")
+ * )
+ *
+ * @OA\Post(
+ *   path="/get-disposition-summary",
+ *   summary="Get disposition summary report",
+ *   operationId="getDispositionSummary",
+ *   tags={"Report"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="start_date", type="string", format="date"),
+ *     @OA\Property(property="end_date", type="string", format="date"),
+ *     @OA\Property(property="campaign_id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Disposition summary")
+ * )
+ *
+ * @OA\Post(
+ *   path="/daily-call-report",
+ *   summary="Get daily call report",
+ *   operationId="getDailyCallReport",
+ *   tags={"Report"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="date", type="string", format="date"),
+ *     @OA\Property(property="campaign_id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Daily call report")
+ * )
+ *
+ * @OA\Post(
+ *   path="/login-history",
+ *   summary="Get agent login history",
+ *   operationId="loginHistory",
+ *   tags={"Report"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="agent_id", type="integer"),
+ *     @OA\Property(property="start_date", type="string", format="date"),
+ *     @OA\Property(property="end_date", type="string", format="date")
+ *   )),
+ *   @OA\Response(response=200, description="Login history records")
+ * )
+ */
 class ReportController extends Controller
 {
     /**
@@ -183,12 +268,18 @@ class ReportController extends Controller
     public function exportReport()
     {
         $this->validate($this->request, [
-            'number'     => 'numeric',
-            'campaign'   => 'numeric',
-            'type'       => 'string',
-            'start_date' => 'date',
-            'end_date'   => 'date',
+            'number'      => 'numeric',
+            'campaign'    => 'numeric',
+            'campaign_id' => 'numeric',
+            'type'        => 'string',
+            'start_date'  => 'date',
+            'end_date'    => 'date',
         ]);
+
+        // Normalise campaign_id → campaign so getReport() filter works
+        if ($this->request->has('campaign_id') && !$this->request->has('campaign')) {
+            $this->request->merge(['campaign' => $this->request->input('campaign_id')]);
+        }
 
         // Re-use existing report logic with a large limit for export
         $this->request->merge(['lower_limit' => 0, 'upper_limit' => 50000]);
@@ -196,7 +287,11 @@ class ReportController extends Controller
 
         $rows = $result['data'] ?? $result['cdr'] ?? [];
         if (empty($rows)) {
-            return response()->json(['success' => false, 'message' => 'No data to export'], 404);
+            // Return empty CSV with headers rather than a 404 that breaks blob parsing
+            return response("", 200, [
+                'Content-Type'        => 'text/csv',
+                'Content-Disposition' => 'attachment; filename="cdr_export_empty.csv"',
+            ]);
         }
 
         $filename  = 'cdr_export_' . date('Ymd_His') . '.csv';
@@ -667,11 +762,13 @@ class ReportController extends Controller
     public function getDispositionSummary(Request $request)
     {
         $this->validate($request, [
-            'startTime' => 'required|date_format:Y-m-d H:i:s',
-            'endTime' => 'required|date_format:Y-m-d H:i:s'
+            'startTime' => 'nullable|date_format:Y-m-d H:i:s',
+            'endTime' => 'nullable|date_format:Y-m-d H:i:s'
         ]);
+        $startTime = $request->startTime ?? \Carbon\Carbon::today()->startOfDay()->format('Y-m-d H:i:s');
+        $endTime   = $request->endTime   ?? \Carbon\Carbon::today()->endOfDay()->format('Y-m-d H:i:s');
         $reportService = new ReportService($request->auth->parent_id);
-        return $this->successResponse("Disposition summary", $reportService->dispositionSummary($this->request, $request->startTime, $request->endTime));
+        return $this->successResponse("Disposition summary", $reportService->dispositionSummary($this->request, $startTime, $endTime));
     }
 
     /**
@@ -1590,16 +1687,16 @@ public function cdrCallsByRangeNew(Request $request)
 public function getCdrDashboardSummary(Request $request)
 {
     $this->validate($request, [
-        'startTime' => 'required|date_format:Y-m-d H:i:s',
-        'endTime' => 'required|date_format:Y-m-d H:i:s',
-        'userId' => 'required|array'
+        'startTime' => 'nullable|date_format:Y-m-d H:i:s',
+        'endTime' => 'nullable|date_format:Y-m-d H:i:s',
+        'userId' => 'nullable|array'
     ]);
 
     $reportService = new ReportService($request->auth->parent_id);
 
-    $startTime = $request->startTime;
-    $endTime = $request->endTime;
-    $userId = $request->userId;
+    $startTime = $request->startTime ?? \Carbon\Carbon::today()->startOfDay()->format('Y-m-d H:i:s');
+    $endTime   = $request->endTime   ?? \Carbon\Carbon::today()->endOfDay()->format('Y-m-d H:i:s');
+    $userId    = $request->userId    ?? [];
 
     $data = [];
     $data['extListDashboard'] = $reportService->cdrExtensionSummary($request, $startTime, $endTime, $userId);
@@ -1617,7 +1714,7 @@ public function getCdrDashboardSummary(Request $request)
 
     // Logged-in agent count
     $data['loggedInAgent'] = $reportService->cdrCallAgentCountNew($startTime, $endTime, $userId);
-    $data['getStatewiseCalls'] = $reportService->stateWiseSummaryNew($startTime, $endTime, $userId);
+    $data['getStatewiseCalls'] = $reportService->stateWiseSummaryNew($startTime, $endTime, $userId, $request);
 
     return $this->successResponse("CDR Dashboard Summary", $data);
 }

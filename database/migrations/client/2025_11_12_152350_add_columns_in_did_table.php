@@ -12,8 +12,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('did', function (Blueprint $table) {
-            $table->string('voice_ai')->nullable();
-            $table->string('voice_ai_ooh')->nullable();
+            if (!Schema::hasColumn('did', 'voice_ai')) $table->string('voice_ai')->nullable();
+            if (!Schema::hasColumn('did', 'voice_ai_ooh')) $table->string('voice_ai_ooh')->nullable();
         });
     }
 

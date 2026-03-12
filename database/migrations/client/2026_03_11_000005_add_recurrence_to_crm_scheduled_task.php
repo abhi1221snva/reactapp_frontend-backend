@@ -14,13 +14,19 @@ class AddRecurrenceToCrmScheduledTask extends Migration
     public function up()
     {
         Schema::table('crm_scheduled_task', function (Blueprint $table) {
-            $table->enum('recurrence_rule', ['none', 'daily', 'weekly', 'monthly'])
-                  ->default('none')
-                  ->after('is_sent');
-            $table->date('recurrence_end')->nullable()->after('recurrence_rule')
-                  ->comment('Stop creating new occurrences after this date');
-            $table->unsignedBigInteger('parent_task_id')->nullable()->after('recurrence_end')
-                  ->comment('ID of the original recurring task');
+            if (!Schema::hasColumn('crm_scheduled_task', 'recurrence_rule')) {
+                $table->enum('recurrence_rule', ['none', 'daily', 'weekly', 'monthly'])
+                      ->default('none')
+                      ->after('is_sent');
+            }
+            if (!Schema::hasColumn('crm_scheduled_task', 'recurrence_end')) {
+                $table->date('recurrence_end')->nullable()->after('recurrence_rule')
+                      ->comment('Stop creating new occurrences after this date');
+            }
+            if (!Schema::hasColumn('crm_scheduled_task', 'parent_task_id')) {
+                $table->unsignedBigInteger('parent_task_id')->nullable()->after('recurrence_end')
+                      ->comment('ID of the original recurring task');
+            }
         });
     }
 

@@ -14,7 +14,7 @@ class AddResponseColumnInCallMatrixTable extends Migration
     public function up()
     {
         Schema::table('call_matrix_report', function (Blueprint $table) {
-            $table->json('response_data')->nullable();
+            if (!Schema::hasColumn('call_matrix_report', 'response_data')) $table->json('response_data')->nullable();
         });
     }
 

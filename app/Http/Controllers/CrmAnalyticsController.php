@@ -7,6 +7,53 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Carbon\Carbon;
 
+/**
+ * @OA\Get(
+ *   path="/crm/analytics/status-distribution",
+ *   summary="Lead status distribution analytics",
+ *   operationId="crmAnalyticsStatusDistribution",
+ *   tags={"CRM Analytics"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Status distribution"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Get(
+ *   path="/crm/analytics/lead-velocity",
+ *   summary="Lead velocity analytics (how fast leads move through pipeline)",
+ *   operationId="crmAnalyticsLeadVelocity",
+ *   tags={"CRM Analytics"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Lead velocity data")
+ * )
+ *
+ * @OA\Get(
+ *   path="/crm/analytics/agent-performance",
+ *   summary="Agent performance analytics in CRM",
+ *   operationId="crmAnalyticsAgentPerformance",
+ *   tags={"CRM Analytics"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Agent performance data")
+ * )
+ *
+ * @OA\Get(
+ *   path="/crm/analytics/conversion-funnel",
+ *   summary="CRM conversion funnel analytics",
+ *   operationId="crmAnalyticsConversionFunnel",
+ *   tags={"CRM Analytics"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Conversion funnel data")
+ * )
+ *
+ * @OA\Get(
+ *   path="/crm/analytics/lender-performance",
+ *   summary="Lender performance analytics",
+ *   operationId="crmAnalyticsLenderPerformance",
+ *   tags={"CRM Analytics"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Lender performance data")
+ * )
+ */
 class CrmAnalyticsController extends Controller
 {
     private function period(Request $request): array

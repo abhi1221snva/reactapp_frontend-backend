@@ -8,6 +8,41 @@ use App\Services\GmailOAuthService;
 use App\Services\GoogleCalendarOAuthService;
 use Illuminate\Http\Request;
 
+/**
+ * @OA\Get(
+ *   path="/integrations",
+ *   summary="Get OAuth integration status for all providers",
+ *   operationId="integrationsIndex",
+ *   tags={"Integrations"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Integration statuses for gmail and google_calendar"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/connect-integration",
+ *   summary="Get OAuth authorization URL for a provider",
+ *   operationId="integrationsConnect",
+ *   tags={"Integrations"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(required={"provider"},
+ *     @OA\Property(property="provider", type="string", enum={"gmail","google_calendar"})
+ *   )),
+ *   @OA\Response(response=200, description="Authorization URL to redirect user to")
+ * )
+ *
+ * @OA\Post(
+ *   path="/disconnect-integration",
+ *   summary="Revoke OAuth access for a provider",
+ *   operationId="integrationsDisconnect",
+ *   tags={"Integrations"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(required={"provider"},
+ *     @OA\Property(property="provider", type="string", enum={"gmail","google_calendar"})
+ *   )),
+ *   @OA\Response(response=200, description="Integration disconnected")
+ * )
+ */
 class IntegrationController extends Controller
 {
     /**

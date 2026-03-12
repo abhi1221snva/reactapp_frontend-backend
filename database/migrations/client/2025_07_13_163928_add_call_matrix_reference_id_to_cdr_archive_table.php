@@ -14,7 +14,7 @@ class AddCallMatrixReferenceIdToCdrArchiveTable extends Migration
     public function up()
     {
         Schema::table('cdr_archive', function (Blueprint $table) {
-            $table->string('call_matrix_reference_id')->nullable();
+            if (!Schema::hasColumn('cdr_archive', 'call_matrix_reference_id')) $table->string('call_matrix_reference_id')->nullable();
         });
     }
 

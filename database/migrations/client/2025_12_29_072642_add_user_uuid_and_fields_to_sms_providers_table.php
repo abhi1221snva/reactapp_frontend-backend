@@ -11,13 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-         DB::statement("
-            ALTER TABLE sms_providers
-            ADD COLUMN uuid CHAR(36) NULL UNIQUE AFTER id,
-            ADD COLUMN type VARCHAR(50) NULL AFTER provider,
-            ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL
-        ");
-
+        Schema::table('sms_providers', function (Blueprint $table) {
+            if (!Schema::hasColumn('sms_providers', 'uuid')) $table->uuid('uuid')->nullable()->unique()->after('id');
+            if (!Schema::hasColumn('sms_providers', 'type')) $table->string('type', 50)->nullable()->after('provider');
+            if (!Schema::hasColumn('sms_providers', 'deleted_at')) $table->timestamp('deleted_at')->nullable()->default(null);
+        });
     }
 
     /**
@@ -25,12 +23,11 @@ return new class extends Migration
      */
     public function down(): void
     {
-   DB::statement("
+        DB::statement("
             ALTER TABLE sms_providers
             DROP COLUMN uuid,
             DROP COLUMN type,
             DROP COLUMN deleted_at
         ");
-
     }
 };

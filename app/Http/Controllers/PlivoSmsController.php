@@ -8,6 +8,56 @@ use App\Jobs\PlivoBulkSmsJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * @OA\Post(
+ *   path="/plivo/sms/send",
+ *   summary="Send a single SMS via Plivo",
+ *   operationId="plivoSendSms",
+ *   tags={"Plivo"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"to","src","text"},
+ *     @OA\Property(property="to", type="string", example="+15551234567"),
+ *     @OA\Property(property="src", type="string", example="+15559876543"),
+ *     @OA\Property(property="text", type="string"),
+ *     @OA\Property(property="lead_id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="SMS sent"),
+ *   @OA\Response(response=422, description="Validation error"),
+ *   @OA\Response(response=500, description="Plivo error")
+ * )
+ *
+ * @OA\Post(
+ *   path="/plivo/sms/bulk",
+ *   summary="Send bulk SMS via Plivo",
+ *   operationId="plivoBulkSms",
+ *   tags={"Plivo"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"messages"},
+ *     @OA\Property(property="messages", type="array", @OA\Items(
+ *       @OA\Property(property="to", type="string"),
+ *       @OA\Property(property="text", type="string")
+ *     )),
+ *     @OA\Property(property="src", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Bulk SMS job dispatched"),
+ *   @OA\Response(response=422, description="Validation error")
+ * )
+ *
+ * @OA\Get(
+ *   path="/plivo/sms",
+ *   summary="List Plivo SMS logs",
+ *   operationId="plivoListSms",
+ *   tags={"Plivo"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="date_from", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Parameter(name="date_till", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Parameter(name="start", in="query", @OA\Schema(type="integer", default=0)),
+ *   @OA\Parameter(name="limit", in="query", @OA\Schema(type="integer", default=25)),
+ *   @OA\Response(response=200, description="SMS list")
+ * )
+ */
 class PlivoSmsController extends Controller
 {
     // -- Send single SMS ----------------------------------------------------------

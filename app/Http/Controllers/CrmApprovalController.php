@@ -9,6 +9,63 @@ use App\Model\Client\CrmLeadActivity;
 use App\Model\User;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * @OA\Put(
+ *   path="/crm/lead/{id}/approval/request",
+ *   summary="Request approval for a lead",
+ *   operationId="crmApprovalRequest",
+ *   tags={"CRM Approvals"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Approval requested"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/crm/lead/{id}/approval/{aid}/review",
+ *   summary="Review (approve/reject) a lead approval",
+ *   operationId="crmApprovalReview",
+ *   tags={"CRM Approvals"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Parameter(name="aid", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="decision", type="string", enum={"approved","rejected"}),
+ *     @OA\Property(property="note", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Approval reviewed")
+ * )
+ *
+ * @OA\Post(
+ *   path="/crm/lead/{id}/approval/{aid}/withdraw",
+ *   summary="Withdraw an approval request",
+ *   operationId="crmApprovalWithdraw",
+ *   tags={"CRM Approvals"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Parameter(name="aid", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Approval withdrawn")
+ * )
+ *
+ * @OA\Get(
+ *   path="/crm/lead/{id}/approvals",
+ *   summary="List approvals for a lead",
+ *   operationId="crmApprovalList",
+ *   tags={"CRM Approvals"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Lead approvals")
+ * )
+ *
+ * @OA\Get(
+ *   path="/crm/approvals",
+ *   summary="List all pending approvals",
+ *   operationId="crmApprovalListAll",
+ *   tags={"CRM Approvals"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="All approvals")
+ * )
+ */
 class CrmApprovalController extends Controller
 {
     /**

@@ -8,6 +8,7 @@ class CreateTwilioTrunksTable extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasTable('twilio_trunks')) return;
         Schema::create('twilio_trunks', function (Blueprint $table) {
             $table->bigIncrements('id');
             $table->string('sid', 64)->unique();          // Twilio Trunk SID (TK...)

@@ -8,6 +8,58 @@ use App\Model\Client\CrmLeadStatusHistory;
 use App\Model\Client\CrmLeadActivity;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * @OA\Post(
+ *   path="/crm/leads/bulk/assign",
+ *   summary="Bulk assign leads to an agent",
+ *   operationId="crmBulkAssign",
+ *   tags={"CRM Bulk"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="lead_ids", type="array", @OA\Items(type="integer")),
+ *     @OA\Property(property="agent_id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Leads assigned"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/crm/leads/bulk/status-change",
+ *   summary="Bulk change lead status",
+ *   operationId="crmBulkStatusChange",
+ *   tags={"CRM Bulk"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="lead_ids", type="array", @OA\Items(type="integer")),
+ *     @OA\Property(property="status_id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Statuses updated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/crm/leads/bulk/delete",
+ *   summary="Bulk delete leads",
+ *   operationId="crmBulkDelete",
+ *   tags={"CRM Bulk"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="lead_ids", type="array", @OA\Items(type="integer"))
+ *   )),
+ *   @OA\Response(response=200, description="Leads deleted")
+ * )
+ *
+ * @OA\Post(
+ *   path="/crm/leads/bulk/export",
+ *   summary="Bulk export leads as CSV",
+ *   operationId="crmBulkExport",
+ *   tags={"CRM Bulk"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="lead_ids", type="array", @OA\Items(type="integer"))
+ *   )),
+ *   @OA\Response(response=200, description="CSV export")
+ * )
+ */
 class CrmBulkController extends Controller
 {
     private const MAX_BULK = 500;

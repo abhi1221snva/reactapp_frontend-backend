@@ -12,8 +12,8 @@ return new class extends Migration
     public function up(): void
     {
        Schema::table('sms_templete', function (Blueprint $table) {
-            $table->enum('status', ['0', '1'])->default('1'); // 0 - no, 1 - yes
-             $table->timestamps(); // adds created_at and updated_at
+            if (!Schema::hasColumn('sms_templete', 'status')) $table->enum('status', ['0', '1'])->default('1'); // 0 - no, 1 - yes
+            if (!Schema::hasColumn('sms_templete', 'created_at') && !Schema::hasColumn('sms_templete', 'updated_at')) $table->timestamps(); // adds created_at and updated_at
         });
 
     }

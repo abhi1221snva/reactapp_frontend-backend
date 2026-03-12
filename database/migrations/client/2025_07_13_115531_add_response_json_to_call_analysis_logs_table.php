@@ -14,7 +14,7 @@ class AddResponseJsonToCallAnalysisLogsTable extends Migration
     public function up()
     {
         Schema::table('call_analysis_logs', function (Blueprint $table) {
-            $table->longText('response_json')->nullable()->after('campaign_id');
+            if (!Schema::hasColumn('call_analysis_logs', 'response_json')) $table->longText('response_json')->nullable()->after('campaign_id');
             //
         });
     }

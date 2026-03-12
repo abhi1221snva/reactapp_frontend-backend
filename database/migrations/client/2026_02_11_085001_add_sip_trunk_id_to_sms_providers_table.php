@@ -12,10 +12,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('sms_providers', function (Blueprint $table) {
-            $table->string('twilio_trunk_id')->nullable();
-            $table->string('twilio_friendly_name')->nullable();
-
-
+            if (!Schema::hasColumn('sms_providers', 'twilio_trunk_id')) $table->string('twilio_trunk_id')->nullable();
+            if (!Schema::hasColumn('sms_providers', 'twilio_friendly_name')) $table->string('twilio_friendly_name')->nullable();
         });
     }
 

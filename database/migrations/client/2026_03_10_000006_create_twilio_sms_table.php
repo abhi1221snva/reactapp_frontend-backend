@@ -8,6 +8,7 @@ class CreateTwilioSmsTable extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasTable('twilio_sms')) return;
         Schema::create('twilio_sms', function (Blueprint $table) {
             $table->bigIncrements('id');
             $table->string('sms_sid', 64)->unique();      // SM...

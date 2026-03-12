@@ -10,6 +10,69 @@ use App\Services\GmailNotificationService;
 use App\Services\GmailOAuthService;
 use Illuminate\Http\Request;
 
+/**
+ * @OA\\Get(
+ *   path="/gmail/notification/settings",
+ *   tags={"Gmail"},
+ *   summary="Get Gmail notification settings",
+ *   security={{"bearerAuth":{}}},
+ *   @OA\\Response(response=200, description="Settings retrieved"),
+ *   @OA\\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\\Post(
+ *   path="/gmail/notification/settings",
+ *   tags={"Gmail"},
+ *   summary="Update Gmail notification settings",
+ *   security={{"bearerAuth":{}}},
+ *   @OA\\RequestBody(required=false, @OA\\JsonContent(
+ *     @OA\\Property(property="notification_type", type="string", enum={"dm","channel"}),
+ *     @OA\\Property(property="channel_uuid", type="string"),
+ *     @OA\\Property(property="is_enabled", type="boolean"),
+ *     @OA\\Property(property="include_subject", type="boolean"),
+ *     @OA\\Property(property="include_sender", type="boolean"),
+ *     @OA\\Property(property="include_preview", type="boolean"),
+ *     @OA\\Property(property="preview_length", type="integer"),
+ *     @OA\\Property(property="include_attachments_list", type="boolean"),
+ *     @OA\\Property(property="include_email_link", type="boolean"),
+ *     @OA\\Property(property="filter_labels", type="array", @OA\\Items(type="string")),
+ *     @OA\\Property(property="exclude_labels", type="array", @OA\\Items(type="string")),
+ *     @OA\\Property(property="only_unread", type="boolean")
+ *   )),
+ *   @OA\\Response(response=200, description="Settings updated"),
+ *   @OA\\Response(response=400, description="Gmail not connected"),
+ *   @OA\\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\\Get(
+ *   path="/gmail/notification/channels",
+ *   tags={"Gmail"},
+ *   summary="Get team channels available for Gmail notifications",
+ *   security={{"bearerAuth":{}}},
+ *   @OA\\Response(response=200, description="Channels list"),
+ *   @OA\\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\\Post(
+ *   path="/gmail/notification/test",
+ *   tags={"Gmail"},
+ *   summary="Send a test Gmail notification",
+ *   security={{"bearerAuth":{}}},
+ *   @OA\\Response(response=200, description="Test notification sent"),
+ *   @OA\\Response(response=400, description="Settings not configured"),
+ *   @OA\\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\\Get(
+ *   path="/gmail/notification/logs",
+ *   tags={"Gmail"},
+ *   summary="Get Gmail notification history/logs",
+ *   security={{"bearerAuth":{}}},
+ *   @OA\\Parameter(name="limit", in="query", @OA\\Schema(type="integer", default=50)),
+ *   @OA\\Response(response=200, description="Logs retrieved"),
+ *   @OA\\Response(response=401, description="Unauthenticated")
+ * )
+ */
 class GmailNotificationSettingsController extends Controller
 {
     protected $notificationService = null;

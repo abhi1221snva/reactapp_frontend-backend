@@ -11,6 +11,44 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * @OA\Get(
+ *   path="/workforce/dashboard",
+ *   summary="Workforce real-time supervisor dashboard",
+ *   description="Returns all agents with attendance status, dialer status, and live call metrics.",
+ *   operationId="workforceDashboard",
+ *   tags={"Workforce"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(
+ *     response=200,
+ *     description="Dashboard data",
+ *     @OA\JsonContent(
+ *       @OA\Property(property="success", type="boolean"),
+ *       @OA\Property(property="data", type="object",
+ *         @OA\Property(property="agents", type="array", @OA\Items(type="object")),
+ *         @OA\Property(property="summary", type="object",
+ *           @OA\Property(property="total_agents", type="integer"),
+ *           @OA\Property(property="clocked_in", type="integer"),
+ *           @OA\Property(property="on_call", type="integer"),
+ *           @OA\Property(property="on_break", type="integer")
+ *         )
+ *       )
+ *     )
+ *   ),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Get(
+ *   path="/workforce/dashboard/agent/{userId}",
+ *   summary="Get agent real-time status",
+ *   operationId="workforceAgentStatus",
+ *   tags={"Workforce"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="userId", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Agent status details"),
+ *   @OA\Response(response=404, description="Agent not found")
+ * )
+ */
 class WorkforceDashboardController extends Controller
 {
     private $request;

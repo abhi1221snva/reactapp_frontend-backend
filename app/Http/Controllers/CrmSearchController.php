@@ -5,6 +5,22 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * @OA\Post(
+ *   path="/crm/leads/search",
+ *   summary="Full-text search across CRM leads",
+ *   operationId="crmSearch",
+ *   tags={"CRM"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="q", type="string", description="Search query"),
+ *     @OA\Property(property="fields", type="array", @OA\Items(type="string")),
+ *     @OA\Property(property="limit", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Search results"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ */
 class CrmSearchController extends Controller
 {
     /**

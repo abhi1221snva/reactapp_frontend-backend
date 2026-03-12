@@ -5,6 +5,118 @@ namespace App\Http\Controllers;
 use App\Services\GmailMailboxService;
 use Illuminate\Http\Request;
 
+/**
+ * @OA\Get(
+ *   path="/gmail/mailbox",
+ *   summary="List emails from a Gmail folder/label",
+ *   operationId="gmailMailboxList",
+ *   tags={"Gmail"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="folder", in="query", @OA\Schema(type="string", default="INBOX")),
+ *   @OA\Parameter(name="limit", in="query", @OA\Schema(type="integer", default=20, maximum=50)),
+ *   @OA\Parameter(name="page_token", in="query", @OA\Schema(type="string")),
+ *   @OA\Parameter(name="q", in="query", description="Gmail search query", @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Email list"),
+ *   @OA\Response(response=400, description="Gmail not connected"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Get(
+ *   path="/gmail/mailbox/labels",
+ *   summary="Get available Gmail labels",
+ *   operationId="gmailMailboxLabels",
+ *   tags={"Gmail"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Gmail labels")
+ * )
+ *
+ * @OA\Get(
+ *   path="/gmail/mailbox/{messageId}",
+ *   summary="Get a single email's full content",
+ *   operationId="gmailMailboxShow",
+ *   tags={"Gmail"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="messageId", in="path", required=true, @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Email content"),
+ *   @OA\Response(response=404, description="Email not found")
+ * )
+ *
+ * @OA\Post(
+ *   path="/gmail/mailbox/send",
+ *   summary="Send an email via Gmail",
+ *   operationId="gmailMailboxSend",
+ *   tags={"Gmail"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(required={"to","subject","body"},
+ *     @OA\Property(property="to", type="string", format="email"),
+ *     @OA\Property(property="subject", type="string"),
+ *     @OA\Property(property="body", type="string"),
+ *     @OA\Property(property="cc", type="string"),
+ *     @OA\Property(property="bcc", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Email sent")
+ * )
+ *
+ * @OA\Post(
+ *   path="/gmail/mailbox/{messageId}/star",
+ *   summary="Star an email",
+ *   operationId="gmailMailboxStar",
+ *   tags={"Gmail"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="messageId", in="path", required=true, @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Email starred")
+ * )
+ *
+ * @OA\Post(
+ *   path="/gmail/mailbox/{messageId}/unstar",
+ *   summary="Unstar an email",
+ *   operationId="gmailMailboxUnstar",
+ *   tags={"Gmail"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="messageId", in="path", required=true, @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Email unstarred")
+ * )
+ *
+ * @OA\Post(
+ *   path="/gmail/mailbox/{messageId}/trash",
+ *   summary="Move email to trash",
+ *   operationId="gmailMailboxTrash",
+ *   tags={"Gmail"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="messageId", in="path", required=true, @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Email moved to trash")
+ * )
+ *
+ * @OA\Delete(
+ *   path="/gmail/mailbox/{messageId}",
+ *   summary="Permanently delete an email",
+ *   operationId="gmailMailboxDelete",
+ *   tags={"Gmail"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="messageId", in="path", required=true, @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Email deleted")
+ * )
+ *
+ * @OA\Post(
+ *   path="/gmail/mailbox/{messageId}/read",
+ *   summary="Mark email as read",
+ *   operationId="gmailMailboxMarkRead",
+ *   tags={"Gmail"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="messageId", in="path", required=true, @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Email marked as read")
+ * )
+ *
+ * @OA\Post(
+ *   path="/gmail/mailbox/{messageId}/unread",
+ *   summary="Mark email as unread",
+ *   operationId="gmailMailboxMarkUnread",
+ *   tags={"Gmail"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="messageId", in="path", required=true, @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Email marked as unread")
+ * )
+ */
 class GmailMailboxController extends Controller
 {
     protected $mailboxService;

@@ -557,13 +557,13 @@ function getLeadCount(Request $request) {
         $campaigns = [];
         foreach ($results as $row) {
             $campaignInfo = DB::connection($connection)->selectOne(
-                "SELECT name FROM campaign WHERE id = ? LIMIT 1",
+                "SELECT title FROM campaign WHERE id = ? LIMIT 1",
                 [$row->campaign_id]
             );
 
             $campaigns[] = [
                 'campaignId' => $row->campaign_id,
-                'campaignName' => $campaignInfo ? $campaignInfo->name : 'Unknown Campaign',
+                'campaignName' => $campaignInfo ? $campaignInfo->title : 'Unknown Campaign',
                 'revenue' => round((float)$row->revenue, 2),
                 'callCount' => (int)$row->call_count,
                 'totalDuration' => (int)$row->total_duration,

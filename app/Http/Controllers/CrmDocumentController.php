@@ -10,6 +10,49 @@ use Illuminate\Support\Facades\Storage;
 use App\Model\Client\CrmLeadActivity;
 use App\Model\User;
 
+/**
+ * @OA\Get(
+ *   path="/crm/lead/{id}/documents",
+ *   tags={"CRM"},
+ *   summary="List all documents for a lead",
+ *   security={{"bearerAuth":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, description="Lead ID", @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Documents list"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/crm/lead/{id}/documents",
+ *   tags={"CRM"},
+ *   summary="Upload documents for a lead",
+ *   security={{"bearerAuth":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, description="Lead ID", @OA\Schema(type="integer")),
+ *   @OA\RequestBody(required=true,
+ *     @OA\MediaType(mediaType="multipart/form-data",
+ *       @OA\Schema(
+ *         required={"files","document_type"},
+ *         @OA\Property(property="files[]", type="array", @OA\Items(type="string", format="binary"), description="1–10 files, max 20MB each (pdf,doc,docx,xls,xlsx,jpg,jpeg,png)"),
+ *         @OA\Property(property="document_type", type="string", example="Contract")
+ *       )
+ *     )
+ *   ),
+ *   @OA\Response(response=200, description="Documents uploaded"),
+ *   @OA\Response(response=422, description="Validation error or all uploads failed"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Delete(
+ *   path="/crm/lead/{id}/documents/{did}",
+ *   tags={"CRM"},
+ *   summary="Soft-delete a document",
+ *   security={{"bearerAuth":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, description="Lead ID", @OA\Schema(type="integer")),
+ *   @OA\Parameter(name="did", in="path", required=true, description="Document ID", @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Document deleted"),
+ *   @OA\Response(response=404, description="Document not found"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ */
 class CrmDocumentController extends Controller
 {
     /**
@@ -44,7 +87,7 @@ class CrmDocumentController extends Controller
                     $u = $uploaders[$uid];
                     $d['uploaded_by_name'] = trim(($u['first_name'] ?? '') . ' ' . ($u['last_name'] ?? ''));
                 }
-                $d['file_name'] = basename($d['file_path'] ?? '');
+                $d['file_name'] = !empty($d['file_path']) ? basename($d['file_path']) : ($d['file_name'] ?? '');
                 return $d;
             })->values();
 

@@ -13,7 +13,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('email_templates', function (Blueprint $table) {
-             $table->string('type')->default('def');
+            if (!Schema::hasColumn('email_templates', 'type')) $table->string('type')->default('def');
         });
     }
 

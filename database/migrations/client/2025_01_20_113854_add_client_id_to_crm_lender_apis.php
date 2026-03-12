@@ -14,9 +14,9 @@ class AddClientIdToCrmLenderApis extends Migration
     public function up()
     {
         Schema::table('crm_lender_apis', function (Blueprint $table) {
-            $table->string('partner_api_key')->nullable();
-            $table->string('client_id')->nullable();
-            $table->string('auth_url')->nullable();
+            if (!Schema::hasColumn('crm_lender_apis', 'partner_api_key')) $table->string('partner_api_key')->nullable();
+            if (!Schema::hasColumn('crm_lender_apis', 'client_id')) $table->string('client_id')->nullable();
+            if (!Schema::hasColumn('crm_lender_apis', 'auth_url')) $table->string('auth_url')->nullable();
         });
     }
 

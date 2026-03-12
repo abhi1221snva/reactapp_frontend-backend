@@ -17,14 +17,114 @@ use App\Services\CacheService;
 /**
  * Agent management for client admins.
  *
- * Routes (JWT required, level >= 7):
- *   GET    /agents              → list agents
- *   POST   /agents              → create agent
- *   GET    /agents/{id}         → show agent
- *   PUT    /agents/{id}         → update agent
- *   DELETE /agents/{id}         → deactivate agent
- *   POST   /agents/{id}/reset-password → reset password
- *   POST   /agents/{id}/activate       → reactivate agent
+ * @OA\Get(
+ *   path="/agents",
+ *   summary="List agents",
+ *   description="Returns a paginated list of agents for the authenticated client.",
+ *   operationId="listAgents",
+ *   tags={"Agent"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="search", in="query", @OA\Schema(type="string")),
+ *   @OA\Parameter(name="status", in="query", @OA\Schema(type="integer", enum={0,1})),
+ *   @OA\Parameter(name="role_id", in="query", @OA\Schema(type="integer")),
+ *   @OA\Parameter(name="start", in="query", @OA\Schema(type="integer", default=0)),
+ *   @OA\Parameter(name="limit", in="query", @OA\Schema(type="integer", default=25)),
+ *   @OA\Response(response=200, description="Agent list"),
+ *   @OA\Response(response=401, description="Unauthenticated"),
+ *   @OA\Response(response=403, description="Forbidden")
+ * )
+ *
+ * @OA\Post(
+ *   path="/agents",
+ *   summary="Create agent",
+ *   operationId="createAgent",
+ *   tags={"Agent"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(
+ *     required=true,
+ *     @OA\JsonContent(
+ *       required={"name","email","password","role"},
+ *       @OA\Property(property="name", type="string"),
+ *       @OA\Property(property="email", type="string", format="email"),
+ *       @OA\Property(property="password", type="string", format="password"),
+ *       @OA\Property(property="role", type="integer"),
+ *       @OA\Property(property="extension", type="string"),
+ *       @OA\Property(property="phone", type="string")
+ *     )
+ *   ),
+ *   @OA\Response(response=200, description="Agent created"),
+ *   @OA\Response(response=422, description="Validation error")
+ * )
+ *
+ * @OA\Get(
+ *   path="/agents/{id}",
+ *   summary="Get agent details",
+ *   operationId="showAgent",
+ *   tags={"Agent"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Agent details"),
+ *   @OA\Response(response=404, description="Not found")
+ * )
+ *
+ * @OA\Put(
+ *   path="/agents/{id}",
+ *   summary="Update agent",
+ *   operationId="updateAgent",
+ *   tags={"Agent"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\RequestBody(
+ *     @OA\JsonContent(
+ *       @OA\Property(property="name", type="string"),
+ *       @OA\Property(property="email", type="string"),
+ *       @OA\Property(property="phone", type="string"),
+ *       @OA\Property(property="extension", type="string")
+ *     )
+ *   ),
+ *   @OA\Response(response=200, description="Agent updated"),
+ *   @OA\Response(response=404, description="Not found")
+ * )
+ *
+ * @OA\Delete(
+ *   path="/agents/{id}",
+ *   summary="Deactivate agent",
+ *   operationId="deactivateAgent",
+ *   tags={"Agent"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Agent deactivated"),
+ *   @OA\Response(response=404, description="Not found")
+ * )
+ *
+ * @OA\Post(
+ *   path="/agents/{id}/reset-password",
+ *   summary="Reset agent password",
+ *   operationId="resetAgentPassword",
+ *   tags={"Agent"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\RequestBody(
+ *     required=true,
+ *     @OA\JsonContent(
+ *       required={"password"},
+ *       @OA\Property(property="password", type="string", format="password")
+ *     )
+ *   ),
+ *   @OA\Response(response=200, description="Password reset"),
+ *   @OA\Response(response=404, description="Not found")
+ * )
+ *
+ * @OA\Post(
+ *   path="/agents/{id}/activate",
+ *   summary="Reactivate a deactivated agent",
+ *   operationId="activateAgent",
+ *   tags={"Agent"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Agent activated"),
+ *   @OA\Response(response=404, description="Not found")
+ * )
  */
 class AgentController extends Controller
 {

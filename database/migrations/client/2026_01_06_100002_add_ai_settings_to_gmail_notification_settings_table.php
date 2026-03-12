@@ -12,11 +12,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('gmail_notification_settings', function (Blueprint $table) {
-            $table->boolean('ai_analysis_enabled')->default(true)->after('only_unread');
-            $table->boolean('include_ai_summary')->default(true)->after('ai_analysis_enabled');
-            $table->boolean('include_priority')->default(true)->after('include_ai_summary');
-            $table->boolean('include_suggested_reply')->default(true)->after('include_priority');
-            $table->enum('min_priority_notify', ['high', 'medium', 'low'])->default('low')->after('include_suggested_reply');
+            if (!Schema::hasColumn('gmail_notification_settings', 'ai_analysis_enabled')) $table->boolean('ai_analysis_enabled')->default(true)->after('only_unread');
+            if (!Schema::hasColumn('gmail_notification_settings', 'include_ai_summary')) $table->boolean('include_ai_summary')->default(true)->after('ai_analysis_enabled');
+            if (!Schema::hasColumn('gmail_notification_settings', 'include_priority')) $table->boolean('include_priority')->default(true)->after('include_ai_summary');
+            if (!Schema::hasColumn('gmail_notification_settings', 'include_suggested_reply')) $table->boolean('include_suggested_reply')->default(true)->after('include_priority');
+            if (!Schema::hasColumn('gmail_notification_settings', 'min_priority_notify')) $table->enum('min_priority_notify', ['high', 'medium', 'low'])->default('low')->after('include_suggested_reply');
         });
     }
 

@@ -6,6 +6,67 @@ use App\Services\CallMonitoringService;
 use Illuminate\Http\Request;
 
 /**
+ * @OA\Post(
+ *   path="/monitoring/listen",
+ *   summary="Listen to an active call (silent monitoring)",
+ *   operationId="monitoringListen",
+ *   tags={"Call Monitoring"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(required={"call_sid","supervisor_endpoint"},
+ *     @OA\Property(property="call_sid", type="string"),
+ *     @OA\Property(property="supervisor_endpoint", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Monitor session started"),
+ *   @OA\Response(response=403, description="Supervisor access required")
+ * )
+ *
+ * @OA\Post(
+ *   path="/monitoring/whisper",
+ *   summary="Whisper to agent only (caller cannot hear)",
+ *   operationId="monitoringWhisper",
+ *   tags={"Call Monitoring"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(required={"call_sid","supervisor_endpoint"},
+ *     @OA\Property(property="call_sid", type="string"),
+ *     @OA\Property(property="supervisor_endpoint", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Whisper session started")
+ * )
+ *
+ * @OA\Post(
+ *   path="/monitoring/barge",
+ *   summary="Barge into call (all parties can hear)",
+ *   operationId="monitoringBarge",
+ *   tags={"Call Monitoring"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(required={"call_sid","supervisor_endpoint"},
+ *     @OA\Property(property="call_sid", type="string"),
+ *     @OA\Property(property="supervisor_endpoint", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Barge session started")
+ * )
+ *
+ * @OA\Post(
+ *   path="/monitoring/stop",
+ *   summary="Stop active monitoring session",
+ *   operationId="monitoringStop",
+ *   tags={"Call Monitoring"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(required={"monitor_call_sid"},
+ *     @OA\Property(property="monitor_call_sid", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Monitor session stopped")
+ * )
+ *
+ * @OA\Get(
+ *   path="/monitoring/active",
+ *   summary="List all active monitor sessions",
+ *   operationId="monitoringActive",
+ *   tags={"Call Monitoring"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Active monitor sessions")
+ * )
+ *
  * Real-time call monitoring for supervisors.
  * Minimum level 5 (supervisor) required for all endpoints.
  */

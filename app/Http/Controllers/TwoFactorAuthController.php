@@ -15,6 +15,91 @@ use BaconQrCode\Renderer\RendererStyle\RendererStyle;
 use BaconQrCode\Writer;
 use App\Http\Helper\JwtToken;
 
+/**
+ * @OA\Post(
+ *   path="/2fa/setup",
+ *   summary="Initiate TOTP 2FA setup — generates QR code",
+ *   operationId="twoFaSetup",
+ *   tags={"Authentication"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(
+ *     response=200,
+ *     description="QR code SVG and secret",
+ *     @OA\JsonContent(
+ *       @OA\Property(property="secret", type="string"),
+ *       @OA\Property(property="qr_code", type="string", description="SVG QR code")
+ *     )
+ *   ),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/2fa/enable",
+ *   summary="Enable 2FA by verifying TOTP code",
+ *   operationId="twoFaEnable",
+ *   tags={"Authentication"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"code","secret"},
+ *     @OA\Property(property="code", type="string", description="6-digit TOTP code"),
+ *     @OA\Property(property="secret", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="2FA enabled + backup codes"),
+ *   @OA\Response(response=422, description="Invalid code")
+ * )
+ *
+ * @OA\Post(
+ *   path="/2fa/disable",
+ *   summary="Disable 2FA",
+ *   operationId="twoFaDisable",
+ *   tags={"Authentication"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"password"},
+ *     @OA\Property(property="password", type="string", format="password")
+ *   )),
+ *   @OA\Response(response=200, description="2FA disabled"),
+ *   @OA\Response(response=422, description="Invalid password")
+ * )
+ *
+ * @OA\Post(
+ *   path="/2fa/verify",
+ *   summary="Verify TOTP code during login (no JWT required)",
+ *   operationId="twoFaVerify",
+ *   tags={"Authentication"},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"temp_token","code"},
+ *     @OA\Property(property="temp_token", type="string"),
+ *     @OA\Property(property="code", type="string", description="6-digit TOTP code or backup code")
+ *   )),
+ *   @OA\Response(response=200, description="Verified — returns full JWT"),
+ *   @OA\Response(response=422, description="Invalid code"),
+ *   @OA\Response(response=401, description="Invalid temp token")
+ * )
+ *
+ * @OA\Get(
+ *   path="/2fa/status",
+ *   summary="Get 2FA status for current user",
+ *   operationId="twoFaStatus",
+ *   tags={"Authentication"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="2FA status")
+ * )
+ *
+ * @OA\Post(
+ *   path="/2fa/backup-codes/regenerate",
+ *   summary="Regenerate 2FA backup codes",
+ *   operationId="twoFaRegenerateBackupCodes",
+ *   tags={"Authentication"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"password"},
+ *     @OA\Property(property="password", type="string", format="password")
+ *   )),
+ *   @OA\Response(response=200, description="New backup codes"),
+ *   @OA\Response(response=422, description="Invalid password")
+ * )
+ */
 class TwoFactorAuthController extends Controller
 {
     private Google2FA $google2fa;

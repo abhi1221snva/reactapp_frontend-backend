@@ -9,6 +9,86 @@ use App\Services\TwilioService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * @OA\Post(
+ *   path="/twilio/account/connect",
+ *   summary="Connect Twilio account",
+ *   operationId="twilioConnect",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"account_sid","auth_token"},
+ *     @OA\Property(property="account_sid", type="string"),
+ *     @OA\Property(property="auth_token", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Account connected"),
+ *   @OA\Response(response=401, description="Invalid credentials"),
+ *   @OA\Response(response=422, description="Validation error")
+ * )
+ *
+ * @OA\Get(
+ *   path="/twilio/account",
+ *   summary="Get connected Twilio account",
+ *   operationId="twilioGetAccount",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Account details"),
+ *   @OA\Response(response=404, description="No account configured")
+ * )
+ *
+ * @OA\Post(
+ *   path="/twilio/account/disconnect",
+ *   summary="Disconnect Twilio account",
+ *   operationId="twilioDisconnect",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Account disconnected")
+ * )
+ *
+ * @OA\Post(
+ *   path="/twilio/subaccount",
+ *   summary="Create a Twilio subaccount",
+ *   operationId="twilioCreateSubaccount",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(@OA\Property(property="name", type="string"))),
+ *   @OA\Response(response=200, description="Subaccount created"),
+ *   @OA\Response(response=500, description="Creation failed")
+ * )
+ *
+ * @OA\Get(
+ *   path="/twilio/subaccounts",
+ *   summary="List Twilio subaccounts",
+ *   operationId="twilioListSubaccounts",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Subaccount list")
+ * )
+ *
+ * @OA\Post(
+ *   path="/twilio/subaccount/suspend",
+ *   summary="Suspend a Twilio subaccount",
+ *   operationId="twilioSuspendSubaccount",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"account_sid"},
+ *     @OA\Property(property="account_sid", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Subaccount suspended")
+ * )
+ *
+ * @OA\Get(
+ *   path="/twilio/usage",
+ *   summary="Get Twilio usage & billing summary",
+ *   operationId="twilioUsage",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="date_from", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Parameter(name="date_till", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Response(response=200, description="Usage summary")
+ * )
+ */
 class TwilioAccountController extends Controller
 {
     // ── Connect / update account ───────────────────────────────────────────

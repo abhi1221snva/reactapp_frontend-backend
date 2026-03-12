@@ -8,6 +8,56 @@ use App\Jobs\TwilioBulkSmsJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * @OA\Post(
+ *   path="/twilio/sms/send",
+ *   summary="Send a single SMS via Twilio",
+ *   operationId="twilioSendSms",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"to","from","body"},
+ *     @OA\Property(property="to", type="string", example="+15551234567"),
+ *     @OA\Property(property="from", type="string", example="+15559876543"),
+ *     @OA\Property(property="body", type="string"),
+ *     @OA\Property(property="lead_id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="SMS sent"),
+ *   @OA\Response(response=422, description="Validation error"),
+ *   @OA\Response(response=500, description="Twilio error")
+ * )
+ *
+ * @OA\Post(
+ *   path="/twilio/sms/bulk",
+ *   summary="Send bulk SMS via Twilio",
+ *   operationId="twilioBulkSms",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"messages"},
+ *     @OA\Property(property="messages", type="array", @OA\Items(
+ *       @OA\Property(property="to", type="string"),
+ *       @OA\Property(property="body", type="string")
+ *     )),
+ *     @OA\Property(property="from", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Bulk SMS job dispatched"),
+ *   @OA\Response(response=422, description="Validation error")
+ * )
+ *
+ * @OA\Get(
+ *   path="/twilio/sms",
+ *   summary="List Twilio SMS logs",
+ *   operationId="twilioListSms",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="date_from", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Parameter(name="date_till", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Parameter(name="start", in="query", @OA\Schema(type="integer", default=0)),
+ *   @OA\Parameter(name="limit", in="query", @OA\Schema(type="integer", default=25)),
+ *   @OA\Response(response=200, description="SMS list")
+ * )
+ */
 class TwilioSmsController extends Controller
 {
     // ── Send single SMS ────────────────────────────────────────────────────

@@ -20,6 +20,72 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * @OA\Get(
+ *   path="/get-extension",
+ *   summary="List extensions for the current client",
+ *   operationId="listExtensions",
+ *   tags={"Extension Group"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="search", in="query", @OA\Schema(type="string")),
+ *   @OA\Parameter(name="status", in="query", @OA\Schema(type="integer")),
+ *   @OA\Parameter(name="start", in="query", @OA\Schema(type="integer", default=0)),
+ *   @OA\Parameter(name="limit", in="query", @OA\Schema(type="integer", default=25)),
+ *   @OA\Response(response=200, description="Extension list"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/add-extension",
+ *   summary="Create a new SIP extension",
+ *   operationId="createExtension",
+ *   tags={"Extension Group"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"extension","password"},
+ *     @OA\Property(property="extension", type="string"),
+ *     @OA\Property(property="password", type="string"),
+ *     @OA\Property(property="caller_id_name", type="string"),
+ *     @OA\Property(property="caller_id_number", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Extension created"),
+ *   @OA\Response(response=422, description="Validation error")
+ * )
+ *
+ * @OA\Post(
+ *   path="/edit-extension",
+ *   summary="Update an existing extension",
+ *   operationId="updateExtension",
+ *   tags={"Extension Group"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"id"},
+ *     @OA\Property(property="id", type="integer"),
+ *     @OA\Property(property="caller_id_name", type="string"),
+ *     @OA\Property(property="caller_id_number", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Extension updated"),
+ *   @OA\Response(response=404, description="Not found")
+ * )
+ *
+ * @OA\Get(
+ *   path="/extension-list",
+ *   summary="Get extension list (simple)",
+ *   operationId="getExtensionList",
+ *   tags={"Extension Group"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Extension list")
+ * )
+ *
+ * @OA\Get(
+ *   path="/extension-count",
+ *   summary="Get total extension count for client",
+ *   operationId="getExtensionCount",
+ *   tags={"Extension Group"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Extension count")
+ * )
+ */
 class ExtensionController extends Controller
 {
 

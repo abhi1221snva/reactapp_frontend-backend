@@ -8,6 +8,7 @@ class CreateTwilioUsageLogsTable extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasTable('twilio_usage_logs')) return;
         Schema::create('twilio_usage_logs', function (Blueprint $table) {
             $table->bigIncrements('id');
             $table->string('category', 80);      // e.g. calls, sms, recordings

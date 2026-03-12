@@ -4,6 +4,18 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 
+/**
+ * @OA\Get(
+ *   path="/ai-coach-api",
+ *   summary="AI lead coaching — transcribe call audio and score lead via AI",
+ *   operationId="aiCoachIndex",
+ *   tags={"AI"},
+ *   @OA\Parameter(name="wav_url", in="query", required=true, @OA\Schema(type="string", format="uri")),
+ *   @OA\Response(response=200, description="AI lead scorecard with follow-up email"),
+ *   @OA\Response(response=400, description="Missing wav_url parameter")
+ * )
+ */
+
 class AiCoachController extends Controller
 {
     public function index()

@@ -283,11 +283,47 @@ class Report extends Model
             }
 
             if ($request->has('type') && !empty($request->input('type'))) {
-                $search['type'] = $request->input('type');
-                $search['type1'] = $request->input('type');
+                $typeVal = strtolower($request->input('type'));
+                // Map inbound/outbound (from frontend direction dropdown) to route column
+                if ($typeVal === 'inbound') {
+                    array_push($searchString, "route = 'IN'");
+                    array_push($searchString1, "route = 'IN'");
+                } elseif ($typeVal === 'outbound') {
+                    array_push($searchString, "route = 'OUT'");
+                    array_push($searchString1, "route = 'OUT'");
+                } else {
+                    $search['type'] = $request->input('type');
+                    $search['type1'] = $request->input('type');
+                    array_push($searchString, 'type = :type');
+                    array_push($searchString1, 'type = :type1');
+                }
+            }
 
-                array_push($searchString, 'type = :type');
-                array_push($searchString1, 'type = :type1');
+            // Filter by disposition name (text search against disposition.title)
+            if ($request->has('disposition_name') && !empty($request->input('disposition_name'))) {
+                $dispName = '%' . $request->input('disposition_name') . '%';
+                $dispRows = DB::connection('mysql_' . $parent_id)
+                    ->select("SELECT id FROM disposition WHERE title LIKE ?", [$dispName]);
+                if (!empty($dispRows)) {
+                    $dispIds = implode(',', array_column(array_map('get_object_vars', $dispRows), 'id'));
+                    array_push($searchString, "disposition_id IN ($dispIds)");
+                    array_push($searchString1, "disposition_id IN ($dispIds)");
+                } else {
+                    array_push($searchString, "1 = 0");
+                    array_push($searchString1, "1 = 0");
+                }
+            }
+
+            // Filter by call status (answered = duration > 0, no-answer = duration = 0)
+            if ($request->has('status') && !empty($request->input('status'))) {
+                $statusVal = strtoupper($request->input('status'));
+                if ($statusVal === 'ANSWERED') {
+                    array_push($searchString, "duration > 0");
+                    array_push($searchString1, "duration > 0");
+                } elseif (in_array($statusVal, ['NO ANSWER', 'MISSED'])) {
+                    array_push($searchString, "(duration IS NULL OR duration = 0)");
+                    array_push($searchString1, "(duration IS NULL OR duration = 0)");
+                }
             }
 
             if ($request->has('start_date') && $request->has('end_date') && !empty($request->input('start_date')) && !empty($request->input('end_date'))) {
@@ -360,52 +396,16 @@ class Report extends Model
                 array_push($searchString1, " extension IN ($srch_input_1)");
             } else {
 
-                #admin and above show cdr for all extensions
+                #admin and above show cdr for all extensions — no restriction by default
                 if ($request->auth->level >= 7) {
-                    $sql_extension = "SELECT extension,alt_extension FROM master.users WHERE parent_id = '" . $parent_id . "' order by  first_name asc";
-                    //Log::info('reached extension',['sql_extension' => $sql_extension]);
-
-                    if (empty($request->input('did_numbers'))) {
-                        $sql_did = "SELECT cli FROM master.did WHERE parent_id = '" . $parent_id . "'";
-
-                        $extensionDid = DB::connection('master')->select($sql_did);
-
-                        foreach ($extensionDid as $key => $val) {
-                            $user_data_did[] = $val->cli;
-                        }
-
-                        $did_implode = implode(',', $user_data_did);
-                        $did_implode1 = implode(',', $user_data_did);
-
-                        $extensionArray = DB::connection('master')->select($sql_extension);
-
-
-
-
-
-                        $user_data_extension = ["'" . $request->auth->extension . "'"]; // Quote the auth extension
-                        foreach ($extensionArray as $val) {
-                            $user_data_extension[] = "'" . $val->extension . "'"; // Quote each extension value
-                            $user_data_extension[] = "'" . $val->alt_extension . "'"; // Quote each alt_extension value
-                        }
-                        $srch_input_1 = implode(',', $user_data_extension);
-                        $srch_input = implode(',', $user_data_extension);
-                        if (empty($user_data_did)) {
-                            /*array_push($searchString, " (extension IN ($srch_input))");
-                    array_push($searchString1, " (extension IN ($srch_input_1))");*/
-                        } else {
-
-                            array_push($searchString, " (extension IN ($srch_input) OR cli IN ($did_implode))");
-                            array_push($searchString1, " (extension IN ($srch_input_1) OR cli IN ($did_implode1))");
-                        }
-                    } else {
-                        $did_implode = implode(',', $request->input('did_numbers'));
-                        $did_implode1 = implode(',', $request->input('did_numbers'));
-
-
-                        array_push($searchString, "  cli IN ($did_implode)");
-                        array_push($searchString1, "  cli IN ($did_implode1)");
+                    // Admins see ALL CDR records. Only restrict if caller explicitly passes did_numbers.
+                    if (!empty($request->input('did_numbers'))) {
+                        $did_implode  = implode(',', array_map('intval', $request->input('did_numbers')));
+                        $did_implode1 = $did_implode;
+                        array_push($searchString,  "cli IN ($did_implode)");
+                        array_push($searchString1, "cli IN ($did_implode1)");
                     }
+                    // else: no WHERE restriction — admin sees every record in this client DB
                 } else {
                     $database = 'client_' . $parent_id;
                     $sql_extension = "SELECT extension,alt_extension FROM master.users WHERE extension IN (
@@ -449,42 +449,49 @@ $query_string = "
         c.extension,
         c.cli,
         c.number,
+        c.number                                                          AS phone_number,
         c.area_code,
-        acc.city_name As city,
-        acc.state_name As state,
+        acc.city_name                                                     AS city,
+        acc.state_name                                                    AS state,
         c.start_time,
+        c.start_time                                                      AS created_at,
         c.end_time,
         c.duration,
         c.route,
         c.call_recording,
+        c.call_recording                                                  AS recording_url,
         c.campaign_id,
-        camp.title As campaign_name,
+        camp.title                                                        AS campaign_name,
         c.lead_id,
         c.type,
+        c.type                                                            AS call_type,
         c.disposition_id,
-        disp.title AS dispostion_name,
+        disp.title                                                        AS disposition,
         c.billable_minutes,
         c.billable_charge,
-        c.amd_status
+        c.amd_status,
+        TRIM(CONCAT(COALESCE(agent.first_name,''), ' ', COALESCE(agent.last_name,''))) AS agent_name
     FROM (
         (SELECT
             id, extension, cli, area_code, number, start_time, end_time, duration,
             route, call_recording, campaign_id, lead_id, type, disposition_id,
-            billable_minutes, billable_charge, amd_status
+            billable_minutes, billable_charge, amd_status, user_id
          FROM cdr $filter)
         UNION ALL
         (SELECT
             id, extension, cli, area_code, number, start_time, end_time, duration,
             route, call_recording, campaign_id, lead_id, type, disposition_id,
-            billable_minutes, billable_charge, amd_status
+            billable_minutes, billable_charge, amd_status, user_id
          FROM cdr_archive $filter1)
     ) AS c
-    LEFT JOIN master.areacode_city AS acc 
+    LEFT JOIN master.areacode_city AS acc
         ON acc.areacode = c.area_code
-    LEFT JOIN client_{$parent_id}.campaign AS camp 
+    LEFT JOIN client_{$parent_id}.campaign AS camp
         ON camp.id = c.campaign_id
-    LEFT JOIN client_{$parent_id}.disposition AS disp 
+    LEFT JOIN client_{$parent_id}.disposition AS disp
         ON disp.id = c.disposition_id
+    LEFT JOIN master.users AS agent
+        ON agent.id = c.user_id
     ORDER BY c.start_time DESC
 ";
 

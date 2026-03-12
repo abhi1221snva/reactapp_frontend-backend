@@ -8,6 +8,69 @@ use App\Services\PlivoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * @OA\Post(
+ *   path="/plivo/calls/make",
+ *   summary="Initiate an outbound Plivo call",
+ *   operationId="plivoMakeCall",
+ *   tags={"Plivo"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"to","from"},
+ *     @OA\Property(property="to", type="string", example="+15551234567"),
+ *     @OA\Property(property="from", type="string", example="+15559876543"),
+ *     @OA\Property(property="lead_id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Call initiated"),
+ *   @OA\Response(response=422, description="Validation error"),
+ *   @OA\Response(response=500, description="Plivo error")
+ * )
+ *
+ * @OA\Post(
+ *   path="/plivo/calls/{uuid}/hangup",
+ *   summary="Hang up an active Plivo call",
+ *   operationId="plivoHangupCall",
+ *   tags={"Plivo"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="uuid", in="path", required=true, @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Call hung up"),
+ *   @OA\Response(response=404, description="Not found")
+ * )
+ *
+ * @OA\Get(
+ *   path="/plivo/calls",
+ *   summary="List Plivo call logs",
+ *   operationId="plivoListCalls",
+ *   tags={"Plivo"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="date_from", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Parameter(name="date_till", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Parameter(name="start", in="query", @OA\Schema(type="integer", default=0)),
+ *   @OA\Parameter(name="limit", in="query", @OA\Schema(type="integer", default=25)),
+ *   @OA\Response(response=200, description="Call list")
+ * )
+ *
+ * @OA\Get(
+ *   path="/plivo/calls/{uuid}",
+ *   summary="Get a single Plivo call by UUID",
+ *   operationId="plivoGetCall",
+ *   tags={"Plivo"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="uuid", in="path", required=true, @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Call details"),
+ *   @OA\Response(response=404, description="Not found")
+ * )
+ *
+ * @OA\Get(
+ *   path="/plivo/recordings",
+ *   summary="List Plivo call recordings",
+ *   operationId="plivoListRecordings",
+ *   tags={"Plivo"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="call_uuid", in="query", @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Recording list")
+ * )
+ */
 class PlivoCallController extends Controller
 {
     // -- Make outbound call -------------------------------------------------------

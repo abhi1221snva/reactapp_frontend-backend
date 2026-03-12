@@ -8,6 +8,7 @@ class CreateTwilioCallsTable extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasTable('twilio_calls')) return;
         Schema::create('twilio_calls', function (Blueprint $table) {
             $table->bigIncrements('id');
             $table->string('call_sid', 64)->unique();     // CA...

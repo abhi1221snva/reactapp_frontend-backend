@@ -18,6 +18,33 @@ class AdminClientController extends Controller
 {
     // ── List all clients ───────────────────────────────────────────────────────
 
+    /**
+     * @OA\Get(
+     *     path="/admin/clients",
+     *     summary="List all tenant clients (paginated)",
+     *     tags={"Admin"},
+     *     security={{"Bearer":{}}},
+     *     @OA\Parameter(name="per_page", in="query", required=false, @OA\Schema(type="integer", default=25)),
+     *     @OA\Parameter(name="page",     in="query", required=false, @OA\Schema(type="integer", default=1)),
+     *     @OA\Parameter(name="search",   in="query", required=false, @OA\Schema(type="string")),
+     *     @OA\Parameter(name="status",   in="query", required=false, @OA\Schema(type="string", enum={"active","inactive",""})),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Paginated client list",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="boolean"),
+     *             @OA\Property(property="message", type="string"),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="clients",      type="array", @OA\Items(type="object")),
+     *                 @OA\Property(property="total",        type="integer"),
+     *                 @OA\Property(property="current_page", type="integer"),
+     *                 @OA\Property(property="per_page",     type="integer")
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(response=403, description="Forbidden — system_administrator only")
+     * )
+     */
     public function index(Request $request)
     {
         $perPage = (int) $request->input('per_page', 25);
@@ -70,6 +97,25 @@ class AdminClientController extends Controller
 
     // ── Get single client ──────────────────────────────────────────────────────
 
+    /**
+     * @OA\Get(
+     *     path="/admin/clients/{id}",
+     *     summary="Get a single client by ID",
+     *     tags={"Admin"},
+     *     security={{"Bearer":{}}},
+     *     @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Client details including admin user and server assignments",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="boolean"),
+     *             @OA\Property(property="data", type="object")
+     *         )
+     *     ),
+     *     @OA\Response(response=404, description="Client not found"),
+     *     @OA\Response(response=403, description="Forbidden")
+     * )
+     */
     public function show(int $id)
     {
         $client = Client::findOrFail($id);
@@ -91,6 +137,30 @@ class AdminClientController extends Controller
 
     // ── Create client ──────────────────────────────────────────────────────────
 
+    /**
+     * @OA\Post(
+     *     path="/admin/clients",
+     *     summary="Create a new tenant client",
+     *     tags={"Admin"},
+     *     security={{"Bearer":{}}},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"company_name","asterisk_servers","trunk","api_key"},
+     *             @OA\Property(property="company_name",     type="string"),
+     *             @OA\Property(property="asterisk_servers", type="array", @OA\Items(type="integer")),
+     *             @OA\Property(property="trunk",            type="string"),
+     *             @OA\Property(property="api_key",          type="string"),
+     *             @OA\Property(property="enable_2fa",       type="string", enum={"on","off"}),
+     *             @OA\Property(property="address_1",        type="string"),
+     *             @OA\Property(property="address_2",        type="string")
+     *         )
+     *     ),
+     *     @OA\Response(response=200, description="Client created successfully"),
+     *     @OA\Response(response=422, description="Validation error"),
+     *     @OA\Response(response=403, description="Forbidden")
+     * )
+     */
     public function store(Request $request)
     {
         $this->validate($request, [
@@ -129,6 +199,27 @@ class AdminClientController extends Controller
 
     // ── Update client ──────────────────────────────────────────────────────────
 
+    /**
+     * @OA\Put(
+     *     path="/admin/clients/{id}",
+     *     summary="Update an existing tenant client",
+     *     tags={"Admin"},
+     *     security={{"Bearer":{}}},
+     *     @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     *     @OA\RequestBody(
+     *         @OA\JsonContent(
+     *             @OA\Property(property="company_name",     type="string"),
+     *             @OA\Property(property="trunk",            type="string"),
+     *             @OA\Property(property="api_key",          type="string"),
+     *             @OA\Property(property="enable_2fa",       type="string"),
+     *             @OA\Property(property="asterisk_servers", type="array", @OA\Items(type="integer"))
+     *         )
+     *     ),
+     *     @OA\Response(response=200, description="Client updated successfully"),
+     *     @OA\Response(response=404, description="Client not found"),
+     *     @OA\Response(response=403, description="Forbidden")
+     * )
+     */
     public function update(Request $request, int $id)
     {
         $this->validate($request, [
@@ -177,6 +268,18 @@ class AdminClientController extends Controller
 
     // ── Activate / Deactivate ──────────────────────────────────────────────────
 
+    /**
+     * @OA\Post(
+     *     path="/admin/clients/{id}/activate",
+     *     summary="Activate a deactivated client",
+     *     tags={"Admin"},
+     *     security={{"Bearer":{}}},
+     *     @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     *     @OA\Response(response=200, description="Client activated"),
+     *     @OA\Response(response=404, description="Client not found"),
+     *     @OA\Response(response=403, description="Forbidden")
+     * )
+     */
     public function activate(Request $request, int $id)
     {
         $client = Client::findOrFail($id);
@@ -187,6 +290,19 @@ class AdminClientController extends Controller
         return $this->successResponse('Client activated.', ['id' => $id, 'is_deleted' => 0]);
     }
 
+    /**
+     * @OA\Post(
+     *     path="/admin/clients/{id}/deactivate",
+     *     summary="Deactivate (soft-delete) a client",
+     *     tags={"Admin"},
+     *     security={{"Bearer":{}}},
+     *     @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     *     @OA\Response(response=200, description="Client deactivated"),
+     *     @OA\Response(response=422, description="Cannot deactivate own account"),
+     *     @OA\Response(response=404, description="Client not found"),
+     *     @OA\Response(response=403, description="Forbidden")
+     * )
+     */
     public function deactivate(Request $request, int $id)
     {
         $client = Client::findOrFail($id);
@@ -209,6 +325,31 @@ class AdminClientController extends Controller
     // with a `client_override` claim so JwtMiddleware routes all subsequent
     // DB queries to the target client's database.
 
+    /**
+     * @OA\Post(
+     *     path="/admin/clients/{id}/switch",
+     *     summary="Impersonate a client — returns a JWT with client_override claim",
+     *     tags={"Admin"},
+     *     security={{"Bearer":{}}},
+     *     @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     *     @OA\Response(
+     *         response=200,
+     *         description="JWT token for impersonating the target client",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success",                 type="boolean"),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="token",                    type="string"),
+     *                 @OA\Property(property="expires_at",               type="string"),
+     *                 @OA\Property(property="impersonating",            type="boolean"),
+     *                 @OA\Property(property="impersonating_client_id",  type="integer"),
+     *                 @OA\Property(property="impersonating_company",    type="string")
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(response=422, description="Cannot switch to deactivated client"),
+     *     @OA\Response(response=403, description="Forbidden")
+     * )
+     */
     public function switchTo(Request $request, int $id)
     {
         $client = Client::findOrFail($id);

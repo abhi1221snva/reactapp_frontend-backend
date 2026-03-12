@@ -6,6 +6,18 @@ use Illuminate\Http\Request;
 use App\Model\Client\CrmLeadStatusHistory;
 use App\Model\User;
 
+/**
+ * @OA\Get(
+ *   path="/crm/lead/{id}/status-history",
+ *   summary="Get status change history for a lead",
+ *   operationId="crmLeadStatusHistory",
+ *   tags={"CRM"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Lead status history"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ */
 class CrmLeadStatusHistoryController extends Controller
 {
     /**

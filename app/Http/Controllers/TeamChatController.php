@@ -16,6 +16,125 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Pusher\Pusher;
 
+/**
+ * @OA\Get(
+ *   path="/team-chat/widget-data",
+ *   summary="Get team chat widget data (conversations, unread count, online users)",
+ *   operationId="teamChatWidgetData",
+ *   tags={"Team Chat"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Widget data"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Get(
+ *   path="/team-chat/conversations",
+ *   summary="List team chat conversations",
+ *   operationId="teamChatConversations",
+ *   tags={"Team Chat"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Conversations list")
+ * )
+ *
+ * @OA\Post(
+ *   path="/team-chat/conversations",
+ *   summary="Create a group conversation",
+ *   operationId="teamChatCreateConversation",
+ *   tags={"Team Chat"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="name", type="string"),
+ *     @OA\Property(property="participant_ids", type="array", @OA\Items(type="integer"))
+ *   )),
+ *   @OA\Response(response=200, description="Conversation created")
+ * )
+ *
+ * @OA\Post(
+ *   path="/team-chat/conversations/direct",
+ *   summary="Get or create direct 1:1 conversation",
+ *   operationId="teamChatDirectConversation",
+ *   tags={"Team Chat"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(required={"user_id"},
+ *     @OA\Property(property="user_id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Direct conversation")
+ * )
+ *
+ * @OA\Get(
+ *   path="/team-chat/conversations/{uuid}",
+ *   summary="Get a single conversation",
+ *   operationId="teamChatGetConversation",
+ *   tags={"Team Chat"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="uuid", in="path", required=true, @OA\Schema(type="string", format="uuid")),
+ *   @OA\Response(response=200, description="Conversation detail")
+ * )
+ *
+ * @OA\Get(
+ *   path="/team-chat/conversations/{uuid}/messages",
+ *   summary="Get messages in a conversation",
+ *   operationId="teamChatGetMessages",
+ *   tags={"Team Chat"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="uuid", in="path", required=true, @OA\Schema(type="string", format="uuid")),
+ *   @OA\Response(response=200, description="Messages list")
+ * )
+ *
+ * @OA\Post(
+ *   path="/team-chat/conversations/{uuid}/messages",
+ *   summary="Send a message in a conversation",
+ *   operationId="teamChatSendMessage",
+ *   tags={"Team Chat"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="uuid", in="path", required=true, @OA\Schema(type="string", format="uuid")),
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="message", type="string"),
+ *     @OA\Property(property="message_type", type="string", enum={"text","image","file"})
+ *   )),
+ *   @OA\Response(response=200, description="Message sent")
+ * )
+ *
+ * @OA\Post(
+ *   path="/team-chat/conversations/{uuid}/read",
+ *   summary="Mark conversation messages as read",
+ *   operationId="teamChatMarkRead",
+ *   tags={"Team Chat"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="uuid", in="path", required=true, @OA\Schema(type="string", format="uuid")),
+ *   @OA\Response(response=200, description="Messages marked as read")
+ * )
+ *
+ * @OA\Post(
+ *   path="/team-chat/presence",
+ *   summary="Update user presence status",
+ *   operationId="teamChatUpdatePresence",
+ *   tags={"Team Chat"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="status", type="string", enum={"online","away","offline"})
+ *   )),
+ *   @OA\Response(response=200, description="Presence updated")
+ * )
+ *
+ * @OA\Get(
+ *   path="/team-chat/users/online",
+ *   summary="Get list of online users",
+ *   operationId="teamChatOnlineUsers",
+ *   tags={"Team Chat"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Online users")
+ * )
+ *
+ * @OA\Get(
+ *   path="/team-chat/unread-count",
+ *   summary="Get total unread message count",
+ *   operationId="teamChatUnreadCount",
+ *   tags={"Team Chat"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Unread count")
+ * )
+ */
 class TeamChatController extends Controller
 {
     protected $pusher;

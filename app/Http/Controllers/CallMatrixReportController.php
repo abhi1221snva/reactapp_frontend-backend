@@ -12,6 +12,49 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * @OA\Post(
+ *   path="/call-matrix-report",
+ *   summary="Save CallChex call analysis result",
+ *   operationId="callMatrixStore",
+ *   tags={"Call Matrix"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="reference_id", type="string"),
+ *     @OA\Property(property="response_data", type="object")
+ *   )),
+ *   @OA\Response(response=200, description="Analysis saved"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/call-matrix/process",
+ *   summary="Submit call recording to CallChex for analysis",
+ *   operationId="callMatrixProcess",
+ *   tags={"Call Matrix"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="lead_id", type="integer"),
+ *     @OA\Property(property="audio_url", type="string"),
+ *     @OA\Property(property="agent_id", type="string"),
+ *     @OA\Property(property="campaign_id", type="integer"),
+ *     @OA\Property(property="recording_url", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Analysis initiated with reference_id"),
+ *   @OA\Response(response=500, description="CallChex request failed")
+ * )
+ *
+ * @OA\Get(
+ *   path="/call-matrix-report/{reference_id}",
+ *   summary="View call analysis result by reference ID",
+ *   operationId="callMatrixView",
+ *   tags={"Call Matrix"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="reference_id", in="path", required=true, @OA\Schema(type="string", format="uuid")),
+ *   @OA\Response(response=200, description="Call analysis result"),
+ *   @OA\Response(response=404, description="Not found")
+ * )
+ */
 class CallMatrixReportController extends Controller
 {
     public function process1(Request $request)

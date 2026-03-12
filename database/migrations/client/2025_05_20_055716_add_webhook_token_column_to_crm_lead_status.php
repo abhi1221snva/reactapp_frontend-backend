@@ -14,7 +14,7 @@ class AddWebhookTokenColumnToCrmLeadStatus extends Migration
     public function up()
     {
         Schema::table('crm_lead_status', function (Blueprint $table) {
-            $table->string('webhook_token')->nullable();
+            if (!Schema::hasColumn('crm_lead_status', 'webhook_token')) $table->string('webhook_token')->nullable();
         });
     }
 

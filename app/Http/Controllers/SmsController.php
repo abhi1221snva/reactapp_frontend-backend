@@ -24,6 +24,72 @@ use Carbon\Carbon;
 
 
 
+/**
+ * @OA\Post(
+ *   path="/get-sms",
+ *   summary="Get SMS conversation history",
+ *   operationId="getSms",
+ *   tags={"SMS"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="did_id", type="integer"),
+ *     @OA\Property(property="contact_number", type="string"),
+ *     @OA\Property(property="start", type="integer", default=0),
+ *     @OA\Property(property="limit", type="integer", default=25)
+ *   )),
+ *   @OA\Response(response=200, description="SMS messages"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/send-sms",
+ *   summary="Send an SMS message",
+ *   operationId="sendSms",
+ *   tags={"SMS"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"to","message","from_did"},
+ *     @OA\Property(property="to", type="string", example="+15551234567"),
+ *     @OA\Property(property="message", type="string"),
+ *     @OA\Property(property="from_did", type="integer"),
+ *     @OA\Property(property="lead_id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="SMS sent"),
+ *   @OA\Response(response=422, description="Validation error")
+ * )
+ *
+ * @OA\Post(
+ *   path="/get-unread-sms",
+ *   summary="Get unread SMS count",
+ *   operationId="getUnreadSms",
+ *   tags={"SMS"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Unread count")
+ * )
+ *
+ * @OA\Post(
+ *   path="/sms-did-list",
+ *   summary="List DIDs with SMS capability",
+ *   operationId="smsDidList",
+ *   tags={"SMS"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="DID list")
+ * )
+ *
+ * @OA\Post(
+ *   path="/send-test-sms",
+ *   summary="Send a test SMS",
+ *   operationId="sendTestSms",
+ *   tags={"SMS"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"to","message"},
+ *     @OA\Property(property="to", type="string"),
+ *     @OA\Property(property="message", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Test SMS sent")
+ * )
+ */
 class SmsController extends Controller
 {
 

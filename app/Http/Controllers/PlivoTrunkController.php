@@ -7,6 +7,56 @@ use App\Services\PlivoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * @OA\Get(
+ *   path="/plivo/trunks",
+ *   summary="List Plivo SIP trunks (Applications)",
+ *   operationId="plivoListTrunks",
+ *   tags={"Plivo"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Trunk list")
+ * )
+ *
+ * @OA\Post(
+ *   path="/plivo/trunks",
+ *   summary="Create a Plivo SIP trunk (Application)",
+ *   operationId="plivoCreateTrunk",
+ *   tags={"Plivo"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"app_name","answer_url"},
+ *     @OA\Property(property="app_name", type="string"),
+ *     @OA\Property(property="answer_url", type="string", format="uri"),
+ *     @OA\Property(property="hangup_url", type="string", format="uri")
+ *   )),
+ *   @OA\Response(response=200, description="Trunk created"),
+ *   @OA\Response(response=500, description="Plivo error")
+ * )
+ *
+ * @OA\Put(
+ *   path="/plivo/trunks/{appId}",
+ *   summary="Update a Plivo SIP trunk",
+ *   operationId="plivoUpdateTrunk",
+ *   tags={"Plivo"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="appId", in="path", required=true, @OA\Schema(type="string")),
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="app_name", type="string"),
+ *     @OA\Property(property="answer_url", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Trunk updated")
+ * )
+ *
+ * @OA\Delete(
+ *   path="/plivo/trunks/{appId}",
+ *   summary="Delete a Plivo SIP trunk",
+ *   operationId="plivoDeleteTrunk",
+ *   tags={"Plivo"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="appId", in="path", required=true, @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Trunk deleted")
+ * )
+ */
 class PlivoTrunkController extends Controller
 {
     // -- List trunks (Plivo Applications) -----------------------------------------

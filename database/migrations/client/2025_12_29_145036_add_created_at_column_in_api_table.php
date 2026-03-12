@@ -11,10 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-           DB::statement("
-        ALTER TABLE `api`
-        ADD COLUMN `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
-    ");
+        if (!Schema::hasColumn('api', 'created_at')) {
+            DB::statement("
+            ALTER TABLE `api`
+            ADD COLUMN `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
+        ");
+        }
     }
 
     /**

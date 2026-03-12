@@ -5,6 +5,63 @@ namespace App\Http\Controllers;
 use App\Model\RingGroup;
 use Illuminate\Http\Request;
 
+/**
+ * @OA\Post(
+ *   path="/get-ring-group",
+ *   summary="List ring groups",
+ *   operationId="listRingGroups",
+ *   tags={"Ring Group"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Ring group list"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/add-ring-group",
+ *   summary="Create a ring group",
+ *   operationId="createRingGroup",
+ *   tags={"Ring Group"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"name","strategy"},
+ *     @OA\Property(property="name", type="string"),
+ *     @OA\Property(property="strategy", type="string", enum={"simultaneous","sequential"}),
+ *     @OA\Property(property="members", type="array", @OA\Items(type="integer"))
+ *   )),
+ *   @OA\Response(response=200, description="Ring group created"),
+ *   @OA\Response(response=422, description="Validation error")
+ * )
+ *
+ * @OA\Post(
+ *   path="/edit-ring-group",
+ *   summary="Update a ring group",
+ *   operationId="updateRingGroup",
+ *   tags={"Ring Group"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"id"},
+ *     @OA\Property(property="id", type="integer"),
+ *     @OA\Property(property="name", type="string"),
+ *     @OA\Property(property="members", type="array", @OA\Items(type="integer"))
+ *   )),
+ *   @OA\Response(response=200, description="Ring group updated"),
+ *   @OA\Response(response=404, description="Not found")
+ * )
+ *
+ * @OA\Post(
+ *   path="/delete-ring-group",
+ *   summary="Delete a ring group",
+ *   operationId="deleteRingGroup",
+ *   tags={"Ring Group"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"id"},
+ *     @OA\Property(property="id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Ring group deleted"),
+ *   @OA\Response(response=404, description="Not found")
+ * )
+ */
 class RingGroupController extends Controller
 {
     /**

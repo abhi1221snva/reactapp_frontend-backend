@@ -15,11 +15,11 @@ class AlterCrmNotificationsTable extends Migration
     {
         Schema::table('crm_notifications', function (Blueprint $table) {
             // Make lead_id nullable
-            $table->unsignedBigInteger('lead_id')->nullable()->change();
+            if (Schema::hasColumn('crm_notifications', 'lead_id')) $table->unsignedBigInteger('lead_id')->nullable()->change();
             
             // Add new columns
-            $table->json('data')->nullable()->after('message');
-            $table->string('title')->nullable()->after('lead_id');
+            if (!Schema::hasColumn('crm_notifications', 'data')) $table->json('data')->nullable()->after('message');
+            if (!Schema::hasColumn('crm_notifications', 'title')) $table->string('title')->nullable()->after('lead_id');
         });
     }
 

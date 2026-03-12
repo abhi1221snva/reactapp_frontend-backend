@@ -30,6 +30,67 @@ use Exception;
 
 
 
+/**
+ * @OA\Post(
+ *   path="/get-dids",
+ *   summary="List DID phone numbers for client",
+ *   operationId="listDids",
+ *   tags={"DID"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="search", type="string"),
+ *     @OA\Property(property="campaign_id", type="integer"),
+ *     @OA\Property(property="start", type="integer", default=0),
+ *     @OA\Property(property="limit", type="integer", default=25)
+ *   )),
+ *   @OA\Response(response=200, description="DID list"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/add-did",
+ *   summary="Add a new DID",
+ *   operationId="addDid",
+ *   tags={"DID"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"did"},
+ *     @OA\Property(property="did", type="string", description="Phone number in E.164 format"),
+ *     @OA\Property(property="did_name", type="string"),
+ *     @OA\Property(property="campaign_id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="DID added"),
+ *   @OA\Response(response=422, description="Validation error")
+ * )
+ *
+ * @OA\Post(
+ *   path="/delete-did",
+ *   summary="Delete a DID",
+ *   operationId="deleteDid",
+ *   tags={"DID"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"id"},
+ *     @OA\Property(property="id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="DID deleted"),
+ *   @OA\Response(response=404, description="Not found")
+ * )
+ *
+ * @OA\Post(
+ *   path="/did-detail",
+ *   summary="Get DID details",
+ *   operationId="didDetail",
+ *   tags={"DID"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"id"},
+ *     @OA\Property(property="id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="DID details"),
+ *   @OA\Response(response=404, description="Not found")
+ * )
+ */
 class DidsController extends Controller
 {
 

@@ -12,10 +12,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('did', function (Blueprint $table) {
-            $table->string('phone_number_sid', 100)
-                  ->nullable()
-                  ->after('cli');
-      
+            if (!Schema::hasColumn('did', 'phone_number_sid')) {
+                $table->string('phone_number_sid', 100)
+                      ->nullable()
+                      ->after('cli');
+            }
         });
     }
 

@@ -12,12 +12,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('email_logs', function (Blueprint $table) {
-            $table->string('folder')->default('sent')->after('id');
-
-            // Add cc and bcc columns, nullable
-              // Add cc and bcc columns as JSON, nullable
-            $table->json('cc')->nullable()->after('folder');
-            $table->json('bcc')->nullable()->after('cc');
+            if (!Schema::hasColumn('email_logs', 'folder')) $table->string('folder')->default('sent')->after('id');
+            if (!Schema::hasColumn('email_logs', 'cc')) $table->json('cc')->nullable()->after('folder');
+            if (!Schema::hasColumn('email_logs', 'bcc')) $table->json('bcc')->nullable()->after('cc');
         });
     }
 

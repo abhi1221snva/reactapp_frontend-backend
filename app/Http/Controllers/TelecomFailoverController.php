@@ -6,6 +6,41 @@ use App\Services\TelecomFailoverService;
 use Illuminate\Http\Request;
 
 /**
+ * @OA\Get(
+ *   path="/telecom/failover/status",
+ *   summary="Get active telecom provider and per-provider health",
+ *   operationId="telecomFailoverStatus",
+ *   tags={"Telecom"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Provider status"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/telecom/failover/switch",
+ *   summary="Manually switch active telecom provider",
+ *   operationId="telecomFailoverSwitch",
+ *   tags={"Telecom"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(required={"provider"},
+ *     @OA\Property(property="provider", type="string", enum={"twilio","plivo"})
+ *   )),
+ *   @OA\Response(response=200, description="Provider switched"),
+ *   @OA\Response(response=403, description="Admin access required")
+ * )
+ *
+ * @OA\Post(
+ *   path="/telecom/failover/reset-stats",
+ *   summary="Reset failure counters for a telecom provider",
+ *   operationId="telecomFailoverResetStats",
+ *   tags={"Telecom"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(required={"provider"},
+ *     @OA\Property(property="provider", type="string", enum={"twilio","plivo"})
+ *   )),
+ *   @OA\Response(response=200, description="Stats reset")
+ * )
+ *
  * Telecom provider failover management.
  * Admin level 7+ required.
  */

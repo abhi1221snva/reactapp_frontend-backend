@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('email_logs', function (Blueprint $table) {
-            $table->string('previous_folder', 50)->nullable()->after('folder');
+            if (!Schema::hasColumn('email_logs', 'previous_folder')) $table->string('previous_folder', 50)->nullable()->after('folder');
         });
     }
 

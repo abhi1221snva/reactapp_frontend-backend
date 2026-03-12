@@ -2569,12 +2569,11 @@ public function cdrCallAgentCountNew(string $startTime, string $endTime, array $
     $record = DB::connection("mysql_{$this->clientId}")->select($sql);
     return (array) $record[0];
 }
- public function stateWiseSummaryNew(string $startTime, string $endTime,array $userId)
+ public function stateWiseSummaryNew(string $startTime, string $endTime, array $userId, $request = null)
     {
         if(!empty($userId))
         {
-            //$explode = "'" . implode ( "', '", $request->userId ) . "'";
-             $userIds = $userId; // already an array
+            $userIds = $userId; // already an array
             $users = User::whereIn("id", $userIds)->get();
             $extensionArray = array();
             foreach($users as $key=> $value)
@@ -2585,16 +2584,8 @@ public function cdrCallAgentCountNew(string $startTime, string $endTime, array $
             $srch_input_1 = "'" . implode ( "', '", $extensionArray ) . "'";
             $sql = "SELECT count(*) as rowCount,area_code from ((SELECT area_code FROM cdr_archive WHERE extension IN(".$srch_input_1.") and start_time >= '$startTime' AND start_time <= '$endTime') UNION ALL (SELECT area_code FROM cdr WHERE extension IN(".$srch_input_1.") and start_time >= '$startTime' AND start_time <= '$endTime') ) as t group by area_code order by rowCount desc";
         }
-
-        /*if(!empty($request->userId))
-        {
-            $user = User::where("id", "=", $request->userId)->first();
-            $extension = $user->extension;
-            $alt_extension = $user->alt_extension;
-            $sql = "SELECT count(*) as rowCount,area_code from ((SELECT area_code FROM cdr_archive WHERE extension IN(".$srch_input_1.") and start_time >= '$startTime' AND start_time <= '$endTime') UNION ALL (SELECT area_code FROM cdr WHERE extension IN(".$srch_input_1.") and start_time >= '$startTime' AND start_time <= '$endTime') ) as t group by area_code order by rowCount desc";
-        }*/
         else
-        if($request->auth->level == 1) //show dashboard related to agent 
+        if($request && $request->auth->level == 1) //show dashboard related to agent
         {
             $extension = $request->auth->extension;
             $alt_extension = $request->auth->alt_extension;

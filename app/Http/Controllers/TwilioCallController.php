@@ -9,6 +9,67 @@ use App\Jobs\SyncTwilioCallsJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * @OA\Post(
+ *   path="/twilio/calls/make",
+ *   summary="Initiate an outbound Twilio call",
+ *   operationId="twilioMakeCall",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"to","from"},
+ *     @OA\Property(property="to", type="string", example="+15551234567"),
+ *     @OA\Property(property="from", type="string", example="+15559876543"),
+ *     @OA\Property(property="lead_id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Call initiated"),
+ *   @OA\Response(response=422, description="Validation error"),
+ *   @OA\Response(response=500, description="Twilio error")
+ * )
+ *
+ * @OA\Get(
+ *   path="/twilio/calls",
+ *   summary="List Twilio call logs",
+ *   operationId="twilioListCalls",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="date_from", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Parameter(name="date_till", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Parameter(name="start", in="query", @OA\Schema(type="integer", default=0)),
+ *   @OA\Parameter(name="limit", in="query", @OA\Schema(type="integer", default=25)),
+ *   @OA\Response(response=200, description="Call list")
+ * )
+ *
+ * @OA\Get(
+ *   path="/twilio/calls/{sid}",
+ *   summary="Get a single Twilio call by SID",
+ *   operationId="twilioGetCall",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="sid", in="path", required=true, @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Call details"),
+ *   @OA\Response(response=404, description="Not found")
+ * )
+ *
+ * @OA\Post(
+ *   path="/twilio/calls/sync",
+ *   summary="Sync Twilio call records from Twilio API",
+ *   operationId="twilioSyncCalls",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Sync dispatched")
+ * )
+ *
+ * @OA\Get(
+ *   path="/twilio/recordings",
+ *   summary="List Twilio call recordings",
+ *   operationId="twilioListRecordings",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="call_sid", in="query", @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Recording list")
+ * )
+ */
 class TwilioCallController extends Controller
 {
     // -- Make outbound call -------------------------------------------------

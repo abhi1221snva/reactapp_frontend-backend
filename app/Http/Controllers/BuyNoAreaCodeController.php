@@ -3,6 +3,34 @@
 namespace App\Http\Controllers;
 
 use App\Model\Dids;
+
+/**
+ * @OA\Post(
+ *   path="/get-did-list-for-areacode",
+ *   summary="Get available DIDs for an area code",
+ *   operationId="buyNoAreaCodeGetDids",
+ *   tags={"DIDs"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="area_code", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Available DIDs for area code"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/buy-save-selected-did-areacode",
+ *   summary="Buy and save a DID selected from area code search",
+ *   operationId="buyNoAreaCodeSaveDid",
+ *   tags={"DIDs"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="did", type="string"),
+ *     @OA\Property(property="area_code", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="DID purchased and saved")
+ * )
+ */
 use App\Model\Client\Did;
 use App\Model\Client\UploadHistoryDid;
 use App\Model\Client\CallTimings;

@@ -8,6 +8,43 @@ use App\Model\Client\Lead;
 use App\Model\User;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * @OA\Get(
+ *   path="/crm/lead/{id}/activity",
+ *   summary="Get activity timeline for a lead",
+ *   operationId="crmLeadActivityTimeline",
+ *   tags={"CRM"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Activity timeline"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Put(
+ *   path="/crm/lead/{id}/activity",
+ *   summary="Add a manual activity entry to a lead",
+ *   operationId="crmLeadActivityAdd",
+ *   tags={"CRM"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="type", type="string"),
+ *     @OA\Property(property="note", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Activity added")
+ * )
+ *
+ * @OA\Post(
+ *   path="/crm/lead/{id}/activity/{aid}/pin",
+ *   summary="Pin an activity entry",
+ *   operationId="crmLeadActivityPin",
+ *   tags={"CRM"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Parameter(name="aid", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Activity pinned")
+ * )
+ */
 class CrmLeadActivityController extends Controller
 {
     /**
@@ -21,7 +58,11 @@ class CrmLeadActivityController extends Controller
             $clientId    = $request->auth->parent_id;
             $limit       = min((int)($request->input('limit', 50)), 200);
             $offset      = (int)$request->input('offset', 0);
-            $types       = $request->input('types', []);
+            // Support ?type=system (single) and ?types[]=system (array)
+            $types = (array) $request->input('types', []);
+            if (empty($types) && $request->has('type')) {
+                $types = [$request->input('type')];
+            }
             $includeSrc  = $request->input('include_sources', 'crm_lead_activity');
 
             // Base: crm_lead_activity

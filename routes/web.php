@@ -69,6 +69,16 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($ro
     $router->get('system/performance-metrics', 'SystemHealthController@performanceMetrics');
 });
 
+// ─── Server Monitoring + Swagger (level 11 — system_administrator only) ──────
+$router->group(['middleware' => ['jwt.auth', 'auth.sysadmin']], function () use ($router) {
+    $router->get('system/server-info',         'SystemServerController@serverInfo');
+
+    // Swagger / OpenAPI documentation — system_administrator only
+    $router->get('docs',                       'SwaggerController@spec');
+    $router->get('api/documentation',          'SwaggerController@spec');
+    $router->post('system/swagger-regenerate', 'SwaggerController@regenerate');
+});
+
 $router->get('/redis-test', function () {
     externalRedisCacheSet(123, 'test-prompt', ['data' => 'value from Redis!']);
     return externalRedisCacheGet(123, 'test-prompt', 'Not found');
@@ -362,6 +372,10 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   $router->post('reports/agent-productivity',   'AdvancedReportController@agentProductivity');
   $router->post('reports/hourly-volume',        'AdvancedReportController@hourlyVolume');
   $router->post('reports/export',               'AdvancedReportController@export');
+  $router->post('reports/daily',                'AdvancedReportController@dailyReport');
+  $router->post('reports/disposition',          'AdvancedReportController@dispositionReport');
+  // Alias used by AgentSummary frontend page
+  $router->post('agent-report',                 'AdvancedReportController@agentProductivity');
   $router->post('transfer-report', 'ReportController@getTransferReport');
   $router->get('get-timezone-list', 'ReportController@getTimeZoneList');
 

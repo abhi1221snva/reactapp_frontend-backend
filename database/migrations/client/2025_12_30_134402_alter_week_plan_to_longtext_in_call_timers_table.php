@@ -11,6 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (!Schema::hasTable('call_timers')) return;
          DB::statement("
             ALTER TABLE `call_timers`
             MODIFY `week_plan` LONGTEXT

@@ -11,11 +11,13 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('ring_group', function (Blueprint $table) {
-            DB::statement("ALTER TABLE ring_group 
-            MODIFY receive_on ENUM('web_phone', 'mobile', 'desk_phone') 
-            NOT NULL DEFAULT 'web_phone'");
-        });
+        if (Schema::hasColumn('ring_group', 'receive_on')) {
+            Schema::table('ring_group', function (Blueprint $table) {
+                DB::statement("ALTER TABLE ring_group 
+                MODIFY receive_on ENUM('web_phone', 'mobile', 'desk_phone') 
+                NOT NULL DEFAULT 'web_phone'");
+            });
+        }
     }
 
     /**

@@ -7,6 +7,73 @@ use Illuminate\Http\Request;
 use App\Model\Client\Campaign;
 use Carbon\Carbon;
 
+/**
+ * @OA\Get(
+ *   path="/call-timers",
+ *   summary="List call timers",
+ *   operationId="callTimerIndex",
+ *   tags={"Call Timers"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="search", in="query", @OA\Schema(type="string")),
+ *   @OA\Parameter(name="start", in="query", @OA\Schema(type="integer")),
+ *   @OA\Parameter(name="limit", in="query", @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="List of call timers"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Get(
+ *   path="/call-timers/{id}",
+ *   summary="Get a single call timer",
+ *   operationId="callTimerShow",
+ *   tags={"Call Timers"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Call timer detail"),
+ *   @OA\Response(response=404, description="Not found")
+ * )
+ *
+ * @OA\Post(
+ *   path="/call-timers",
+ *   summary="Create a call timer",
+ *   operationId="callTimerStore",
+ *   tags={"Call Timers"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(required={"title"},
+ *     @OA\Property(property="title", type="string"),
+ *     @OA\Property(property="description", type="string"),
+ *     @OA\Property(property="week_plan", type="object")
+ *   )),
+ *   @OA\Response(response=200, description="Call timer created")
+ * )
+ *
+ * @OA\Post(
+ *   path="/call-timers/{id}",
+ *   summary="Update a call timer",
+ *   operationId="callTimerUpdate",
+ *   tags={"Call Timers"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="title", type="string"),
+ *     @OA\Property(property="description", type="string"),
+ *     @OA\Property(property="week_plan", type="object")
+ *   )),
+ *   @OA\Response(response=200, description="Call timer updated"),
+ *   @OA\Response(response=404, description="Not found")
+ * )
+ *
+ * @OA\Delete(
+ *   path="/call-timers/{id}",
+ *   summary="Delete a call timer",
+ *   operationId="callTimerDestroy",
+ *   tags={"Call Timers"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Call timer deleted"),
+ *   @OA\Response(response=400, description="Timer is assigned to a campaign"),
+ *   @OA\Response(response=404, description="Not found")
+ * )
+ */
 class CallTimerController extends Controller
 {
     // GET /call-timers

@@ -14,7 +14,7 @@ class AddDeletedAtToCrmListsTable extends Migration
     public function up()
     {
         Schema::table('crm_lists', function (Blueprint $table) {
-            $table->softDeletes();
+            if (!Schema::hasColumn('crm_lists', 'deleted_at')) $table->softDeletes();
         });
     }
 

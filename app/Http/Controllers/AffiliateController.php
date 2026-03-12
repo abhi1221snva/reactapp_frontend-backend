@@ -28,6 +28,48 @@ use App\Http\Controllers\NotificationController;
 
 use File;
 
+/**
+ * @OA\Get(
+ *   path="/check-affiliate-link/{client_id}/{extension_id}/{token_url}",
+ *   summary="Check affiliate link validity",
+ *   operationId="affiliateCheckLink",
+ *   tags={"Affiliate"},
+ *   @OA\Parameter(name="client_id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Parameter(name="extension_id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Parameter(name="token_url", in="path", required=true, @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Affiliate link status"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Put(
+ *   path="/affiliate/lead/add/{client_id}/{extension_id}",
+ *   summary="Create a lead via affiliate link",
+ *   operationId="affiliateCreateLead",
+ *   tags={"Affiliate"},
+ *   @OA\Parameter(name="client_id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Parameter(name="extension_id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Lead created")
+ * )
+ *
+ * @OA\Put(
+ *   path="/save-document-affiliate/{clientId}",
+ *   summary="Save document via affiliate",
+ *   operationId="affiliateCreateDocument",
+ *   tags={"Affiliate"},
+ *   @OA\Parameter(name="clientId", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Document saved")
+ * )
+ *
+ * @OA\Put(
+ *   path="/add-notification-affiliate/add/{leadId}/{clientId}",
+ *   summary="Add notification via affiliate",
+ *   operationId="affiliateCreateNotification",
+ *   tags={"Affiliate"},
+ *   @OA\Parameter(name="leadId", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Parameter(name="clientId", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Notification created")
+ * )
+ */
 class AffiliateController extends Controller
 {
     public function checkAffiliateLink(Request $request,$client_id,$extension_id,$token_url)

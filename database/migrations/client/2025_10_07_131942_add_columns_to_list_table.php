@@ -12,9 +12,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('list', function (Blueprint $table) {
-                $table->boolean('duplicate_check')->default(0)->comment('1 = Yes, 0 = No')->after('type');
-                $table->boolean('is_dialing')->default(0)->comment('1 = Yes, 0 = No')->after('duplicate_check');
-                $table->integer('lead_count')->comment('Total number of leads')->after('is_dialing')->nullable();
+            if (!Schema::hasColumn('list', 'duplicate_check')) $table->boolean('duplicate_check')->default(0)->comment('1 = Yes, 0 = No')->after('type');
+            if (!Schema::hasColumn('list', 'is_dialing')) $table->boolean('is_dialing')->default(0)->comment('1 = Yes, 0 = No')->after('duplicate_check');
+            if (!Schema::hasColumn('list', 'lead_count')) $table->integer('lead_count')->comment('Total number of leads')->after('is_dialing')->nullable();
         });
     }
 

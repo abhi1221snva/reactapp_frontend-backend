@@ -8,6 +8,65 @@ use App\Services\PredictiveDialerService;
 use Illuminate\Http\Request;
 
 /**
+ * @OA\Get(
+ *   path="/dialer/pacing/{campaignId}",
+ *   summary="Get pacing snapshot for a campaign",
+ *   operationId="dialerPacingSnapshot",
+ *   tags={"Dialer"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="campaignId", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Pacing snapshot with agent breakdown"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/dialer/pacing/{campaignId}/agent-state",
+ *   summary="Agent updates their availability state",
+ *   operationId="dialerPacingAgentState",
+ *   tags={"Dialer"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="campaignId", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\RequestBody(@OA\JsonContent(required={"state"},
+ *     @OA\Property(property="state", type="string", enum={"available","wrapping","paused"})
+ *   )),
+ *   @OA\Response(response=200, description="Agent state updated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/dialer/pacing/{campaignId}/heartbeat",
+ *   summary="Agent heartbeat to stay alive in Redis",
+ *   operationId="dialerPacingHeartbeat",
+ *   tags={"Dialer"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="campaignId", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Heartbeat recorded")
+ * )
+ *
+ * @OA\Post(
+ *   path="/dialer/pacing/{campaignId}/record-outcome",
+ *   summary="Record call outcome for pacing algorithm",
+ *   operationId="dialerPacingRecordOutcome",
+ *   tags={"Dialer"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="campaignId", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\RequestBody(@OA\JsonContent(required={"outcome"},
+ *     @OA\Property(property="outcome", type="string", enum={"answered","abandoned","no_answer","busy","failed"}),
+ *     @OA\Property(property="handle_time", type="integer", example=45)
+ *   )),
+ *   @OA\Response(response=200, description="Outcome recorded")
+ * )
+ *
+ * @OA\Post(
+ *   path="/dialer/pacing/{campaignId}/reset",
+ *   summary="Reset pacing counters for a campaign",
+ *   operationId="dialerPacingReset",
+ *   tags={"Dialer"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="campaignId", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Pacing counters reset"),
+ *   @OA\Response(response=403, description="Supervisor access required")
+ * )
+ *
  * Dialer Pacing API — exposes real-time pacing data and agent state updates.
  */
 class DialerPacingController extends Controller

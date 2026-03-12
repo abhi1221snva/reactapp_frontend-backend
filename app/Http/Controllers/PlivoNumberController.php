@@ -9,6 +9,90 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * @OA\Get(
+ *   path="/plivo/numbers/search",
+ *   summary="Search available Plivo phone numbers",
+ *   operationId="plivoSearchNumbers",
+ *   tags={"Plivo"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="country_iso", in="query", @OA\Schema(type="string", default="US")),
+ *   @OA\Parameter(name="area_code", in="query", @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Available numbers")
+ * )
+ *
+ * @OA\Post(
+ *   path="/plivo/numbers/purchase",
+ *   summary="Purchase a Plivo phone number",
+ *   operationId="plivoPurchaseNumber",
+ *   tags={"Plivo"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"number"},
+ *     @OA\Property(property="number", type="string", example="+15551234567")
+ *   )),
+ *   @OA\Response(response=200, description="Number purchased"),
+ *   @OA\Response(response=422, description="Validation error")
+ * )
+ *
+ * @OA\Delete(
+ *   path="/plivo/numbers/{number}",
+ *   summary="Release a Plivo phone number",
+ *   operationId="plivoReleaseNumber",
+ *   tags={"Plivo"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="number", in="path", required=true, @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Number released"),
+ *   @OA\Response(response=404, description="Not found")
+ * )
+ *
+ * @OA\Get(
+ *   path="/plivo/numbers",
+ *   summary="List purchased Plivo numbers",
+ *   operationId="plivoListNumbers",
+ *   tags={"Plivo"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="search", in="query", @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Number list")
+ * )
+ *
+ * @OA\Post(
+ *   path="/plivo/numbers/assign-campaign",
+ *   summary="Assign a Plivo number to a campaign",
+ *   operationId="plivoAssignNumberToCampaign",
+ *   tags={"Plivo"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"number","campaign_id"},
+ *     @OA\Property(property="number", type="string"),
+ *     @OA\Property(property="campaign_id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Number assigned")
+ * )
+ *
+ * @OA\Get(
+ *   path="/plivo/numbers/campaign/{campaignId}",
+ *   summary="Get Plivo numbers assigned to a campaign",
+ *   operationId="plivoGetNumbersByCampaign",
+ *   tags={"Plivo"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="campaignId", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Campaign numbers")
+ * )
+ *
+ * @OA\Post(
+ *   path="/plivo/numbers/unassign-campaign",
+ *   summary="Unassign a Plivo number from a campaign",
+ *   operationId="plivoUnassignNumber",
+ *   tags={"Plivo"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"number"},
+ *     @OA\Property(property="number", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Number unassigned")
+ * )
+ */
 class PlivoNumberController extends Controller
 {
     // -- Search available numbers -------------------------------------------------

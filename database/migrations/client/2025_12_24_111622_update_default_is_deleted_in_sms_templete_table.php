@@ -11,10 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-       DB::statement("
-            ALTER TABLE sms_templete 
-            MODIFY is_deleted ENUM('1','0') NOT NULL DEFAULT '0'
-        ");
+        if (Schema::hasColumn('sms_templete', 'is_deleted')) {
+            DB::statement("
+                ALTER TABLE sms_templete 
+                MODIFY is_deleted ENUM('1','0') NOT NULL DEFAULT '0'
+            ");
+        }
     }
 
     /**
@@ -22,9 +24,11 @@ return new class extends Migration
      */
     public function down(): void
     {
-        DB::statement("
-            ALTER TABLE sms_templete 
-            MODIFY is_deleted ENUM('1','0') NOT NULL DEFAULT '1'
-        ");
+        if (Schema::hasColumn('sms_templete', 'is_deleted')) {
+            DB::statement("
+                ALTER TABLE sms_templete 
+                MODIFY is_deleted ENUM('1','0') NOT NULL DEFAULT '1'
+            ");
+        }
     }
 };

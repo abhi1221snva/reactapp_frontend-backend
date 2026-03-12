@@ -6,6 +6,34 @@ use Illuminate\Support\Facades\Log;
 use App\Model\Master\ApiLogs;
 use DB;
 
+/**
+ * @OA\Get(
+ *   path="/api-logs",
+ *   summary="List all API logs (superadmin only)",
+ *   operationId="apiLogsIndex",
+ *   tags={"Admin"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="API logs list"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/api-logs-data",
+ *   summary="Get filtered API logs",
+ *   operationId="apiLogsGetLogs",
+ *   tags={"Admin"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="lender_api_type", type="string"),
+ *     @OA\Property(property="businessID", type="string"),
+ *     @OA\Property(property="start_date", type="string", format="date"),
+ *     @OA\Property(property="end_date", type="string", format="date"),
+ *     @OA\Property(property="lower_limit", type="integer"),
+ *     @OA\Property(property="upper_limit", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Filtered API logs")
+ * )
+ */
 class ApiLogsController extends Controller
 {
     public function create(Request $request)

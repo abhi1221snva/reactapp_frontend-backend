@@ -66,7 +66,31 @@ class ProfileController extends Controller
     {
         $this->request = $request;
     }
-    //
+    /**
+     * @OA\Get(
+     *     path="/profile",
+     *     summary="Get the authenticated user's profile",
+     *     tags={"Profile"},
+     *     security={{"Bearer":{}}},
+     *     @OA\Response(
+     *         response=200,
+     *         description="User profile data",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success", type="boolean"),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="id",          type="integer"),
+     *                 @OA\Property(property="first_name",  type="string"),
+     *                 @OA\Property(property="last_name",   type="string"),
+     *                 @OA\Property(property="email",       type="string"),
+     *                 @OA\Property(property="role",        type="integer"),
+     *                 @OA\Property(property="user_level",  type="integer"),
+     *                 @OA\Property(property="profile_pic", type="string", nullable=true)
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Unauthorized")
+     * )
+     */
     // Display the authenticated user's profile
     public function index(Request $request)
     {
@@ -88,6 +112,21 @@ class ProfileController extends Controller
     }
 
 
+    /**
+     * @OA\Post(
+     *     path="/profile/two-factor",
+     *     summary="Enable or disable SMS-based 2FA for the authenticated user",
+     *     tags={"Profile"},
+     *     security={{"Bearer":{}}},
+     *     @OA\RequestBody(
+     *         @OA\JsonContent(
+     *             @OA\Property(property="two_factor", type="string", enum={"on","off"})
+     *         )
+     *     ),
+     *     @OA\Response(response=200, description="2FA setting updated"),
+     *     @OA\Response(response=401, description="Unauthorized")
+     * )
+     */
     public function updateTwoFactor(Request $request)
     {
         // $request->validate([
@@ -107,6 +146,24 @@ class ProfileController extends Controller
     }
 
 
+    /**
+     * @OA\Post(
+     *     path="/profile/google-authenticator",
+     *     summary="Set up Google Authenticator TOTP 2FA — returns QR code and secret",
+     *     tags={"Profile"},
+     *     security={{"Bearer":{}}},
+     *     @OA\Response(
+     *         response=200,
+     *         description="Google Authenticator setup data",
+     *         @OA\JsonContent(
+     *             @OA\Property(property="success",    type="boolean"),
+     *             @OA\Property(property="qr_code",    type="string", description="Base64 SVG QR code"),
+     *             @OA\Property(property="secret",     type="string", description="TOTP secret key")
+     *         )
+     *     ),
+     *     @OA\Response(response=401, description="Unauthorized")
+     * )
+     */
     public function updateGoogleAuthenticator(Request $request)
     {
         try {
@@ -219,6 +276,24 @@ class ProfileController extends Controller
     //     }
     // }
 
+    /**
+     * @OA\Post(
+     *     path="/profile/verify-google-authenticator",
+     *     summary="Verify a TOTP code and activate Google Authenticator 2FA",
+     *     tags={"Profile"},
+     *     security={{"Bearer":{}}},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"code"},
+     *             @OA\Property(property="code", type="string", example="123456")
+     *         )
+     *     ),
+     *     @OA\Response(response=200, description="Google Authenticator verified and activated"),
+     *     @OA\Response(response=422, description="Invalid OTP code"),
+     *     @OA\Response(response=401, description="Unauthorized")
+     * )
+     */
     public function verifyGoogleAuthenticator(Request $request)
     {
         try {

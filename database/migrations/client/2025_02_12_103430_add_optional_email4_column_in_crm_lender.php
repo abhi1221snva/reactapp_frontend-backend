@@ -14,7 +14,7 @@ class AddOptionalEmail4ColumnInCrmLender extends Migration
     public function up()
     {
         Schema::table('crm_lender', function (Blueprint $table) {
-            $table->string('secondary_email4')->nullable();
+            if (!Schema::hasColumn('crm_lender', 'secondary_email4')) $table->string('secondary_email4')->nullable();
 
         });
     }

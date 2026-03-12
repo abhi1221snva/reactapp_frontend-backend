@@ -8,6 +8,106 @@ use Illuminate\Support\Facades\Cache;
 use Carbon\Carbon;
 
 /**
+ * @OA\Post(
+ *   path="/reports/campaign-performance",
+ *   summary="Campaign performance report",
+ *   operationId="reportCampaignPerformance",
+ *   tags={"Reports"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="from_date", type="string", format="date"),
+ *     @OA\Property(property="to_date", type="string", format="date"),
+ *     @OA\Property(property="campaign_id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Campaign performance data"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/reports/agent-productivity",
+ *   summary="Agent productivity report",
+ *   operationId="reportAgentProductivity",
+ *   tags={"Reports"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="from_date", type="string", format="date"),
+ *     @OA\Property(property="to_date", type="string", format="date"),
+ *     @OA\Property(property="agent_id", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Agent productivity data")
+ * )
+ *
+ * @OA\Post(
+ *   path="/agent-report",
+ *   summary="Agent productivity report (alias)",
+ *   operationId="reportAgentProductivityAlias",
+ *   tags={"Reports"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="from_date", type="string", format="date"),
+ *     @OA\Property(property="to_date", type="string", format="date")
+ *   )),
+ *   @OA\Response(response=200, description="Agent productivity data")
+ * )
+ *
+ * @OA\Post(
+ *   path="/reports/hourly-volume",
+ *   summary="Hourly call volume report",
+ *   operationId="reportHourlyVolume",
+ *   tags={"Reports"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="from_date", type="string", format="date"),
+ *     @OA\Property(property="to_date", type="string", format="date"),
+ *     @OA\Property(property="campaign_id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Hourly volume by 24h buckets")
+ * )
+ *
+ * @OA\Post(
+ *   path="/reports/export",
+ *   summary="Export report as CSV",
+ *   operationId="reportExport",
+ *   tags={"Reports"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     required={"report_type"},
+ *     @OA\Property(property="report_type", type="string", enum={"campaign","agent","cdr","disposition"}),
+ *     @OA\Property(property="from_date", type="string", format="date"),
+ *     @OA\Property(property="to_date", type="string", format="date")
+ *   )),
+ *   @OA\Response(response=200, description="CSV file download"),
+ *   @OA\Response(response=422, description="Validation error")
+ * )
+ *
+ * @OA\Post(
+ *   path="/reports/daily",
+ *   summary="Daily call report grouped by date and campaign",
+ *   operationId="reportDaily",
+ *   tags={"Reports"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="from_date", type="string", format="date"),
+ *     @OA\Property(property="to_date", type="string", format="date"),
+ *     @OA\Property(property="campaign_id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Daily call data")
+ * )
+ *
+ * @OA\Post(
+ *   path="/reports/disposition",
+ *   summary="Disposition breakdown report",
+ *   operationId="reportDisposition",
+ *   tags={"Reports"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="from_date", type="string", format="date"),
+ *     @OA\Property(property="to_date", type="string", format="date"),
+ *     @OA\Property(property="campaign_id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Disposition counts and percentages")
+ * )
+ *
  * Advanced reporting endpoints:
  * - Campaign performance report
  * - Agent productivity report
@@ -23,8 +123,11 @@ class AdvancedReportController extends Controller
 
     private function parseDateRange(Request $request): array
     {
-        $from = $request->input('from_date', Carbon::today()->subDays(7)->toDateString());
-        $to   = $request->input('to_date', Carbon::today()->toDateString());
+        // Accept both from_date/to_date and date_from/date_to parameter names
+        $from = $request->input('from_date',
+            $request->input('date_from', Carbon::today()->subDays(7)->toDateString()));
+        $to   = $request->input('to_date',
+            $request->input('date_to', Carbon::today()->toDateString()));
         return [
             Carbon::parse($from)->startOfDay(),
             Carbon::parse($to)->endOfDay(),
@@ -45,22 +148,22 @@ class AdvancedReportController extends Controller
 
         $query = $db->table('cdr AS c')
             ->leftJoin('campaign AS camp', 'c.campaign_id', '=', 'camp.id')
-            ->whereBetween('c.created_at', [$from, $to])
-            ->groupBy('c.campaign_id', 'camp.name')
+            ->whereBetween('c.start_time', [$from, $to])
+            ->groupBy('c.campaign_id', 'camp.title')
             ->selectRaw("
                 c.campaign_id,
-                COALESCE(camp.name, CONCAT('Campaign #', c.campaign_id)) AS campaign_name,
-                COUNT(*)                                                   AS total_calls,
-                SUM(CASE WHEN c.status = 'answered' THEN 1 ELSE 0 END)   AS answered,
-                SUM(CASE WHEN c.status = 'no-answer' THEN 1 ELSE 0 END)  AS no_answer,
-                SUM(CASE WHEN c.status = 'busy' THEN 1 ELSE 0 END)       AS busy,
-                SUM(CASE WHEN c.status = 'failed' THEN 1 ELSE 0 END)     AS failed,
-                COALESCE(SUM(c.duration), 0)                              AS total_duration,
-                COALESCE(AVG(NULLIF(c.duration, 0)), 0)                   AS avg_duration,
+                COALESCE(camp.title, CONCAT('Campaign #', c.campaign_id)) AS campaign_name,
+                COUNT(*)                                                    AS total_calls,
+                SUM(CASE WHEN c.duration > 0 THEN 1 ELSE 0 END)           AS answered,
+                SUM(CASE WHEN COALESCE(c.duration,0) = 0 THEN 1 ELSE 0 END) AS no_answer,
+                0                                                           AS busy,
+                0                                                           AS failed,
+                COALESCE(SUM(c.duration), 0)                               AS total_duration,
+                COALESCE(AVG(NULLIF(c.duration, 0)), 0)                    AS avg_duration,
                 ROUND(
-                    SUM(CASE WHEN c.status = 'answered' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0),
-                2)                                                         AS answer_rate,
-                COUNT(DISTINCT c.lead_id)                                  AS unique_leads
+                    SUM(CASE WHEN c.duration > 0 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0),
+                2)                                                          AS answer_rate,
+                COUNT(DISTINCT c.lead_id)                                   AS unique_leads
             ");
 
         if ($campaignId) {
@@ -104,30 +207,32 @@ class AdvancedReportController extends Controller
         $agentId     = $request->input('agent_id');
 
         $query = $db->table('cdr AS c')
-            ->leftJoin('users AS u', 'c.agent_id', '=', 'u.id')
-            ->whereBetween('c.created_at', [$from, $to])
-            ->whereNotNull('c.agent_id')
-            ->groupBy('c.agent_id', 'u.name', 'u.username')
+            ->leftJoin(DB::raw('master.users AS u'), 'u.extension', '=', 'c.extension')
+            ->whereBetween('c.start_time', [$from, $to])
+            ->groupBy('c.extension', 'u.id', 'u.first_name', 'u.last_name')
             ->selectRaw("
-                c.agent_id,
-                COALESCE(u.name, u.username, CONCAT('Agent #', c.agent_id)) AS agent_name,
-                u.username AS extension,
-                COUNT(*)                                                      AS total_calls,
-                SUM(CASE WHEN c.status = 'answered' THEN 1 ELSE 0 END)      AS answered,
-                SUM(CASE WHEN c.status = 'no-answer' THEN 1 ELSE 0 END)     AS no_answer,
-                COALESCE(SUM(c.duration), 0)                                 AS total_talk_time,
-                COALESCE(AVG(NULLIF(c.duration, 0)), 0)                      AS avg_talk_time,
-                COALESCE(MAX(c.duration), 0)                                 AS max_call_duration,
-                COUNT(DISTINCT c.lead_id)                                    AS unique_leads,
-                COUNT(DISTINCT c.campaign_id)                                AS campaigns_worked,
+                c.extension                                                           AS agent_id,
+                COALESCE(
+                    NULLIF(TRIM(CONCAT(COALESCE(u.first_name,''),' ',COALESCE(u.last_name,''))), ''),
+                    CONCAT('Ext #', c.extension)
+                )                                                                     AS agent_name,
+                c.extension,
+                COUNT(*)                                                              AS total_calls,
+                SUM(CASE WHEN c.duration > 0 THEN 1 ELSE 0 END)                     AS answered,
+                SUM(CASE WHEN COALESCE(c.duration,0) = 0 THEN 1 ELSE 0 END)         AS no_answer,
+                COALESCE(SUM(c.duration), 0)                                         AS total_talk_time,
+                COALESCE(AVG(NULLIF(c.duration, 0)), 0)                              AS avg_talk_time,
+                COALESCE(MAX(c.duration), 0)                                         AS max_call_duration,
+                COUNT(DISTINCT c.lead_id)                                            AS unique_leads,
+                COUNT(DISTINCT c.campaign_id)                                        AS campaigns_worked,
                 ROUND(
-                    SUM(CASE WHEN c.status = 'answered' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0),
-                2)                                                            AS answer_rate,
-                COUNT(DISTINCT DATE(c.created_at))                          AS active_days
+                    SUM(CASE WHEN c.duration > 0 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0),
+                2)                                                                    AS answer_rate,
+                COUNT(DISTINCT DATE(c.start_time))                                   AS active_days
             ");
 
         if ($agentId) {
-            $query->where('c.agent_id', $agentId);
+            $query->where('c.extension', $agentId);
         }
 
         $rows    = $query->orderByRaw('SUM(c.duration) DESC')->get();
@@ -171,12 +276,12 @@ class AdvancedReportController extends Controller
         $db          = $this->db($request);
 
         $rows = $db->table('cdr')
-            ->whereBetween('created_at', [$from, $to])
-            ->groupByRaw('HOUR(created_at)')
+            ->whereBetween('start_time', [$from, $to])
+            ->groupByRaw('HOUR(start_time)')
             ->selectRaw("
-                HOUR(created_at) AS hour,
+                HOUR(start_time) AS hour,
                 COUNT(*) AS total_calls,
-                SUM(CASE WHEN status = 'answered' THEN 1 ELSE 0 END) AS answered
+                SUM(CASE WHEN duration > 0 THEN 1 ELSE 0 END) AS answered
             ")
             ->orderBy('hour')
             ->get();
@@ -236,9 +341,9 @@ class AdvancedReportController extends Controller
         [$from, $to] = $this->parseDateRange($request);
         return $this->db($request)->table('cdr AS c')
             ->leftJoin('campaign AS camp', 'c.campaign_id', '=', 'camp.id')
-            ->whereBetween('c.created_at', [$from, $to])
-            ->groupBy('c.campaign_id', 'camp.name')
-            ->selectRaw("COALESCE(camp.name,'Unknown') AS Campaign, COUNT(*) AS 'Total Calls', SUM(CASE WHEN c.status='answered' THEN 1 ELSE 0 END) AS Answered, ROUND(SUM(CASE WHEN c.status='answered' THEN 1 ELSE 0 END)*100.0/NULLIF(COUNT(*),0),2) AS 'Answer Rate %', COALESCE(SUM(c.duration),0) AS 'Total Duration (s)'")
+            ->whereBetween('c.start_time', [$from, $to])
+            ->groupBy('c.campaign_id', 'camp.title')
+            ->selectRaw("COALESCE(camp.title,'Unknown') AS Campaign, COUNT(*) AS 'Total Calls', SUM(CASE WHEN c.duration > 0 THEN 1 ELSE 0 END) AS Answered, ROUND(SUM(CASE WHEN c.duration > 0 THEN 1 ELSE 0 END)*100.0/NULLIF(COUNT(*),0),2) AS 'Answer Rate %', COALESCE(SUM(c.duration),0) AS 'Total Duration (s)'")
             ->get();
     }
 
@@ -246,11 +351,10 @@ class AdvancedReportController extends Controller
     {
         [$from, $to] = $this->parseDateRange($request);
         return $this->db($request)->table('cdr AS c')
-            ->leftJoin('users AS u', 'c.agent_id', '=', 'u.id')
-            ->whereBetween('c.created_at', [$from, $to])
-            ->whereNotNull('c.agent_id')
-            ->groupBy('c.agent_id', 'u.name')
-            ->selectRaw("COALESCE(u.name,'Unknown') AS Agent, COUNT(*) AS 'Total Calls', SUM(CASE WHEN c.status='answered' THEN 1 ELSE 0 END) AS Answered, COALESCE(SUM(c.duration),0) AS 'Talk Time (s)', ROUND(SUM(CASE WHEN c.status='answered' THEN 1 ELSE 0 END)*100.0/NULLIF(COUNT(*),0),2) AS 'Answer Rate %'")
+            ->leftJoin(DB::raw('master.users AS u'), 'u.extension', '=', 'c.extension')
+            ->whereBetween('c.start_time', [$from, $to])
+            ->groupBy('c.extension', 'u.first_name', 'u.last_name')
+            ->selectRaw("COALESCE(NULLIF(TRIM(CONCAT(COALESCE(u.first_name,''),' ',COALESCE(u.last_name,''))),''),CONCAT('Ext #',c.extension)) AS Agent, c.extension AS Extension, COUNT(*) AS 'Total Calls', SUM(CASE WHEN c.duration > 0 THEN 1 ELSE 0 END) AS Answered, COALESCE(SUM(c.duration),0) AS 'Talk Time (s)', ROUND(SUM(CASE WHEN c.duration > 0 THEN 1 ELSE 0 END)*100.0/NULLIF(COUNT(*),0),2) AS 'Answer Rate %'")
             ->orderByRaw('COUNT(*) DESC')
             ->get();
     }
@@ -260,11 +364,103 @@ class AdvancedReportController extends Controller
         [$from, $to] = $this->parseDateRange($request);
         return $this->db($request)->table('cdr AS c')
             ->leftJoin('disposition AS d', 'c.disposition_id', '=', 'd.id')
-            ->whereBetween('c.created_at', [$from, $to])
+            ->whereBetween('c.start_time', [$from, $to])
             ->groupBy('c.disposition_id', 'd.title')
             ->selectRaw("COALESCE(d.title,'Not Set') AS Disposition, COUNT(*) AS Count")
             ->orderByRaw('COUNT(*) DESC')
             ->get();
+    }
+
+    // --- Daily Report ---
+
+    /**
+     * POST /reports/daily
+     * Body: { from_date|date_from, to_date|date_to, campaign_id? }
+     * Returns call counts grouped by date (and optional campaign).
+     */
+    public function dailyReport(Request $request)
+    {
+        [$from, $to] = $this->parseDateRange($request);
+        $db         = $this->db($request);
+        $campaignId = $request->input('campaign_id');
+
+        $query = $db->table('cdr AS c')
+            ->leftJoin('campaign AS camp', 'c.campaign_id', '=', 'camp.id')
+            ->whereBetween('c.start_time', [$from, $to])
+            ->groupByRaw('DATE(c.start_time), c.campaign_id, camp.title')
+            ->selectRaw("
+                DATE(c.start_time)                                              AS date,
+                COALESCE(camp.title, CONCAT('Campaign #', c.campaign_id), 'Unknown') AS campaign,
+                c.campaign_id,
+                COUNT(*)                                                        AS total_calls,
+                SUM(CASE WHEN c.duration > 0 THEN 1 ELSE 0 END)               AS answered,
+                SUM(CASE WHEN COALESCE(c.duration,0) = 0 THEN 1 ELSE 0 END)   AS missed,
+                0                                                               AS busy,
+                0                                                               AS failed,
+                COALESCE(SUM(c.duration), 0)                                   AS total_duration,
+                COALESCE(AVG(NULLIF(c.duration, 0)), 0)                        AS avg_duration,
+                ROUND(
+                    SUM(CASE WHEN c.duration > 0 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0),
+                2)                                                              AS answer_rate
+            ")
+            ->orderByRaw('DATE(c.start_time) DESC');
+
+        if ($campaignId) {
+            $query->where('c.campaign_id', $campaignId);
+        }
+
+        $rows = $query->get();
+
+        return response()->json([
+            'status'  => true,
+            'data'    => $rows,
+            'filters' => ['from_date' => $from->toDateString(), 'to_date' => $to->toDateString()],
+        ]);
+    }
+
+    // --- Disposition Report ---
+
+    /**
+     * POST /reports/disposition
+     * Body: { from_date|date_from, to_date|date_to, campaign_id? }
+     * Returns call counts grouped by disposition.
+     */
+    public function dispositionReport(Request $request)
+    {
+        [$from, $to] = $this->parseDateRange($request);
+        $db         = $this->db($request);
+        $campaignId = $request->input('campaign_id');
+
+        $query = $db->table('cdr AS c')
+            ->leftJoin('disposition AS d', 'c.disposition_id', '=', 'd.id')
+            ->whereBetween('c.start_time', [$from, $to])
+            ->groupBy('c.disposition_id', 'd.title')
+            ->selectRaw("
+                COALESCE(d.title, 'Not Set')  AS disposition,
+                COALESCE(d.title, 'Not Set')  AS title,
+                COUNT(*)                      AS count,
+                COUNT(*)                      AS total
+            ")
+            ->orderByRaw('COUNT(*) DESC');
+
+        if ($campaignId) {
+            $query->where('c.campaign_id', $campaignId);
+        }
+
+        $rows    = $query->get();
+        $total   = $rows->sum('count');
+
+        $rows = $rows->map(function ($r) use ($total) {
+            $r->percentage = $total > 0 ? round($r->count / $total * 100, 1) : 0;
+            return $r;
+        });
+
+        return response()->json([
+            'status'  => true,
+            'data'    => $rows,
+            'total'   => $total,
+            'filters' => ['from_date' => $from->toDateString(), 'to_date' => $to->toDateString()],
+        ]);
     }
 
     private function toCsv($collection): string

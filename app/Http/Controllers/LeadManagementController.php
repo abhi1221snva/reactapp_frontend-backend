@@ -7,6 +7,74 @@ use App\Services\LeadAssignmentService;
 use Illuminate\Http\Request;
 
 /**
+ * @OA\Post(
+ *   path="/leads/check-duplicate",
+ *   summary="Check if a phone number is a duplicate lead",
+ *   operationId="leadCheckDuplicate",
+ *   tags={"Leads"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(required={"phone"},
+ *     @OA\Property(property="phone", type="string", example="555-1234")
+ *   )),
+ *   @OA\Response(response=200, description="Duplicate check result"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/leads/scan-duplicates",
+ *   summary="Scan a list for duplicate leads",
+ *   operationId="leadScanDuplicates",
+ *   tags={"Leads"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(required={"list_id"},
+ *     @OA\Property(property="list_id", type="integer"),
+ *     @OA\Property(property="limit", type="integer", example=500)
+ *   )),
+ *   @OA\Response(response=200, description="Duplicate scan results")
+ * )
+ *
+ * @OA\Post(
+ *   path="/leads/assign",
+ *   summary="Bulk assign leads to a campaign",
+ *   operationId="leadAssign",
+ *   tags={"Leads"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(required={"lead_ids","campaign_id"},
+ *     @OA\Property(property="lead_ids", type="array", @OA\Items(type="integer")),
+ *     @OA\Property(property="campaign_id", type="integer"),
+ *     @OA\Property(property="strategy", type="string", enum={"round_robin","least_loaded","priority"})
+ *   )),
+ *   @OA\Response(response=200, description="Assignment result")
+ * )
+ *
+ * @OA\Post(
+ *   path="/leads/auto-distribute",
+ *   summary="Auto-distribute leads across agents in a campaign",
+ *   operationId="leadAutoDistribute",
+ *   tags={"Leads"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(required={"campaign_id"},
+ *     @OA\Property(property="campaign_id", type="integer"),
+ *     @OA\Property(property="limit", type="integer", example=1000),
+ *     @OA\Property(property="strategy", type="string", enum={"round_robin","least_loaded","priority"})
+ *   )),
+ *   @OA\Response(response=200, description="Auto-distribution result")
+ * )
+ *
+ * @OA\Post(
+ *   path="/leads/dedup-batch",
+ *   summary="Check a batch of leads for duplicates before import",
+ *   operationId="leadDedupBatch",
+ *   tags={"Leads"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(required={"leads"},
+ *     @OA\Property(property="leads", type="array", @OA\Items(type="object")),
+ *     @OA\Property(property="phone_field", type="string", example="phone"),
+ *     @OA\Property(property="policy", type="string", enum={"block","flag","merge"})
+ *   )),
+ *   @OA\Response(response=200, description="Batch dedup result")
+ * )
+ *
  * Lead deduplication and assignment API.
  */
 class LeadManagementController extends Controller

@@ -5,6 +5,41 @@ namespace App\Http\Controllers;
 use App\Model\Client\BreakPolicy;
 use Illuminate\Http\Request;
 
+/**
+ * @OA\Get(
+ *   path="/workforce/break-policy",
+ *   summary="List all break policies (global and campaign-specific)",
+ *   operationId="breakPolicyIndex",
+ *   tags={"Workforce"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Break policies list"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/workforce/break-policy",
+ *   summary="Upsert break policy",
+ *   operationId="breakPolicyUpsert",
+ *   tags={"Workforce"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(required={"max_concurrent_breaks","max_break_minutes"},
+ *     @OA\Property(property="campaign_id", type="integer", description="Null for global policy"),
+ *     @OA\Property(property="max_concurrent_breaks", type="integer"),
+ *     @OA\Property(property="max_break_minutes", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Break policy saved")
+ * )
+ *
+ * @OA\Delete(
+ *   path="/workforce/break-policy/{id}",
+ *   summary="Remove a break policy",
+ *   operationId="breakPolicyDestroy",
+ *   tags={"Workforce"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Break policy removed")
+ * )
+ */
 class BreakPolicyController extends Controller
 {
     private $request;

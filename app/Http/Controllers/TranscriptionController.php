@@ -1,5 +1,17 @@
 <?php
 namespace App\Http\Controllers;
+
+/**
+ * @OA\Get(
+ *   path="/transcription-conversion-api",
+ *   summary="Transcribe call recordings",
+ *   operationId="transcriptionIndex",
+ *   tags={"AI"},
+ *   @OA\Response(response=200, description="Transcription result"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ */
+
 use App\Model\Master\RinglessVoiceMail;
 use App\Model\Master\RvmDomainList;
 use App\Model\Master\RvmCdrLog;
@@ -134,6 +146,7 @@ private function analyzeConversationWithOpenAI($conversation) {
     return json_decode($response, true);
 }
 
+/* DISABLED TEST CODE
 //if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $audioUrl = 'https://sip2.voiptella.com/recording/93903-5613318703-20250122210324.wav';//$_POST['audio_url'] ?? '';
 
@@ -217,6 +230,7 @@ private function analyzeConversationWithOpenAI($conversation) {
         echo '<p>Invalid URL. Please provide a valid WAV file URL.</p>';
     }
 //}
+END DISABLED TEST CODE */
 
 
 

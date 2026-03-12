@@ -8,6 +8,7 @@ class CreateCampaignNumbersTable extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasTable('campaign_numbers')) return;
         Schema::create('campaign_numbers', function (Blueprint $table) {
             $table->bigIncrements('id');
             $table->unsignedBigInteger('campaign_id');

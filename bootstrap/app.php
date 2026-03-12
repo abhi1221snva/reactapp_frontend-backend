@@ -155,6 +155,7 @@ $app->routeMiddleware([
     'twilio.webhook'  => App\Http\Middleware\TwilioWebhookMiddleware::class,
     'plivo.webhook'   => App\Http\Middleware\PlivoWebhookMiddleware::class,
     'tenant'          => App\Http\Middleware\TenantIsolationMiddleware::class,
+    'auth.sysadmin'   => App\Http\Middleware\SystemAdminAuth::class,
 ]);
 
 if (!class_exists('Redis')) {

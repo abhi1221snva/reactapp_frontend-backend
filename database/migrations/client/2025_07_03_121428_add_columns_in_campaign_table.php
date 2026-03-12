@@ -14,7 +14,7 @@ class AddColumnsInCampaignTable extends Migration
     public function up()
     {
         Schema::table('campaign', function (Blueprint $table) {
-        $table->enum('call_metric', array('0','1'))->default('0'); // 0-no,1-yes
+            if (!Schema::hasColumn('campaign', 'call_metric')) $table->enum('call_metric', array('0','1'))->default('0'); // 0-no,1-yes
 
         });
     }

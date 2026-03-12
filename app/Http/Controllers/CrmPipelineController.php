@@ -7,6 +7,73 @@ use App\Model\Client\CrmPipelineView;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 
+/**
+ * @OA\Get(
+ *   path="/crm/pipeline/board",
+ *   summary="Get CRM pipeline board with leads grouped by status",
+ *   operationId="crmPipelineBoard",
+ *   tags={"CRM Pipeline"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Pipeline board"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Patch(
+ *   path="/crm/pipeline/leads/{id}/move",
+ *   summary="Move a lead to a different pipeline stage",
+ *   operationId="crmPipelineMoveLead",
+ *   tags={"CRM Pipeline"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="status_id", type="integer"),
+ *     @OA\Property(property="position", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Lead moved")
+ * )
+ *
+ * @OA\Get(
+ *   path="/crm/pipeline/views",
+ *   summary="List saved pipeline views",
+ *   operationId="crmPipelineListViews",
+ *   tags={"CRM Pipeline"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Pipeline views")
+ * )
+ *
+ * @OA\Put(
+ *   path="/crm/pipeline/views",
+ *   summary="Create a pipeline view",
+ *   operationId="crmPipelineCreateView",
+ *   tags={"CRM Pipeline"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="name", type="string"),
+ *     @OA\Property(property="filters", type="object")
+ *   )),
+ *   @OA\Response(response=200, description="View created")
+ * )
+ *
+ * @OA\Post(
+ *   path="/crm/pipeline/views/{id}",
+ *   summary="Update a pipeline view",
+ *   operationId="crmPipelineUpdateView",
+ *   tags={"CRM Pipeline"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="View updated")
+ * )
+ *
+ * @OA\Delete(
+ *   path="/crm/pipeline/views/{id}",
+ *   summary="Delete a pipeline view",
+ *   operationId="crmPipelineDeleteView",
+ *   tags={"CRM Pipeline"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="View deleted")
+ * )
+ */
 class CrmPipelineController extends Controller
 {
     /**

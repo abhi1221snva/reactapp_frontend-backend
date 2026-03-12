@@ -12,14 +12,14 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('prompt_functions', function (Blueprint $table) {
-            $table->longText('curl_request')->nullable();
-            $table->longText('curl_response')->nullable();
-            $table->string('api_method', 20)->nullable();
-            $table->text('api_url')->nullable();
-            $table->longText('api_body')->nullable();
-            $table->longText('api_response')->nullable();
-            $table->longText('content')->nullable();
-            $table->text('description')->nullable();
+            if (!Schema::hasColumn('prompt_functions', 'curl_request')) $table->longText('curl_request')->nullable();
+            if (!Schema::hasColumn('prompt_functions', 'curl_response')) $table->longText('curl_response')->nullable();
+            if (!Schema::hasColumn('prompt_functions', 'api_method')) $table->string('api_method', 20)->nullable();
+            if (!Schema::hasColumn('prompt_functions', 'api_url')) $table->text('api_url')->nullable();
+            if (!Schema::hasColumn('prompt_functions', 'api_body')) $table->longText('api_body')->nullable();
+            if (!Schema::hasColumn('prompt_functions', 'api_response')) $table->longText('api_response')->nullable();
+            if (!Schema::hasColumn('prompt_functions', 'content')) $table->longText('content')->nullable();
+            if (!Schema::hasColumn('prompt_functions', 'description')) $table->text('description')->nullable();
         });
     }
 

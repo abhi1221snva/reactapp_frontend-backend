@@ -14,9 +14,9 @@ class AddCancapitalLabelToCrmLenderApisLabelSetting extends Migration
     public function up()
     {
         Schema::table('crm_lender_apis_label_setting', function (Blueprint $table) {
-            $table->string('cancapital_label')->nullable()->after('specialty_label');
-            $table->string('rapid_label')->nullable()->after('cancapital_label');
-            $table->string('biz2credit_label')->nullable()->after('rapid_label');
+            if (!Schema::hasColumn('crm_lender_apis_label_setting', 'cancapital_label')) $table->string('cancapital_label')->nullable()->after('specialty_label');
+            if (!Schema::hasColumn('crm_lender_apis_label_setting', 'rapid_label')) $table->string('rapid_label')->nullable()->after('cancapital_label');
+            if (!Schema::hasColumn('crm_lender_apis_label_setting', 'biz2credit_label')) $table->string('biz2credit_label')->nullable()->after('rapid_label');
 
 
             

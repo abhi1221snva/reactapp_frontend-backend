@@ -5,6 +5,31 @@ namespace App\Http\Controllers;
 use App\Model\Client\AgentStatus;
 use Illuminate\Http\Request;
 
+/**
+ * @OA\Post(
+ *   path="/workforce/agent-status",
+ *   summary="Update agent dialer status (supervisor override)",
+ *   operationId="agentStatusUpdate",
+ *   tags={"Workforce"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(required={"user_id","status"},
+ *     @OA\Property(property="user_id", type="integer"),
+ *     @OA\Property(property="status", type="string", enum={"available","on_call","on_break","after_call_work","offline"}),
+ *     @OA\Property(property="campaign_id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Agent status updated"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Get(
+ *   path="/workforce/agents-online",
+ *   summary="Get list of currently available/on-call agent IDs",
+ *   operationId="agentStatusOnline",
+ *   tags={"Workforce"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Online agent IDs")
+ * )
+ */
 class AgentStatusController extends Controller
 {
     private $request;

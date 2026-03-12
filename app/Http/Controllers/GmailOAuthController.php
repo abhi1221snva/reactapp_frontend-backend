@@ -7,6 +7,72 @@ use App\Model\Master\GmailOAuthToken;
 use App\Services\GmailOAuthService;
 use Illuminate\Http\Request;
 
+/**
+ * @OA\Get(
+ *   path="/gmail/connect",
+ *   summary="Get Gmail OAuth authorization URL",
+ *   operationId="gmailOAuthConnect",
+ *   tags={"Gmail"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Authorization URL"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/gmail/disconnect",
+ *   summary="Disconnect Gmail (revoke OAuth access)",
+ *   operationId="gmailOAuthDisconnect",
+ *   tags={"Gmail"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Gmail disconnected")
+ * )
+ *
+ * @OA\Get(
+ *   path="/gmail/status",
+ *   summary="Get Gmail connection status",
+ *   operationId="gmailOAuthStatus",
+ *   tags={"Gmail"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Connection status")
+ * )
+ *
+ * @OA\Post(
+ *   path="/gmail/refresh-token",
+ *   summary="Manually refresh Gmail access token",
+ *   operationId="gmailOAuthRefreshToken",
+ *   tags={"Gmail"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Token refreshed"),
+ *   @OA\Response(response=400, description="Token refresh failed")
+ * )
+ *
+ * @OA\Post(
+ *   path="/gmail/watch/setup",
+ *   summary="Enable Gmail push notifications (watch)",
+ *   operationId="gmailWatchSetup",
+ *   tags={"Gmail"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Watch enabled")
+ * )
+ *
+ * @OA\Post(
+ *   path="/gmail/watch/stop",
+ *   summary="Disable Gmail push notifications",
+ *   operationId="gmailWatchStop",
+ *   tags={"Gmail"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Watch disabled")
+ * )
+ *
+ * @OA\Get(
+ *   path="/gmail/watch/status",
+ *   summary="Get Gmail watch/push notification status",
+ *   operationId="gmailWatchStatus",
+ *   tags={"Gmail"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Watch status")
+ * )
+ */
 class GmailOAuthController extends Controller
 {
     protected $oauthService = null;

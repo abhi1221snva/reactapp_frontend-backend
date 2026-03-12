@@ -5,6 +5,19 @@ namespace App\Http\Controllers;
 use App\Services\GoogleCalendarOAuthService;
 use Illuminate\Http\Request;
 
+/**
+ * @OA\\Get(
+ *   path="/integrations/google-calendar/callback",
+ *   tags={"Google Calendar"},
+ *   summary="OAuth callback from Google (no auth required)",
+ *   description="Handles the Google OAuth redirect after user grants calendar access. Redirects to frontend profile page with success/error status.",
+ *   @OA\\Parameter(name="code", in="query", description="Authorization code from Google", @OA\\Schema(type="string")),
+ *   @OA\\Parameter(name="state", in="query", description="State parameter containing user_id", @OA\\Schema(type="string")),
+ *   @OA\\Parameter(name="error", in="query", description="Error from Google if denied", @OA\\Schema(type="string")),
+ *   @OA\\Response(response=302, description="Redirect to frontend with status"),
+ *   @OA\\Response(response=400, description="Missing required parameters")
+ * )
+ */
 class GoogleCalendarOAuthController extends Controller
 {
     protected ?GoogleCalendarOAuthService $service = null;

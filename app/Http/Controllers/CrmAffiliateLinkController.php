@@ -8,6 +8,56 @@ use App\Model\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
+/**
+ * @OA\Get(
+ *   path="/crm/affiliate-links",
+ *   summary="List CRM affiliate links",
+ *   operationId="crmAffiliateLinkList",
+ *   tags={"CRM Affiliate"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Affiliate links"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Put(
+ *   path="/crm/affiliate-links",
+ *   summary="Create a CRM affiliate link",
+ *   operationId="crmAffiliateLinkCreate",
+ *   tags={"CRM Affiliate"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Affiliate link created")
+ * )
+ *
+ * @OA\Post(
+ *   path="/crm/affiliate-links/{id}",
+ *   summary="Update a CRM affiliate link",
+ *   operationId="crmAffiliateLinkUpdate",
+ *   tags={"CRM Affiliate"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Affiliate link updated")
+ * )
+ *
+ * @OA\Delete(
+ *   path="/crm/affiliate-links/{id}",
+ *   summary="Deactivate a CRM affiliate link",
+ *   operationId="crmAffiliateLinkDeactivate",
+ *   tags={"CRM Affiliate"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Affiliate link deactivated")
+ * )
+ *
+ * @OA\Get(
+ *   path="/crm/affiliate-links/{id}/stats",
+ *   summary="Get stats for a CRM affiliate link",
+ *   operationId="crmAffiliateLinkStats",
+ *   tags={"CRM Affiliate"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Affiliate link stats")
+ * )
+ */
 class CrmAffiliateLinkController extends Controller
 {
     /**

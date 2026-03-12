@@ -13,11 +13,18 @@ class AddEscalationToCrmLeadApprovals extends Migration
 {
     public function up()
     {
+        if (!Schema::hasTable('crm_lead_approvals')) return;
         Schema::table('crm_lead_approvals', function (Blueprint $table) {
-            $table->unsignedInteger('escalate_to')->nullable()->after('reviewed_by')
-                  ->comment('User ID to escalate to if declined');
-            $table->timestamp('escalated_at')->nullable()->after('escalate_to');
-            $table->text('escalation_note')->nullable()->after('escalated_at');
+            if (!Schema::hasColumn('crm_lead_approvals', 'escalate_to')) {
+                $table->unsignedInteger('escalate_to')->nullable()->after('reviewed_by')
+                      ->comment('User ID to escalate to if declined');
+            }
+            if (!Schema::hasColumn('crm_lead_approvals', 'escalated_at')) {
+                $table->timestamp('escalated_at')->nullable()->after('escalate_to');
+            }
+            if (!Schema::hasColumn('crm_lead_approvals', 'escalation_note')) {
+                $table->text('escalation_note')->nullable()->after('escalated_at');
+            }
         });
     }
 

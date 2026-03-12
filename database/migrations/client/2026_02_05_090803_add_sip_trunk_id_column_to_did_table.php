@@ -12,8 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('did', function (Blueprint $table) {
-              $table->string('sip_trunk_id', 100)
-                  ->nullable()->after('phone_number_sid');
+            if (!Schema::hasColumn('did', 'sip_trunk_id')) $table->string('sip_trunk_id', 100)->nullable()->after('phone_number_sid');
         });
     }
 

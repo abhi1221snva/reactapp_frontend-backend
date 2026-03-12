@@ -8,6 +8,74 @@ use App\Model\Client\AgentStatus;
 use App\Model\Client\BreakPolicy;
 use Illuminate\Http\Request;
 
+/**
+ * @OA\Post(
+ *   path="/attendance/clock-in",
+ *   summary="Clock in an agent",
+ *   operationId="attendanceClockIn",
+ *   tags={"Attendance"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Clocked in"),
+ *   @OA\Response(response=422, description="Already clocked in")
+ * )
+ *
+ * @OA\Post(
+ *   path="/attendance/clock-out",
+ *   summary="Clock out an agent",
+ *   operationId="attendanceClockOut",
+ *   tags={"Attendance"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Clocked out"),
+ *   @OA\Response(response=422, description="Not clocked in")
+ * )
+ *
+ * @OA\Get(
+ *   path="/attendance/status",
+ *   summary="Get current attendance status",
+ *   operationId="attendanceStatus",
+ *   tags={"Attendance"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Clock-in status and break status")
+ * )
+ *
+ * @OA\Post(
+ *   path="/attendance/break/start",
+ *   summary="Start a break",
+ *   operationId="attendanceStartBreak",
+ *   tags={"Attendance"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="break_type_id", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Break started"),
+ *   @OA\Response(response=422, description="Already on break")
+ * )
+ *
+ * @OA\Post(
+ *   path="/attendance/break/end",
+ *   summary="End a break",
+ *   operationId="attendanceEndBreak",
+ *   tags={"Attendance"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Break ended"),
+ *   @OA\Response(response=422, description="No active break")
+ * )
+ *
+ * @OA\Post(
+ *   path="/get-attendance-list",
+ *   summary="List attendance records",
+ *   operationId="getAttendanceList",
+ *   tags={"Attendance"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(
+ *     @OA\Property(property="agent_id", type="integer"),
+ *     @OA\Property(property="date", type="string", format="date"),
+ *     @OA\Property(property="start", type="integer", default=0),
+ *     @OA\Property(property="limit", type="integer", default=25)
+ *   )),
+ *   @OA\Response(response=200, description="Attendance records")
+ * )
+ */
 class AttendanceController extends Controller
 {
     private $request;

@@ -11,9 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('wallet_transactions', function (Blueprint $table) {
-             DB::statement("ALTER TABLE wallet_transactions MODIFY amount DECIMAL(10,2) NOT NULL");
-        });
+        if (Schema::hasColumn('wallet_transactions', 'amount')) {
+            Schema::table('wallet_transactions', function (Blueprint $table) {
+                DB::statement("ALTER TABLE wallet_transactions MODIFY amount DECIMAL(10,2) NOT NULL");
+            });
+        }
     }
 
     /**

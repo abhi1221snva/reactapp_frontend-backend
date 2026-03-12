@@ -6,6 +6,41 @@ use App\Model\Client\CampaignStaffing;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * @OA\Get(
+ *   path="/workforce/campaign-staffing",
+ *   summary="List staffing requirements for all campaigns",
+ *   operationId="campaignStaffingIndex",
+ *   tags={"Workforce"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Campaign staffing list"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/workforce/campaign-staffing",
+ *   summary="Upsert staffing requirement for a campaign",
+ *   operationId="campaignStaffingUpsert",
+ *   tags={"Workforce"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(@OA\JsonContent(required={"campaign_id","required_agents"},
+ *     @OA\Property(property="campaign_id", type="integer"),
+ *     @OA\Property(property="required_agents", type="integer"),
+ *     @OA\Property(property="min_agents", type="integer")
+ *   )),
+ *   @OA\Response(response=200, description="Staffing requirement saved")
+ * )
+ *
+ * @OA\Delete(
+ *   path="/workforce/campaign-staffing/{campaign_id}",
+ *   summary="Remove staffing requirement for a campaign",
+ *   operationId="campaignStaffingDestroy",
+ *   tags={"Workforce"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="campaign_id", in="path", required=true, @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Staffing requirement removed")
+ * )
+ */
 class CampaignStaffingController extends Controller
 {
     private $request;

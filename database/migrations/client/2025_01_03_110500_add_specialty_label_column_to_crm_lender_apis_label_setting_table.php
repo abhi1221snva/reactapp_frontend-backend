@@ -14,8 +14,8 @@ class AddSpecialtyLabelColumnToCrmLenderApisLabelSettingTable extends Migration
     public function up()
     {
         Schema::table('crm_lender_apis_label_setting', function (Blueprint $table) {
-            $table->string('specialty_label')->nullable()->after('credibly_label');
-            $table->string('forward_financing_label')->nullable()->after('specialty_label');
+            if (!Schema::hasColumn('crm_lender_apis_label_setting', 'specialty_label')) $table->string('specialty_label')->nullable()->after('credibly_label');
+            if (!Schema::hasColumn('crm_lender_apis_label_setting', 'forward_financing_label')) $table->string('forward_financing_label')->nullable()->after('specialty_label');
             
             
         });

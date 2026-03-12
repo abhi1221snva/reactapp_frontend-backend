@@ -9,6 +9,43 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * @OA\Get(
+ *   path="/workforce/reports/productivity",
+ *   summary="Agent productivity report",
+ *   operationId="workforceProductivityReport",
+ *   tags={"Workforce"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="start_date", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Parameter(name="end_date", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Parameter(name="agent_id", in="query", @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Productivity report data"),
+ *   @OA\Response(response=401, description="Unauthenticated")
+ * )
+ *
+ * @OA\Get(
+ *   path="/workforce/reports/staffing",
+ *   summary="Campaign staffing report",
+ *   operationId="workforceStaffingReport",
+ *   tags={"Workforce"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="start_date", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Parameter(name="end_date", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Parameter(name="campaign_id", in="query", @OA\Schema(type="integer")),
+ *   @OA\Response(response=200, description="Staffing report data")
+ * )
+ *
+ * @OA\Get(
+ *   path="/workforce/reports/idle",
+ *   summary="Agent idle time report",
+ *   operationId="workforceIdleReport",
+ *   tags={"Workforce"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="start_date", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Parameter(name="end_date", in="query", @OA\Schema(type="string", format="date")),
+ *   @OA\Response(response=200, description="Idle time report data")
+ * )
+ */
 class WorkforceReportController extends Controller
 {
     private $request;

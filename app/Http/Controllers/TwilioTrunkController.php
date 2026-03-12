@@ -8,6 +8,64 @@ use App\Jobs\SyncTwilioTrunksJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * @OA\Get(
+ *   path="/twilio/trunks",
+ *   summary="List Twilio SIP trunks",
+ *   operationId="twilioListTrunks",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Trunk list")
+ * )
+ *
+ * @OA\Post(
+ *   path="/twilio/trunks",
+ *   summary="Create a Twilio SIP trunk",
+ *   operationId="twilioCreateTrunk",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"friendly_name"},
+ *     @OA\Property(property="friendly_name", type="string"),
+ *     @OA\Property(property="origination_url", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="Trunk created"),
+ *   @OA\Response(response=500, description="Twilio error")
+ * )
+ *
+ * @OA\Delete(
+ *   path="/twilio/trunks/{sid}",
+ *   summary="Delete a Twilio SIP trunk",
+ *   operationId="twilioDeleteTrunk",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="sid", in="path", required=true, @OA\Schema(type="string")),
+ *   @OA\Response(response=200, description="Trunk deleted")
+ * )
+ *
+ * @OA\Put(
+ *   path="/twilio/trunks/{sid}/origination-url",
+ *   summary="Update a trunk's origination URL",
+ *   operationId="twilioUpdateTrunkOriginationUrl",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Parameter(name="sid", in="path", required=true, @OA\Schema(type="string")),
+ *   @OA\RequestBody(required=true, @OA\JsonContent(
+ *     required={"origination_url"},
+ *     @OA\Property(property="origination_url", type="string")
+ *   )),
+ *   @OA\Response(response=200, description="URL updated")
+ * )
+ *
+ * @OA\Post(
+ *   path="/twilio/trunks/sync",
+ *   summary="Sync Twilio trunks from Twilio API",
+ *   operationId="twilioSyncTrunks",
+ *   tags={"Twilio"},
+ *   security={{"Bearer":{}}},
+ *   @OA\Response(response=200, description="Sync dispatched")
+ * )
+ */
 class TwilioTrunkController extends Controller
 {
     // -- List SIP trunks ----------------------------------------------------

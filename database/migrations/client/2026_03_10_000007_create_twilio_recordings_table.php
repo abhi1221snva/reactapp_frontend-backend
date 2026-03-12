@@ -8,6 +8,7 @@ class CreateTwilioRecordingsTable extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasTable('twilio_recordings')) return;
         Schema::create('twilio_recordings', function (Blueprint $table) {
             $table->bigIncrements('id');
             $table->string('recording_sid', 64)->unique(); // RE...
