@@ -1659,9 +1659,18 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   $router->post('crm/lead/{id}/documents',         'CrmDocumentController@store');
   $router->delete('crm/lead/{id}/documents/{did}', 'CrmDocumentController@destroy');
 
-  // Send to Lender
+  // Send to Lender (legacy single-lender)
   $router->get('crm/lead/{id}/lender-submissions', 'LeadController@lenderSubmissions');
   $router->post('crm/lead/{id}/send-to-lender',    'LeadController@sendToLender');
+
+  // Enhanced Lender Submission System
+  $router->post('crm/lead/{id}/submit-application',                       'LeadController@submitApplication');
+  $router->get('crm/lead/{id}/lender-submissions/enhanced',               'LeadController@enhancedLenderSubmissions');
+  $router->post('crm/lead/{id}/submissions/{subId}/response',             'LeadController@updateSubmissionResponse');
+
+  // PDF Application Generator
+  $router->get('crm/lead/{id}/render-pdf',                                'LeadController@renderPdf');
+  $router->get('crm/pdf/placeholders',                                    'LeadController@pdfPlaceholders');
 });
 
 

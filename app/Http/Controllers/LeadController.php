@@ -1921,4 +1921,439 @@ class LeadController extends Controller
             return $this->failResponse("Failed to send lead to lender", [$e->getMessage()], $e, 500);
         }
     }
+
+    /**
+     * GET /crm/lead/{id}/render-pdf
+     *
+     * Fetches the template marked custom_type='signature_application',
+     * hydrates [[field_key]] placeholders with EAV lead data, and returns
+     * the final HTML for client-side print/PDF generation.
+     */
+    public function renderPdf(Request $request, $id)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            $conn     = "mysql_{$clientId}";
+            $leadId   = (int) $id;
+
+            // 1. Resolve the application template
+            $template = DB::connection($conn)
+                ->table('crm_custom_templates')
+                ->where('custom_type', 'signature_application')
+                ->whereNull('deleted_at')
+                ->orderBy('id', 'desc')
+                ->first();
+
+            if (!$template) {
+                return $this->failResponse(
+                    'No application template found. Create one under CRM → PDF Templates.',
+                    [], null, 404
+                );
+            }
+
+            // ── Build replacement map from all available data sources ──────────
+
+            $data = [];
+
+            // 2a. New EAV: crm_lead_values (field_key → field_value)
+            //     e.g. first_name, last_name, company_name, option_33, ...
+            $schemaEav = DB::connection($conn)
+                ->getSchemaBuilder()
+                ->hasTable('crm_lead_values');
+
+            if ($schemaEav) {
+                $eavValues = DB::connection($conn)
+                    ->table('crm_lead_values')
+                    ->where('lead_id', $leadId)
+                    ->pluck('field_value', 'field_key')
+                    ->toArray();
+                $data = array_merge($data, $eavValues);
+            }
+
+            // 2b. New EAV: crm_leads base record (system cols)
+            $schemaLeads = DB::connection($conn)
+                ->getSchemaBuilder()
+                ->hasTable('crm_leads');
+
+            $leadName = "Lead #{$leadId}";
+            if ($schemaLeads) {
+                $lead = DB::connection($conn)->table('crm_leads')->where('id', $leadId)->first();
+                if (!$lead) {
+                    return $this->failResponse('Lead not found', [], null, 404);
+                }
+                // Only merge non-null system cols so they don't overwrite EAV values
+                foreach ((array) $lead as $k => $v) {
+                    if ($v !== null && !isset($data[$k])) {
+                        $data[$k] = $v;
+                    }
+                }
+            }
+
+            // 2c. Legacy: crm_lead_data with crm_label mapping
+            //     label_title_url (template placeholder) → column_name (crm_lead_data col)
+            //     e.g. legal_company_name→option_1, amount_requested→option_39, ...
+            $schemaOld     = DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_data');
+            $schemaOldLabel= DB::connection($conn)->getSchemaBuilder()->hasTable('crm_label');
+
+            if ($schemaOld && $schemaOldLabel) {
+                $oldLead = DB::connection($conn)->table('crm_lead_data')->where('id', $leadId)->first();
+                if ($oldLead) {
+                    $oldLeadArr = (array) $oldLead;
+
+                    // Direct columns first (first_name, last_name, email, etc.)
+                    foreach ($oldLeadArr as $col => $val) {
+                        if (!isset($data[$col]) && $val !== null) {
+                            $data[$col] = $val;
+                        }
+                    }
+
+                    // Then label_title_url → column_name mapping
+                    $labels = DB::connection($conn)
+                        ->table('crm_label')
+                        ->select('label_title_url', 'column_name')
+                        ->get();
+
+                    foreach ($labels as $lbl) {
+                        $key = $lbl->label_title_url;   // e.g. "legal_company_name"
+                        $col = $lbl->column_name;        // e.g. "option_1"
+                        if (!isset($data[$key]) && array_key_exists($col, $oldLeadArr)) {
+                            $data[$key] = $oldLeadArr[$col];
+                        }
+                    }
+                }
+            }
+
+            // ── Convenience aliases so templates can use common shorthand keys ──
+            // [mobile] → phone_number value
+            if (!isset($data['mobile']) && isset($data['phone_number'])) {
+                $data['mobile'] = $data['phone_number'];
+            }
+            // [lead_created_at] from crm_leads.created_at or crm_lead_data.created_at
+            if (!isset($data['lead_created_at']) && isset($data['created_at'])) {
+                $data['lead_created_at'] = $data['created_at'];
+            }
+            // [fax] — often stored as option_35 via crm_label, but if empty give blank
+            if (!isset($data['fax'])) {
+                $data['fax'] = $data['option_35'] ?? '';
+            }
+            // [business_phone] alias
+            if (!isset($data['business_phone']) && isset($data['option_38'])) {
+                $data['business_phone'] = $data['option_38'];
+            }
+            // [full_name] convenience
+            if (!isset($data['full_name'])) {
+                $data['full_name'] = trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? ''));
+            }
+
+            // ── Agent / Specialist data (from created_by user) ────────────────
+            // Resolves [specialist_name], [specialist_phone], [specialist_email],
+            // [company_logo], [company_name] etc. from the agent who created the lead
+            $createdById = $data['created_by'] ?? null;
+            if ($createdById) {
+                $agent = DB::table('users')
+                    ->where('id', (int) $createdById)
+                    ->select('first_name','last_name','mobile','email','company_name','logo')
+                    ->first();
+
+                if ($agent) {
+                    $agentFullName = trim($agent->first_name . ' ' . $agent->last_name);
+                    $data['specialist_name']       = $agentFullName;
+                    $data['specialist_first_name'] = $agent->first_name ?? '';
+                    $data['specialist_last_name']  = $agent->last_name  ?? '';
+                    $data['specialist_phone']      = $agent->mobile     ?? '';
+                    $data['specialist_mobile']     = $agent->mobile     ?? '';
+                    $data['specialist_email']      = $agent->email      ?? '';
+                    $data['specialist_fax']        = '';  // no fax col on users table
+
+                    // Company details from agent profile
+                    $data['company_name_agent']    = $agent->company_name ?? '';
+
+                    // Company logo — renders as <img> tag (base64 for PDF compatibility)
+                    if (!empty($agent->logo)) {
+                        $logoPath = public_path('logo/' . $agent->logo);
+                        if (file_exists($logoPath)) {
+                            $mime    = mime_content_type($logoPath) ?: 'image/png';
+                            $b64     = base64_encode(file_get_contents($logoPath));
+                            $data['company_logo'] = '<img src="data:' . $mime . ';base64,' . $b64 . '" style="max-height:80px;max-width:200px;" alt="Logo">';
+                        } else {
+                            // Fallback: direct URL
+                            $data['company_logo'] = '<img src="' . env('APP_URL') . '/logo/' . $agent->logo . '" style="max-height:80px;max-width:200px;" alt="Logo">';
+                        }
+                    } else {
+                        $data['company_logo'] = '';
+                    }
+                }
+            }
+            // Ensure these keys exist even when no agent found
+            foreach (['specialist_name','specialist_phone','specialist_mobile','specialist_email','specialist_fax','specialist_first_name','specialist_last_name','company_logo','company_name_agent'] as $k) {
+                if (!isset($data[$k])) $data[$k] = '';
+            }
+
+            // Resolve lead display name
+            $firstName = $data['first_name'] ?? '';
+            $lastName  = $data['last_name']  ?? '';
+            $company   = $data['company_name'] ?? $data['legal_company_name'] ?? '';
+            $leadName  = trim("$firstName $lastName") ?: ($company ?: "Lead #{$leadId}");
+
+            // ── Substitute placeholders — supports both [[key]] and [key] ─────
+            $html = $template->template_html ?? '';
+            foreach ($data as $key => $value) {
+                $val  = (string) ($value ?? '');
+                $html = str_replace("[[{$key}]]", $val, $html);  // double-bracket
+                $html = str_replace("[{$key}]",   $val, $html);  // single-bracket
+            }
+            // Remove any remaining un-substituted placeholders (both formats)
+            $html = preg_replace('/\[\[[^\]]*\]\]/', '', $html);  // [[...]]
+            $html = preg_replace('/\[[a-z0-9_]+\]/i', '', $html); // [key]
+
+            return $this->successResponse('Template rendered', [
+                'html'          => $html,
+                'lead_name'     => $leadName,
+                'template_id'   => $template->id,
+                'template_name' => $template->template_name,
+            ]);
+        } catch (\Throwable $e) {
+            return $this->failResponse('Failed to render PDF', [$e->getMessage()], $e, 500);
+        }
+    }
+
+    /**
+     * GET /crm/pdf/placeholders
+     *
+     * Returns all available [[placeholder]] keys from both old and new field systems.
+     * Used by the PDF template editor placeholder picker.
+     */
+    public function pdfPlaceholders(Request $request)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            $conn     = "mysql_{$clientId}";
+            $placeholders = [];
+            $seenKeys = [];
+
+            $addPlaceholder = function(string $key, string $label, string $type, string $section) use (&$placeholders, &$seenKeys) {
+                if ($key === '' || in_array($key, $seenKeys, true)) return;
+                $seenKeys[] = $key;
+                $placeholders[] = compact('key', 'label', 'type', 'section');
+            };
+
+            // 1. System fields always available from crm_lead_data direct columns
+            $systemFields = [
+                // Lead / applicant
+                ['first_name',          'First Name',           'text',   'Owner Information'],
+                ['last_name',           'Last Name',            'text',   'Owner Information'],
+                ['full_name',           'Full Name',            'text',   'Owner Information'],
+                ['email',               'Email',                'email',  'Owner Information'],
+                ['phone_number',        'Phone Number',         'text',   'Owner Information'],
+                ['mobile',              'Mobile (alias phone)', 'text',   'Owner Information'],
+                ['dob',                 'Date of Birth',        'text',   'Owner Information'],
+                ['gender',              'Gender',               'text',   'Owner Information'],
+                ['address',             'Address',              'text',   'Owner Information'],
+                ['city',                'City',                 'text',   'Owner Information'],
+                ['state',               'State',                'text',   'Owner Information'],
+                ['country',             'Country',              'text',   'Owner Information'],
+                ['company_name',        'Company Name',         'text',   'Business Information'],
+                ['business_name',       'Business Name',        'text',   'Business Information'],
+                ['fax',                 'Fax',                  'text',   'Owner Information'],
+                // Specialist / agent (created_by user)
+                ['specialist_name',         'Specialist Full Name',    'text',  'Specialist (Agent)'],
+                ['specialist_first_name',   'Specialist First Name',   'text',  'Specialist (Agent)'],
+                ['specialist_last_name',    'Specialist Last Name',    'text',  'Specialist (Agent)'],
+                ['specialist_phone',        'Specialist Phone',        'text',  'Specialist (Agent)'],
+                ['specialist_email',        'Specialist Email',        'email', 'Specialist (Agent)'],
+                ['specialist_fax',          'Specialist Fax',          'text',  'Specialist (Agent)'],
+                // Company branding (from agent profile)
+                ['company_logo',            'Company Logo (img tag)',  'text',  'Company Branding'],
+                ['company_name_agent',      'Company Name (agent)',    'text',  'Company Branding'],
+                // System
+                ['lead_status',         'Lead Status',          'text',   'System'],
+                ['lead_type',           'Lead Type',            'text',   'System'],
+                ['lead_created_at',     'Date Created',         'text',   'System'],
+                ['signature_image',     'Applicant Signature',  'text',   'System'],
+                ['unique_url',          'Application URL',      'text',   'System'],
+            ];
+            foreach ($systemFields as [$key, $label, $type, $section]) {
+                $addPlaceholder($key, $label, $type, $section);
+            }
+
+            // 2. New EAV labels (crm_labels table)
+            if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_labels')) {
+                $newLabels = DB::connection($conn)
+                    ->table('crm_labels')
+                    ->where('status', 1)
+                    ->orderBy('display_order')
+                    ->select('field_key', 'label_name', 'field_type', 'section')
+                    ->get();
+                foreach ($newLabels as $l) {
+                    $addPlaceholder(
+                        $l->field_key,
+                        $l->label_name,
+                        $l->field_type ?? 'text',
+                        $l->section    ?? 'General'
+                    );
+                }
+            }
+
+            // 3. Legacy labels (crm_label table) — label_title_url is the placeholder key
+            //    column `title` is the human name (NOT label_title which doesn't exist)
+            if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_label')) {
+                $oldLabels = DB::connection($conn)
+                    ->table('crm_label')
+                    ->select('label_title_url', 'title', 'column_name')
+                    ->whereNotNull('label_title_url')
+                    ->where('label_title_url', '!=', '')
+                    ->where('is_deleted', 0)
+                    ->get();
+
+                // Categorise by column prefix
+                $sectionMap = [
+                    'Business'        => ['business_','ein','dba','industry','use_of_funds','entity_type'],
+                    'Owner Information'=> ['owner_','ssn','credit_score','home_','date_of_birth','ownership_'],
+                    'Funding'         => ['amount_','funded_','approved_','factor_','payback_','daily_','weekly_','term_','payment_'],
+                    'Owner 2'         => ['owner_2_'],
+                ];
+                foreach ($oldLabels as $l) {
+                    $section = 'General';
+                    foreach ($sectionMap as $sec => $prefixes) {
+                        foreach ($prefixes as $p) {
+                            if (str_starts_with($l->label_title_url, $p)) { $section = $sec; break 2; }
+                        }
+                    }
+                    $addPlaceholder(
+                        $l->label_title_url,
+                        $l->title ?? $l->label_title_url,
+                        'text',
+                        $section
+                    );
+                }
+            }
+
+            return $this->successResponse('Placeholders', $placeholders);
+        } catch (\Throwable $e) {
+            return $this->failResponse('Failed to load placeholders', [$e->getMessage()], $e, 500);
+        }
+    }
+
+    /**
+     * POST /crm/lead/{id}/submit-application
+     *
+     * Body:
+     *   lender_ids:    int[]   (required)
+     *   notes:         string  (optional)
+     *   pdf_path:      string  (optional) — relative storage path of application PDF
+     */
+    public function submitApplication(Request $request, $id)
+    {
+        $this->validate($request, [
+            'lender_ids'   => 'required|array|min:1',
+            'lender_ids.*' => 'integer',
+        ]);
+
+        try {
+            $clientId  = $request->auth->parent_id;
+            $leadId    = (int) $id;
+            $userId    = $request->auth->id;
+
+            // Resolve lead display name for the email subject
+            $lead = DB::connection("mysql_{$clientId}")
+                ->table('crm_leads')
+                ->where('id', $leadId)
+                ->first();
+
+            if (!$lead) {
+                // Fall back to legacy table
+                $lead = DB::connection("mysql_{$clientId}")
+                    ->table('crm_lead_data')
+                    ->where('id', $leadId)
+                    ->first();
+            }
+
+            $firstName    = $lead->first_name ?? '';
+            $lastName     = $lead->last_name  ?? '';
+            $companyName  = $lead->company_name ?? '';
+            $businessName = trim($companyName ?: "$firstName $lastName") ?: "Lead #{$leadId}";
+
+            // Submitter display name
+            $user = DB::connection("mysql_{$clientId}")
+                ->table('users')
+                ->where('id', $userId)
+                ->first(['first_name', 'last_name', 'username']);
+            $submitterName = $user
+                ? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: ($user->username ?? 'CRM Agent')
+                : 'CRM Agent';
+
+            $result = $this->lenderService->submitApplication(
+                $clientId,
+                $leadId,
+                $request->input('lender_ids'),
+                $userId,
+                $submitterName,
+                $businessName,
+                $request->input('pdf_path'),
+                $request->input('notes'),
+            );
+
+            $message = count($result['submitted']) . ' application(s) submitted';
+            if (!empty($result['failed'])) {
+                $message .= ', ' . count($result['failed']) . ' failed';
+            }
+
+            return $this->successResponse($message, $result);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to submit application", [$e->getMessage()], $e, 500);
+        }
+    }
+
+    /**
+     * GET /crm/lead/{id}/lender-submissions/enhanced
+     */
+    public function enhancedLenderSubmissions(Request $request, $id)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            return $this->successResponse(
+                "Lender Submissions",
+                $this->lenderService->getEnhancedSubmissions($clientId, (int) $id)
+            );
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to load submissions", [$e->getMessage()], $e, 500);
+        }
+    }
+
+    /**
+     * PATCH /crm/lead/{id}/submissions/{subId}/response
+     *
+     * Body:
+     *   response_status:    string  (required) pending|approved|declined|needs_documents|no_response
+     *   submission_status:  string  (optional)
+     *   response_note:      string  (optional)
+     */
+    public function updateSubmissionResponse(Request $request, $id, $subId)
+    {
+        $this->validate($request, [
+            'response_status' => 'required|string|in:pending,approved,declined,needs_documents,no_response',
+            'submission_status' => 'sometimes|string|in:pending,submitted,viewed,approved,declined,no_response',
+        ]);
+
+        try {
+            $clientId = $request->auth->parent_id;
+            $updated  = $this->lenderService->updateSubmissionResponse(
+                $clientId,
+                (int) $id,
+                (int) $subId,
+                $request->input('response_status'),
+                $request->input('response_note'),
+                $request->input('submission_status'),
+                $request->auth->id
+            );
+
+            if (!$updated) {
+                return $this->failResponse("Submission not found", [], null, 404);
+            }
+
+            return $this->successResponse("Response updated", $updated);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to update response", [$e->getMessage()], $e, 500);
+        }
+    }
 }

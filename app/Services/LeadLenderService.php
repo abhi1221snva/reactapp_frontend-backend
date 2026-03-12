@@ -3,12 +3,16 @@
 namespace App\Services;
 
 use App\Jobs\SendLeadByLenderApi;
+use App\Mail\LenderApplicationMail;
+use App\Model\Client\CrmLenderSubmission;
 use App\Model\Client\CrmSendLeadToLender;
 use App\Model\Client\Lender;
 use App\Model\Client\LenderStatus;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Handles all lender-related CRM operations.
@@ -221,5 +225,198 @@ class LeadLenderService
             'notes'       => $notes,
             'api_queued'  => $apiQueued,
         ];
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Enhanced Lender Submission System (crm_lender_submissions)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Submit a funding application to one or more lenders.
+     *
+     * - Records a row in crm_lender_submissions for each lender.
+     * - Sends an email with the PDF attached to each lender's email address.
+     * - Logs a lender_submitted activity entry.
+     *
+     * @param  string   $clientId
+     * @param  int      $leadId
+     * @param  int[]    $lenderIds
+     * @param  int      $userId
+     * @param  string   $submitterName  Display name shown in the email body
+     * @param  string   $businessName   Business / lead display name for email subject
+     * @param  string|null $pdfStoragePath  Relative storage path (e.g. crm_documents/…/app.pdf)
+     * @param  string|null $notes
+     * @return array{submitted: int[], failed: int[], records: array<int, array>}
+     */
+    public function submitApplication(
+        string  $clientId,
+        int     $leadId,
+        array   $lenderIds,
+        int     $userId,
+        string  $submitterName,
+        string  $businessName,
+        ?string $pdfStoragePath = null,
+        ?string $notes          = null
+    ): array {
+        $conn        = "mysql_{$clientId}";
+        $submitted   = [];
+        $failed      = [];
+        $records     = [];
+
+        // Resolve absolute PDF path once
+        $pdfAbsPath  = null;
+        $pdfFileName = null;
+        if ($pdfStoragePath) {
+            $pdfAbsPath  = storage_path('app/public/' . ltrim($pdfStoragePath, '/'));
+            $pdfFileName = basename($pdfAbsPath);
+            if (!file_exists($pdfAbsPath)) {
+                $pdfAbsPath = null; // won't attach if file is missing
+            }
+        }
+
+        foreach ($lenderIds as $lenderId) {
+            $lender = DB::connection($conn)->table('crm_lender')->where('id', $lenderId)->first();
+            if (!$lender) {
+                $failed[] = $lenderId;
+                continue;
+            }
+
+            try {
+                $now    = Carbon::now();
+                $subId  = DB::connection($conn)->table('crm_lender_submissions')->insertGetId([
+                    'lead_id'          => $leadId,
+                    'lender_id'        => $lenderId,
+                    'lender_name'      => $lender->lender_name,
+                    'lender_email'     => $lender->email,
+                    'application_pdf'  => $pdfStoragePath,
+                    'submission_status'=> 'submitted',
+                    'response_status'  => 'pending',
+                    'notes'            => $notes,
+                    'submitted_by'     => $userId,
+                    'submitted_at'     => $now,
+                    'created_at'       => $now,
+                    'updated_at'       => $now,
+                ]);
+
+                // Send email if lender has an email address
+                $emailTargets = array_filter([
+                    $lender->email,
+                    $lender->secondary_email  ?? null,
+                    $lender->secondary_email2 ?? null,
+                    $lender->secondary_email3 ?? null,
+                    $lender->secondary_email4 ?? null,
+                ]);
+
+                foreach ($emailTargets as $email) {
+                    try {
+                        Mail::to(trim($email))->send(new LenderApplicationMail(
+                            $businessName,
+                            $submitterName,
+                            $pdfAbsPath,
+                            $pdfFileName,
+                            $notes,
+                        ));
+                    } catch (\Throwable $mailEx) {
+                        Log::warning("LenderApplicationMail failed for lender {$lenderId} → {$email}: " . $mailEx->getMessage());
+                    }
+                }
+
+                // Activity log
+                DB::connection($conn)->table('crm_lead_activity')->insert([
+                    'lead_id'       => $leadId,
+                    'user_id'       => $userId,
+                    'activity_type' => 'lender_submitted',
+                    'subject'       => 'Application sent to lender: ' . $lender->lender_name,
+                    'body'          => $notes,
+                    'created_at'    => $now,
+                    'updated_at'    => $now,
+                ]);
+
+                $submitted[] = $lenderId;
+                $records[$lenderId] = [
+                    'id'               => $subId,
+                    'lender_id'        => $lenderId,
+                    'lender_name'      => $lender->lender_name,
+                    'submission_status'=> 'submitted',
+                    'response_status'  => 'pending',
+                    'submitted_at'     => $now->toDateTimeString(),
+                ];
+            } catch (\Throwable $e) {
+                Log::error("submitApplication failed for lender {$lenderId}: " . $e->getMessage());
+                $failed[] = $lenderId;
+            }
+        }
+
+        return compact('submitted', 'failed', 'records');
+    }
+
+    /**
+     * Fetch enhanced lender submissions (from crm_lender_submissions) for a lead.
+     */
+    public function getEnhancedSubmissions(string $clientId, int $leadId): array
+    {
+        return DB::connection("mysql_{$clientId}")
+            ->table('crm_lender_submissions')
+            ->where('lead_id', $leadId)
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(fn ($r) => (array) $r)
+            ->values()
+            ->toArray();
+    }
+
+    /**
+     * Update lender response on a submission record.
+     *
+     * @return array|null  Updated record or null if not found
+     */
+    public function updateSubmissionResponse(
+        string  $clientId,
+        int     $leadId,
+        int     $submissionId,
+        string  $responseStatus,
+        ?string $responseNote  = null,
+        ?string $submissionStatus = null,
+        int     $userId = 0
+    ): ?array {
+        $conn = "mysql_{$clientId}";
+        $row  = DB::connection($conn)
+            ->table('crm_lender_submissions')
+            ->where('id', $submissionId)
+            ->where('lead_id', $leadId)
+            ->first();
+
+        if (!$row) {
+            return null;
+        }
+
+        $now    = Carbon::now();
+        $update = [
+            'response_status'       => $responseStatus,
+            'response_note'         => $responseNote,
+            'response_received_at'  => $now,
+            'updated_at'            => $now,
+        ];
+
+        if ($submissionStatus) {
+            $update['submission_status'] = $submissionStatus;
+        }
+
+        DB::connection($conn)->table('crm_lender_submissions')
+            ->where('id', $submissionId)
+            ->update($update);
+
+        // Activity log
+        DB::connection($conn)->table('crm_lead_activity')->insert([
+            'lead_id'       => $leadId,
+            'user_id'       => $userId,
+            'activity_type' => 'lender_response',
+            'subject'       => 'Lender response updated: ' . ($row->lender_name ?? "Lender #{$row->lender_id}"),
+            'body'          => "Response: {$responseStatus}" . ($responseNote ? " — {$responseNote}" : ''),
+            'created_at'    => $now,
+            'updated_at'    => $now,
+        ]);
+
+        return array_merge((array) $row, $update);
     }
 }
