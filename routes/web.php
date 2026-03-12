@@ -10,6 +10,19 @@
   | and give it the Closure to call when that URI is requested.
   |
  */
+// ─── Public: Affiliate Apply Form + Merchant Portal ──────────────────────────
+// These routes require NO authentication — accessed by external applicants
+$router->group(['middleware' => ['throttle:60,1']], function () use ($router) {
+    $router->get('public/apply/{code}',                  'PublicApplicationController@getApplyForm');
+    $router->post('public/apply/{code}',                 'PublicApplicationController@submitApplication');
+    $router->get('public/merchant/{token}',              'PublicApplicationController@getMerchantPortal');
+    $router->post('public/merchant/{token}',             'PublicApplicationController@updateMerchant');
+    $router->post('public/merchant/{token}/upload',      'PublicApplicationController@uploadDocument');
+
+    // Tenant company logo — public (shown on apply forms, PDFs, etc.)
+    $router->get('public/tenant/{clientId}/logo',        'TenantFileController@serveLogo');
+});
+
 $router->get('/list-all-cache', 'RedisCacheController@listAllCache');
 $router->get('/cache-detail', 'RedisCacheController@getCacheDetail');
 $router->get('/cache-detail/{key}', 'RedisCacheController@getCacheDetail');
@@ -1447,6 +1460,21 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   $router->post('crm/lead-fields',         'CrmLabelController@leadFieldsCreate');
   $router->post('crm/lead-fields/{id}',    'CrmLabelController@leadFieldsUpdate');
   $router->delete('crm/lead-fields/{id}',  'CrmLabelController@leadFieldsDelete');
+
+  // ── Tenant private file serving ─────────────────────────────────────────────
+  $router->get('crm/tenant-file/{subdir}/{filename}', 'TenantFileController@serveFile');
+
+  // ── Company Settings ────────────────────────────────────────────────────────
+  $router->get('crm/company-settings',         'CompanyDetailController@getSettings');
+  $router->put('crm/company-settings',         'CompanyDetailController@updateSettings');
+  $router->post('crm/company-settings/logo',   'CompanyDetailController@uploadLogo');
+  $router->delete('crm/company-settings/logo', 'CompanyDetailController@deleteLogo');
+
+  // ── Affiliate Link Management ───────────────────────────────────────────────
+  $router->get('crm/affiliate/my-link',       'CompanyDetailController@getMyAffiliateLink');
+  $router->post('crm/affiliate/generate-code','CompanyDetailController@generateMyCode');
+  $router->get('crm/affiliate/users',         'CompanyDetailController@listAffiliateUsers');
+  $router->get('crm/lead/{id}/merchant-link', 'CompanyDetailController@getLeadMerchantLink');
 
   //notes and updates
 

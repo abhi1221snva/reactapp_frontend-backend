@@ -38,6 +38,7 @@ use App\Console\Commands\DripCampaignScheduleProcess;
 use App\Console\Commands\SendScheduledReminders;
 use App\Console\Commands\MissedCallNotificationCron;
 use App\Console\Commands\AutoClockoutCommand;
+use App\Console\Commands\ProvisionClientCommand;
 use Illuminate\Console\Scheduling\Schedule;
 use Laravel\Lumen\Console\Kernel as ConsoleKernel;
 
@@ -88,6 +89,7 @@ class Kernel extends ConsoleKernel
         MissedCallNotificationCron::class,
         AutoClockoutCommand::class,
         \App\Console\Commands\GenerateSwaggerDocs::class,
+        ProvisionClientCommand::class,
     ];
 
     /**

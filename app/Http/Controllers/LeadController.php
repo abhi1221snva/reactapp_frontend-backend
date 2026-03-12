@@ -2089,6 +2089,73 @@ class LeadController extends Controller
                 if (!isset($data[$k])) $data[$k] = '';
             }
 
+            // ── Company details from crm_system_setting (client DB) ───────────
+            // Provides [office_name], [office_email], [office_phone], [office_address],
+            // [office_city], [office_state], [office_zip], [office_domain],
+            // [office_logo] (always from Company Details), [company_name] (alias),
+            // [company_logo] (prefers Company Details logo, falls back to agent logo).
+            try {
+                $officeSetting = DB::connection($conn)
+                    ->table('crm_system_setting')
+                    ->orderBy('id')
+                    ->first();
+
+                if ($officeSetting) {
+                    $data['office_name']    = $officeSetting->company_name    ?? '';
+                    $data['office_email']   = $officeSetting->company_email   ?? '';
+                    $data['office_phone']   = $officeSetting->company_phone   ?? '';
+                    $data['office_address'] = $officeSetting->company_address ?? '';
+                    $data['office_city']    = $officeSetting->city            ?? '';
+                    $data['office_state']   = $officeSetting->state           ?? '';
+                    $data['office_zip']     = $officeSetting->zipcode         ?? '';
+                    $data['office_domain']  = $officeSetting->company_domain  ?? '';
+
+                    // [company_name] — alias for the Company Details company name
+                    $data['company_name'] = $officeSetting->company_name ?? '';
+
+                    // Override company_name_agent with setting name if agent didn't set it
+                    if (empty($data['company_name_agent'])) {
+                        $data['company_name_agent'] = $officeSetting->company_name ?? '';
+                    }
+
+                    // Helper: build an <img> tag from a logo value (filename or URL)
+                    // Returns empty string if logo cannot be resolved.
+                    $buildLogoImg = function(string $logo) use ($clientId): string {
+                        if (empty($logo)) return '';
+                        $style = 'max-height:80px;max-width:200px;display:block;';
+                        if (str_starts_with($logo, 'http')) {
+                            return '<img src="' . htmlspecialchars($logo) . '" style="' . $style . '" alt="Logo">';
+                        }
+                        // Try tenant storage (new uploads via Company Details page)
+                        $logoPath = \App\Services\TenantStorageService::getPath($clientId, 'company') . '/' . $logo;
+                        if (!file_exists($logoPath)) {
+                            // Fall back to legacy public/logo/
+                            $logoPath = public_path('logo/' . $logo);
+                        }
+                        if (file_exists($logoPath)) {
+                            $mime = mime_content_type($logoPath) ?: 'image/png';
+                            $b64  = base64_encode(file_get_contents($logoPath));
+                            return '<img src="data:' . $mime . ';base64,' . $b64 . '" style="' . $style . '" alt="Logo">';
+                        }
+                        // URL fallback (last resort)
+                        return '<img src="' . rtrim(env('APP_URL'), '/') . '/public/tenant/' . $clientId . '/logo" style="' . $style . '" alt="Logo">';
+                    };
+
+                    // [office_logo] — ALWAYS from Company Details (reliable, base64 embedded)
+                    $data['office_logo'] = !empty($officeSetting->logo)
+                        ? $buildLogoImg((string) $officeSetting->logo)
+                        : '';
+
+                    // [company_logo] — prefer Company Details logo; agent logo as fallback only
+                    $data['company_logo'] = $data['office_logo'] ?: ($data['company_logo'] ?? '');
+                }
+            } catch (\Throwable $ignored) {}
+
+            // Ensure all office keys exist
+            foreach (['office_name','office_email','office_phone','office_address','office_city','office_state','office_zip','office_domain','office_logo','company_name','company_logo'] as $k) {
+                if (!isset($data[$k])) $data[$k] = '';
+            }
+
             // Resolve lead display name
             $firstName = $data['first_name'] ?? '';
             $lastName  = $data['last_name']  ?? '';
@@ -2162,8 +2229,19 @@ class LeadController extends Controller
                 ['specialist_phone',        'Specialist Phone',        'text',  'Specialist (Agent)'],
                 ['specialist_email',        'Specialist Email',        'email', 'Specialist (Agent)'],
                 ['specialist_fax',          'Specialist Fax',          'text',  'Specialist (Agent)'],
-                // Company branding (from agent profile)
-                ['company_logo',            'Company Logo (img tag)',  'text',  'Company Branding'],
+                // Company branding — from Company Details page (crm_system_setting)
+                ['office_logo',             'Company Logo (Company Details)', 'text', 'Company Branding'],
+                ['company_logo',            'Company Logo (auto)',     'text',  'Company Branding'],
+                ['office_name',             'Company Name',            'text',  'Company Branding'],
+                ['company_name',            'Company Name (alias)',    'text',  'Company Branding'],
+                ['office_email',            'Company Email',           'email', 'Company Branding'],
+                ['office_phone',            'Company Phone',           'text',  'Company Branding'],
+                ['office_address',          'Company Address',         'text',  'Company Branding'],
+                ['office_city',             'Company City',            'text',  'Company Branding'],
+                ['office_state',            'Company State',           'text',  'Company Branding'],
+                ['office_zip',              'Company Zip Code',        'text',  'Company Branding'],
+                ['office_domain',           'Company Website URL',     'text',  'Company Branding'],
+                // Agent profile branding (secondary)
                 ['company_name_agent',      'Company Name (agent)',    'text',  'Company Branding'],
                 // System
                 ['lead_status',         'Lead Status',          'text',   'System'],

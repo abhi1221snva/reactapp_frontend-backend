@@ -54,7 +54,6 @@ class PredictiveCallJob extends Job
 
                         $live_campaigns = ExtensionLive::on($connection)->join('campaign', 'extension_live.campaign_id', '=', 'campaign.id')->where('extension_live.status','=','0')->where('campaign.dial_mode','=','predictive_dial')->groupBy('extension_live.campaign_id')->get(['extension_live.extension','extension_live.status','extension_live.campaign_id','extension_live.lead_id', 'campaign.id','campaign.title','campaign.time_based_calling','campaign.call_time_start','campaign.call_time_end','campaign.last_time_cron_run','campaign.duration','campaign.call_ratio','campaign.dial_mode','campaign.hopper_mode']);
 
-                        echo "<pre>";print_r($live_campaigns);die;
                         Log::info("PredictiveCallJobCron.handle", ["clientId" => $clientId,"live_campaigns" => $live_campaigns]);
 
                         $count = count($live_campaigns);
@@ -199,7 +198,6 @@ class PredictiveCallJob extends Job
                             }
 
                         }
-                            echo "<pre>";print_r($data);
                             Log::info("PredictiveCallJobCron.handle", ["clientId" => $clientId,"predictive calls" => $data]);
 
                         //end 
