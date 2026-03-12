@@ -571,19 +571,36 @@ class CrmLabelController extends Controller
         $clientId = $request->auth->parent_id;
 
         $this->validate($request, [
-            'label_name' => [
-                'required', 'string', 'max:255',
-            ],
-            'field_key'  => [
-                'required', 'string', 'max:100', 'alpha_dash',
-                Rule::unique("mysql_{$clientId}.crm_labels", 'field_key'),
-            ],
+            'label_name' => ['required', 'string', 'max:255'],
             'field_type' => 'required|string|in:text,number,email,phone_number,date,textarea,dropdown,checkbox,radio',
+            // field_key is optional — auto-generated from label_name when absent
+            'field_key'  => ['sometimes', 'nullable', 'string', 'max:100', 'alpha_dash'],
         ]);
 
         try {
+            // Auto-generate field_key from label_name (Task 2)
+            $baseKey  = preg_replace('/[^a-z0-9]+/', '_',
+                            trim(strtolower($request->input('label_name'))));
+            $baseKey  = trim($baseKey, '_');
+            $fieldKey = $request->input('field_key') ?: $baseKey;
+
+            // Ensure uniqueness — append _2, _3, etc. if collision
+            $candidate = $fieldKey;
+            $suffix    = 2;
+            while (
+                DB::connection("mysql_{$clientId}")
+                    ->table('crm_labels')
+                    ->where('field_key', $candidate)
+                    ->exists()
+            ) {
+                $candidate = $fieldKey . '_' . $suffix++;
+            }
+
+            $data            = $request->all();
+            $data['field_key'] = $candidate;
+
             $svc   = new LeadFieldService();
-            $field = $svc->create($clientId, $request->all());
+            $field = $svc->create($clientId, $data);
             return $this->successResponse("Field created successfully", (array) $field);
         } catch (\Throwable $e) {
             return $this->failResponse("Failed to create field", [$e->getMessage()], $e, 500);
