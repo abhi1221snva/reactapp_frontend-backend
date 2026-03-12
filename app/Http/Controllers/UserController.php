@@ -730,37 +730,32 @@ public function assignableRolesNew(Request $request)
             'id' => 'numeric'
         ]);
         $response = $user->userProfileUpdate($this->request);
-         // 2️⃣ Call Easify API
-    try {
-        $userProfile=User::where('id',$this->request->input('id'))->first();
-        $easify_user_uuid= $userProfile->easify_user_uuid;
-        Log::info('reached easify_user_uuid',['easify_user_uuid'=>$easify_user_uuid]);
 
-        $easifyResponse = Http::withHeaders([
-            'X-Application-Token' => env('PHONIFY_APP_TOKEN'),
-            'X-Easify-User-Token' => $easify_user_uuid,
-            'Content-Type' => 'application/json'
-        ])->post(env('EASIFY_URL') . '/api/user/profile/update', [
-            'first_name' => $this->request->first_name,
-            'last_name'  => $this->request->last_name,
-            'timezone'   => $this->request->timezone
-        ]);
-       Log::info('reached easifyresponse',['easifyResponse'=>$easifyResponse]);
-        if (!$easifyResponse->successful()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Easify profile update failed',
-                'easify_error' => $easifyResponse->json()
-            ], $easifyResponse->status());
+        // Sync to Easify (best-effort — never block the response if it fails)
+        try {
+            $userProfile = User::where('id', $this->request->input('id'))->first();
+            $easify_user_uuid = $userProfile->easify_user_uuid ?? null;
+            if ($easify_user_uuid && env('EASIFY_URL')) {
+                $easifyResponse = Http::withHeaders([
+                    'X-Application-Token' => env('PHONIFY_APP_TOKEN'),
+                    'X-Easify-User-Token' => $easify_user_uuid,
+                    'Content-Type'        => 'application/json'
+                ])->post(env('EASIFY_URL') . '/api/user/profile/update', [
+                    'first_name' => $this->request->first_name,
+                    'last_name'  => $this->request->last_name,
+                    'timezone'   => $this->request->timezone,
+                ]);
+                if (!$easifyResponse->successful()) {
+                    Log::warning('Easify profile sync failed (non-blocking)', [
+                        'user_id' => $this->request->input('id'),
+                        'status'  => $easifyResponse->status(),
+                    ]);
+                }
+            }
+        } catch (\Exception $e) {
+            Log::warning('Easify profile sync exception (non-blocking)', ['error' => $e->getMessage()]);
         }
 
-    } catch (\Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Easify API error',
-            'error' => $e->getMessage()
-        ], 500);
-    }
         return response()->json($response);
         
     }

@@ -401,8 +401,10 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                 $save = DB::connection('master')->update($query, $data);
 
                 $client = Client::find($request->input('parentId'));
-                $client->company_name = $data_company['company_name'];
-                $client->save();
+                if ($client && !empty($data_company['company_name'])) {
+                    $client->company_name = $data_company['company_name'];
+                    $client->save();
+                }
 
                 return array(
                     'success' => 'true',
