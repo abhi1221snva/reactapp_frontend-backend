@@ -36,7 +36,7 @@ class PublicApplicationController extends Controller
             return response()->json([
                 'success' => true,
                 'data'    => [
-                    'company'        => $this->svc->getCompanyBranding($client),
+                    'company'        => $this->svc->getCompanyBranding($client, $clientId),
                     'sections'       => $this->svc->getFormSections($clientId),
                     'affiliate_user' => [
                         'name'  => trim($user->first_name . ' ' . $user->last_name),
@@ -100,7 +100,7 @@ class PublicApplicationController extends Controller
         try {
             [$lead, $clientId, $client] = $this->svc->resolveLeadToken($token);
 
-            $company  = $this->svc->getCompanyBranding($client);
+            $company  = $this->svc->getCompanyBranding($client, $clientId);
             $sections = $this->svc->getFormSections($clientId, true);
             $html     = $this->svc->generateApplicationHtml($clientId, $lead, $sections, $company);
 
@@ -132,7 +132,7 @@ class PublicApplicationController extends Controller
             return response()->json([
                 'success' => true,
                 'data'    => [
-                    'company'  => $this->svc->getCompanyBranding($client),
+                    'company'  => $this->svc->getCompanyBranding($client, $clientId),
                     'lead'     => $this->svc->getMerchantLeadData($lead, $clientId),
                     'sections' => $this->svc->getFormSections($clientId, true),
                 ],

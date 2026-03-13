@@ -72,14 +72,20 @@ class PublicApplicationService
     // COMPANY BRANDING
     // ─────────────────────────────────────────────────────────────────────────
 
-    public function getCompanyBranding(object $client): array
+    public function getCompanyBranding(object $client, int $clientId = 0): array
     {
         $logoRaw = $client->logo ?? null;
         $logoUrl = null;
         if ($logoRaw) {
-            $logoUrl = str_starts_with($logoRaw, 'http')
-                ? $logoRaw
-                : rtrim(env('APP_URL'), '/') . '/logo/' . $logoRaw;
+            if (str_starts_with($logoRaw, 'http')) {
+                $logoUrl = $logoRaw;
+            } elseif ($clientId > 0) {
+                // Logos stored in tenant storage → served via /public/tenant/{id}/logo
+                $logoUrl = rtrim(env('APP_URL'), '/') . '/public/tenant/' . $clientId . '/logo';
+            } else {
+                // Legacy: public/logo/ folder
+                $logoUrl = rtrim(env('APP_URL'), '/') . '/logo/' . $logoRaw;
+            }
         }
 
         $websiteUrl = $client->company_domain ?? $client->website_url ?? null;
