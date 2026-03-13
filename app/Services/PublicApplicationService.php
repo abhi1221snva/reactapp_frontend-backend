@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
@@ -13,8 +14,8 @@ use Illuminate\Support\Str;
  */
 class PublicApplicationService
 {
-    // Fields excluded from the public apply form (sensitive)
-    private const EXCLUDED_APPLY_KEYS = ['ssn', 'credit_score', 'unique_url', 'unique_token', 'signature_image', 'owner_2_ssn'];
+    // Fields excluded from the public apply form (sensitive / internal)
+    private const EXCLUDED_APPLY_KEYS = ['credit_score', 'unique_url', 'unique_token', 'signature_image', 'owner_2_ssn'];
 
     // Map crm_label.heading → section title
     private const SECTION_LABELS = [
@@ -28,17 +29,12 @@ class PublicApplicationService
     // AFFILIATE RESOLUTION
     // ─────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Resolve an affiliate code to a user + client.
-     * Returns [user, clientId, client] or throws.
-     */
     public function resolveAffiliate(string $code): array
     {
         $user = DB::table('users')
             ->where('affiliate_code', $code)
-            ->whereNull('is_deleted')
-            ->orWhere(function ($q) use ($code) {
-                $q->where('affiliate_code', $code)->where('is_deleted', 0);
+            ->where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
             })
             ->select('id', 'first_name', 'last_name', 'email', 'mobile', 'parent_id', 'affiliate_code')
             ->first();
@@ -49,14 +45,12 @@ class PublicApplicationService
 
         $clientId = $user->parent_id;
 
-        // Load company data from crm_system_setting (client DB)
         $client = DB::connection("mysql_{$clientId}")
             ->table('crm_system_setting')
             ->orderBy('id')
             ->first();
 
         if (!$client) {
-            // Fallback: create a minimal object from master clients table
             $masterClient = DB::table('clients')->where('id', $clientId)->first();
             $client = (object) [
                 'company_name'    => $masterClient->company_name ?? 'Our Company',
@@ -80,21 +74,16 @@ class PublicApplicationService
 
     public function getCompanyBranding(object $client): array
     {
-        // $client is either a `clients` row (master) or a `crm_system_setting` row (client DB)
-        // Normalise: support both schemas
-        $logoRaw    = $client->logo ?? null;
-        $logoUrl    = null;
+        $logoRaw = $client->logo ?? null;
+        $logoUrl = null;
         if ($logoRaw) {
             $logoUrl = str_starts_with($logoRaw, 'http')
                 ? $logoRaw
                 : rtrim(env('APP_URL'), '/') . '/logo/' . $logoRaw;
         }
 
-        // company_domain (crm_system_setting) OR website_url (clients)
         $websiteUrl = $client->company_domain ?? $client->website_url ?? null;
-
-        // company_email (crm_system_setting) OR support_email (clients)
-        $email = $client->company_email ?? $client->support_email ?? null;
+        $email      = $client->company_email  ?? $client->support_email ?? null;
 
         return [
             'company_name'    => $client->company_name    ?? 'Our Company',
@@ -113,10 +102,6 @@ class PublicApplicationService
     // FORM FIELD CONFIGURATION
     // ─────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Load form sections/fields from crm_label for a given client.
-     * Excludes sensitive fields. Grouped by heading.
-     */
     public function getFormSections(int $clientId, bool $includeAll = false): array
     {
         $conn = "mysql_{$clientId}";
@@ -138,18 +123,10 @@ class PublicApplicationService
         $grouped = [];
         foreach ($labels as $lbl) {
             $key = $lbl->label_title_url;
+            if (!$includeAll && in_array($key, self::EXCLUDED_APPLY_KEYS, true)) continue;
 
-            // Skip internal/sensitive fields from public form
-            if (!$includeAll && in_array($key, self::EXCLUDED_APPLY_KEYS, true)) {
-                continue;
-            }
-
-            $heading  = $lbl->heading_type ?: 'other';
-            $section  = self::SECTION_LABELS[$heading] ?? ucfirst($heading);
-
-            if (!isset($grouped[$section])) {
-                $grouped[$section] = [];
-            }
+            $heading = $lbl->heading_type ?: 'other';
+            $section = self::SECTION_LABELS[$heading] ?? ucfirst($heading);
 
             $grouped[$section][] = [
                 'key'         => $key,
@@ -162,7 +139,6 @@ class PublicApplicationService
             ];
         }
 
-        // Build ordered sections: Business first, then Owner, then others
         $order    = array_values(self::SECTION_LABELS);
         $sections = [];
         foreach ($order as $title) {
@@ -180,20 +156,22 @@ class PublicApplicationService
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // LEAD CREATION (apply form submission)
+    // LEAD CREATION
     // ─────────────────────────────────────────────────────────────────────────
 
     public function createLead(int $clientId, object $affiliateUser, array $formData): array
     {
         $conn      = "mysql_{$clientId}";
-        $leadToken = Str::random(32);  // secure random token
+        $leadToken = Str::random(32);
+        $now       = now();
 
-        // Resolve crm_label column mapping for this client
+        // Extract signature before EAV storage (stored separately)
+        $signatureData = $formData['signature_image'] ?? null;
+        unset($formData['signature_image']);
+
         $columnMap = $this->buildColumnMap($conn);
 
-        $now = now();
-
-        // ── Insert into crm_leads ─────────────────────────────────────────────
+        // ── crm_leads ─────────────────────────────────────────────────────────
         $leadId = DB::connection($conn)->table('crm_leads')->insertGetId([
             'lead_status'       => 'new_lead',
             'lead_type'         => 'warm',
@@ -207,17 +185,17 @@ class PublicApplicationService
             'updated_at'        => $now,
         ]);
 
-        // ── Store EAV values (crm_lead_values) if table exists ───────────────
+        // ── EAV (crm_lead_values) ─────────────────────────────────────────────
         if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_values')) {
             $eavRows = [];
             foreach ($formData as $fieldKey => $value) {
                 if ($value === null || $value === '') continue;
                 $eavRows[] = [
-                    'lead_id'    => $leadId,
-                    'field_key'  => $fieldKey,
-                    'field_value'=> (string) $value,
-                    'created_at' => $now,
-                    'updated_at' => $now,
+                    'lead_id'     => $leadId,
+                    'field_key'   => $fieldKey,
+                    'field_value' => (string) $value,
+                    'created_at'  => $now,
+                    'updated_at'  => $now,
                 ];
             }
             if ($eavRows) {
@@ -225,67 +203,220 @@ class PublicApplicationService
             }
         }
 
-        // ── Also write into crm_lead_data direct columns ─────────────────────
+        // ── Legacy crm_lead_data ──────────────────────────────────────────────
         if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_data')) {
             $legacyData = [
-                'id'         => $leadId,
-                'lead_status'=> 'new_lead',
-                'lead_type'  => 'warm',
-                'assigned_to'=> $affiliateUser->id,
-                'created_by' => $affiliateUser->id,
-                'created_at' => $now,
-                'updated_at' => $now,
+                'id'          => $leadId,
+                'lead_status' => 'new_lead',
+                'lead_type'   => 'warm',
+                'assigned_to' => $affiliateUser->id,
+                'created_by'  => $affiliateUser->id,
+                'created_at'  => $now,
+                'updated_at'  => $now,
             ];
-
-            // Map field_key → column_name for direct columns
             foreach ($formData as $fieldKey => $value) {
                 if ($value === null || $value === '') continue;
-
-                // Direct column match (first_name, last_name, email, etc.)
                 if (isset($columnMap['direct'][$fieldKey])) {
-                    $col = $columnMap['direct'][$fieldKey];
-                    $legacyData[$col] = $value;
-                }
-                // label_title_url → column_name mapping
-                elseif (isset($columnMap['mapped'][$fieldKey])) {
-                    $col = $columnMap['mapped'][$fieldKey];
-                    $legacyData[$col] = $value;
+                    $legacyData[$columnMap['direct'][$fieldKey]] = $value;
+                } elseif (isset($columnMap['mapped'][$fieldKey])) {
+                    $legacyData[$columnMap['mapped'][$fieldKey]] = $value;
                 }
             }
-
             try {
                 DB::connection($conn)->table('crm_lead_data')->insert($legacyData);
             } catch (\Throwable $e) {
-                // Non-fatal — EAV is the primary store
                 \Log::warning("PublicApp: crm_lead_data insert failed for lead {$leadId}: " . $e->getMessage());
             }
         }
 
-        // ── Log activity ─────────────────────────────────────────────────────
-        $this->logActivity($conn, $leadId, $affiliateUser->id, 'affiliate_application', 'Lead created via affiliate link.');
+        // ── Signature ─────────────────────────────────────────────────────────
+        $signatureUrl = null;
+        if ($signatureData) {
+            $signatureUrl = $this->storeSignature($clientId, $leadId, $signatureData, $conn);
+        }
 
-        // ── Build merchant URL ────────────────────────────────────────────────
+        // ── Activity log ──────────────────────────────────────────────────────
+        $this->logActivity($conn, $leadId, $affiliateUser->id, 'affiliate_application', 'Lead created via affiliate application form.');
+
+        // ── Merchant URL ──────────────────────────────────────────────────────
         $websiteUrl  = DB::table('clients')->where('id', $clientId)->value('website_url')
             ?? env('APP_FRONTEND_URL', env('APP_URL'));
         $merchantUrl = rtrim($websiteUrl, '/') . '/merchant/' . $leadToken;
 
         return [
-            'lead_id'      => $leadId,
-            'lead_token'   => $leadToken,
-            'merchant_url' => $merchantUrl,
+            'lead_id'       => $leadId,
+            'lead_token'    => $leadToken,
+            'merchant_url'  => $merchantUrl,
+            'signature_url' => $signatureUrl,
+            'pdf_url'       => rtrim(env('APP_URL'), '/') . '/public/apply/' . $leadToken . '/pdf',
         ];
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SIGNATURE STORAGE
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function storeSignature(int $clientId, int $leadId, string $base64Data, string $conn): ?string
+    {
+        try {
+            $imgData = preg_replace('/^data:image\/\w+;base64,/', '', $base64Data);
+            $decoded = base64_decode($imgData);
+            if (!$decoded || strlen($decoded) < 50) return null;
+
+            $dir      = "crm_documents/{$clientId}/{$leadId}";
+            $filename = 'signature_' . time() . '.png';
+            Storage::disk('public')->put($dir . '/' . $filename, $decoded);
+
+            $path = $dir . '/' . $filename;
+            $url  = rtrim(env('APP_URL'), '/') . '/storage/' . $path;
+
+            // Store path in crm_lead_data signature_image column
+            try {
+                DB::connection($conn)->table('crm_lead_data')
+                    ->where('id', $leadId)
+                    ->update(['signature_image' => $path, 'updated_at' => now()]);
+            } catch (\Throwable $e) {}
+
+            // Store in EAV
+            if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_values')) {
+                DB::connection($conn)->table('crm_lead_values')->updateOrInsert(
+                    ['lead_id' => $leadId, 'field_key' => 'signature_image'],
+                    ['field_value' => $path, 'updated_at' => now(), 'created_at' => now()]
+                );
+            }
+
+            return $url;
+        } catch (\Throwable $e) {
+            \Log::warning("PublicApp: storeSignature failed for lead {$leadId}: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PDF / HTML GENERATION
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function generateApplicationHtml(int $clientId, object $lead, array $sections, array $branding): string
+    {
+        $leadData = $this->getMerchantLeadData($lead, $clientId);
+        $fields   = $leadData['fields'];
+
+        $sigPath = $fields['signature_image'] ?? null;
+        $sigUrl  = $sigPath ? rtrim(env('APP_URL'), '/') . '/storage/' . $sigPath : null;
+        $logoUrl = $branding['logo_url'] ?? null;
+        $company = htmlspecialchars($branding['company_name'] ?? 'Funding Application');
+        $email   = htmlspecialchars($branding['support_email'] ?? '');
+        $phone   = htmlspecialchars($branding['company_phone'] ?? '');
+        $date    = date('F j, Y');
+
+        $logoHtml = $logoUrl
+            ? "<img src='" . htmlspecialchars($logoUrl) . "' class='logo' alt='Logo' />"
+            : "<div class='logo-placeholder'>" . substr($company, 0, 2) . "</div>";
+
+        $sectionsHtml = '';
+        foreach ($sections as $section) {
+            $title = htmlspecialchars($section['title'] ?? '');
+            $sectionsHtml .= "<div class='section'><h3 class='section-title'>{$title}</h3><div class='fields'>";
+            foreach ($section['fields'] as $field) {
+                $key   = $field['key'] ?? '';
+                $label = htmlspecialchars($field['label'] ?? '');
+                $raw   = $fields[$key] ?? '';
+                // Mask SSN
+                if (in_array($key, ['ssn', 'owner_ssn'], true) && strlen($raw) >= 4) {
+                    $raw = '***-**-' . substr($raw, -4);
+                }
+                $value = htmlspecialchars($raw);
+                $sectionsHtml .= "<div class='field'><span class='label'>{$label}</span><span class='value'>" . ($value ?: '—') . "</span></div>";
+            }
+            $sectionsHtml .= "</div></div>";
+        }
+
+        $sigHtml = $sigUrl
+            ? "<div class='section sig-section'><h3 class='section-title'>Digital Signature</h3><img src='" . htmlspecialchars($sigUrl) . "' style='max-height:100px;border:1px solid #e2e8f0;padding:12px;border-radius:8px;background:#fff;' /></div>"
+            : '';
+
+        $docsHtml = '';
+        if (!empty($leadData['documents'])) {
+            $docsHtml = "<div class='section'><h3 class='section-title'>Uploaded Documents</h3><ul class='doc-list'>";
+            foreach ($leadData['documents'] as $doc) {
+                $name = htmlspecialchars($doc['filename'] ?? '');
+                $type = htmlspecialchars($doc['doc_type'] ?? '');
+                $docsHtml .= "<li>{$name} <span class='doc-type'>({$type})</span></li>";
+            }
+            $docsHtml .= "</ul></div>";
+        }
+
+        return <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Funding Application — {$company}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; color: #1e293b; background: #f8fafc; padding: 0; }
+  .page { max-width: 900px; margin: 0 auto; background: #fff; min-height: 100vh; }
+  .header { background: linear-gradient(135deg, #0f172a, #1e293b); color: #fff; padding: 32px 40px; display: flex; align-items: center; gap: 20px; }
+  .logo { max-height: 56px; max-width: 140px; object-fit: contain; border-radius: 6px; }
+  .logo-placeholder { width: 56px; height: 56px; background: #4f46e5; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 800; color: #fff; }
+  .company-name { font-size: 22px; font-weight: 700; color: #fff; }
+  .company-sub  { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+  .badge { display: inline-block; background: #4f46e5; color: #fff; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 20px; margin-top: 8px; }
+  .body { padding: 32px 40px; }
+  .section { margin-bottom: 28px; page-break-inside: avoid; }
+  .section-title { font-size: 13px; font-weight: 700; color: #4f46e5; text-transform: uppercase; letter-spacing: 1px; padding-bottom: 8px; border-bottom: 2px solid #e0e7ff; margin-bottom: 14px; }
+  .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .field { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; }
+  .label { font-size: 10px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.6px; display: block; margin-bottom: 4px; }
+  .value { font-size: 14px; font-weight: 500; color: #1e293b; }
+  .sig-section { margin-top: 24px; }
+  .doc-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .doc-list li { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 14px; font-size: 13px; }
+  .doc-type { color: #64748b; font-size: 11px; }
+  .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 40px; font-size: 12px; color: #94a3b8; display: flex; justify-content: space-between; }
+  .contact { display: flex; gap: 24px; }
+  @media print {
+    body { background: #fff; }
+    .page { box-shadow: none; }
+    @page { margin: 0.5in; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    {$logoHtml}
+    <div>
+      <div class="company-name">{$company}</div>
+      <div class="company-sub">Funding Application — {$date}</div>
+      <span class="badge">CONFIDENTIAL</span>
+    </div>
+  </div>
+  <div class="body">
+    {$sectionsHtml}
+    {$sigHtml}
+    {$docsHtml}
+  </div>
+  <div class="footer">
+    <span>Application submitted on {$date}</span>
+    <div class="contact">
+      {$email}<span>{$phone}</span>
+    </div>
+  </div>
+</div>
+<script>window.addEventListener('load', () => setTimeout(() => window.print(), 300))</script>
+</body>
+</html>
+HTML;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // MERCHANT PORTAL
     // ─────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Resolve a lead_token to [lead, clientId, client].
-     */
     public function resolveLeadToken(string $token): array
     {
-        // Search across clients — find the client DB that owns this token
         $clients = DB::table('clients')->where('is_deleted', 0)->pluck('id');
 
         foreach ($clients as $clientId) {
@@ -300,7 +431,12 @@ class PublicApplicationService
                     $client = DB::connection($conn)->table('crm_system_setting')->orderBy('id')->first();
                     if (!$client) {
                         $mc = DB::table('clients')->where('id', $clientId)->first();
-                        $client = (object)['company_name'=>$mc->company_name??'','company_email'=>null,'company_phone'=>null,'company_address'=>null,'city'=>null,'state'=>null,'zipcode'=>null,'logo'=>$mc->logo??null,'company_domain'=>null];
+                        $client = (object) [
+                            'company_name' => $mc->company_name ?? '',
+                            'company_email' => null, 'company_phone' => null,
+                            'company_address' => null, 'city' => null, 'state' => null,
+                            'zipcode' => null, 'logo' => $mc->logo ?? null, 'company_domain' => null,
+                        ];
                     }
                     return [$lead, $clientId, $client];
                 }
@@ -312,15 +448,11 @@ class PublicApplicationService
         throw new \RuntimeException('Application not found or link expired.', 404);
     }
 
-    /**
-     * Load full lead data for merchant portal (lead + EAV values).
-     */
     public function getMerchantLeadData(object $lead, int $clientId): array
     {
-        $conn = "mysql_{$clientId}";
+        $conn   = "mysql_{$clientId}";
         $leadId = $lead->id;
 
-        // Load EAV values
         $eavData = [];
         if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_values')) {
             $eavData = DB::connection($conn)
@@ -330,55 +462,41 @@ class PublicApplicationService
                 ->toArray();
         }
 
-        // Merge with lead_data direct columns
         $legacyData = [];
         if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_data')) {
             $row = DB::connection($conn)->table('crm_lead_data')->where('id', $leadId)->first();
             if ($row) {
                 $columnMap = $this->buildColumnMap($conn);
-                // Reverse: column_name → field_key
                 foreach ($columnMap['mapped'] as $fieldKey => $col) {
                     $val = ((array) $row)[$col] ?? null;
-                    if ($val !== null && $val !== '') {
-                        $legacyData[$fieldKey] = $val;
-                    }
+                    if ($val !== null && $val !== '') $legacyData[$fieldKey] = $val;
                 }
-                // Direct columns
-                foreach (['first_name','last_name','email','phone_number','dob','city','state','country','address','company_name'] as $col) {
-                    if (!empty(((array) $row)[$col])) {
-                        $legacyData[$col] = ((array) $row)[$col];
-                    }
+                foreach (['first_name','last_name','email','phone_number','dob','city','state','country','address','company_name','signature_image'] as $col) {
+                    if (!empty(((array) $row)[$col])) $legacyData[$col] = ((array) $row)[$col];
                 }
             }
         }
 
         $merged = array_merge($legacyData, $eavData);
 
-        // Load uploaded documents
-        $documents = $this->getDocuments($clientId, $leadId);
-
         return [
-            'id'               => $lead->id,
-            'lead_status'      => $lead->lead_status,
-            'lead_type'        => $lead->lead_type,
-            'lead_token'       => $lead->lead_token,
-            'affiliate_code'   => $lead->affiliate_code ?? null,
-            'created_at'       => $lead->created_at,
-            'fields'           => $merged,
-            'documents'        => $documents,
+            'id'             => $lead->id,
+            'lead_status'    => $lead->lead_status,
+            'lead_type'      => $lead->lead_type,
+            'lead_token'     => $lead->lead_token,
+            'affiliate_code' => $lead->affiliate_code ?? null,
+            'created_at'     => $lead->created_at,
+            'fields'         => $merged,
+            'documents'      => $this->getDocuments($clientId, $leadId),
         ];
     }
 
-    /**
-     * Update lead data from merchant portal.
-     */
     public function updateMerchantLead(object $lead, int $clientId, array $formData): void
     {
         $conn   = "mysql_{$clientId}";
         $leadId = $lead->id;
         $now    = now();
 
-        // Update EAV values
         if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_values')) {
             foreach ($formData as $key => $value) {
                 DB::connection($conn)->table('crm_lead_values')->updateOrInsert(
@@ -388,7 +506,6 @@ class PublicApplicationService
             }
         }
 
-        // Update crm_lead_data
         if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_data')) {
             $columnMap  = $this->buildColumnMap($conn);
             $updateData = ['updated_at' => $now];
@@ -406,12 +523,9 @@ class PublicApplicationService
             }
         }
 
-        $this->logActivity($conn, $leadId, 0, 'merchant_update', 'Merchant updated application.');
+        $this->logActivity($conn, $leadId, 0, 'merchant_update', 'Merchant updated application via self-service portal.');
     }
 
-    /**
-     * Store an uploaded document from the merchant portal.
-     */
     public function storeDocument(object $lead, int $clientId, $file, string $docType): array
     {
         $dir      = "crm_documents/{$clientId}/{$lead->id}";
@@ -427,7 +541,7 @@ class PublicApplicationService
                 'file_name'   => $filename,
                 'file_path'   => $dir . '/' . $filename,
                 'doc_type'    => $docType,
-                'uploaded_by' => 0, // merchant (no auth)
+                'uploaded_by' => 0,
                 'created_at'  => $now,
                 'updated_at'  => $now,
             ]);
@@ -441,35 +555,25 @@ class PublicApplicationService
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // AFFILIATE CODE MANAGEMENT (for CRM backend)
+    // AFFILIATE CODE MANAGEMENT
     // ─────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Generate a unique affiliate code for a user.
-     * Format: {firstname}{lastname_initial}{4_random_digits}
-     */
     public function generateAffiliateCode(object $user): string
     {
         $base = strtolower(
             preg_replace('/[^a-z0-9]/i', '', $user->first_name) .
             substr(preg_replace('/[^a-z0-9]/i', '', $user->last_name), 0, 4)
         );
-        $base = $base ?: 'agent';
-
+        $base  = $base ?: 'agent';
         $code  = $base . rand(100, 9999);
         $tries = 0;
         while (DB::table('users')->where('affiliate_code', $code)->exists() && $tries < 20) {
             $code = $base . rand(1000, 99999);
             $tries++;
         }
-
         return $code;
     }
 
-    /**
-     * Build the affiliate link URL for a user.
-     * Domain comes from clients.website_url — never hardcoded.
-     */
     public function buildAffiliateUrl(int $clientId, string $affiliateCode): string
     {
         $websiteUrl = DB::connection("mysql_{$clientId}")
@@ -486,25 +590,24 @@ class PublicApplicationService
 
     private function buildColumnMap(string $conn): array
     {
-        // Direct column match (label_title_url === column_name)
         $direct = [
-            'first_name'   => 'first_name',
-            'last_name'    => 'last_name',
-            'email'        => 'email',
-            'phone_number' => 'phone_number',
-            'mobile'       => 'phone_number',
-            'dob'          => 'dob',
-            'city'         => 'city',
-            'state'        => 'state',
-            'country'      => 'country',
-            'address'      => 'address',
-            'company_name' => 'company_name',
+            'first_name'    => 'first_name',
+            'last_name'     => 'last_name',
+            'email'         => 'email',
+            'phone_number'  => 'phone_number',
+            'mobile'        => 'phone_number',
+            'dob'           => 'dob',
+            'city'          => 'city',
+            'state'         => 'state',
+            'country'       => 'country',
+            'address'       => 'address',
+            'company_name'  => 'company_name',
+            'business_name' => 'company_name',
         ];
 
-        // label_title_url → column_name from crm_label
         $mapped = [];
         if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_label')) {
-            $rows = DB::connection($conn)->table('crm_label')
+            $rows   = DB::connection($conn)->table('crm_label')
                 ->whereNotNull('label_title_url')
                 ->where('label_title_url', '!=', '')
                 ->pluck('column_name', 'label_title_url');
@@ -516,7 +619,7 @@ class PublicApplicationService
 
     private function normalizeFieldType(string $type): string
     {
-        $map = [
+        return [
             'phone_number' => 'tel',
             'number'       => 'number',
             'date'         => 'date',
@@ -526,8 +629,8 @@ class PublicApplicationService
             'select_state' => 'select',
             'textarea'     => 'textarea',
             'checkbox'     => 'checkbox',
-        ];
-        return $map[$type] ?? 'text';
+            'ssn'          => 'ssn',
+        ][$type] ?? 'text';
     }
 
     private function parseOptions(?string $values): array
@@ -535,28 +638,24 @@ class PublicApplicationService
         if (empty($values)) return [];
         $decoded = json_decode($values, true);
         if (is_array($decoded)) return $decoded;
-        // comma-separated string
         return array_map('trim', explode(',', $values));
     }
 
     private function getDocuments(int $clientId, int $leadId): array
     {
         $conn = "mysql_{$clientId}";
-        if (!DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_documents')) {
-            return [];
-        }
+        if (!DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_documents')) return [];
         return DB::connection($conn)->table('crm_lead_documents')
             ->where('lead_id', $leadId)
+            ->orderBy('id', 'desc')
             ->get()
-            ->map(function ($d) {
-                return [
-                    'id'       => $d->id,
-                    'filename' => $d->file_name,
-                    'doc_type' => $d->doc_type,
-                    'url'      => rtrim(env('APP_URL'), '/') . '/storage/' . $d->file_path,
-                    'uploaded' => $d->created_at,
-                ];
-            })
+            ->map(fn($d) => [
+                'id'       => $d->id,
+                'filename' => $d->file_name,
+                'doc_type' => $d->doc_type,
+                'url'      => rtrim(env('APP_URL'), '/') . '/storage/' . $d->file_path,
+                'uploaded' => $d->created_at,
+            ])
             ->toArray();
     }
 
@@ -577,27 +676,63 @@ class PublicApplicationService
 
     private function defaultSections(): array
     {
+        $usStates = [
+            'Alabama','Alaska','Arizona','Arkansas','California','Colorado','Connecticut',
+            'Delaware','Florida','Georgia','Hawaii','Idaho','Illinois','Indiana','Iowa',
+            'Kansas','Kentucky','Louisiana','Maine','Maryland','Massachusetts','Michigan',
+            'Minnesota','Mississippi','Missouri','Montana','Nebraska','Nevada','New Hampshire',
+            'New Jersey','New Mexico','New York','North Carolina','North Dakota','Ohio',
+            'Oklahoma','Oregon','Pennsylvania','Rhode Island','South Carolina','South Dakota',
+            'Tennessee','Texas','Utah','Vermont','Virginia','Washington','West Virginia',
+            'Wisconsin','Wyoming',
+        ];
+
         return [
             [
-                'title' => 'Business Information',
+                'title'  => 'Business Information',
                 'fields' => [
-                    ['key' => 'legal_company_name', 'label' => 'Business Name',       'type' => 'text',   'required' => true,  'options' => []],
-                    ['key' => 'business_address',   'label' => 'Business Address',     'type' => 'text',   'required' => false, 'options' => []],
-                    ['key' => 'business_city',      'label' => 'City',                 'type' => 'text',   'required' => false, 'options' => []],
-                    ['key' => 'business_state',     'label' => 'State',                'type' => 'text',   'required' => false, 'options' => []],
-                    ['key' => 'industry',            'label' => 'Industry',             'type' => 'text',   'required' => false, 'options' => []],
-                    ['key' => 'amount_requested',   'label' => 'Amount Requested ($)', 'type' => 'number', 'required' => false, 'options' => []],
-                    ['key' => 'use_of_funds',       'label' => 'Use of Funds',         'type' => 'text',   'required' => false, 'options' => []],
+                    ['key' => 'business_name',    'label' => 'Business Legal Name', 'type' => 'text',   'required' => true,  'placeholder' => 'Enter business name', 'options' => []],
+                    ['key' => 'dba',              'label' => 'DBA (if different)',  'type' => 'text',   'required' => false, 'placeholder' => 'Doing business as',   'options' => []],
+                    ['key' => 'business_address', 'label' => 'Business Address',    'type' => 'text',   'required' => true,  'placeholder' => 'Street address',      'options' => []],
+                    ['key' => 'business_city',    'label' => 'City',                'type' => 'text',   'required' => true,  'placeholder' => 'City',                'options' => []],
+                    ['key' => 'business_state',   'label' => 'State',               'type' => 'select', 'required' => true,  'placeholder' => '',                    'options' => $usStates],
+                    ['key' => 'business_zip',     'label' => 'Zip Code',            'type' => 'text',   'required' => true,  'placeholder' => '12345',               'options' => []],
+                    ['key' => 'business_phone',   'label' => 'Business Phone',      'type' => 'tel',    'required' => true,  'placeholder' => '(555) 000-0000',      'options' => []],
                 ],
             ],
             [
-                'title' => 'Owner Information',
+                'title'  => 'Owner Information',
                 'fields' => [
-                    ['key' => 'first_name', 'label' => 'First Name', 'type' => 'text',  'required' => true,  'options' => []],
-                    ['key' => 'last_name',  'label' => 'Last Name',  'type' => 'text',  'required' => true,  'options' => []],
-                    ['key' => 'email',      'label' => 'Email',      'type' => 'email', 'required' => true,  'options' => []],
-                    ['key' => 'mobile',     'label' => 'Phone',      'type' => 'tel',   'required' => true,  'options' => []],
-                    ['key' => 'dob',        'label' => 'Date of Birth', 'type' => 'date', 'required' => false, 'options' => []],
+                    ['key' => 'first_name', 'label' => 'First Name',    'type' => 'text',  'required' => true,  'placeholder' => 'First name',    'options' => []],
+                    ['key' => 'last_name',  'label' => 'Last Name',     'type' => 'text',  'required' => true,  'placeholder' => 'Last name',     'options' => []],
+                    ['key' => 'email',      'label' => 'Email Address', 'type' => 'email', 'required' => true,  'placeholder' => 'you@email.com', 'options' => []],
+                    ['key' => 'mobile',     'label' => 'Phone Number',  'type' => 'tel',   'required' => true,  'placeholder' => '(555) 000-0000','options' => []],
+                    ['key' => 'dob',        'label' => 'Date of Birth', 'type' => 'date',  'required' => true,  'placeholder' => '',              'options' => []],
+                    ['key' => 'ssn',        'label' => 'SSN',           'type' => 'ssn',   'required' => true,  'placeholder' => '***-**-****',   'options' => []],
+                ],
+            ],
+            [
+                'title'  => 'Business Details',
+                'fields' => [
+                    ['key' => 'years_in_business', 'label' => 'Years in Business',   'type' => 'number', 'required' => true,  'placeholder' => 'e.g. 3', 'options' => []],
+                    ['key' => 'monthly_revenue',   'label' => 'Monthly Revenue ($)', 'type' => 'number', 'required' => true,  'placeholder' => '0.00',   'options' => []],
+                    ['key' => 'industry',          'label' => 'Industry',            'type' => 'select', 'required' => true,  'placeholder' => '',        'options' => ['Restaurant/Food Service','Retail','Healthcare','Construction','Transportation','Auto Dealer','Beauty/Salon','Fitness/Gym','Real Estate','Technology','Manufacturing','Professional Services','E-Commerce','Other']],
+                    ['key' => 'business_type',     'label' => 'Business Type',       'type' => 'select', 'required' => true,  'placeholder' => '',        'options' => ['LLC','Corporation','Sole Proprietor','Partnership','S-Corp','C-Corp','Non-Profit','Other']],
+                ],
+            ],
+            [
+                'title'  => 'Funding Request',
+                'fields' => [
+                    ['key' => 'amount_requested', 'label' => 'Requested Amount ($)', 'type' => 'number',   'required' => true,  'placeholder' => '0.00',              'options' => []],
+                    ['key' => 'use_of_funds',     'label' => 'Purpose of Funds',     'type' => 'textarea', 'required' => true,  'placeholder' => 'Describe how you plan to use the funds...', 'options' => []],
+                    ['key' => 'existing_loans',   'label' => 'Existing Business Loans?', 'type' => 'select', 'required' => false,'placeholder' => '',               'options' => ['No','Yes']],
+                ],
+            ],
+            [
+                'title'  => 'Bank Information',
+                'fields' => [
+                    ['key' => 'bank_name',    'label' => 'Bank Name',    'type' => 'text',   'required' => true, 'placeholder' => 'Name of your bank', 'options' => []],
+                    ['key' => 'account_type', 'label' => 'Account Type', 'type' => 'select', 'required' => true, 'placeholder' => '',                  'options' => ['Checking','Savings','Business Checking','Business Savings']],
                 ],
             ],
         ];

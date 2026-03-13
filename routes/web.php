@@ -15,6 +15,7 @@
 $router->group(['middleware' => ['throttle:60,1']], function () use ($router) {
     $router->get('public/apply/{code}',                  'PublicApplicationController@getApplyForm');
     $router->post('public/apply/{code}',                 'PublicApplicationController@submitApplication');
+    $router->get('public/apply/{token}/pdf',             'PublicApplicationController@renderApplicationPdf');
     $router->get('public/merchant/{token}',              'PublicApplicationController@getMerchantPortal');
     $router->post('public/merchant/{token}',             'PublicApplicationController@updateMerchant');
     $router->post('public/merchant/{token}/upload',      'PublicApplicationController@uploadDocument');

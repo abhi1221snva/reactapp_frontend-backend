@@ -26,21 +26,18 @@ class PublicApplicationController extends Controller
 
     /**
      * GET /public/apply/{code}
-     * Returns company branding + dynamic form sections for the apply page.
+     * Returns company branding + dynamic form sections.
      */
     public function getApplyForm(Request $request, string $code)
     {
         try {
             [$user, $clientId, $client] = $this->svc->resolveAffiliate($code);
 
-            $company  = $this->svc->getCompanyBranding($client);
-            $sections = $this->svc->getFormSections($clientId);
-
             return response()->json([
                 'success' => true,
                 'data'    => [
-                    'company'        => $company,
-                    'sections'       => $sections,
+                    'company'        => $this->svc->getCompanyBranding($client),
+                    'sections'       => $this->svc->getFormSections($clientId),
                     'affiliate_user' => [
                         'name'  => trim($user->first_name . ' ' . $user->last_name),
                         'email' => $user->email,
@@ -57,16 +54,17 @@ class PublicApplicationController extends Controller
     /**
      * POST /public/apply/{code}
      * Creates a new lead from the affiliate application form.
-     * Returns the lead_token and merchant_url.
+     * Accepts JSON body with optional signature_image (base64 PNG).
+     * Returns lead_token, merchant_url, pdf_url.
      */
     public function submitApplication(Request $request, string $code)
     {
         $this->validate($request, [
-            'legal_company_name' => 'sometimes|string|max:255',
-            'first_name'         => 'required|string|max:100',
-            'last_name'          => 'required|string|max:100',
-            'email'              => 'required|email|max:255',
-            'mobile'             => 'required|string|max:30',
+            'first_name'      => 'required|string|max:100',
+            'last_name'       => 'required|string|max:100',
+            'email'           => 'required|email|max:255',
+            'mobile'          => 'required|string|max:30',
+            'signature_image' => 'nullable|string',
         ]);
 
         try {
@@ -76,17 +74,45 @@ class PublicApplicationController extends Controller
             $result   = $this->svc->createLead($clientId, $user, $formData);
 
             return response()->json([
-                'success'      => true,
-                'message'      => 'Application submitted successfully! Use your merchant link to track your application.',
-                'lead_token'   => $result['lead_token'],
-                'merchant_url' => $result['merchant_url'],
-                'lead_id'      => $result['lead_id'],
+                'success'       => true,
+                'message'       => 'Application submitted successfully!',
+                'lead_token'    => $result['lead_token'],
+                'merchant_url'  => $result['merchant_url'],
+                'lead_id'       => $result['lead_id'],
+                'signature_url' => $result['signature_url'],
+                'pdf_url'       => $result['pdf_url'],
             ]);
         } catch (\RuntimeException $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], $e->getCode() ?: 400);
         } catch (\Throwable $e) {
-            \Log::error('Public apply submit: ' . $e->getMessage());
+            \Log::error('Public apply submit: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
             return response()->json(['success' => false, 'message' => 'Failed to submit application.'], 500);
+        }
+    }
+
+    /**
+     * GET /public/apply/{token}/pdf
+     * Render a printable HTML application summary.
+     * {token} here is the lead_token (returned after submission).
+     */
+    public function renderApplicationPdf(Request $request, string $token)
+    {
+        try {
+            [$lead, $clientId, $client] = $this->svc->resolveLeadToken($token);
+
+            $company  = $this->svc->getCompanyBranding($client);
+            $sections = $this->svc->getFormSections($clientId, true);
+            $html     = $this->svc->generateApplicationHtml($clientId, $lead, $sections, $company);
+
+            return response($html, 200)
+                ->header('Content-Type', 'text/html; charset=UTF-8')
+                ->header('X-Frame-Options', 'SAMEORIGIN');
+        } catch (\RuntimeException $e) {
+            return response('<h1>Not Found</h1><p>' . htmlspecialchars($e->getMessage()) . '</p>', 404)
+                ->header('Content-Type', 'text/html');
+        } catch (\Throwable $e) {
+            return response('<h1>Error</h1><p>Unable to generate PDF.</p>', 500)
+                ->header('Content-Type', 'text/html');
         }
     }
 
@@ -96,23 +122,19 @@ class PublicApplicationController extends Controller
 
     /**
      * GET /public/merchant/{token}
-     * Returns company branding + lead data + form sections for merchant portal.
+     * Returns company branding + lead data + form sections.
      */
     public function getMerchantPortal(Request $request, string $token)
     {
         try {
             [$lead, $clientId, $client] = $this->svc->resolveLeadToken($token);
 
-            $company  = $this->svc->getCompanyBranding($client);
-            $sections = $this->svc->getFormSections($clientId, true); // include all fields
-            $leadData = $this->svc->getMerchantLeadData($lead, $clientId);
-
             return response()->json([
                 'success' => true,
                 'data'    => [
-                    'company'  => $company,
-                    'lead'     => $leadData,
-                    'sections' => $sections,
+                    'company'  => $this->svc->getCompanyBranding($client),
+                    'lead'     => $this->svc->getMerchantLeadData($lead, $clientId),
+                    'sections' => $this->svc->getFormSections($clientId, true),
                 ],
             ]);
         } catch (\RuntimeException $e) {
@@ -142,7 +164,7 @@ class PublicApplicationController extends Controller
 
     /**
      * POST /public/merchant/{token}/upload
-     * Upload a document from the merchant portal.
+     * Upload a document from the merchant portal or initial submission.
      */
     public function uploadDocument(Request $request, string $token)
     {
