@@ -18,7 +18,8 @@ $router->group(['middleware' => ['throttle:60,1']], function () use ($router) {
     $router->get('public/apply/{token}/pdf',             'PublicApplicationController@renderApplicationPdf');
     $router->get('public/merchant/{token}',              'PublicApplicationController@getMerchantPortal');
     $router->post('public/merchant/{token}',             'PublicApplicationController@updateMerchant');
-    $router->post('public/merchant/{token}/upload',      'PublicApplicationController@uploadDocument');
+    $router->get('public/merchant/{token}/document-types', 'PublicApplicationController@getDocumentTypes');
+    $router->post('public/merchant/{token}/upload',        'PublicApplicationController@uploadDocument');
 
     // Tenant company logo — public (shown on apply forms, PDFs, etc.)
     $router->get('public/tenant/{clientId}/logo',        'TenantFileController@serveLogo');
@@ -1685,6 +1686,10 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   $router->get('crm/analytics/agent-performance',    'CrmAnalyticsController@agentPerformance');
   $router->get('crm/analytics/conversion-funnel',    'CrmAnalyticsController@conversionFunnel');
   $router->get('crm/analytics/lender-performance',   'CrmAnalyticsController@lenderPerformance');
+  $router->get('crm/analytics/revenue-trend',     'CrmAnalyticsController@revenueTrend');
+  $router->get('crm/analytics/pipeline-velocity', 'CrmAnalyticsController@pipelineVelocity');
+  $router->get('crm/analytics/deal-quality',      'CrmAnalyticsController@dealQuality');
+  $router->get('crm/analytics/stale-leads',       'CrmAnalyticsController@staleLeads');
 
   // Documents
   $router->get('crm/lead/{id}/documents',          'CrmDocumentController@index');

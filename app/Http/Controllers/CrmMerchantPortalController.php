@@ -26,7 +26,7 @@ class CrmMerchantPortalController extends Controller
             $domain       = $domainRecord ? $domainRecord->domain_name : '';
 
             $token = Str::random(40);
-            $url   = $domain . 'merchant/customer/app/index/' . $clientId . '/' . $id . '/' . $token;
+            $url   = $domain . 'merchant/' . $token;
 
             // Create new portal record
             $portal = new CrmMerchantPortal();

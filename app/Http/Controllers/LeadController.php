@@ -576,7 +576,7 @@ class LeadController extends Controller
             $phone = $objLead->phone_number;
             $phone_new = str_replace(array('(', ')', '_', '-', ' '), array(''), $phone);
             $unique_token = $this->generateCode();
-            $merchant_url = $domain_list . 'merchant/customer/app/index/' . $clientId . '/' . $lastId . '/' . $unique_token;
+            $merchant_url = $domain_list . 'merchant/' . $unique_token;
             $url = '<a href="' . $merchant_url . '">Click Here</a>';
             $lead = Lead::on("mysql_$clientId")->findorfail($lastId);
             $lead->unique_url = $url;
@@ -707,7 +707,7 @@ class LeadController extends Controller
 
             $lastId       = $objLead->id;
             $unique_token = $this->generateCode();
-            $merchant_url = $domain_list . 'merchant/customer/app/index/' . $clientId . '/' . $lastId . '/' . $unique_token;
+            $merchant_url = $domain_list . 'merchant/' . $unique_token;
             $objLead->unique_url   = '<a href="' . $merchant_url . '">Click Here</a>';
             $objLead->unique_token = $unique_token;
             $objLead->save();
@@ -1321,7 +1321,7 @@ class LeadController extends Controller
                 $unique_token = $this->generateCode();
                 $objLeadUpdate = Lead::on("mysql_$clientId")->findOrFail($lastId);
 
-                $merchant_url = $selected_domain . 'merchant/customer/app/index/' . $clientId . '/' . $lastId . '/' . $unique_token;
+                $merchant_url = $selected_domain . 'merchant/' . $unique_token;
                 $url = '<a href="' . $merchant_url . '">Click Here</a>';
 
                 $objLeadUpdate->unique_url = $url;

@@ -369,4 +369,215 @@ class CrmAnalyticsController extends Controller
             return $this->failResponse("Failed to load lender performance", [$e->getMessage()], $e, 500);
         }
     }
+
+    /**
+     * GET /crm/analytics/revenue-trend
+     * Monthly funded amounts for the last 12 months.
+     */
+    public function revenueTrend(Request $request)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            $cacheKey = "analytics_{$clientId}_revenue_trend_12m";
+
+            $data = Cache::remember($cacheKey, 600, function () use ($clientId) {
+                $rows = DB::connection("mysql_$clientId")
+                    ->table('crm_funded_deals')
+                    ->whereIn('status', ['funded', 'in_repayment', 'paid_off', 'renewed'])
+                    ->where('created_at', '>=', Carbon::now()->subMonths(12)->startOfMonth())
+                    ->select(
+                        DB::raw("DATE_FORMAT(COALESCE(funding_date, created_at), '%Y-%m') as month"),
+                        DB::raw('SUM(funded_amount) as total_funded'),
+                        DB::raw('COUNT(*) as deal_count'),
+                        DB::raw('AVG(funded_amount) as avg_deal_size')
+                    )
+                    ->groupBy(DB::raw("DATE_FORMAT(COALESCE(funding_date, created_at), '%Y-%m')"))
+                    ->orderBy('month')
+                    ->get()
+                    ->keyBy('month');
+
+                $months = [];
+                for ($i = 11; $i >= 0; $i--) {
+                    $dt  = Carbon::now()->subMonths($i);
+                    $key = $dt->format('Y-m');
+                    $row = $rows[$key] ?? null;
+                    $months[] = [
+                        'month'         => $key,
+                        'label'         => $dt->format('M Y'),
+                        'total_funded'  => $row ? (float) $row->total_funded  : 0,
+                        'deal_count'    => $row ? (int)   $row->deal_count    : 0,
+                        'avg_deal_size' => $row ? (float) $row->avg_deal_size : 0,
+                    ];
+                }
+
+                $totalAnnual = array_sum(array_column($months, 'total_funded'));
+                return [
+                    'trend'        => $months,
+                    'total_annual' => $totalAnnual,
+                    'avg_monthly'  => round($totalAnnual / 12, 2),
+                ];
+            });
+
+            return $this->successResponse("Revenue Trend", $data);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to load revenue trend", [$e->getMessage()], $e, 500);
+        }
+    }
+
+    /**
+     * GET /crm/analytics/pipeline-velocity
+     * Average days leads spend in each pipeline stage (estimated from updated_at).
+     */
+    public function pipelineVelocity(Request $request)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            [$start, $end] = $this->period($request);
+            $cacheKey = "analytics_{$clientId}_pipeline_velocity_{$start}_{$end}";
+
+            $data = Cache::remember($cacheKey, 300, function () use ($clientId, $start, $end) {
+                $rows = DB::connection("mysql_$clientId")
+                    ->table('crm_lead_data as ld')
+                    ->join('crm_lead_status as s', 's.lead_title_url', '=', 'ld.lead_status')
+                    ->where('ld.is_deleted', 0)
+                    ->whereBetween(DB::raw('DATE(ld.created_at)'), [$start, $end])
+                    ->select(
+                        'ld.lead_status as status_slug',
+                        's.title as status_name',
+                        's.color_code',
+                        's.display_order',
+                        DB::raw('COUNT(*) as lead_count'),
+                        DB::raw('AVG(GREATEST(0, DATEDIFF(ld.updated_at, ld.created_at))) as avg_days')
+                    )
+                    ->groupBy('ld.lead_status', 's.title', 's.color_code', 's.display_order')
+                    ->orderBy('s.display_order')
+                    ->get();
+
+                $stages = $rows->map(fn($r) => [
+                    'status_slug' => $r->status_slug,
+                    'status_name' => $r->status_name,
+                    'color'       => $r->color_code,
+                    'lead_count'  => (int)   $r->lead_count,
+                    'avg_days'    => round((float) $r->avg_days, 1),
+                ])->values()->toArray();
+
+                $maxDays    = !empty($stages) ? max(array_column($stages, 'avg_days')) : 0;
+                $bottleneck = null;
+                if ($maxDays > 0) {
+                    foreach ($stages as $s) {
+                        if ((float)$s['avg_days'] === (float)$maxDays) { $bottleneck = $s; break; }
+                    }
+                }
+
+                return ['stages' => $stages, 'max_days' => $maxDays, 'bottleneck' => $bottleneck];
+            });
+
+            return $this->successResponse("Pipeline Velocity", $data);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to load pipeline velocity", [$e->getMessage()], $e, 500);
+        }
+    }
+
+    /**
+     * GET /crm/analytics/deal-quality
+     * Portfolio health: default rate, renewal rate, avg time-to-fund.
+     */
+    public function dealQuality(Request $request)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            [$start, $end] = $this->period($request);
+            $cacheKey = "analytics_{$clientId}_deal_quality_{$start}_{$end}";
+
+            $data = Cache::remember($cacheKey, 300, function () use ($clientId, $start, $end) {
+                $deal = DB::connection("mysql_$clientId")
+                    ->table('crm_funded_deals')
+                    ->whereBetween(DB::raw('DATE(created_at)'), [$start, $end])
+                    ->select(
+                        DB::raw('COUNT(*) as total_deals'),
+                        DB::raw("SUM(CASE WHEN status = 'defaulted'             THEN 1 ELSE 0 END) as defaulted"),
+                        DB::raw("SUM(CASE WHEN status IN ('paid_off','renewed') THEN 1 ELSE 0 END) as completed"),
+                        DB::raw("SUM(CASE WHEN status = 'renewed'               THEN 1 ELSE 0 END) as renewed"),
+                        DB::raw('AVG(funded_amount) as avg_deal_size'),
+                        DB::raw('AVG(factor_rate)   as avg_factor_rate'),
+                        DB::raw('AVG(GREATEST(0, DATEDIFF(COALESCE(funding_date, created_at), created_at))) as avg_days_to_fund')
+                    )
+                    ->first();
+
+                $total     = (int) ($deal->total_deals ?? 0);
+                $defaulted = (int) ($deal->defaulted   ?? 0);
+                $completed = (int) ($deal->completed   ?? 0);
+                $renewed   = (int) ($deal->renewed     ?? 0);
+
+                return [
+                    'total_deals'      => $total,
+                    'defaulted'        => $defaulted,
+                    'completed'        => $completed,
+                    'renewed'          => $renewed,
+                    'default_rate'     => $total     > 0 ? round(($defaulted / $total)     * 100, 1) : 0,
+                    'renewal_rate'     => $completed > 0 ? round(($renewed   / $completed) * 100, 1) : 0,
+                    'avg_deal_size'    => round((float)($deal->avg_deal_size    ?? 0), 2),
+                    'avg_factor_rate'  => round((float)($deal->avg_factor_rate  ?? 0), 3),
+                    'avg_days_to_fund' => round((float)($deal->avg_days_to_fund ?? 0), 1),
+                ];
+            });
+
+            return $this->successResponse("Deal Quality", $data);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to load deal quality", [$e->getMessage()], $e, 500);
+        }
+    }
+
+    /**
+     * GET /crm/analytics/stale-leads
+     * Leads unchanged for more than ?days= (default 14) — by stage.
+     */
+    public function staleLeads(Request $request)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            $days     = max(1, min(90, (int) $request->input('days', 14)));
+            $cacheKey = "analytics_{$clientId}_stale_leads_{$days}";
+
+            $data = Cache::remember($cacheKey, 120, function () use ($clientId, $days) {
+                $cutoff = Carbon::now()->subDays($days)->toDateTimeString();
+
+                $rows = DB::connection("mysql_$clientId")
+                    ->table('crm_lead_data as ld')
+                    ->leftJoin('crm_lead_status as s', 's.lead_title_url', '=', 'ld.lead_status')
+                    ->where('ld.is_deleted', 0)
+                    ->where('ld.updated_at', '<', $cutoff)
+                    ->whereNotIn('ld.lead_status', ['funded', 'closed_lost', 'declined', 'dead', 'closed_won'])
+                    ->select(
+                        'ld.lead_status as status_slug',
+                        DB::raw("COALESCE(s.title, ld.lead_status) as status_name"),
+                        's.color_code',
+                        DB::raw('COUNT(*) as count'),
+                        DB::raw('AVG(DATEDIFF(NOW(), ld.updated_at)) as avg_days_stale')
+                    )
+                    ->groupBy('ld.lead_status', 's.title', 's.color_code')
+                    ->orderByDesc('count')
+                    ->get();
+
+                $byStage    = $rows->map(fn($r) => [
+                    'status_slug'    => $r->status_slug,
+                    'status_name'    => $r->status_name,
+                    'color'          => $r->color_code ?? '#6B7280',
+                    'count'          => (int)   $r->count,
+                    'avg_days_stale' => (int) round((float) $r->avg_days_stale),
+                ])->values()->toArray();
+
+                return [
+                    'threshold_days' => $days,
+                    'total_stale'    => array_sum(array_column($byStage, 'count')),
+                    'by_stage'       => $byStage,
+                ];
+            });
+
+            return $this->successResponse("Stale Leads", $data);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to load stale leads", [$e->getMessage()], $e, 500);
+        }
+    }
+
 }

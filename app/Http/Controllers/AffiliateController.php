@@ -488,7 +488,7 @@ Log::info('reached',[$request->all()]);
             $phone = $objLead->phone_number;
             $phone_new = str_replace(array('(',')', '_', '-',' '), array(''), $phone);
             $unique_token = $this->generateCode();
-            $merchant_url = $domain_list.'merchant/customer/app/index/'.$clientId.'/'.$lastId.'/'.$unique_token;
+            $merchant_url = $domain_list.'merchant/'.$unique_token;
             $url = '<a href="'.$merchant_url.'">Click Here</a>';
             $lead = Lead::on("mysql_$clientId")->findorfail($lastId);
             $lead->unique_url = $url;
@@ -855,7 +855,7 @@ Log::info('reached',[$request->all()]);
                 $unique_token = $this->generateCode();
                 $objLeadUpdate = Lead::on("mysql_$clientId")->findOrFail($lastId);
 
-                $merchant_url = $domain_list.'merchant/customer/app/index/'.$clientId.'/'.$lastId.'/'.$unique_token;
+                $merchant_url = $domain_list.'merchant/'.$unique_token;
                 $url = '<a href="'.$merchant_url.'">Click Here</a>';
 
                // $url = $domain_list.$clientId.'/'.$lastId.'/'.$unique_token;

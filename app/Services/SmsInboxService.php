@@ -22,8 +22,17 @@ class SmsInboxService
         $perPage = max(1, min(100, (int) ($filters['per_page'] ?? 30)));
         $status  = $filters['status'] ?? null;
 
+        // crm_leads uses EAV — names are stored in crm_lead_values, not crm_leads columns
         $query = $db->table('crm_sms_conversations as c')
-            ->leftJoin('crm_leads as l', 'l.id', '=', 'c.lead_id')
+            ->leftJoin('crm_lead_values as vfn', function ($j) {
+                $j->on('vfn.lead_id', '=', 'c.lead_id')->where('vfn.field_key', 'first_name');
+            })
+            ->leftJoin('crm_lead_values as vln', function ($j) {
+                $j->on('vln.lead_id', '=', 'c.lead_id')->where('vln.field_key', 'last_name');
+            })
+            ->leftJoin('crm_lead_values as vcn', function ($j) {
+                $j->on('vcn.lead_id', '=', 'c.lead_id')->where('vcn.field_key', 'company_name');
+            })
             ->select([
                 'c.id',
                 'c.lead_id',
@@ -34,9 +43,9 @@ class SmsInboxService
                 'c.status',
                 'c.created_at',
                 'c.updated_at',
-                $db->raw("COALESCE(l.first_name, '') as lead_first_name"),
-                $db->raw("COALESCE(l.last_name, '')  as lead_last_name"),
-                $db->raw("COALESCE(l.company_name, '') as lead_company_name"),
+                $db->raw("COALESCE(vfn.field_value, '') as first_name"),
+                $db->raw("COALESCE(vln.field_value, '') as last_name"),
+                $db->raw("COALESCE(vcn.field_value, '') as company_name"),
             ])
             ->orderByDesc('c.last_message_at');
 

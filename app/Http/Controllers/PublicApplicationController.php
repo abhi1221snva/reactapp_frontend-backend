@@ -183,6 +183,29 @@ class PublicApplicationController extends Controller
     }
 
     /**
+     * GET /public/merchant/{token}/document-types
+     * Returns active document types for the tenant resolved from the lead token.
+     */
+    public function getDocumentTypes(Request $request, string $token)
+    {
+        try {
+            [, $clientId] = $this->svc->resolveLeadToken($token);
+
+            $types = \Illuminate\Support\Facades\DB::connection("mysql_{$clientId}")
+                ->table('crm_documents_types')
+                ->where('status', 1)
+                ->orderBy('id')
+                ->get(['id', 'title', 'type_title_url', 'values']);
+
+            return response()->json(['success' => true, 'data' => $types]);
+        } catch (\RuntimeException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], $e->getCode() ?: 400);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => 'Failed to load document types.'], 500);
+        }
+    }
+
+    /**
      * POST /public/merchant/{token}/upload
      * Upload a document from the merchant portal or initial submission.
      */

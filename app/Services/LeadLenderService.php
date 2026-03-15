@@ -417,6 +417,56 @@ class LeadLenderService
             'updated_at'    => $now,
         ]);
 
+        // ── Sync linked approval record ────────────────────────────────────────
+        $lenderName    = $row->lender_name ?? "Lender #{$row->lender_id}";
+        $approvalStage = $lenderName;
+
+        $existingApproval = DB::connection($conn)->table('crm_lead_approvals')
+            ->where('lead_id', $leadId)
+            ->where('approval_type', 'lender_submission')
+            ->where('approval_stage', $approvalStage)
+            ->first();
+
+        if ($responseStatus === 'approved') {
+            if ($existingApproval) {
+                DB::connection($conn)->table('crm_lead_approvals')
+                    ->where('id', $existingApproval->id)
+                    ->update([
+                        'status'      => 'approved',
+                        'reviewed_by' => $userId ?: null,
+                        'reviewed_at' => $now,
+                        'review_note' => $responseNote,
+                        'updated_at'  => $now,
+                    ]);
+            } else {
+                DB::connection($conn)->table('crm_lead_approvals')->insert([
+                    'lead_id'        => $leadId,
+                    'requested_by'   => $userId ?: 1,
+                    'reviewed_by'    => $userId ?: null,
+                    'approval_type'  => 'lender_submission',
+                    'approval_stage' => $approvalStage,
+                    'status'         => 'approved',
+                    'request_note'   => "Approved by {$lenderName}",
+                    'review_note'    => $responseNote,
+                    'reviewed_at'    => $now,
+                    'created_at'     => $now,
+                    'updated_at'     => $now,
+                ]);
+            }
+        } elseif ($existingApproval && $existingApproval->status !== 'withdrawn') {
+            // Sync status: declined → declined, anything else → pending
+            $mappedStatus = ($responseStatus === 'declined') ? 'declined' : 'pending';
+            DB::connection($conn)->table('crm_lead_approvals')
+                ->where('id', $existingApproval->id)
+                ->update([
+                    'status'      => $mappedStatus,
+                    'review_note' => $responseNote,
+                    'reviewed_by' => $userId ?: null,
+                    'reviewed_at' => $now,
+                    'updated_at'  => $now,
+                ]);
+        }
+
         return array_merge((array) $row, $update);
     }
 }
