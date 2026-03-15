@@ -1059,6 +1059,22 @@ public function extensionDetailList(Request $request, int $extension_id = null)
                     array_push($updateString, 'voicemail_send_to_email = :voicemail_send_to_email');
                     $data['voicemail_send_to_email'] = $request->input('voicemail_send_to_email');
                 }
+                if ($request->has('user_level') && is_numeric($request->input('user_level'))) {
+                    array_push($updateString, 'user_level = :user_level');
+                    $data['user_level'] = $request->input('user_level');
+                }
+                if ($request->has('status') && is_numeric($request->input('status'))) {
+                    array_push($updateString, 'status = :status');
+                    $data['status'] = $request->input('status');
+                }
+                if ($request->has('timezone') && !empty($request->input('timezone'))) {
+                    array_push($updateString, 'timezone = :timezone');
+                    $data['timezone'] = $request->input('timezone');
+                }
+                if ($request->has('dialer_mode') && !empty($request->input('dialer_mode'))) {
+                    array_push($updateString, 'dialer_mode = :dialer_mode');
+                    $data['dialer_mode'] = $request->input('dialer_mode');
+                }
                if ($request->has('is_deleted') && is_numeric($request->input('is_deleted'))) {
                 array_push($updateString, 'is_deleted = :is_deleted');
                 $data['is_deleted'] = $request->input('is_deleted');
@@ -1844,9 +1860,9 @@ public function checkExtension($request)
         //prepare alt_extension
         $strSql = "SELECT GROUP_CONCAT(extension) as extensions, GROUP_CONCAT(alt_extension) as alt_extensions, GROUP_CONCAT(app_extension) as app_extensions FROM users WHERE parent_id=:parent_id AND is_deleted=0";
         $arrExistingExtensionsResponse = DB::select($strSql, ['parent_id' => $request->auth->parent_id]);
-        $arrExistingPrimaryExtensions = explode(",", $arrExistingExtensionsResponse[0]->extensions);
-        $arrExistingAltExtensions = explode(",", $arrExistingExtensionsResponse[0]->alt_extensions);
-        $arrExistingAppExtensions = explode(",", $arrExistingExtensionsResponse[0]->app_extensions);
+        $arrExistingPrimaryExtensions = explode(",", $arrExistingExtensionsResponse[0]->extensions ?? '');
+        $arrExistingAltExtensions = explode(",", $arrExistingExtensionsResponse[0]->alt_extensions ?? '');
+        $arrExistingAppExtensions = explode(",", $arrExistingExtensionsResponse[0]->app_extensions ?? '');
 
         $arrExistingExtensions = array_merge($arrExistingPrimaryExtensions, $arrExistingAltExtensions, $arrExistingAppExtensions);
         $intGeneratedAltExtension = $this->generateExtension($arrExistingExtensions);
@@ -1886,6 +1902,7 @@ public function checkExtension($request)
         $first_names = strtolower($request->input('first_name'));
         $result_fname = substr($first_names, 0, 3);
         $array_fname = str_split($result_fname);
+        $dialpad = [];
         foreach ($array_fname as $char) {
             if (array_key_exists($char, $dialPadArray)) {
                 $dialpad[] = $dialPadArray[$char];
@@ -1897,9 +1914,10 @@ public function checkExtension($request)
         //last name for dialpad_lastname
 
         $data['last_name'] = $request->input('last_name');
-        $last_names = strtolower($data['last_name']);
+        $last_names = strtolower($data['last_name'] ?? '');
         $result = substr($last_names, 0, 3);
         $array = str_split($result);
+        $dialpadLastName = [];
         foreach ($array as $char) {
             if (array_key_exists($char, $dialPadArray)) {
                 $dialpadLastName[] = $dialPadArray[$char];
@@ -1916,6 +1934,7 @@ public function checkExtension($request)
         $data['dialpad'] = $finaldialPad;
         $data['dialpad_lastname'] = $finaldialPadLastName;
         $data['role'] = 2;
+        $data['user_level'] = is_numeric($request->input('user_level')) ? (int)$request->input('user_level') : 1;
         $data['extension'] = $request->auth->parent_id . $request->input('extension');
 
         $data['alt_extension'] = $request->auth->parent_id . $intGeneratedAltExtension;

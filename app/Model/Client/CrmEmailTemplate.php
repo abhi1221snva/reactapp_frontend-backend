@@ -7,6 +7,6 @@ class CrmEmailTemplate extends Model
 {
     public $timestamps = true;
     protected $table = "crm_email_templates";
-    protected $fillable = ['template_name','template_html','subject','lead_status'];
+    protected $fillable = ['template_name','template_html','subject','lead_status','send_bcc','status'];
 
 }

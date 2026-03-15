@@ -313,6 +313,7 @@ class ExtensionController extends Controller
         // Base query: client users + admin-level users merged
         $query = User::join('roles', 'users.role', '=', 'roles.id')
             ->where('users.parent_id', $clientId)
+            ->where('users.is_deleted', 0)
             ->orderBy('users.id', 'DESC')
             ->select('users.*', 'roles.name as role_name', 'roles.level');
 
@@ -882,35 +883,30 @@ class ExtensionController extends Controller
     //echo $easifyUserToken;
     //echo $easifyAppToken;
 
-    if (empty($loggedInUser?->easify_user_uuid)) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Easify user token not found for logged-in user'
-        ], 403);
-    }
-    
-    $validate = Http::withHeaders([
-        'X-Application-Token' => env('PHONIFY_APP_TOKEN'),
-        'X-Easify-User-Token' => $easifyUserToken,
-        'Accept' => 'application/json', // Ensure JSON response
-    ])->post('https://easify-auth.on-forge.com/api/users/create', [
-        'email' => $request->email,
-        'password' => $request->password,
-        'first_name' => $request->first_name,
-        'last_name' => $request->last_name,
-        'phone' => $request->phone,
-        'only_validate' => true,
-    ]);
+    // Skip Easify validation when the admin has no easify_user_uuid (e.g. System Admin)
+    if (!empty($loggedInUser?->easify_user_uuid)) {
+        $validate = Http::withHeaders([
+            'X-Application-Token' => env('PHONIFY_APP_TOKEN'),
+            'X-Easify-User-Token' => $easifyUserToken,
+            'Accept' => 'application/json',
+        ])->post('https://easify-auth.on-forge.com/api/users/create', [
+            'email' => $request->email,
+            'password' => $request->password,
+            'first_name' => $request->first_name,
+            'last_name' => $request->last_name,
+            'phone' => $request->phone,
+            'only_validate' => true,
+        ]);
 
-    // Log validation response safely
-    Log::info('Easify VALIDATION API response', [
-        'status' => $validate->status(),
-        'body' => $validate->body() ?: 'empty', // raw body for debugging
-        'json' => $validate->json() ?: 'null', // decoded JSON, null-safe
-    ]);
+        Log::info('Easify VALIDATION API response', [
+            'status' => $validate->status(),
+            'body' => $validate->body() ?: 'empty',
+            'json' => $validate->json() ?: 'null',
+        ]);
 
-    if (!$validate->successful()) {
-        return response()->json($validate->json(), $validate->status());
+        if (!$validate->successful()) {
+            return response()->json($validate->json(), $validate->status());
+        }
     }
         $call_forward = $this->request->call_forward;
         $twinning = $this->request->twinning;
@@ -1036,48 +1032,42 @@ if (!$localUserId) {
     ], 500);
 }
 
-$create = Http::withHeaders([
-    'X-Application-Token' => env('PHONIFY_APP_TOKEN'),
-    'X-Easify-User-Token' => $easifyUserToken,
-    'Accept' => 'application/json',
-])->post('https://easify-auth.on-forge.com/api/users/create', [
-    'email' => $request->email,
-    'password' => $request->password,
-    'first_name' => $request->first_name,
-    'last_name' => $request->last_name,
-    'phone' => $request->phone,
-    'application_user_id' => $localUserId, // ✅ ADDED HERE
-    'only_validate' => false,
-]);
-
-Log::info('Easify CREATE API response', [
-    'status' => $create->status(),
-    'body' => $create->body() ?: 'empty',
-    'json' => $create->json() ?: 'null',
-]);
-
-if (!$create->successful()) {
-    // Optional: rollback local user here
-    return response()->json($create->json(), $create->status());
-}
-
-
-/**
- * STEP 6 — Update Easify UUID in Local DB
- */
 $user = User::find($localUserId);
-$user->easify_user_uuid = $create->json('data.uuid');
-$user->save();
-    // return response()->json([
-    //     'status' => $validate->status(),
-    //     'response' => $validate->json()
-    // ]);
-    
+
+// Only call Easify CREATE when the admin has an easify_user_uuid
+if (!empty($easifyUserToken)) {
+    $create = Http::withHeaders([
+        'X-Application-Token' => env('PHONIFY_APP_TOKEN'),
+        'X-Easify-User-Token' => $easifyUserToken,
+        'Accept' => 'application/json',
+    ])->post('https://easify-auth.on-forge.com/api/users/create', [
+        'email' => $request->email,
+        'password' => $request->password,
+        'first_name' => $request->first_name,
+        'last_name' => $request->last_name,
+        'phone' => $request->phone,
+        'application_user_id' => $localUserId,
+        'only_validate' => false,
+    ]);
+
+    Log::info('Easify CREATE API response', [
+        'status' => $create->status(),
+        'body' => $create->body() ?: 'empty',
+        'json' => $create->json() ?: 'null',
+    ]);
+
+    if (!$create->successful()) {
+        return response()->json($create->json(), $create->status());
+    }
+
+    // Store Easify UUID in local DB
+    $user->easify_user_uuid = $create->json('data.uuid');
+    $user->save();
+}
 
         return response()->json([
             'success' => true,
             'data' => $user,
-            //'data'=> $create->json(),  // full Easify response
         ]);
     }
     function saveNewExtensionlatest()

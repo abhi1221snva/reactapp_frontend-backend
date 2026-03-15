@@ -22,6 +22,9 @@ $router->group(['middleware' => ['throttle:60,1']], function () use ($router) {
 
     // Tenant company logo — public (shown on apply forms, PDFs, etc.)
     $router->get('public/tenant/{clientId}/logo',        'TenantFileController@serveLogo');
+
+    // Lead document serve — validated by lead_token ownership
+    $router->get('public/lead/{token}/document/{docId}', 'PublicApplicationController@serveDocument');
 });
 
 $router->get('/list-all-cache', 'RedisCacheController@listAllCache');
@@ -1699,6 +1702,52 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
 
   // PDF Application Generator
   $router->get('crm/lead/{id}/render-pdf',                                'LeadController@renderPdf');
+
+  // ── Offers ─────────────────────────────────────────────────────────────────
+  $router->get('crm/lead/{id}/offers',              'CrmOfferController@index');
+  $router->put('crm/lead/{id}/offers',              'CrmOfferController@store');
+  $router->post('crm/lead/{id}/offers/{oid}',       'CrmOfferController@update');
+  $router->delete('crm/lead/{id}/offers/{oid}',     'CrmOfferController@destroy');
+  $router->post('crm/lead/{id}/offers/{oid}/accept','CrmOfferController@accept');
+
+  // ── Stips ──────────────────────────────────────────────────────────────────
+  $router->get('crm/lead/{id}/stips',               'CrmStipController@index');
+  $router->put('crm/lead/{id}/stips',               'CrmStipController@store');
+  $router->post('crm/lead/{id}/stips/bulk',         'CrmStipController@bulkCreate');
+  $router->post('crm/lead/{id}/stips/{sid}',        'CrmStipController@update');
+  $router->delete('crm/lead/{id}/stips/{sid}',      'CrmStipController@destroy');
+
+  // ── Funded Deal ─────────────────────────────────────────────────────────────
+  $router->get('crm/lead/{id}/funded-deal',                          'CrmFundedDealController@show');
+  $router->put('crm/lead/{id}/funded-deal',                          'CrmFundedDealController@store');
+  $router->post('crm/lead/{id}/funded-deal/{did}',                   'CrmFundedDealController@update');
+  $router->post('crm/lead/{id}/funded-deal/{did}/mark-renewed',      'CrmFundedDealController@markRenewed');
+
+  // ── Merchant Positions ──────────────────────────────────────────────────────
+  $router->get('crm/lead/{id}/positions',           'CrmPositionController@index');
+  $router->put('crm/lead/{id}/positions',           'CrmPositionController@store');
+  $router->delete('crm/lead/{id}/positions/{pid}',  'CrmPositionController@destroy');
+
+  // ── Compliance ──────────────────────────────────────────────────────────────
+  $router->get('crm/lead/{id}/compliance',             'CrmComplianceController@index');
+  $router->put('crm/lead/{id}/compliance',             'CrmComplianceController@store');
+  $router->post('crm/lead/{id}/compliance/{cid}',      'CrmComplianceController@update');
+  $router->get('crm/advance-registry/search',          'CrmComplianceController@searchAdvanceRegistry');
+  $router->get('crm/lead/{id}/stacking-warning',       'CrmComplianceController@stackingWarning');
+
+  // ── Automations ─────────────────────────────────────────────────────────────
+  $router->get('crm/automations',               'CrmAutomationController@index');
+  $router->put('crm/automations',               'CrmAutomationController@store');
+  $router->post('crm/automations/{id}',         'CrmAutomationController@update');
+  $router->delete('crm/automations/{id}',       'CrmAutomationController@destroy');
+  $router->patch('crm/automations/{id}/toggle', 'CrmAutomationController@toggle');
+  $router->get('crm/automations/{id}/logs',     'CrmAutomationController@logs');
+
+  // ── SMS Inbox ───────────────────────────────────────────────────────────────
+  $router->get('crm/sms/conversations',                    'CrmSmsInboxController@getConversations');
+  $router->get('crm/sms/conversations/{id}/messages',      'CrmSmsInboxController@getMessages');
+  $router->post('crm/sms/conversations/{id}/send',         'CrmSmsInboxController@sendMessage');
+  $router->post('crm/sms/conversations/{id}/read',         'CrmSmsInboxController@markRead');
   $router->get('crm/pdf/placeholders',                                    'LeadController@pdfPlaceholders');
 });
 

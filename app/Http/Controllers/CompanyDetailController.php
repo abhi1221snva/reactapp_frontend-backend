@@ -331,7 +331,7 @@ class CompanyDetailController extends Controller
                 ];
             });
 
-            return $this->successResponse('Affiliate users', $result);
+            return $this->successResponse('Affiliate users', $result->values()->all());
         } catch (\Throwable $e) {
             return $this->failResponse('Failed to list affiliate users.', [$e->getMessage()], $e);
         }

@@ -1084,8 +1084,9 @@ class LeadController extends Controller
      *     )
      * )
      */
-    public function show(Request $request, int $id)
+    public function show(Request $request, $id)
     {
+        $id = (int) $id;
         $clientId = $request->auth->parent_id;
         try {
             $arrLead = CrmLeadRecord::on("mysql_$clientId")->findOrFail($id)->toArray();

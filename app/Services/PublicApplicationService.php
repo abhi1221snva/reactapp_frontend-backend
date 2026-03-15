@@ -2,8 +2,8 @@
 
 namespace App\Services;
 
+use App\Services\TenantStorageService;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
@@ -269,29 +269,36 @@ class PublicApplicationService
             $decoded = base64_decode($imgData);
             if (!$decoded || strlen($decoded) < 50) return null;
 
-            $dir      = "crm_documents/{$clientId}/{$leadId}";
-            $filename = 'signature_' . time() . '.png';
-            Storage::disk('public')->put($dir . '/' . $filename, $decoded);
+            // Organized folder: storage/app/clients/client_{id}/leads/{leadId}/signatures/
+            $subdir  = "leads/{$leadId}/signatures";
+            $dir     = TenantStorageService::getPath($clientId, $subdir);
+            if (!is_dir($dir)) {
+                mkdir($dir, 0775, true);
+            }
 
-            $path = $dir . '/' . $filename;
-            $url  = rtrim(env('APP_URL'), '/') . '/storage/' . $path;
+            $filename = 'signature_' . time() . '.png';
+            file_put_contents($dir . DIRECTORY_SEPARATOR . $filename, $decoded);
+
+            // Relative path stored in EAV (relative from client base)
+            $relPath = "leads/{$leadId}/signatures/{$filename}";
 
             // Store path in crm_lead_data signature_image column
             try {
                 DB::connection($conn)->table('crm_lead_data')
                     ->where('id', $leadId)
-                    ->update(['signature_image' => $path, 'updated_at' => now()]);
+                    ->update(['signature_image' => $relPath, 'updated_at' => now()]);
             } catch (\Throwable $e) {}
 
             // Store in EAV
             if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_values')) {
                 DB::connection($conn)->table('crm_lead_values')->updateOrInsert(
                     ['lead_id' => $leadId, 'field_key' => 'signature_image'],
-                    ['field_value' => $path, 'updated_at' => now(), 'created_at' => now()]
+                    ['field_value' => $relPath, 'updated_at' => now(), 'created_at' => now()]
                 );
             }
 
-            return $url;
+            // Return inline data URI (used immediately in success response)
+            return 'data:image/png;base64,' . base64_encode($decoded);
         } catch (\Throwable $e) {
             \Log::warning("PublicApp: storeSignature failed for lead {$leadId}: " . $e->getMessage());
             return null;
@@ -307,8 +314,19 @@ class PublicApplicationService
         $leadData = $this->getMerchantLeadData($lead, $clientId);
         $fields   = $leadData['fields'];
 
-        $sigPath = $fields['signature_image'] ?? null;
-        $sigUrl  = $sigPath ? rtrim(env('APP_URL'), '/') . '/storage/' . $sigPath : null;
+        $sigPath   = $fields['signature_image'] ?? null;
+        $sigInline = null;
+        if ($sigPath) {
+            // Try new TenantStorageService path (leads/{leadId}/signatures/...)
+            $absPath = TenantStorageService::getPath($clientId, $sigPath);
+            if (!file_exists($absPath)) {
+                // Backward compat: old public disk path (crm_documents/{clientId}/{leadId}/...)
+                $absPath = storage_path('app/public/' . $sigPath);
+            }
+            if (file_exists($absPath)) {
+                $sigInline = 'data:image/png;base64,' . base64_encode(file_get_contents($absPath));
+            }
+        }
         $logoUrl = $branding['logo_url'] ?? null;
         $company = htmlspecialchars($branding['company_name'] ?? 'Funding Application');
         $email   = htmlspecialchars($branding['support_email'] ?? '');
@@ -337,8 +355,8 @@ class PublicApplicationService
             $sectionsHtml .= "</div></div>";
         }
 
-        $sigHtml = $sigUrl
-            ? "<div class='section sig-section'><h3 class='section-title'>Digital Signature</h3><img src='" . htmlspecialchars($sigUrl) . "' style='max-height:100px;border:1px solid #e2e8f0;padding:12px;border-radius:8px;background:#fff;' /></div>"
+        $sigHtml = $sigInline
+            ? "<div class='section sig-section'><h3 class='section-title'>Digital Signature</h3><img src='" . $sigInline . "' style='max-height:100px;border:1px solid #e2e8f0;padding:12px;border-radius:8px;background:#fff;' /></div>"
             : '';
 
         $docsHtml = '';
@@ -534,18 +552,29 @@ HTML;
 
     public function storeDocument(object $lead, int $clientId, $file, string $docType): array
     {
-        $dir      = "crm_documents/{$clientId}/{$lead->id}";
-        $filename = time() . '_' . Str::random(8) . '.' . $file->getClientOriginalExtension();
-        $file->storeAs($dir, $filename, 'public');
+        // Organized folder: storage/app/clients/client_{id}/leads/{leadId}/documents/
+        $subdir  = "leads/{$lead->id}/documents";
+        $dir     = TenantStorageService::getPath($clientId, $subdir);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0775, true);
+        }
 
-        $conn = "mysql_{$clientId}";
-        $now  = now();
+        $ext      = strtolower($file->getClientOriginalExtension()) ?: 'bin';
+        $filename = time() . '_' . Str::random(8) . '.' . $ext;
+        $file->move($dir, $filename);
+
+        // Relative path stored in DB (relative from client base)
+        $relPath = "leads/{$lead->id}/documents/{$filename}";
+
+        $conn  = "mysql_{$clientId}";
+        $now   = now();
+        $docId = null;
 
         if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_documents')) {
-            DB::connection($conn)->table('crm_lead_documents')->insert([
+            $docId = DB::connection($conn)->table('crm_lead_documents')->insertGetId([
                 'lead_id'     => $lead->id,
                 'file_name'   => $filename,
-                'file_path'   => $dir . '/' . $filename,
+                'file_path'   => $relPath,
                 'doc_type'    => $docType,
                 'uploaded_by' => 0,
                 'created_at'  => $now,
@@ -555,9 +584,50 @@ HTML;
 
         return [
             'filename' => $filename,
-            'path'     => $dir . '/' . $filename,
-            'url'      => rtrim(env('APP_URL'), '/') . '/storage/' . $dir . '/' . $filename,
+            'path'     => $relPath,
+            'url'      => rtrim(env('APP_URL'), '/') . '/public/lead/' . $lead->lead_token . '/document/' . $docId,
         ];
+    }
+
+    /**
+     * Serve a lead document by token + document ID (public, no auth).
+     * Returns [absPath, mimeType, filename] or throws RuntimeException.
+     */
+    public function serveLeadDocument(string $token, int $docId): array
+    {
+        [$lead, $clientId] = $this->resolveLeadToken($token);
+        $conn              = "mysql_{$clientId}";
+
+        if (!DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_documents')) {
+            throw new \RuntimeException('Document not found.', 404);
+        }
+
+        $doc = DB::connection($conn)->table('crm_lead_documents')
+            ->where('id', $docId)
+            ->where('lead_id', $lead->id)
+            ->first();
+
+        if (!$doc) {
+            throw new \RuntimeException('Document not found.', 404);
+        }
+
+        $relPath = $doc->file_path;
+
+        // Try new TenantStorageService path
+        $absPath = TenantStorageService::getPath($clientId, $relPath);
+        if (!file_exists($absPath)) {
+            // Backward compat: old public disk path
+            $absPath = storage_path('app/public/' . $relPath);
+        }
+
+        if (!file_exists($absPath)) {
+            throw new \RuntimeException('Document file not found.', 404);
+        }
+
+        $mime     = mime_content_type($absPath) ?: 'application/octet-stream';
+        $filename = $doc->file_name ?? basename($absPath);
+
+        return [$absPath, $mime, $filename];
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -651,17 +721,31 @@ HTML;
     {
         $conn = "mysql_{$clientId}";
         if (!DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_documents')) return [];
+
+        $leadToken = DB::connection($conn)->table('crm_leads')->where('id', $leadId)->value('lead_token');
+        $base      = rtrim(env('APP_URL'), '/');
+
         return DB::connection($conn)->table('crm_lead_documents')
             ->where('lead_id', $leadId)
             ->orderBy('id', 'desc')
             ->get()
-            ->map(fn($d) => [
-                'id'       => $d->id,
-                'filename' => $d->file_name,
-                'doc_type' => $d->doc_type,
-                'url'      => rtrim(env('APP_URL'), '/') . '/storage/' . $d->file_path,
-                'uploaded' => $d->created_at,
-            ])
+            ->map(function ($d) use ($base, $leadToken) {
+                $path = $d->file_path ?? '';
+                // Old public-disk paths start with "crm_documents/" → use /storage/ URL
+                // New TenantStorageService paths start with "leads/" → use serve route
+                if (str_starts_with($path, 'crm_documents/')) {
+                    $url = $base . '/storage/' . $path;
+                } else {
+                    $url = $base . '/public/lead/' . $leadToken . '/document/' . $d->id;
+                }
+                return [
+                    'id'       => $d->id,
+                    'filename' => $d->file_name,
+                    'doc_type' => $d->doc_type,
+                    'url'      => $url,
+                    'uploaded' => $d->created_at,
+                ];
+            })
             ->toArray();
     }
 

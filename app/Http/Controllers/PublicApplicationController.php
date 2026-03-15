@@ -163,6 +163,26 @@ class PublicApplicationController extends Controller
     }
 
     /**
+     * GET /public/lead/{token}/document/{docId}
+     * Serve a stored lead document (no auth — validated by lead_token ownership).
+     */
+    public function serveDocument(Request $request, string $token, int $docId)
+    {
+        try {
+            [$absPath, $mime, $filename] = $this->svc->serveLeadDocument($token, $docId);
+
+            return response()->file($absPath, [
+                'Content-Type'        => $mime,
+                'Content-Disposition' => 'inline; filename="' . addslashes($filename) . '"',
+            ]);
+        } catch (\RuntimeException $e) {
+            return response('<h1>Not Found</h1>', 404)->header('Content-Type', 'text/html');
+        } catch (\Throwable $e) {
+            return response('<h1>Error</h1>', 500)->header('Content-Type', 'text/html');
+        }
+    }
+
+    /**
      * POST /public/merchant/{token}/upload
      * Upload a document from the merchant portal or initial submission.
      */
