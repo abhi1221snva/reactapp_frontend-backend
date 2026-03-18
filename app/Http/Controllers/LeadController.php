@@ -35,6 +35,7 @@ use App\Services\LeadEavService;
 use App\Services\LeadLenderService;
 use App\Services\LeadQueryService;
 use App\Services\LeadTaskService;
+use App\Services\EmailService;
 
 
 class LeadController extends Controller
@@ -431,9 +432,7 @@ class LeadController extends Controller
     {
         try {
 
-            $DomainList = DomainList::where('client_id', $request->auth->parent_id)->get()->first();
-
-            $domain_list = $DomainList->domain_name;
+            $domain_list = $this->getPortalBaseUrl((int) $request->auth->parent_id);
 
             $file_path = env('FILE_UPLOAD_PATH');
             $title = $request->title;
@@ -491,7 +490,7 @@ class LeadController extends Controller
                                     $list_data['created_at'] = date('y-m-d h:i:s');
                                     $list_data['updated_at'] = date('y-m-d h:i:s');
                                     $list_data['unique_token'] = $this->generateCode();
-                                    $url = $domain_list . $request->auth->parent_id . '/' . $r . '/' . $list_data['unique_token'];
+                                    $url = $domain_list . '/merchant/customer/app/index/' . $request->auth->parent_id . '/' . $r . '/' . $list_data['unique_token'];
                                     $list_data['unique_url'] = '<a href="' . $url . '">Click Here</a>';
 
                                     $list_data['lead_status'] = 'new_lead';
@@ -555,10 +554,6 @@ class LeadController extends Controller
 
         $this->validate($request, ['phone_number' => 'nullable|sometimes|max:255:' . 'mysql_' . $request->auth->parent_id . '.crm_lead_data', 'email' => 'nullable|sometimes:' . 'mysql_' . $request->auth->parent_id . '.crm_lead_data']);
 
-        $DomainList = DomainList::where('client_id', $request->auth->parent_id)->get()->first();
-
-        $domain_list = $DomainList->domain_name;
-
         $clientId = $request->auth->parent_id;
 
         //Validation
@@ -576,7 +571,7 @@ class LeadController extends Controller
             $phone = $objLead->phone_number;
             $phone_new = str_replace(array('(', ')', '_', '-', ' '), array(''), $phone);
             $unique_token = $this->generateCode();
-            $merchant_url = $domain_list . 'merchant/' . $unique_token;
+            $merchant_url = $this->getPortalBaseUrl($clientId) . '/merchant/customer/app/index/' . $clientId . '/' . $lastId . '/' . $unique_token;
             $url = '<a href="' . $merchant_url . '">Click Here</a>';
             $lead = Lead::on("mysql_$clientId")->findorfail($lastId);
             $lead->unique_url = $url;
@@ -672,9 +667,6 @@ class LeadController extends Controller
 
         $clientId = $request->auth->parent_id;
 
-        $DomainList = DomainList::where('client_id', $clientId)->first();
-        $domain_list = $DomainList ? $DomainList->domain_name : '';
-
         try {
             // Build system-column payload for crm_leads
             $systemData = $this->eavService->formatLeadFields($request->all(), $clientId);
@@ -707,9 +699,10 @@ class LeadController extends Controller
 
             $lastId       = $objLead->id;
             $unique_token = $this->generateCode();
-            $merchant_url = $domain_list . 'merchant/' . $unique_token;
+            $merchant_url = $this->getPortalBaseUrl($clientId) . '/merchant/customer/app/index/' . $clientId . '/' . $lastId . '/' . $unique_token;
             $objLead->unique_url   = '<a href="' . $merchant_url . '">Click Here</a>';
             $objLead->unique_token = $unique_token;
+            $objLead->lead_token   = $unique_token;
             $objLead->save();
 
             // Save all dynamic fields (EAV) into crm_lead_values
@@ -1285,16 +1278,6 @@ class LeadController extends Controller
     //create lead from another domain
     public function createLead(Request $request)
     {
-        $DomainList = DomainList::where('client_id', $request->auth->parent_id)->get()->first();
-
-        $domain_list = $DomainList->domain_name;
-
-        if ($domain_list) {
-            $selected_domain = $domain_list;
-        } else {
-            $selected_domain = env('DOMAIN_NAME');
-        }
-
         $clientId = $request->auth->parent_id;
         //Validation
         $arrValidationRules = $this->validateLeadInfo($clientId);
@@ -1321,7 +1304,7 @@ class LeadController extends Controller
                 $unique_token = $this->generateCode();
                 $objLeadUpdate = Lead::on("mysql_$clientId")->findOrFail($lastId);
 
-                $merchant_url = $selected_domain . 'merchant/' . $unique_token;
+                $merchant_url = $this->getPortalBaseUrl($clientId) . '/merchant/customer/app/index/' . $clientId . '/' . $lastId . '/' . $unique_token;
                 $url = '<a href="' . $merchant_url . '">Click Here</a>';
 
                 $objLeadUpdate->unique_url = $url;
@@ -1930,31 +1913,10 @@ class LeadController extends Controller
      * hydrates [[field_key]] placeholders with EAV lead data, and returns
      * the final HTML for client-side print/PDF generation.
      */
-    public function renderPdf(Request $request, $id)
+    // ── Private: build the full placeholder-substitution map for a lead ──────────
+    private function buildLeadData(int $leadId, string $conn, int $clientId, $auth): array
     {
-        try {
-            $clientId = $request->auth->parent_id;
-            $conn     = "mysql_{$clientId}";
-            $leadId   = (int) $id;
-
-            // 1. Resolve the application template
-            $template = DB::connection($conn)
-                ->table('crm_custom_templates')
-                ->where('custom_type', 'signature_application')
-                ->whereNull('deleted_at')
-                ->orderBy('id', 'desc')
-                ->first();
-
-            if (!$template) {
-                return $this->failResponse(
-                    'No application template found. Create one under CRM → PDF Templates.',
-                    [], null, 404
-                );
-            }
-
-            // ── Build replacement map from all available data sources ──────────
-
-            $data = [];
+        $data = [];
 
             // 2a. New EAV: crm_lead_values (field_key → field_value)
             //     e.g. first_name, last_name, company_name, option_33, ...
@@ -2157,22 +2119,51 @@ class LeadController extends Controller
                 if (!isset($data[$k])) $data[$k] = '';
             }
 
-            // Resolve lead display name
+        return $data;
+    }
+
+    // ── Private: substitute [[key]] and [key] placeholders in a string ────────
+    private function applyPlaceholders(string $text, array $data): string
+    {
+        foreach ($data as $key => $value) {
+            $val  = (string) ($value ?? '');
+            $text = str_replace("[[{$key}]]", $val, $text);
+            $text = str_replace("[{$key}]",   $val, $text);
+        }
+        $text = preg_replace('/\[\[[^\]]*\]\]/', '', $text);
+        $text = preg_replace('/\[[a-z0-9_]+\]/i', '', $text);
+        return $text;
+    }
+
+    public function renderPdf(Request $request, $id)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            $conn     = "mysql_{$clientId}";
+            $leadId   = (int) $id;
+
+            $template = DB::connection($conn)
+                ->table('crm_custom_templates')
+                ->where('custom_type', 'signature_application')
+                ->whereNull('deleted_at')
+                ->orderBy('id', 'desc')
+                ->first();
+
+            if (!$template) {
+                return $this->failResponse(
+                    'No application template found. Create one under CRM → PDF Templates.',
+                    [], null, 404
+                );
+            }
+
+            $data = $this->buildLeadData($leadId, $conn, $clientId, $request->auth);
+
             $firstName = $data['first_name'] ?? '';
             $lastName  = $data['last_name']  ?? '';
             $company   = $data['company_name'] ?? $data['legal_company_name'] ?? '';
             $leadName  = trim("$firstName $lastName") ?: ($company ?: "Lead #{$leadId}");
 
-            // ── Substitute placeholders — supports both [[key]] and [key] ─────
-            $html = $template->template_html ?? '';
-            foreach ($data as $key => $value) {
-                $val  = (string) ($value ?? '');
-                $html = str_replace("[[{$key}]]", $val, $html);  // double-bracket
-                $html = str_replace("[{$key}]",   $val, $html);  // single-bracket
-            }
-            // Remove any remaining un-substituted placeholders (both formats)
-            $html = preg_replace('/\[\[[^\]]*\]\]/', '', $html);  // [[...]]
-            $html = preg_replace('/\[[a-z0-9_]+\]/i', '', $html); // [key]
+            $html = $this->applyPlaceholders($template->template_html ?? '', $data);
 
             return $this->successResponse('Template rendered', [
                 'html'          => $html,
@@ -2182,6 +2173,29 @@ class LeadController extends Controller
             ]);
         } catch (\Throwable $e) {
             return $this->failResponse('Failed to render PDF', [$e->getMessage()], $e, 500);
+        }
+    }
+
+    public function resolveEmailTemplate(Request $request, $id, $templateId)
+    {
+        try {
+            $clientId  = $request->auth->parent_id;
+            $conn      = "mysql_{$clientId}";
+            $leadId    = (int) $id;
+
+            $template = \App\Model\Client\CrmEmailTemplate::on($conn)->findOrFail((int) $templateId);
+
+            $data    = $this->buildLeadData($leadId, $conn, $clientId, $request->auth);
+            $subject = $this->applyPlaceholders($template->subject ?? '', $data);
+            $html    = $this->applyPlaceholders($template->template_html ?? '', $data);
+
+            return $this->successResponse('Template resolved', [
+                'subject'       => $subject,
+                'body'          => $html,
+                'template_name' => $template->template_name,
+            ]);
+        } catch (\Throwable $e) {
+            return $this->failResponse('Failed to resolve template', [$e->getMessage()], $e, 500);
         }
     }
 
@@ -2356,9 +2370,9 @@ class LeadController extends Controller
             $user = DB::connection("mysql_{$clientId}")
                 ->table('users')
                 ->where('id', $userId)
-                ->first(['first_name', 'last_name', 'username']);
+                ->first(['first_name', 'last_name', 'email']);
             $submitterName = $user
-                ? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: ($user->username ?? 'CRM Agent')
+                ? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: ($user->email ?? 'CRM Agent')
                 : 'CRM Agent';
 
             $result = $this->lenderService->submitApplication(
@@ -2407,6 +2421,46 @@ class LeadController extends Controller
      *   submission_status:  string  (optional)
      *   response_note:      string  (optional)
      */
+    public function sendMerchantEmail(Request $request, $id)
+    {
+        $this->validate($request, [
+            'to'      => 'required|email',
+            'subject' => 'required|string|max:255',
+            'body'    => 'required|string',
+        ]);
+
+        try {
+            $clientId = $request->auth->parent_id;
+            $leadId   = (int) $id;
+            $to       = trim($request->input('to'));
+            $subject  = trim($request->input('subject'));
+            $body   = $request->input('body');
+            $isHtml = (bool) $request->input('is_html', false);
+            $html   = $isHtml ? $body : nl2br(e($body));
+
+            EmailService::forClient($clientId, 'notification')->send(
+                to:      $to,
+                subject: $subject,
+                html:    $html,
+            );
+
+            // Log activity
+            DB::connection("mysql_{$clientId}")->table('crm_lead_activity')->insert([
+                'lead_id'       => $leadId,
+                'user_id'       => $request->auth->id,
+                'activity_type' => 'email_sent',
+                'subject'       => "Email sent to merchant: {$to}",
+                'body'          => $subject,
+                'created_at'    => now(),
+                'updated_at'    => now(),
+            ]);
+
+            return $this->successResponse("Email sent successfully to {$to}");
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to send email: " . $e->getMessage(), [], $e, 500);
+        }
+    }
+
     public function updateSubmissionResponse(Request $request, $id, $subId)
     {
         $this->validate($request, [

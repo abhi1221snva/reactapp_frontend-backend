@@ -21,6 +21,16 @@ $router->group(['middleware' => ['throttle:60,1']], function () use ($router) {
     $router->get('public/merchant/{token}/document-types', 'PublicApplicationController@getDocumentTypes');
     $router->post('public/merchant/{token}/upload',        'PublicApplicationController@uploadDocument');
 
+    // ── Merchant Lead Update API (token-auth, no JWT required) ───────────────
+    // GET  /api/merchant/lead/{token}        — fetch lead data
+    // POST /api/merchant/lead/update/{token} — update fields + audit trail
+    // GET  /api/merchant/lead/{token}/logs   — audit log for this lead
+    // GET  /api/merchant/lead/{token}/notes  — auto-notes for this lead
+    $router->get('api/merchant/lead/{token}',        'Merchant\LeadUpdateController@show');
+    $router->post('api/merchant/lead/update/{token}','Merchant\LeadUpdateController@update');
+    $router->get('api/merchant/lead/{token}/logs',   'Merchant\LeadUpdateController@logs');
+    $router->get('api/merchant/lead/{token}/notes',  'Merchant\LeadUpdateController@notes');
+
     // Tenant company logo — public (shown on apply forms, PDFs, etc.)
     $router->get('public/tenant/{clientId}/logo',        'TenantFileController@serveLogo');
 
@@ -1545,10 +1555,19 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   $router->post('update-system-setting/{id}', 'CrmSystemSettingController@update');
 
   $router->get('company-columns', 'CrmSystemSettingController@companyColumns');
-  //crm email setting 
+  // Legacy crm-email-setting routes (backward compat)
   $router->get('crm-email-setting', 'CrmEmailSettingController@list');
   $router->post('crm-email-setting', 'CrmEmailSettingController@create');
   $router->post('update-crm-email-setting/{id}', 'CrmEmailSettingController@update');
+
+  // CRM Email Settings — RESTful
+  $router->get('crm/email-settings',              'CrmEmailSettingController@index');
+  $router->post('crm/email-settings',             'CrmEmailSettingController@store');
+  $router->post('crm/email-settings/test',        'CrmEmailSettingController@testEmail');
+  $router->get('crm/email-settings/{id}',         'CrmEmailSettingController@show');
+  $router->put('crm/email-settings/{id}',         'CrmEmailSettingController@update');
+  $router->delete('crm/email-settings/{id}',      'CrmEmailSettingController@destroy');
+  $router->post('crm/email-settings/{id}/toggle', 'CrmEmailSettingController@toggle');
   //crm dasboard
   $router->get('dashboard-lead-status', 'CrmdashboardController@index');
 
@@ -1707,6 +1726,8 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
 
   // PDF Application Generator
   $router->get('crm/lead/{id}/render-pdf',                                'LeadController@renderPdf');
+  $router->post('crm/lead/{id}/send-merchant-email',                      'LeadController@sendMerchantEmail');
+  $router->get('crm/lead/{id}/resolve-email-template/{templateId}',       'LeadController@resolveEmailTemplate');
 
   // ── Offers ─────────────────────────────────────────────────────────────────
   $router->get('crm/lead/{id}/offers',              'CrmOfferController@index');
@@ -1749,10 +1770,14 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   $router->get('crm/automations/{id}/logs',     'CrmAutomationController@logs');
 
   // ── SMS Inbox ───────────────────────────────────────────────────────────────
+  $router->get('crm/sms/sender-numbers',                   'CrmSmsInboxController@getSenderNumbers');
+  $router->get('crm/sms/agents',                           'CrmSmsInboxController@getAgents');
   $router->get('crm/sms/conversations',                    'CrmSmsInboxController@getConversations');
   $router->get('crm/sms/conversations/{id}/messages',      'CrmSmsInboxController@getMessages');
   $router->post('crm/sms/conversations/{id}/send',         'CrmSmsInboxController@sendMessage');
   $router->post('crm/sms/conversations/{id}/read',         'CrmSmsInboxController@markRead');
+  $router->post('crm/sms/conversations/{id}/assign',       'CrmSmsInboxController@assignAgent');
+  $router->post('crm/sms/new-conversation',                'CrmSmsInboxController@startConversation');
   $router->get('crm/pdf/placeholders',                                    'LeadController@pdfPlaceholders');
 });
 

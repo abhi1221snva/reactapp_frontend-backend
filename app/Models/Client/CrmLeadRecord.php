@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int|null    $lead_source_id
  * @property int         $lead_parent_id
  * @property string|null $unique_token
+ * @property string|null $lead_token
  * @property string|null $unique_url
  * @property int         $score
  * @property int         $is_deleted
@@ -37,6 +38,7 @@ class CrmLeadRecord extends Model
         'lead_source_id',
         'lead_parent_id',
         'unique_token',
+        'lead_token',
         'unique_url',
         'score',
         'is_deleted',

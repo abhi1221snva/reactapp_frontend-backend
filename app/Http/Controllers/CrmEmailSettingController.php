@@ -3,265 +3,219 @@
 namespace App\Http\Controllers;
 
 use App\Model\Client\EmailSetting;
+use App\Services\EmailService;
 use Illuminate\Http\Request;
-use App\Model\Role;
-use App\Model\User;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\Rule;
-use App\Http\Helper\Log;
+use Illuminate\Support\Facades\Validator;
 
+/**
+ * CRM Email Settings — CRUD + test email (Lumen-compatible)
+ *
+ * Routes (all under jwt.auth middleware):
+ *   GET    /crm/email-settings            → index
+ *   POST   /crm/email-settings            → store
+ *   POST   /crm/email-settings/test       → testEmail
+ *   GET    /crm/email-settings/{id}       → show
+ *   PUT    /crm/email-settings/{id}       → update
+ *   DELETE /crm/email-settings/{id}       → destroy
+ *   POST   /crm/email-settings/{id}/toggle → toggle
+ *
+ * Legacy routes kept for backward compatibility:
+ *   GET    /crm-email-setting             → index
+ *   POST   /crm-email-setting             → store
+ *   POST   /update-crm-email-setting/{id} → update
+ */
 class CrmEmailSettingController extends Controller
 {
+    private const DRIVER_PRESETS = [
+        'Sendgrid'  => ['mail_host' => 'smtp.sendgrid.net',                      'mail_port' => 587, 'mail_encryption' => 'TLS'],
+        'Zoho'      => ['mail_host' => 'smtp.zoho.com',                          'mail_port' => 587, 'mail_encryption' => 'TLS'],
+        'Google'    => ['mail_host' => 'smtp.gmail.com',                         'mail_port' => 587, 'mail_encryption' => 'TLS'],
+        'Mailgun'   => ['mail_host' => 'smtp.mailgun.org',                       'mail_port' => 587, 'mail_encryption' => 'TLS'],
+        'SES'       => ['mail_host' => 'email-smtp.us-east-1.amazonaws.com',     'mail_port' => 587, 'mail_encryption' => 'TLS'],
+        'Sendpulse' => ['mail_host' => 'smtp-pulse.com',                         'mail_port' => 587, 'mail_encryption' => 'TLS'],
+    ];
 
-    /**
-     * @OA\Get(
-     *     path="/crm-email-setting",
-     *     summary="Get all email settings",
-     *     description="Returns a list of email settings .",
-     *     tags={"CrmEmailSetting"},
-     *     security={{"Bearer":{}}},
-     *     @OA\Response(
-     *         response=200,
-     *         description="Email settings fetched successfully",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="message", type="string", example="Email Setting"),
-     *             @OA\Property(
-     *                 property="data",
-     *                 type="object",
-     *                 @OA\Property(property="online", type="object", nullable=true),
-     *                 @OA\Property(property="notification", type="object", nullable=true),
-     *                 @OA\Property(property="submission", type="object", nullable=true),
-     *                 @OA\Property(property="marketing_campaigns", type="object", nullable=true)
-     *             )
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=500,
-     *         description="Failed to list email settings",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="message", type="string", example="Failed to list of Email Setting"),
-     *             @OA\Property(property="errors", type="array", @OA\Items(type="string")),
-     *             @OA\Property(property="trace", type="string"),
-     *             @OA\Property(property="code", type="integer")
-     *         )
-     *     )
-     * )
-     */
+    private const VALID_TYPES = ['online application', 'notification', 'submission', 'marketing_campaigns'];
+    private const VALID_VIA   = ['user_email', 'custom'];
 
-    public function list(Request $request)
+    // ── List ──────────────────────────────────────────────────────────────────
+    public function index(Request $request)
     {
         try {
             $clientId = $request->auth->parent_id;
-            //$clientId = 3;
-            $setting = [];
-            $setting['online'] = EmailSetting::on("mysql_$clientId")->where('mail_type', 'online application')->get()->first();
-            $setting['notification'] = EmailSetting::on("mysql_$clientId")->where('mail_type', 'notification')->get()->first();
-            $setting['submission'] = EmailSetting::on("mysql_$clientId")->where('mail_type', 'submission')->get()->first();
-            $setting['marketing_campaigns'] = EmailSetting::on("mysql_$clientId")->where('mail_type', 'marketing_campaigns')->get()->first();
+            $rows = EmailSetting::on("mysql_{$clientId}")->orderBy('id')->get();
 
-
-            return $this->successResponse("Email Setting", $setting);
-        } catch (\Throwable $exception) {
-            return $this->failResponse("Failed to list of Email Setting", [$exception->getMessage()], $exception, $exception->getCode());
-        }
-    }
-
-    /**
-     * @OA\Post(
-     *     path="/crm-email-setting",
-     *     summary="Create a new SMTP email setting",
-     *     description="Creates and stores a new email setting configuration for the authenticated client's database.",
-     *     tags={"CrmEmailSetting"},
-     *     security={{"Bearer":{}}},
-     *     @OA\RequestBody(
-     *         required=true,
-     *         @OA\JsonContent(
-     *             required={"mail_driver", "mail_username", "mail_password", "sender_email", "mail_type"},
-     *             @OA\Property(property="mail_driver", type="string", example="Sendgrid"),
-     *             @OA\Property(property="mail_username", type="string", example="user@example.com"),
-     *             @OA\Property(property="mail_password", type="string", example="securepassword"),
-     *             @OA\Property(property="mail_encryption", type="string", example="TLS"),
-     *             @OA\Property(property="mail_port", type="integer", example=587),
-     *             @OA\Property(property="sender_email", type="string", example="noreply@example.com"),
-     *             @OA\Property(property="send_email_via", type="string", example="custom"),
-     *             @OA\Property(property="sender_name", type="string", example="Support Team"),
-     *             @OA\Property(property="mail_type", type="string", example="notification")
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="SMTP setting added successfully",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="message", type="string", example="Added Successfully"),
-     *             @OA\Property(property="data", type="object")
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=500,
-     *         description="Failed to save SMTP setting",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="message", type="string", example="Failed to save SMTP setting"),
-     *             @OA\Property(property="errors", type="array", @OA\Items(type="string")),
-     *             @OA\Property(property="trace", type="string"),
-     *             @OA\Property(property="code", type="integer")
-     *         )
-     *     )
-     * )
-     */
-
-
-    public function create(Request $request)
-    {
-
-
-        try {
-            $input = $request->all();
-            $smtp = new EmailSetting();
-            $smtp->setConnection("mysql_" . $request->auth->parent_id);
-            //$smtp->mail_type = 'online application';
-            if ($input["mail_driver"] === "Sendgrid") {
-                $smtp->mail_host = "smtp.sendgrid.net";
-                $smtp->mail_encryption = "TLS";
-                $smtp->mail_port = 587;
-            } elseif (($input["mail_driver"] === "Zoho")) {
-                $smtp->mail_host = "smtp.zoho.com";
-                $smtp->mail_encryption = "TLS";
-                $smtp->mail_port = 587;
-            } elseif (($input["mail_driver"] === "Google")) {
-                $smtp->mail_host = "smtp.gmail.com";
-                $smtp->mail_encryption = "TLS";
-                $smtp->mail_port = 587;
-            }
-            if (!empty($input["mail_driver"])) $smtp->mail_driver = $input["mail_driver"];
-            if (!empty($input["mail_username"])) $smtp->mail_username = $input["mail_username"];
-            if (!empty($input["mail_password"])) $smtp->mail_password = $input["mail_password"];
-            if (!empty($input["mail_encryption"])) $smtp->mail_encryption = $input["mail_encryption"];
-            if (!empty($input["mail_port"])) $smtp->mail_port = $input["mail_port"];
-            if (!empty($input["sender_email"])) $smtp->sender_email = $input["sender_email"];
-            if ($input["mail_type"] == 'notification') {
-                $smtp->send_email_via = 'custom';
-            } else {
-                if (!empty($input["send_email_via"])) $smtp->send_email_via = $input["send_email_via"];
-            }
-            if (!empty($input["sender_name"])) $smtp->sender_name = $input["sender_name"];
-            if (!empty($input["mail_type"])) $smtp->mail_type = $input["mail_type"];
-
-
-            //  return $smtp;
-
-            $smtp->saveOrFail();
-            return $this->successResponse("Added Successfully", $smtp->toArray());
-        } catch (\Throwable $exception) {
-            return $this->failResponse("Failed to save SMTP setting", [$exception->getMessage()], $exception, 500);
-        }
-    }
-
-
-    /**
-     * @OA\Post(
-     *     path="/update-crm-email-setting/{id}",
-     *     summary="Update an existing SMTP email setting",
-     *     description="Updates a specific SMTP email setting configuration for the authenticated client's database by ID.",
-     *     tags={"CrmEmailSetting"},
-     *     security={{"Bearer":{}}},
-     *     @OA\Parameter(
-     *         name="id",
-     *         in="path",
-     *         description="ID of the SMTP setting to update",
-     *         required=true,
-     *         @OA\Schema(type="integer")
-     *     ),
-     *     @OA\RequestBody(
-     *         required=true,
-     *         @OA\JsonContent(
-     *             @OA\Property(property="mail_driver", type="string", example="Zoho"),
-     *             @OA\Property(property="mail_username", type="string", example="user@example.com"),
-     *             @OA\Property(property="mail_password", type="string", example="securepassword"),
-     *             @OA\Property(property="sender_name", type="string", example="Support Team"),
-     *             @OA\Property(property="sender_email", type="string", example="noreply@example.com"),
-     *             @OA\Property(property="send_email_via", type="string", example="custom")
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=200,
-     *         description="SMTP setting updated successfully",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="message", type="string", example="System Setting Updated"),
-     *             @OA\Property(property="data", type="object")
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=404,
-     *         description="SMTP setting not found or update failed",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="message", type="string", example="System Setting Not Found"),
-     *             @OA\Property(property="errors", type="array", @OA\Items(type="string")),
-     *             @OA\Property(property="trace", type="string"),
-     *             @OA\Property(property="code", type="integer")
-     *         )
-     *     )
-     * )
-     */
-
-
-    public function update(Request $request, $id)
-    {
-        $clientId = $request->auth->parent_id;
-
-        try {
-            $System = EmailSetting::on("mysql_$clientId")->findOrFail($id);
-
-            if ($request->input("mail_driver") === "Sendgrid") {
-                $System->mail_host = "smtp.sendgrid.net";
-                $System->mail_encryption = "TLS";
-                $System->mail_port = 587;
-            } elseif (($request->input("mail_driver") === "Zoho")) {
-                $System->mail_host = "smtp.zoho.com";
-                $System->mail_encryption = "TLS";
-                $System->mail_port = 587;
-            } elseif (($request->input("mail_driver") === "Google")) {
-                $System->mail_host = "smtp.gmail.com";
-                $System->mail_encryption = "TLS";
-                $System->mail_port = 587;
-            }
-
-
-            if ($request->has("mail_driver")) {
-                $System->mail_driver = $request->input("mail_driver");
-            }
-            if ($request->has("mail_username")) {
-                $System->mail_username = $request->input("mail_username");
-            }
-            if ($request->has("mail_password")) {
-                $System->mail_password = $request->input("mail_password");
-            }
-            if ($request->has("sender_name")) {
-                $System->sender_name = $request->input("sender_name");
-            }
-            if ($request->has("sender_email")) {
-                $System->sender_email = $request->input("sender_email");
-            }
-
-            if ($request->has("send_email_via")) {
-                if ($request->input("send_email_via") == 'user_email') {
-                    $System->sender_email = '';
-                    $System->sender_name = '';
+            $grouped = ['online' => null, 'notification' => null, 'submission' => null, 'marketing_campaigns' => null];
+            foreach ($rows as $r) {
+                $key = $r->mail_type === 'online application' ? 'online' : $r->mail_type;
+                if (array_key_exists($key, $grouped) && !$grouped[$key]) {
+                    $grouped[$key] = $r;
                 }
-                $System->send_email_via = $request->input("send_email_via");
             }
-            $System->saveOrFail();
 
-            return $this->successResponse("System Setting Updated", $System->toArray());
-        } catch (ModelNotFoundException $exception) {
-            return $this->failResponse("System Setting  Not Found", [
-                "Invalid System Setting  id $id"
-            ], $exception, 404);
-        } catch (\Throwable $exception) {
-            return $this->failResponse("Failed to update System Setting ", [
-                $exception->getMessage()
-            ], $exception, 404);
+            return $this->successResponse('Email Settings', ['list' => $rows, 'grouped' => $grouped]);
+        } catch (\Throwable $e) {
+            return $this->failResponse('Failed to list email settings', [$e->getMessage()], $e, 500);
         }
+    }
+
+    // Legacy alias
+    public function list(Request $request) { return $this->index($request); }
+
+    // ── Show ──────────────────────────────────────────────────────────────────
+    public function show(Request $request, int $id)
+    {
+        try {
+            $setting = EmailSetting::on("mysql_{$request->auth->parent_id}")->findOrFail($id);
+            return $this->successResponse('Email Setting', $setting);
+        } catch (\Throwable $e) {
+            return $this->failResponse('Setting not found', [$e->getMessage()], $e, 404);
+        }
+    }
+
+    // ── Create ────────────────────────────────────────────────────────────────
+    public function store(Request $request)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            $input    = $request->all();
+
+            $v = Validator::make($input, [
+                'mail_type'      => 'required|in:' . implode(',', self::VALID_TYPES),
+                'mail_driver'    => 'required|string|max:50',
+                'mail_username'  => 'required|string|max:255',
+                'mail_password'  => 'required|string',
+                'sender_email'   => 'required|email',
+                'sender_name'    => 'nullable|string|max:100',
+                'send_email_via' => 'nullable|in:' . implode(',', self::VALID_VIA),
+                'mail_host'      => 'nullable|string|max:255',
+                'mail_port'      => 'nullable|integer',
+                'mail_encryption'=> 'nullable|string|max:10',
+                'meta_json'      => 'nullable|string',
+            ]);
+            if ($v->fails()) {
+                return response()->json(['success' => false, 'message' => 'Validation failed', 'errors' => $v->errors()], 422);
+            }
+
+            $data = $this->applyDriverPreset($input);
+            $data['send_email_via'] = ($data['mail_type'] === 'notification') ? 'custom' : ($data['send_email_via'] ?? 'custom');
+
+            $setting = new EmailSetting($data);
+            $setting->setConnection("mysql_{$clientId}");
+            $setting->status = 1;
+            $setting->saveOrFail();
+
+            return $this->successResponse('Email setting created', $setting->toArray());
+        } catch (\Throwable $e) {
+            return $this->failResponse('Failed to create email setting', [$e->getMessage()], $e, 500);
+        }
+    }
+
+    // Legacy alias
+    public function create(Request $request) { return $this->store($request); }
+
+    // ── Update ────────────────────────────────────────────────────────────────
+    public function update(Request $request, int $id)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            $setting  = EmailSetting::on("mysql_{$clientId}")->findOrFail($id);
+            $input    = $request->all();
+
+            $v = Validator::make($input, [
+                'mail_type'      => 'sometimes|in:' . implode(',', self::VALID_TYPES),
+                'mail_driver'    => 'sometimes|string|max:50',
+                'mail_username'  => 'sometimes|string|max:255',
+                'mail_password'  => 'sometimes|string',
+                'sender_email'   => 'sometimes|email',
+                'sender_name'    => 'nullable|string|max:100',
+                'send_email_via' => 'nullable|in:' . implode(',', self::VALID_VIA),
+                'mail_host'      => 'nullable|string|max:255',
+                'mail_port'      => 'nullable|integer',
+                'mail_encryption'=> 'nullable|string|max:10',
+                'meta_json'      => 'nullable|string',
+            ]);
+            if ($v->fails()) {
+                return response()->json(['success' => false, 'message' => 'Validation failed', 'errors' => $v->errors()], 422);
+            }
+
+            if (isset($input['mail_driver'])) {
+                $input = $this->applyDriverPreset($input);
+            }
+            if (($input['send_email_via'] ?? null) === 'user_email') {
+                $input['sender_email'] = '';
+                $input['sender_name']  = '';
+            }
+
+            $setting->fill($input);
+            $setting->saveOrFail();
+
+            return $this->successResponse('Email setting updated', $setting->toArray());
+        } catch (\Throwable $e) {
+            return $this->failResponse('Failed to update email setting', [$e->getMessage()], $e, 500);
+        }
+    }
+
+    // ── Delete ────────────────────────────────────────────────────────────────
+    public function destroy(Request $request, int $id)
+    {
+        try {
+            EmailSetting::on("mysql_{$request->auth->parent_id}")->findOrFail($id)->delete();
+            return $this->successResponse('Email setting deleted', []);
+        } catch (\Throwable $e) {
+            return $this->failResponse('Failed to delete email setting', [$e->getMessage()], $e, 500);
+        }
+    }
+
+    // ── Toggle active / inactive ──────────────────────────────────────────────
+    public function toggle(Request $request, int $id)
+    {
+        try {
+            $setting = EmailSetting::on("mysql_{$request->auth->parent_id}")->findOrFail($id);
+            $setting->status = $setting->status ? 0 : 1;
+            $setting->saveOrFail();
+            return $this->successResponse(
+                $setting->status ? 'Setting activated' : 'Setting deactivated',
+                ['id' => $id, 'status' => $setting->status]
+            );
+        } catch (\Throwable $e) {
+            return $this->failResponse('Failed to toggle email setting', [$e->getMessage()], $e, 500);
+        }
+    }
+
+    // ── Test email (pre-save) ─────────────────────────────────────────────────
+    public function testEmail(Request $request)
+    {
+        $input = $request->all();
+
+        $v = Validator::make($input, [
+            'config.mail_host'       => 'required|string',
+            'config.mail_port'       => 'required|integer',
+            'config.mail_username'   => 'required|string',
+            'config.mail_password'   => 'required|string',
+            'config.mail_encryption' => 'required|string',
+            'config.sender_email'    => 'required|email',
+            'config.sender_name'     => 'nullable|string',
+            'test_to'                => 'required|email',
+        ]);
+        if ($v->fails()) {
+            return response()->json(['success' => false, 'message' => 'Validation failed', 'errors' => $v->errors()], 422);
+        }
+
+        $result = EmailService::test($input['config'], $input['test_to']);
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    private function applyDriverPreset(array $data): array
+    {
+        $driver = $data['mail_driver'] ?? null;
+        if ($driver && isset(self::DRIVER_PRESETS[$driver])) {
+            $preset = self::DRIVER_PRESETS[$driver];
+            $data['mail_host']       = $data['mail_host']       ?? $preset['mail_host'];
+            $data['mail_port']       = $data['mail_port']       ?? $preset['mail_port'];
+            $data['mail_encryption'] = $data['mail_encryption'] ?? $preset['mail_encryption'];
+        }
+        return $data;
     }
 }

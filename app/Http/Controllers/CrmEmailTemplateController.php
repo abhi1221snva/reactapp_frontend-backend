@@ -44,9 +44,16 @@ class CrmEmailTemplateController extends Controller
     public function list(Request $request)
     {
         try {
-            $clientId = $request->auth->parent_id;
-            $EmailTemplates = [];
-            $EmailTemplates = CrmEmailTemplate::on("mysql_$clientId")->orderBy('id', 'DESC')->get()->all();
+            $clientId  = $request->auth->parent_id;
+            $emailType = $request->query('type');
+
+            $query = CrmEmailTemplate::on("mysql_$clientId")->orderBy('id', 'DESC');
+
+            if ($emailType) {
+                $query->where('email_type', $emailType);
+            }
+
+            $EmailTemplates = $query->get()->all();
             return $this->successResponse("Email Templates", $EmailTemplates);
         } catch (\Throwable $exception) {
             return $this->failResponse("Failed to list Email Templates", [$exception->getMessage()], $exception, $exception->getCode());
@@ -235,6 +242,8 @@ class CrmEmailTemplateController extends Controller
                 $EmailTemplates->lead_status = $request->input("lead_status");
             if ($request->has("send_bcc"))
                 $EmailTemplates->send_bcc = $request->input("send_bcc");
+            if ($request->has("email_type"))
+                $EmailTemplates->email_type = $request->input("email_type");
             $EmailTemplates->saveOrFail();
             return $this->successResponse("Email Template Update", $EmailTemplates->toArray());
         } catch (ModelNotFoundException $exception) {

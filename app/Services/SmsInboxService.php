@@ -56,11 +56,33 @@ class SmsInboxService
             $query->where('c.status', '!=', 'archived');
         }
 
+        // Agent id filter
+        if (!empty($filters['agent_id'])) {
+            $query->where('c.agent_id', (int) $filters['agent_id']);
+        }
+
         $total   = $query->count();
         $records = $query->offset(($page - 1) * $perPage)->limit($perPage)->get()->toArray();
 
+        // Resolve agent names from master DB in one query
+        $agentIds = array_values(array_filter(array_unique(array_column(array_map(fn ($r) => (array) $r, $records), 'agent_id'))));
+        $agentNames = [];
+        if (!empty($agentIds)) {
+            $agents = \Illuminate\Support\Facades\DB::connection('master')
+                ->table('users')
+                ->whereIn('id', $agentIds)
+                ->get(['id', 'first_name', 'last_name']);
+            foreach ($agents as $a) {
+                $agentNames[$a->id] = trim("{$a->first_name} {$a->last_name}");
+            }
+        }
+
         return [
-            'data'         => array_map(fn ($r) => (array) $r, $records),
+            'data'         => array_map(function ($r) use ($agentNames) {
+                $r = (array) $r;
+                $r['agent_name'] = $r['agent_id'] ? ($agentNames[$r['agent_id']] ?? null) : null;
+                return $r;
+            }, $records),
             'total'        => $total,
             'page'         => $page,
             'per_page'     => $perPage,
@@ -115,17 +137,26 @@ class SmsInboxService
      * Resolves a "from" number from campaign_numbers, then delegates to TwilioService.
      * Saves the message record regardless of Twilio success/failure.
      */
-    public function sendMessage(int $clientId, int $conversationId, string $body, int $userId): CrmSmsMessage
+    public function sendMessage(int $clientId, int $conversationId, string $body, int $userId, ?string $fromNumber = null): CrmSmsMessage
     {
         $conn         = "mysql_{$clientId}";
         $conversation = CrmSmsConversation::on($conn)->findOrFail($conversationId);
 
-        // Resolve a from-number: prefer a campaign number for this client
-        $fromNumber = DB::connection($conn)
-            ->table('campaign_numbers')
-            ->whereNotNull('phone_number')
-            ->value('phone_number');
-
+        // Use caller-supplied number, then fall back to a campaign number, then config default
+        if (!$fromNumber) {
+            $fromNumber = DB::connection($conn)
+                ->table('twilio_numbers')
+                ->where('status', 'active')
+                ->whereRaw("JSON_EXTRACT(capabilities, '$.sms') = true")
+                ->value('phone_number');
+        }
+        if (!$fromNumber) {
+            $fromNumber = DB::connection($conn)
+                ->table('campaign_numbers')
+                ->join('twilio_numbers', 'twilio_numbers.id', '=', 'campaign_numbers.twilio_number_id')
+                ->whereNotNull('twilio_numbers.phone_number')
+                ->value('twilio_numbers.phone_number');
+        }
         if (!$fromNumber) {
             $fromNumber = config('services.twilio.from_number', '+10000000000');
         }
@@ -215,6 +246,66 @@ class SmsInboxService
         $conversation->update(['last_message_at' => Carbon::now()]);
 
         return $message;
+    }
+
+    /**
+     * Start an outbound conversation to an arbitrary phone number.
+     * Reuses any existing open conversation for that number; otherwise creates one.
+     * Attempts to link the conversation to a CRM lead if one matches the phone.
+     *
+     * @return array{conversation: array, message: array}
+     */
+    public function startNewConversation(int $clientId, string $phone, string $body, int $userId, ?string $fromNumber = null): array
+    {
+        $conn = "mysql_{$clientId}";
+
+        // Reuse existing open conversation for this phone if one exists
+        $conversation = CrmSmsConversation::on($conn)
+            ->where('lead_phone', $phone)
+            ->where('status', 'open')
+            ->latest('last_message_at')
+            ->first();
+
+        if (!$conversation) {
+            // Try to match an existing CRM lead by phone_number
+            $normalised = preg_replace('/\D/', '', $phone);
+            $lead = DB::connection($conn)
+                ->table('crm_leads')
+                ->where(function ($q) use ($phone, $normalised) {
+                    $q->where('phone_number', $phone)
+                      ->orWhere('phone_number', $normalised);
+                })
+                ->first(['id']);
+
+            $conversation = CrmSmsConversation::on($conn)->create([
+                'lead_id'         => $lead->id ?? null,
+                'lead_phone'      => $phone,
+                'agent_id'        => null,
+                'last_message_at' => Carbon::now(),
+                'unread_count'    => 0,
+                'status'          => 'open',
+            ]);
+        }
+
+        $message = $this->sendMessage($clientId, $conversation->id, $body, $userId, $fromNumber);
+
+        // Re-fetch so last_message_at is up to date
+        $conversation = CrmSmsConversation::on($conn)->find($conversation->id);
+
+        return [
+            'conversation' => $conversation->toArray(),
+            'message'      => $message->toArray(),
+        ];
+    }
+
+    /**
+     * Assign (or unassign) an agent to a conversation.
+     */
+    public function assignAgent(int $clientId, int $conversationId, ?int $agentId): void
+    {
+        CrmSmsConversation::on("mysql_{$clientId}")
+            ->where('id', $conversationId)
+            ->update(['agent_id' => $agentId]);
     }
 
     /**

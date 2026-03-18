@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\TenantAware;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Laravel\Lumen\Routing\Controller as BaseController;
 
@@ -67,6 +68,21 @@ class Controller extends BaseController
             "message" => $message,
             "data" => $data
         ]);
+    }
+
+    /**
+     * Resolve the portal base URL for a tenant from crm_system_setting.company_domain.
+     * Falls back to APP_FRONTEND_URL / APP_URL env vars if not set.
+     * Always returns a URL with NO trailing slash.
+     */
+    protected function getPortalBaseUrl(int $clientId): string
+    {
+        $domain = DB::connection("mysql_{$clientId}")
+            ->table('crm_system_setting')
+            ->orderBy('id')
+            ->value('company_domain');
+
+        return rtrim($domain ?: env('APP_FRONTEND_URL', env('APP_URL', '')), '/');
     }
 
     protected function failResponse(string $message, array $errors = [], \Throwable $exception = null, $httpStatus=500)

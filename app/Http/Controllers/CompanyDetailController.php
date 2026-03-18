@@ -102,7 +102,7 @@ class CompanyDetailController extends Controller
                     ? rtrim($websiteUrl, '/') . '/apply/{your_code}'
                     : null,
                 'merchant_url_example' => $websiteUrl
-                    ? rtrim($websiteUrl, '/') . '/merchant/{lead_token}'
+                    ? rtrim($websiteUrl, '/') . '/merchant/customer/app/index/{client_id}/{lead_id}/{lead_token}'
                     : null,
             ]);
         } catch (\Throwable $e) {
@@ -357,8 +357,8 @@ class CompanyDetailController extends Controller
             }
 
             $setting     = $this->getSystemSetting($clientId);
-            $websiteUrl  = $setting->company_domain ?? env('APP_FRONTEND_URL', '');
-            $merchantUrl = rtrim($websiteUrl, '/') . '/merchant/' . $lead->lead_token;
+            $websiteUrl  = rtrim($setting->company_domain ?? env('APP_FRONTEND_URL', ''), '/');
+            $merchantUrl = $websiteUrl . '/merchant/customer/app/index/' . $clientId . '/' . $id . '/' . $lead->lead_token;
 
             return $this->successResponse('Merchant link', [
                 'lead_token'   => $lead->lead_token,

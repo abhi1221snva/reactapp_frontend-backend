@@ -40,7 +40,13 @@ class SendCrmNotificationEmail extends Job
 
         $company_name = $client->company_name;
 
-        $smtp_setting = EmailSetting::on("mysql_$clientId")->where('mail_type',$emailType)->first();    
+        // Prefer active config; fall back to any config for the type (backward compat)
+        $smtp_setting = EmailSetting::on("mysql_$clientId")
+            ->where('mail_type', $emailType)
+            ->where('status', 1)
+            ->first()
+            ?? EmailSetting::on("mysql_$clientId")->where('mail_type', $emailType)->first();
+
             //if($smtp_setting['send_email_via'] == 'user_email') 
             if($smtp_setting['send_email_via'] == 'user_email' && $smtp_setting['mail_type'] != 'notification') 
 

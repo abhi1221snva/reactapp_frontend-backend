@@ -448,7 +448,10 @@ HTML;
             try {
                 if (!DB::connection($conn)->getSchemaBuilder()->hasTable('crm_leads')) continue;
                 $lead = DB::connection($conn)->table('crm_leads')
-                    ->where('lead_token', $token)
+                    ->where(function ($q) use ($token) {
+                        $q->where('lead_token', $token)
+                          ->orWhere('unique_token', $token);
+                    })
                     ->whereNull('deleted_at')
                     ->first();
                 if ($lead) {
@@ -521,23 +524,49 @@ HTML;
         $leadId = $lead->id;
         $now    = now();
 
+        // ── 1. Load current EAV values for field-level diff ──────────────────
+        $currentValues = [];
         if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_values')) {
-            foreach ($formData as $key => $value) {
+            $currentValues = DB::connection($conn)
+                ->table('crm_lead_values')
+                ->where('lead_id', $leadId)
+                ->pluck('field_value', 'field_key')
+                ->toArray();
+        }
+
+        // ── 2. Detect actual changes ──────────────────────────────────────────
+        $changes = [];
+        foreach ($formData as $key => $newVal) {
+            $newVal = ($newVal === '') ? null : $newVal;
+            $oldVal = $currentValues[$key] ?? null;
+            if ((string) $oldVal !== (string) $newVal) {
+                $changes[$key] = ['old' => $oldVal, 'new' => $newVal];
+            }
+        }
+
+        if (empty($changes)) {
+            return; // nothing actually changed — skip all writes
+        }
+
+        // ── 3. Write EAV updates ──────────────────────────────────────────────
+        if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_values')) {
+            foreach ($changes as $key => $diff) {
                 DB::connection($conn)->table('crm_lead_values')->updateOrInsert(
                     ['lead_id' => $leadId, 'field_key' => $key],
-                    ['field_value' => $value, 'updated_at' => $now, 'created_at' => $now]
+                    ['field_value' => $diff['new'], 'updated_at' => $now, 'created_at' => $now]
                 );
             }
         }
 
+        // ── 4. Mirror to legacy crm_lead_data if it exists ───────────────────
         if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_data')) {
             $columnMap  = $this->buildColumnMap($conn);
             $updateData = ['updated_at' => $now];
-            foreach ($formData as $fieldKey => $value) {
+            foreach ($changes as $fieldKey => $diff) {
                 if (isset($columnMap['direct'][$fieldKey])) {
-                    $updateData[$columnMap['direct'][$fieldKey]] = $value;
+                    $updateData[$columnMap['direct'][$fieldKey]] = $diff['new'];
                 } elseif (isset($columnMap['mapped'][$fieldKey])) {
-                    $updateData[$columnMap['mapped'][$fieldKey]] = $value;
+                    $updateData[$columnMap['mapped'][$fieldKey]] = $diff['new'];
                 }
             }
             try {
@@ -547,7 +576,35 @@ HTML;
             }
         }
 
-        $this->logActivity($conn, $leadId, 0, 'merchant_update', 'Merchant updated application via self-service portal.');
+        // ── 5. Write per-field activity entries to crm_lead_activity ─────────
+        if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_activity')) {
+            foreach ($changes as $field => $diff) {
+                $label   = ucwords(str_replace('_', ' ', $field));
+                $oldDisp = $diff['old'] ?? '(empty)';
+                $newDisp = $diff['new'] ?? '(empty)';
+                try {
+                    DB::connection($conn)->table('crm_lead_activity')->insert([
+                        'lead_id'       => $leadId,
+                        'user_id'       => null,
+                        'activity_type' => 'system',
+                        'subject'       => "Merchant updated {$label}: \"{$oldDisp}\" → \"{$newDisp}\"",
+                        'body'          => null,
+                        'meta'          => json_encode([
+                            'field'     => $field,
+                            'old_value' => $diff['old'],
+                            'new_value' => $diff['new'],
+                            'source'    => 'merchant_portal',
+                        ]),
+                        'source_type'   => 'api',
+                        'is_pinned'     => 0,
+                        'created_at'    => $now,
+                        'updated_at'    => $now,
+                    ]);
+                } catch (\Throwable $e) {
+                    \Log::warning("Merchant activity insert failed for field {$field}: " . $e->getMessage());
+                }
+            }
+        }
     }
 
     public function storeDocument(object $lead, int $clientId, $file, string $docType): array
@@ -754,12 +811,16 @@ HTML;
         try {
             if (!DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_activity')) return;
             DB::connection($conn)->table('crm_lead_activity')->insert([
-                'lead_id'     => $leadId,
-                'user_id'     => $userId,
-                'activity'    => $type,
-                'description' => $note,
-                'created_at'  => now(),
-                'updated_at'  => now(),
+                'lead_id'       => $leadId,
+                'user_id'       => $userId ?: null,
+                'activity_type' => $type,   // was 'activity' — wrong column name, fixed
+                'subject'       => $note,   // was 'description' — wrong column name, fixed
+                'body'          => null,
+                'meta'          => null,
+                'source_type'   => 'api',
+                'is_pinned'     => 0,
+                'created_at'    => now(),
+                'updated_at'    => now(),
             ]);
         } catch (\Throwable $e) { /* non-fatal */ }
     }

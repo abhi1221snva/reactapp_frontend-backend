@@ -270,9 +270,7 @@ class AffiliateController extends Controller
         try
         {
 
-             $DomainList = DomainList::where('client_id',$request->auth->parent_id)->get()->first();
-
-            $domain_list = $DomainList->domain_name;
+            $domain_list = $this->getPortalBaseUrl((int) $request->auth->parent_id);
 
             $file_path = env('FILE_UPLOAD_PATH');
             $title = $request->title;
@@ -344,8 +342,8 @@ class AffiliateController extends Controller
                                     $list_data['created_at'] = date('y-m-d h:i:s');
                                     $list_data['updated_at'] = date('y-m-d h:i:s');
                                     $list_data['unique_token'] = $this->generateCode();
-                                    $url = $domain_list.$request->auth->parent_id.'/'.$r.'/'.$list_data['unique_token'];
-                                    $list_data['unique_url'] = '<a href="'.$url.'">Click Here</a>';
+                                    $url = $domain_list . '/merchant/customer/app/index/' . $request->auth->parent_id . '/' . $r . '/' . $list_data['unique_token'];
+                                    $list_data['unique_url'] = '<a href="' . $url . '">Click Here</a>';
 
                                     $list_data['lead_status'] = 'new_lead';
                                     $list_data['option_' . $r] = $ept;
@@ -431,9 +429,7 @@ Log::info('reached',[$request->all()]);
              $clientId = $client_id;
         /*$this->validate($request, ['phone_number' => 'required|string|max:255|unique:'.'mysql_'.$clientId.'.crm_lead_data','email' => 'required|string|unique:'.'mysql_'.$clientId.'.crm_lead_data']);*/
 
-        $DomainList = DomainList::where('client_id',$clientId)->get()->first();
-
-        $domain_list = $DomainList->domain_name;
+        $domain_list = $this->getPortalBaseUrl((int) $clientId);
 
         $clientId = $clientId;
 
@@ -488,8 +484,8 @@ Log::info('reached',[$request->all()]);
             $phone = $objLead->phone_number;
             $phone_new = str_replace(array('(',')', '_', '-',' '), array(''), $phone);
             $unique_token = $this->generateCode();
-            $merchant_url = $domain_list.'merchant/'.$unique_token;
-            $url = '<a href="'.$merchant_url.'">Click Here</a>';
+            $merchant_url = $domain_list . '/merchant/customer/app/index/' . $clientId . '/' . $lastId . '/' . $unique_token;
+            $url = '<a href="' . $merchant_url . '">Click Here</a>';
             $lead = Lead::on("mysql_$clientId")->findorfail($lastId);
             $lead->unique_url = $url;
             $lead->unique_token = $unique_token;
@@ -826,12 +822,8 @@ Log::info('reached',[$request->all()]);
     public function createLead(Request $request)
     {
         //return $request->all();
-         $DomainList = DomainList::where('client_id',$request->auth->parent_id)->get()->first();
-
-        $domain_list = $DomainList->domain_name;
-
-
         $clientId = $request->auth->parent_id;
+        $domain_list = $this->getPortalBaseUrl($clientId);
         //Validation
         $arrValidationRules = $this->validateLeadInfo($clientId);
         //$this->validate($request, $arrValidationRules);
@@ -855,8 +847,8 @@ Log::info('reached',[$request->all()]);
                 $unique_token = $this->generateCode();
                 $objLeadUpdate = Lead::on("mysql_$clientId")->findOrFail($lastId);
 
-                $merchant_url = $domain_list.'merchant/'.$unique_token;
-                $url = '<a href="'.$merchant_url.'">Click Here</a>';
+                $merchant_url = $domain_list . '/merchant/customer/app/index/' . $clientId . '/' . $lastId . '/' . $unique_token;
+                $url = '<a href="' . $merchant_url . '">Click Here</a>';
 
                // $url = $domain_list.$clientId.'/'.$lastId.'/'.$unique_token;
                 $objLeadUpdate->unique_url = $url;

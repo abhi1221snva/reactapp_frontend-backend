@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Model\Client\CrmMerchantPortal;
 use App\Model\Client\Lead;
-use App\Model\Master\DomainList;
 use Illuminate\Support\Str;
 
 class CrmMerchantPortalController extends Controller
@@ -21,12 +20,8 @@ class CrmMerchantPortalController extends Controller
 
             $lead = Lead::on("mysql_$clientId")->findOrFail($id);
 
-            // Get tenant domain
-            $domainRecord = DomainList::where('client_id', $clientId)->first();
-            $domain       = $domainRecord ? $domainRecord->domain_name : '';
-
             $token = Str::random(40);
-            $url   = $domain . 'merchant/' . $token;
+            $url   = $this->getPortalBaseUrl($clientId) . '/merchant/customer/app/index/' . $clientId . '/' . $id . '/' . $token;
 
             // Create new portal record
             $portal = new CrmMerchantPortal();
@@ -42,6 +37,12 @@ class CrmMerchantPortalController extends Controller
             $lead->unique_token = $token;
             $lead->unique_url   = '<a href="' . $url . '">Click Here</a>';
             $lead->save();
+
+            // Update crm_leads so resolveLeadToken() can find this token on the public merchant page
+            \Illuminate\Support\Facades\DB::connection("mysql_$clientId")
+                ->table('crm_leads')
+                ->where('id', $id)
+                ->update(['lead_token' => $token, 'unique_token' => $token]);
 
             return $this->successResponse("Merchant Portal Link Generated", [
                 'portal_id'  => $portal->id,
