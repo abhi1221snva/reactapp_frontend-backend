@@ -491,7 +491,7 @@ class LeadController extends Controller
                                     $list_data['updated_at'] = date('y-m-d h:i:s');
                                     $list_data['unique_token'] = $this->generateCode();
                                     $url = $domain_list . '/merchant/customer/app/index/' . $request->auth->parent_id . '/' . $r . '/' . $list_data['unique_token'];
-                                    $list_data['unique_url'] = '<a href="' . $url . '">Click Here</a>';
+                                    $list_data['unique_url'] = $url;
 
                                     $list_data['lead_status'] = 'new_lead';
                                     $list_data['option_' . $r] = $ept;
@@ -572,9 +572,8 @@ class LeadController extends Controller
             $phone_new = str_replace(array('(', ')', '_', '-', ' '), array(''), $phone);
             $unique_token = $this->generateCode();
             $merchant_url = $this->getPortalBaseUrl($clientId) . '/merchant/customer/app/index/' . $clientId . '/' . $lastId . '/' . $unique_token;
-            $url = '<a href="' . $merchant_url . '">Click Here</a>';
             $lead = Lead::on("mysql_$clientId")->findorfail($lastId);
-            $lead->unique_url = $url;
+            $lead->unique_url   = $merchant_url;
             $lead->unique_token = $unique_token;
             $lead->lead_status = 'new_lead';
             $lead->phone_number = $phone_new;
@@ -700,7 +699,7 @@ class LeadController extends Controller
             $lastId       = $objLead->id;
             $unique_token = $this->generateCode();
             $merchant_url = $this->getPortalBaseUrl($clientId) . '/merchant/customer/app/index/' . $clientId . '/' . $lastId . '/' . $unique_token;
-            $objLead->unique_url   = '<a href="' . $merchant_url . '">Click Here</a>';
+            $objLead->unique_url   = $merchant_url;
             $objLead->unique_token = $unique_token;
             $objLead->lead_token   = $unique_token;
             $objLead->save();
@@ -1305,9 +1304,8 @@ class LeadController extends Controller
                 $objLeadUpdate = Lead::on("mysql_$clientId")->findOrFail($lastId);
 
                 $merchant_url = $this->getPortalBaseUrl($clientId) . '/merchant/customer/app/index/' . $clientId . '/' . $lastId . '/' . $unique_token;
-                $url = '<a href="' . $merchant_url . '">Click Here</a>';
 
-                $objLeadUpdate->unique_url = $url;
+                $objLeadUpdate->unique_url   = $merchant_url;
                 $objLeadUpdate->unique_token = $unique_token;
                 $objLeadUpdate->created_by = $request->auth->id;
                 $objLeadUpdate->assigned_to = $request->auth->id;
@@ -2119,6 +2117,43 @@ class LeadController extends Controller
                 if (!isset($data[$k])) $data[$k] = '';
             }
 
+            // ── unique_url: use DB value as-is; normalise to anchor tag ─────────
+            // NEVER strip the anchor tag or reconstruct the URL from config/token
+            // if a value already exists — that would replace the correct stored URL
+            // with the wrong domain from crm_system_setting.company_domain.
+            // The blade uses {!! $content !!} so HTML anchor tags render correctly.
+            Log::info('[buildLeadData] DB_unique_url', [
+                'lead_id'    => $leadId,
+                'unique_url' => $data['unique_url'] ?? null,
+            ]);
+
+            $rawUniqueUrl = (string) ($data['unique_url'] ?? '');
+            if (!empty($rawUniqueUrl)) {
+                // Already an anchor tag — use as-is so it renders as "Click Here"
+                if (strpos($rawUniqueUrl, '<a ') !== false) {
+                    $data['unique_url'] = $rawUniqueUrl;
+                } else {
+                    // Plain URL stored in DB — wrap in anchor tag for clickable email output
+                    $data['unique_url'] = '<a href="' . htmlspecialchars($rawUniqueUrl, ENT_QUOTES, 'UTF-8') . '">Click Here</a>';
+                }
+            } else {
+                // Edge case only: unique_url is NULL/empty — generate once from token, persist.
+                // Only reaches here when the lead was never assigned a portal link.
+                $token = $data['unique_token'] ?? $data['lead_token'] ?? null;
+                if ($token) {
+                    $plainUrl = $this->getPortalBaseUrl($clientId)
+                        . '/merchant/customer/app/index/' . $clientId . '/' . $leadId . '/' . $token;
+                    $data['unique_url'] = '<a href="' . $plainUrl . '">Click Here</a>';
+                    // Persist so this is never regenerated again.
+                    try {
+                        DB::connection($conn)->table('crm_leads')->where('id', $leadId)
+                            ->update(['unique_url' => $data['unique_url']]);
+                    } catch (\Throwable $ignored) {}
+                } else {
+                    $data['unique_url'] = '';
+                }
+            }
+
         return $data;
     }
 
@@ -2186,6 +2221,14 @@ class LeadController extends Controller
             $template = \App\Model\Client\CrmEmailTemplate::on($conn)->findOrFail((int) $templateId);
 
             $data    = $this->buildLeadData($leadId, $conn, $clientId, $request->auth);
+
+            \Illuminate\Support\Facades\Log::info('[resolveEmailTemplate] unique_url resolved', [
+                'lead_id'       => $leadId,
+                'template_id'   => $templateId,
+                'unique_url'    => $data['unique_url'] ?? null,
+                'unique_token'  => $data['unique_token'] ?? null,
+            ]);
+
             $subject = $this->applyPlaceholders($template->subject ?? '', $data);
             $html    = $this->applyPlaceholders($template->template_html ?? '', $data);
 

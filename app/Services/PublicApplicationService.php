@@ -524,15 +524,36 @@ HTML;
         $leadId = $lead->id;
         $now    = now();
 
-        // ── 1. Load current EAV values for field-level diff ──────────────────
-        $currentValues = [];
+        // ── 1. Load current values for diff (legacy + EAV, same as display) ──
+        // Must mirror getMerchantLeadData() merge so we compare what the
+        // merchant actually sees, not just what's in EAV (which may be empty
+        // for leads that were created before the EAV migration).
+        $legacyCurrent = [];
+        if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_data')) {
+            $legacyRow = DB::connection($conn)->table('crm_lead_data')->where('id', $leadId)->first();
+            if ($legacyRow) {
+                $columnMap = $this->buildColumnMap($conn);
+                foreach ($columnMap['mapped'] as $fieldKey => $col) {
+                    $val = ((array) $legacyRow)[$col] ?? null;
+                    if ($val !== null && $val !== '') $legacyCurrent[$fieldKey] = $val;
+                }
+                foreach (['first_name','last_name','email','phone_number','dob','city','state','country','address','company_name','signature_image'] as $col) {
+                    if (!empty(((array) $legacyRow)[$col])) $legacyCurrent[$col] = ((array) $legacyRow)[$col];
+                }
+            }
+        }
+
+        $eavCurrent = [];
         if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_values')) {
-            $currentValues = DB::connection($conn)
+            $eavCurrent = DB::connection($conn)
                 ->table('crm_lead_values')
                 ->where('lead_id', $leadId)
                 ->pluck('field_value', 'field_key')
                 ->toArray();
         }
+
+        // EAV takes priority over legacy (same merge order as getMerchantLeadData)
+        $currentValues = array_merge($legacyCurrent, $eavCurrent);
 
         // ── 2. Detect actual changes ──────────────────────────────────────────
         $changes = [];
