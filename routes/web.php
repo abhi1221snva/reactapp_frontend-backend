@@ -18,6 +18,7 @@ $router->group(['middleware' => ['throttle:60,1']], function () use ($router) {
     $router->get('public/apply/{token}/pdf',             'PublicApplicationController@renderApplicationPdf');
     $router->get('public/merchant/{token}',              'PublicApplicationController@getMerchantPortal');
     $router->post('public/merchant/{token}',             'PublicApplicationController@updateMerchant');
+    $router->get('public/merchant/{token}/render-pdf',   'PublicApplicationController@renderMerchantPdf');
     $router->get('public/merchant/{token}/document-types', 'PublicApplicationController@getDocumentTypes');
     $router->post('public/merchant/{token}/upload',        'PublicApplicationController@uploadDocument');
 
@@ -36,6 +37,10 @@ $router->group(['middleware' => ['throttle:60,1']], function () use ($router) {
 
     // Lead document serve — validated by lead_token ownership
     $router->get('public/lead/{token}/document/{docId}', 'PublicApplicationController@serveDocument');
+
+    // Lead signature serve + merchant signature save
+    $router->get('public/lead/{token}/signature',         'PublicApplicationController@serveSignature');
+    $router->post('public/merchant/{token}/signature',    'PublicApplicationController@saveMerchantSignature');
 });
 
 $router->get('/list-all-cache', 'RedisCacheController@listAllCache');

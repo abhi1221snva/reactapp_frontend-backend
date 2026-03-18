@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\PublicApplicationService;
+use App\Services\LeadPdfService;
 use Illuminate\Http\Request;
 
 /**
@@ -14,10 +15,12 @@ use Illuminate\Http\Request;
 class PublicApplicationController extends Controller
 {
     private PublicApplicationService $svc;
+    private LeadPdfService $pdfSvc;
 
-    public function __construct(PublicApplicationService $svc)
+    public function __construct(PublicApplicationService $svc, LeadPdfService $pdfSvc)
     {
-        $this->svc = $svc;
+        $this->svc    = $svc;
+        $this->pdfSvc = $pdfSvc;
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -145,6 +148,33 @@ class PublicApplicationController extends Controller
     }
 
     /**
+     * GET /public/merchant/{token}/render-pdf
+     *
+     * Renders the SAME signature_application PDF template used in the CRM
+     * (LeadController::renderPdf) but authenticated by lead token instead of JWT.
+     * Returns full rendered HTML — identical to the CRM version.
+     */
+    public function renderMerchantPdf(Request $request, string $token)
+    {
+        try {
+            [$lead, $clientId] = $this->svc->resolveLeadToken($token);
+
+            $result = $this->pdfSvc->renderPdfHtml($clientId, $lead->id);
+
+            return response($result['html'], 200)
+                ->header('Content-Type', 'text/html; charset=UTF-8')
+                ->header('X-Frame-Options', 'SAMEORIGIN');
+        } catch (\RuntimeException $e) {
+            $code = $e->getCode() ?: 400;
+            return response('<h1>' . ($code === 404 ? 'Not Found' : 'Error') . '</h1><p>' . htmlspecialchars($e->getMessage()) . '</p>', $code)
+                ->header('Content-Type', 'text/html');
+        } catch (\Throwable $e) {
+            return response('<h1>Error</h1><p>Unable to generate PDF.</p>', 500)
+                ->header('Content-Type', 'text/html');
+        }
+    }
+
+    /**
      * POST /public/merchant/{token}
      * Update lead fields from merchant portal.
      */
@@ -163,6 +193,62 @@ class PublicApplicationController extends Controller
     }
 
     /**
+     * GET /public/lead/{token}/signature
+     * Serve the lead's signature image (no auth — validated by lead_token ownership).
+     */
+    public function serveSignature(Request $request, string $token)
+    {
+        try {
+            [$lead, $clientId] = $this->svc->resolveLeadToken($token);
+            [$absPath, $mime]  = $this->svc->serveLeadSignature($clientId, $lead->id);
+
+            return response()->file($absPath, [
+                'Content-Type'  => $mime,
+                'Cache-Control' => 'public, max-age=86400',
+            ]);
+        } catch (\RuntimeException $e) {
+            return response('<h1>Not Found</h1>', 404)->header('Content-Type', 'text/html');
+        } catch (\Throwable $e) {
+            return response('<h1>Error</h1>', 500)->header('Content-Type', 'text/html');
+        }
+    }
+
+    /**
+     * POST /public/merchant/{token}/signature
+     * Save or replace the signature from the merchant portal.
+     * Accepts { signature_image: "data:image/png;base64,..." }
+     */
+    public function saveMerchantSignature(Request $request, string $token)
+    {
+        $this->validate($request, [
+            'signature_image' => 'required|string|min:50',
+        ]);
+
+        try {
+            [$lead, $clientId] = $this->svc->resolveLeadToken($token);
+            $conn   = "mysql_{$clientId}";
+            $result = $this->svc->storeSignature($clientId, $lead->id, $request->input('signature_image'), $conn);
+
+            if (!$result) {
+                return response()->json(['success' => false, 'message' => 'Failed to process signature image.'], 422);
+            }
+
+            // Return the backend-served URL (not the data URI) for immediate display
+            $serveUrl = rtrim(env('APP_URL'), '/') . '/public/lead/' . $lead->lead_token . '/signature';
+
+            return response()->json([
+                'success'       => true,
+                'message'       => 'Signature saved.',
+                'signature_url' => $serveUrl,
+            ]);
+        } catch (\RuntimeException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], $e->getCode() ?: 400);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => 'Failed to save signature.'], 500);
+        }
+    }
+
+    /**
      * GET /public/lead/{token}/document/{docId}
      * Serve a stored lead document (no auth — validated by lead_token ownership).
      */
@@ -170,6 +256,10 @@ class PublicApplicationController extends Controller
     {
         try {
             [$absPath, $mime, $filename] = $this->svc->serveLeadDocument($token, $docId);
+
+            if ($mime === 'redirect') {
+                return redirect($absPath);
+            }
 
             return response()->file($absPath, [
                 'Content-Type'        => $mime,

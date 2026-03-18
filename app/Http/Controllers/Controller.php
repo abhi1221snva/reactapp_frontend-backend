@@ -74,6 +74,7 @@ class Controller extends BaseController
      * Resolve the portal base URL for a tenant from crm_system_setting.company_domain.
      * Falls back to APP_FRONTEND_URL / APP_URL env vars if not set.
      * Always returns a URL with NO trailing slash.
+     * Logs the resolved domain to aid debugging.
      */
     protected function getPortalBaseUrl(int $clientId): string
     {
@@ -82,7 +83,14 @@ class Controller extends BaseController
             ->orderBy('id')
             ->value('company_domain');
 
-        return rtrim($domain ?: env('APP_FRONTEND_URL', env('APP_URL', '')), '/');
+        if (empty($domain)) {
+            $fallback = env('APP_FRONTEND_URL', env('APP_URL', ''));
+            Log::warning("[getPortalBaseUrl] company_domain not configured for client {$clientId} — falling back to: {$fallback}");
+            return rtrim($fallback, '/');
+        }
+
+        Log::info("[getPortalBaseUrl] client={$clientId} domain={$domain}");
+        return rtrim($domain, '/');
     }
 
     protected function failResponse(string $message, array $errors = [], \Throwable $exception = null, $httpStatus=500)

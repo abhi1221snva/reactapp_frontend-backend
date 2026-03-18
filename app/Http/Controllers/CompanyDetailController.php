@@ -357,8 +357,20 @@ class CompanyDetailController extends Controller
             }
 
             $setting     = $this->getSystemSetting($clientId);
-            $websiteUrl  = rtrim($setting->company_domain ?? env('APP_FRONTEND_URL', ''), '/');
-            $merchantUrl = $websiteUrl . '/merchant/customer/app/index/' . $clientId . '/' . $id . '/' . $lead->lead_token;
+            $portalBase  = $this->getPortalBaseUrl($clientId);
+            $merchantUrl = $portalBase . '/merchant/customer/app/index/' . $clientId . '/' . $id . '/' . $lead->lead_token;
+
+            // Persist generated URL on the lead
+            DB::connection($conn)->table('crm_leads')
+                ->where('id', $id)
+                ->update(['unique_url' => $merchantUrl, 'unique_token' => $lead->lead_token]);
+
+            \Log::info('[getLeadMerchantLink] generated', [
+                'client_id'  => $clientId,
+                'lead_id'    => $id,
+                'domain'     => $portalBase,
+                'url'        => $merchantUrl,
+            ]);
 
             return $this->successResponse('Merchant link', [
                 'lead_token'   => $lead->lead_token,

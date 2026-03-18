@@ -54,6 +54,7 @@ class CrmMerchantPortalController extends Controller
     /**
      * GET /crm/lead/{id}/merchant-portal
      * Get current portal record for a lead.
+     * Always ensures the stored URL uses the current company_domain.
      */
     public function show(Request $request, $id)
     {
@@ -68,6 +69,34 @@ class CrmMerchantPortalController extends Controller
 
             if (!$portal) {
                 return $this->failResponse("No active merchant portal found for this lead", [], null, 404);
+            }
+
+            // Rebuild URL from current company_domain — this fixes stale/legacy URLs
+            // that may contain an old domain (e.g. portal.voiptella.com) or HTML anchor wrapping.
+            $currentBase = $this->getPortalBaseUrl($clientId);
+            $freshUrl    = $currentBase . '/merchant/customer/app/index/' . $clientId . '/' . $id . '/' . $portal->token;
+
+            // Strip HTML anchor wrapping from the stored URL for comparison
+            $storedRaw = strip_tags($portal->url ?? '');
+            // Also strip trailing slash from stored URL for a clean compare
+            $storedRaw = rtrim($storedRaw, '/');
+
+            if ($storedRaw !== $freshUrl) {
+                \Log::info('[CrmMerchantPortal::show] domain mismatch — updating stored URL', [
+                    'lead_id'   => $id,
+                    'client_id' => $clientId,
+                    'old_url'   => $portal->url,
+                    'new_url'   => $freshUrl,
+                ]);
+                $portal->url = $freshUrl;
+                $portal->save();
+
+                // Keep crm_leads.unique_url in sync
+                CrmLeadRecord::on("mysql_$clientId")->where('id', $id)->update([
+                    'unique_url'   => $freshUrl,
+                    'unique_token' => $portal->token,
+                    'lead_token'   => $portal->token,
+                ]);
             }
 
             return $this->successResponse("Merchant Portal", $portal->toArray());

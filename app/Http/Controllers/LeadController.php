@@ -666,9 +666,25 @@ class LeadController extends Controller
 
         $clientId = $request->auth->parent_id;
 
+        // ── Dynamic EAV field validation ─────────────────────────────────────
+        $input     = $request->all();
+        try {
+            $eavErrors = $this->buildEavValidation($input, $clientId);
+        } catch (\Throwable $e) {
+            Log::error('EAV validation error in create', ['error' => $e->getMessage(), 'client' => $clientId]);
+            $eavErrors = [];
+        }
+        if (!empty($eavErrors)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed.',
+                'errors'  => $eavErrors,
+            ], 422);
+        }
+
         try {
             // Build system-column payload for crm_leads
-            $systemData = $this->eavService->formatLeadFields($request->all(), $clientId);
+            $systemData = $this->eavService->formatLeadFields($input, $clientId);
             $systemData['lead_status']    = $systemData['lead_status']    ?? 'new_lead';
             $systemData['lead_parent_id'] = $systemData['lead_parent_id'] ?? 0;
             $systemData['created_by']     = $request->auth->id;
@@ -704,8 +720,8 @@ class LeadController extends Controller
             $objLead->lead_token   = $unique_token;
             $objLead->save();
 
-            // Save all dynamic fields (EAV) into crm_lead_values
-            $this->eavService->save($clientId, $lastId, $request->all());
+            // Save all dynamic fields (EAV) into crm_lead_values (use sanitized $input)
+            $this->eavService->save($clientId, $lastId, $input);
 
             // Log creation activity
             try {
@@ -787,11 +803,27 @@ class LeadController extends Controller
     {
         $clientId = $request->auth->parent_id;
 
+        // ── Dynamic EAV field validation ─────────────────────────────────────
+        $input     = $request->all();
+        try {
+            $eavErrors = $this->buildEavValidation($input, $clientId);
+        } catch (\Throwable $e) {
+            Log::error('EAV validation error in update', ['error' => $e->getMessage(), 'client' => $clientId]);
+            $eavErrors = [];
+        }
+        if (!empty($eavErrors)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed.',
+                'errors'  => $eavErrors,
+            ], 422);
+        }
+
         try {
             $objLead = CrmLeadRecord::on("mysql_$clientId")->findOrFail($id);
 
             // Extract system column changes
-            $arrFormatLeadInfo = $this->formatLeadInfo($request->all(), $clientId);
+            $arrFormatLeadInfo = $this->formatLeadInfo($input, $clientId);
             $changedFields     = [];
             foreach ($arrFormatLeadInfo as $strLeadLabel => $strLeadValue) {
                 $oldVal = $objLead->getOriginal($strLeadLabel);
@@ -806,8 +838,8 @@ class LeadController extends Controller
             $objLead->updated_by = $request->auth->id;
             $objLead->saveOrFail();
 
-            // Save all dynamic fields (EAV) into crm_lead_values
-            $this->eavService->save($clientId, (int)$id, $request->all());
+            // Save all dynamic fields (EAV) into crm_lead_values (use sanitized $input)
+            $this->eavService->save($clientId, (int)$id, $input);
 
             // ── CRM Activity: log field updates (additive — never breaks existing response) ──
             try {
@@ -1146,6 +1178,112 @@ class LeadController extends Controller
     private function loadEavForLeads(string $clientId, array $leadIds): array
     {
         return $this->eavService->load($clientId, $leadIds);
+    }
+
+    /**
+     * Validate EAV dynamic fields against their configured types.
+     * Mutates $input: strips non-numeric chars from phone fields before saving.
+     *
+     * @param  array  &$input    Request input (passed by reference so phone is cleaned in-place)
+     * @param  string  $clientId
+     * @return array             ['field_key' => ['error message']] — empty means valid
+     */
+    private function buildEavValidation(array &$input, string $clientId): array
+    {
+        $fields = DB::connection("mysql_{$clientId}")
+            ->table('crm_labels')
+            ->where('status', true)
+            ->get(['field_key', 'field_type', 'required', 'label_name', 'options'])
+            ->toArray();
+
+        $errors = [];
+
+        foreach ($fields as $field) {
+            $key = $field->field_key;
+
+            // Only validate fields that are actually present in the request
+            if (!array_key_exists($key, $input)) {
+                continue;
+            }
+
+            $fieldType  = strtolower(trim((string) $field->field_type));
+            $raw        = $input[$key];
+            $isRequired = !empty($field->required);
+
+            // Pre-clean phone: strip spaces, symbols, and non-numeric characters
+            if (in_array($fieldType, ['phone_number', 'phone'], true)) {
+                $raw        = preg_replace('/[^0-9]/', '', (string) $raw);
+                $input[$key] = $raw; // mutate so the sanitized value is saved
+            } else {
+                $raw = is_string($raw) ? trim($raw) : $raw;
+            }
+
+            $isEmpty = ($raw === null || $raw === '');
+
+            // Required check
+            if ($isRequired && $isEmpty) {
+                $errors[$key] = [$field->label_name . ' is required.'];
+                continue;
+            }
+
+            // Optional and empty — skip type validation
+            if ($isEmpty) {
+                continue;
+            }
+
+            // Type-based validation
+            switch ($fieldType) {
+                case 'phone_number':
+                case 'phone':
+                    if (!preg_match('/^\d{10}$/', (string) $raw)) {
+                        $errors[$key] = [$field->label_name . ' must be exactly 10 digits.'];
+                    }
+                    break;
+
+                case 'email':
+                    if (!filter_var($raw, FILTER_VALIDATE_EMAIL)) {
+                        $errors[$key] = [$field->label_name . ' must be a valid email address.'];
+                    }
+                    break;
+
+                case 'number':
+                    if (!is_numeric($raw)) {
+                        $errors[$key] = [$field->label_name . ' must be a numeric value.'];
+                    }
+                    break;
+
+                case 'date':
+                    $parsed = date_create((string) $raw);
+                    if (!$parsed) {
+                        $errors[$key] = [$field->label_name . ' must be a valid date.'];
+                    }
+                    break;
+
+                case 'text':
+                case 'textarea':
+                case 'text_area':
+                    if (mb_strlen((string) $raw) > 500) {
+                        $errors[$key] = [$field->label_name . ' must not exceed 500 characters.'];
+                    }
+                    break;
+
+                case 'dropdown':
+                case 'select':
+                case 'select_option':
+                    if (!empty($field->options)) {
+                        $opts = json_decode($field->options, true);
+                        if (is_array($opts)) {
+                            $opts = array_map('strval', $opts);
+                            if (!in_array((string) $raw, $opts, true)) {
+                                $errors[$key] = [$field->label_name . ' must be a valid option.'];
+                            }
+                        }
+                    }
+                    break;
+            }
+        }
+
+        return $errors;
     }
 
     /**
@@ -1904,14 +2042,9 @@ class LeadController extends Controller
         }
     }
 
-    /**
-     * GET /crm/lead/{id}/render-pdf
-     *
-     * Fetches the template marked custom_type='signature_application',
-     * hydrates [[field_key]] placeholders with EAV lead data, and returns
-     * the final HTML for client-side print/PDF generation.
-     */
     // ── Private: build the full placeholder-substitution map for a lead ──────────
+    // NOTE: This logic has been extracted to App\Services\LeadPdfService.
+    //       Kept here only for reference — renderPdf() now delegates to the service.
     private function buildLeadData(int $leadId, string $conn, int $clientId, $auth): array
     {
         $data = [];
@@ -2174,38 +2307,13 @@ class LeadController extends Controller
     {
         try {
             $clientId = $request->auth->parent_id;
-            $conn     = "mysql_{$clientId}";
             $leadId   = (int) $id;
 
-            $template = DB::connection($conn)
-                ->table('crm_custom_templates')
-                ->where('custom_type', 'signature_application')
-                ->whereNull('deleted_at')
-                ->orderBy('id', 'desc')
-                ->first();
+            $result = app(\App\Services\LeadPdfService::class)->renderPdfHtml($clientId, $leadId);
 
-            if (!$template) {
-                return $this->failResponse(
-                    'No application template found. Create one under CRM → PDF Templates.',
-                    [], null, 404
-                );
-            }
-
-            $data = $this->buildLeadData($leadId, $conn, $clientId, $request->auth);
-
-            $firstName = $data['first_name'] ?? '';
-            $lastName  = $data['last_name']  ?? '';
-            $company   = $data['company_name'] ?? $data['legal_company_name'] ?? '';
-            $leadName  = trim("$firstName $lastName") ?: ($company ?: "Lead #{$leadId}");
-
-            $html = $this->applyPlaceholders($template->template_html ?? '', $data);
-
-            return $this->successResponse('Template rendered', [
-                'html'          => $html,
-                'lead_name'     => $leadName,
-                'template_id'   => $template->id,
-                'template_name' => $template->template_name,
-            ]);
+            return $this->successResponse('Template rendered', $result);
+        } catch (\RuntimeException $e) {
+            return $this->failResponse($e->getMessage(), [], null, $e->getCode() ?: 404);
         } catch (\Throwable $e) {
             return $this->failResponse('Failed to render PDF', [$e->getMessage()], $e, 500);
         }

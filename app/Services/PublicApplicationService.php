@@ -245,9 +245,20 @@ class PublicApplicationService
         $this->logActivity($conn, $leadId, $affiliateUser->id, 'affiliate_application', 'Lead created via affiliate application form.');
 
         // ── Merchant URL ──────────────────────────────────────────────────────
-        $websiteUrl  = DB::table('clients')->where('id', $clientId)->value('website_url')
-            ?? env('APP_FRONTEND_URL', env('APP_URL'));
-        $merchantUrl = rtrim($websiteUrl, '/') . '/merchant/' . $leadToken;
+        $portalBase  = $this->resolvePortalBase($clientId);
+        $merchantUrl = $portalBase . '/merchant/customer/app/index/' . $clientId . '/' . $leadId . '/' . $leadToken;
+
+        // Persist the generated merchant URL on the lead record
+        DB::connection($conn)->table('crm_leads')
+            ->where('id', $leadId)
+            ->update(['unique_url' => $merchantUrl]);
+
+        \Log::info('[PublicApp createLead] merchant_url generated', [
+            'client_id' => $clientId,
+            'lead_id'   => $leadId,
+            'domain'    => $portalBase,
+            'url'       => $merchantUrl,
+        ]);
 
         return [
             'lead_id'       => $leadId,
@@ -506,6 +517,13 @@ HTML;
 
         $merged = array_merge($legacyData, $eavData);
 
+        // Build a backend-served signature URL so the frontend never needs to
+        // construct a path into the non-public app storage directory.
+        $hasSig      = !empty($merged['signature_image']);
+        $signatureUrl = $hasSig
+            ? rtrim(env('APP_URL'), '/') . '/public/lead/' . $lead->lead_token . '/signature'
+            : null;
+
         return [
             'id'             => $lead->id,
             'lead_status'    => $lead->lead_status,
@@ -514,6 +532,7 @@ HTML;
             'affiliate_code' => $lead->affiliate_code ?? null,
             'created_at'     => $lead->created_at,
             'fields'         => $merged,
+            'signature_url'  => $signatureUrl,
             'documents'      => $this->getDocuments($clientId, $leadId),
         ];
     }
@@ -630,41 +649,70 @@ HTML;
 
     public function storeDocument(object $lead, int $clientId, $file, string $docType): array
     {
-        // Organized folder: storage/app/clients/client_{id}/leads/{leadId}/documents/
-        $subdir  = "leads/{$lead->id}/documents";
-        $dir     = TenantStorageService::getPath($clientId, $subdir);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0775, true);
-        }
+        $conn = "mysql_{$clientId}";
+        $now  = now();
 
-        $ext      = strtolower($file->getClientOriginalExtension()) ?: 'bin';
-        $filename = time() . '_' . Str::random(8) . '.' . $ext;
-        $file->move($dir, $filename);
+        // Store on public disk (consistent with CrmDocumentController)
+        $storagePath = $file->store("crm_documents/client_{$clientId}/lead_{$lead->id}", 'public');
+        $filename    = basename($storagePath);
+        $fileUrl     = rtrim(env('APP_URL'), '/') . '/storage/' . $storagePath;
 
-        // Relative path stored in DB (relative from client base)
-        $relPath = "leads/{$lead->id}/documents/{$filename}";
-
-        $conn  = "mysql_{$clientId}";
-        $now   = now();
-        $docId = null;
-
-        if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_documents')) {
-            $docId = DB::connection($conn)->table('crm_lead_documents')->insertGetId([
-                'lead_id'     => $lead->id,
-                'file_name'   => $filename,
-                'file_path'   => $relPath,
-                'doc_type'    => $docType,
-                'uploaded_by' => 0,
-                'created_at'  => $now,
-                'updated_at'  => $now,
-            ]);
-        }
+        $docId = DB::connection($conn)->table('crm_documents')->insertGetId([
+            'lead_id'       => $lead->id,
+            'document_name' => $file->getClientOriginalName(),
+            'document_type' => $docType,
+            'file_name'     => $file->getClientOriginalName(),
+            'file_path'     => $fileUrl,
+            'uploaded_by'   => 0,
+            'file_size'     => $file->getSize(),
+            'created_at'    => $now,
+            'updated_at'    => $now,
+        ]);
 
         return [
             'filename' => $filename,
-            'path'     => $relPath,
-            'url'      => rtrim(env('APP_URL'), '/') . '/public/lead/' . $lead->lead_token . '/document/' . $docId,
+            'path'     => $storagePath,
+            'url'      => $fileUrl,
         ];
+    }
+
+    /**
+     * Serve the signature image for a lead (public, no auth).
+     * Returns [absPath, mimeType] or throws RuntimeException.
+     */
+    public function serveLeadSignature(int $clientId, int $leadId): array
+    {
+        $conn    = "mysql_{$clientId}";
+        $sigPath = null;
+
+        if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_values')) {
+            $sigPath = DB::connection($conn)->table('crm_lead_values')
+                ->where('lead_id', $leadId)
+                ->where('field_key', 'signature_image')
+                ->value('field_value');
+        }
+
+        // Fallback: try legacy crm_lead_data column
+        if (!$sigPath && DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_data')) {
+            $sigPath = DB::connection($conn)->table('crm_lead_data')
+                ->where('id', $leadId)
+                ->value('signature_image');
+        }
+
+        if (!$sigPath) {
+            throw new \RuntimeException('Signature not found.', 404);
+        }
+
+        $absPath = TenantStorageService::getPath($clientId, $sigPath);
+        if (!file_exists($absPath)) {
+            $absPath = storage_path('app/public/' . $sigPath);
+        }
+
+        if (!file_exists($absPath)) {
+            throw new \RuntimeException('Signature file not found.', 404);
+        }
+
+        return [$absPath, 'image/png'];
     }
 
     /**
@@ -676,35 +724,34 @@ HTML;
         [$lead, $clientId] = $this->resolveLeadToken($token);
         $conn              = "mysql_{$clientId}";
 
-        if (!DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_documents')) {
-            throw new \RuntimeException('Document not found.', 404);
-        }
-
-        $doc = DB::connection($conn)->table('crm_lead_documents')
-            ->where('id', $docId)
-            ->where('lead_id', $lead->id)
-            ->first();
+        $doc = DB::connection($conn)->getSchemaBuilder()->hasTable('crm_documents')
+            ? DB::connection($conn)->table('crm_documents')
+                ->where('id', $docId)->where('lead_id', $lead->id)->whereNull('deleted_at')->first()
+            : null;
 
         if (!$doc) {
             throw new \RuntimeException('Document not found.', 404);
         }
 
-        $relPath = $doc->file_path;
+        $filePath = $doc->file_path ?? '';
+        $filename = $doc->file_name ?? basename($filePath);
 
-        // Try new TenantStorageService path
-        $absPath = TenantStorageService::getPath($clientId, $relPath);
+        // file_path is a full public URL — signal controller to redirect
+        if (str_starts_with($filePath, 'http')) {
+            return [$filePath, 'redirect', $filename];
+        }
+
+        // Legacy: relative path on disk
+        $absPath = TenantStorageService::getPath($clientId, $filePath);
         if (!file_exists($absPath)) {
-            // Backward compat: old public disk path
-            $absPath = storage_path('app/public/' . $relPath);
+            $absPath = storage_path('app/public/' . $filePath);
         }
 
         if (!file_exists($absPath)) {
             throw new \RuntimeException('Document file not found.', 404);
         }
 
-        $mime     = mime_content_type($absPath) ?: 'application/octet-stream';
-        $filename = $doc->file_name ?? basename($absPath);
-
+        $mime = mime_content_type($absPath) ?: 'application/octet-stream';
         return [$absPath, $mime, $filename];
     }
 
@@ -730,12 +777,30 @@ HTML;
 
     public function buildAffiliateUrl(int $clientId, string $affiliateCode): string
     {
-        $websiteUrl = DB::connection("mysql_{$clientId}")
+        return $this->resolvePortalBase($clientId) . '/apply/' . $affiliateCode;
+    }
+
+    /**
+     * Resolve the portal/frontend base URL for a client from crm_system_setting.company_domain.
+     * Falls back to APP_FRONTEND_URL / APP_URL if not configured.
+     * Logs the resolved domain and emits a warning when falling back.
+     * Always returns a URL with NO trailing slash.
+     */
+    private function resolvePortalBase(int $clientId): string
+    {
+        $domain = DB::connection("mysql_{$clientId}")
             ->table('crm_system_setting')
             ->orderBy('id')
-            ->value('company_domain')
-            ?? env('APP_FRONTEND_URL', '');
-        return rtrim($websiteUrl, '/') . '/apply/' . $affiliateCode;
+            ->value('company_domain');
+
+        if (empty($domain)) {
+            $fallback = env('APP_FRONTEND_URL', env('APP_URL', ''));
+            \Log::warning("[PublicApp] company_domain not configured for client {$clientId} — falling back to: {$fallback}");
+            return rtrim($fallback, '/');
+        }
+
+        \Log::info("[PublicApp] resolvePortalBase client={$clientId} domain={$domain}");
+        return rtrim($domain, '/');
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -798,29 +863,19 @@ HTML;
     private function getDocuments(int $clientId, int $leadId): array
     {
         $conn = "mysql_{$clientId}";
-        if (!DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_documents')) return [];
+        if (!DB::connection($conn)->getSchemaBuilder()->hasTable('crm_documents')) return [];
 
-        $leadToken = DB::connection($conn)->table('crm_leads')->where('id', $leadId)->value('lead_token');
-        $base      = rtrim(env('APP_URL'), '/');
-
-        return DB::connection($conn)->table('crm_lead_documents')
+        return DB::connection($conn)->table('crm_documents')
             ->where('lead_id', $leadId)
+            ->whereNull('deleted_at')
             ->orderBy('id', 'desc')
             ->get()
-            ->map(function ($d) use ($base, $leadToken) {
-                $path = $d->file_path ?? '';
-                // Old public-disk paths start with "crm_documents/" → use /storage/ URL
-                // New TenantStorageService paths start with "leads/" → use serve route
-                if (str_starts_with($path, 'crm_documents/')) {
-                    $url = $base . '/storage/' . $path;
-                } else {
-                    $url = $base . '/public/lead/' . $leadToken . '/document/' . $d->id;
-                }
+            ->map(function ($d) {
                 return [
                     'id'       => $d->id,
                     'filename' => $d->file_name,
-                    'doc_type' => $d->doc_type,
-                    'url'      => $url,
+                    'doc_type' => $d->document_type,
+                    'url'      => $d->file_path,  // already a full public URL
                     'uploaded' => $d->created_at,
                 ];
             })
