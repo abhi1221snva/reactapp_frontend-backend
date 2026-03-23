@@ -261,33 +261,31 @@ class ExcludeNumberController extends Controller
     }
 
 
-     public function uploadExcludeNumber()
+    public function uploadExcludeNumber()
     {
+        $uploadDir = '/var/www/html/api/upload/';
 
-        $this->validate($this->request, [
-            'file'           => 'required'
-        ]);
-        
-       
-        if($this->request->has('file'))
-        {
-            //commented  not able to upload file directory
-            //$path = ".." . DIRECTORY_SEPARATOR . "upload" . DIRECTORY_SEPARATOR;
-            //$this->request->file('file')->move($path, $this->request->file('file')->getClientOriginalName());
-            $filename=$this->request->input('file');
-            $filePath= ('/var/www/html/api/upload/'.$filename);
+        // Handle actual multipart file upload from React frontend
+        if ($this->request->hasFile('file')) {
+            $uploadedFile = $this->request->file('file');
+            $filename = time() . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', $uploadedFile->getClientOriginalName());
+            if (!is_dir($uploadDir)) {
+                mkdir($uploadDir, 0777, true);
+            }
+            $uploadedFile->move($uploadDir, $filename);
+            $filePath = $uploadDir . $filename;
+        } elseif ($this->request->has('file')) {
+            $filename = $this->request->input('file');
+            $filePath = $uploadDir . $filename;
+        } else {
+            return response()->json(['success' => 'false', 'message' => 'No file provided.']);
         }
-        if(!empty($filePath) && file_exists($filePath))
-        {
+
+        if (!empty($filePath) && file_exists($filePath)) {
             $response = $this->model->uploadExcludeNumber($this->request, $filePath);
             return response()->json($response);
         }
-        else
-        {
-            return response()->json(array(
-                'success'=> 'false',
-                'message'=> 'Unable to upload file.'
-            ));
-        }
+
+        return response()->json(['success' => 'false', 'message' => 'Unable to upload file.']);
     }
 }

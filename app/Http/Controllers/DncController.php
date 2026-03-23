@@ -285,30 +285,30 @@ class DncController extends Controller
 
     public function uploadDnc()
     {
-        $this->validate($this->request, [
-            'file'           => 'required'
-        ]);
+        $uploadDir = '/var/www/html/api/upload/';
 
-
-        if ($this->request->has('file')) {
-            //commented  not able to upload file directory
-            //$path = ".." . DIRECTORY_SEPARATOR . "upload" . DIRECTORY_SEPARATOR;
-            //$this->request->file('file')->move($path, $this->request->file('file')->getClientOriginalName());
-            // Construct the full file path
+        // Handle actual multipart file upload from React frontend
+        if ($this->request->hasFile('file')) {
+            $uploadedFile = $this->request->file('file');
+            $filename = time() . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', $uploadedFile->getClientOriginalName());
+            if (!is_dir($uploadDir)) {
+                mkdir($uploadDir, 0777, true);
+            }
+            $uploadedFile->move($uploadDir, $filename);
+            $filePath = $uploadDir . $filename;
+        } elseif ($this->request->has('file')) {
+            // Legacy: filename reference already on server
             $filename = $this->request->input('file');
-            $filePath = ('/var/www/html/api/upload/' . $filename);
-
-            Log::info('reached filepath', ['filePath' => $filePath]);
+            $filePath = $uploadDir . $filename;
+        } else {
+            return response()->json(['success' => 'false', 'message' => 'No file provided.']);
         }
+
         if (!empty($filePath) && file_exists($filePath)) {
-            Log::info('reached file exists', ['filePath' => $filePath]);
             $response = $this->model->uploadDnc($this->request, $filePath);
             return response()->json($response);
-        } else {
-            return response()->json(array(
-                'success' => 'false',
-                'message' => 'Unable to upload file.'
-            ));
         }
+
+        return response()->json(['success' => 'false', 'message' => 'Unable to upload file.']);
     }
 }

@@ -273,65 +273,70 @@ class Dnc extends Model
 
 
 
+    /**
+     * Normalise a raw spreadsheet cell value into a phone-number string.
+     * Handles PHP int, float (including 9876543210.0), and numeric strings.
+     * Returns empty string if the value cannot be parsed to a 7+ digit number.
+     */
+    private function parsePhoneNumber($raw): string
+    {
+        if ($raw === null || $raw === '' || $raw === false) return '';
+        // Cast to float first so scientific notation (e.g. 9.87E+9) is handled,
+        // then round to int to drop any fractional part.
+        $num = (string)(int) round((float) $raw);
+        return (strlen($num) >= 7 && $num !== '0') ? $num : '';
+    }
+
     public function uploadDnc($request, $filePath)
     {
         try {
-            if (!empty($filePath)) {
-                $dataBase = 'mysql_' . $request->auth->parent_id;
-                try {
-                    $reader = Excel::toArray(new Excel(), $filePath);
-                } catch (\Exception $e) {
-                    return array(
-                        'success' => 'false',
-                        'message' => 'Unable to read excel.'
-                    );
-                }
-
-
-
-                if (!empty($reader)) {
-                    $count = 0;
-                    foreach ($reader as $row) {
-                        $i = 0;
-                        foreach ($row as $item => $value) {
-                            if ($item != 0) {
-                                $data['number'] = $value[0];
-                                $data['extension'] = $value[1];
-                                $data['comment'] = $value[2];
-                                $data['updated_at'] = $value[3];
-
-                                //echo "<pre>";print_r($data);
-
-                                $query = "INSERT INTO " . $this->table . " (number, extension, comment,updated_at) VALUE (:number, :extension, :comment,:updated_at)";
-                                $add =  DB::connection('mysql_' . $request->auth->parent_id)->insert($query, $data);
-                            }
-                        }
-                    }
-
-
-                    if ($add == 1) {
-                        return array(
-                            'success' => 'true',
-                            'message' => 'Dnc added successfully.'
-                        );
-                    }
-                } else {
-                    return array(
-                        'success' => 'false',
-                        'message' => 'DNC not added successfully, File is empty',
-
-                    );
-                }
+            if (empty($filePath)) {
+                return ['success' => 'false', 'message' => 'No file path provided.'];
             }
 
-            return array(
-                'success' => 'false',
-                'message' => 'Dnc  not added successfully.'
-            );
-        } catch (Exception $e) {
-            Log::log($e->getMessage());
-        } catch (InvalidArgumentException $e) {
-            Log::log($e->getMessage());
+            try {
+                $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($filePath);
+                // formatData=false → raw cell values, no comma-separated number formatting
+                $rows = $spreadsheet->getActiveSheet()->toArray(null, false, false, false);
+            } catch (\Exception $e) {
+                return ['success' => 'false', 'message' => 'Unable to read Excel file. Please upload a valid .xls, .xlsx, or .csv file.'];
+            }
+
+            array_shift($rows); // remove header row
+
+            $inserted = 0;
+            $skipped  = 0;
+            $db = DB::connection('mysql_' . $request->auth->parent_id);
+
+            foreach ($rows as $row) {
+                // Column A = number, B = extension, C = comment
+                $number = $this->parsePhoneNumber($row[0] ?? null);
+                if ($number === '') { $skipped++; continue; }
+
+                $extension = (isset($row[1]) && $row[1] !== null && $row[1] !== '') ? trim((string)$row[1]) : null;
+                $comment   = (isset($row[2]) && $row[2] !== null && $row[2] !== '') ? trim((string)$row[2]) : null;
+
+                // INSERT IGNORE is MySQL-native and returns exact affected-row count
+                $affected = $db->affectingStatement(
+                    "INSERT IGNORE INTO `{$this->table}` (`number`, `extension`, `comment`) VALUES (?, ?, ?)",
+                    [$number, $extension, $comment]
+                );
+
+                if ($affected > 0) $inserted++;
+                else $skipped++; // duplicate primary key
+            }
+
+            if ($inserted === 0 && $skipped > 0) {
+                return ['success' => 'false', 'message' => "No new numbers inserted — {$skipped} row(s) were either duplicates or contained invalid phone numbers."];
+            }
+
+            return [
+                'success' => 'true',
+                'message' => "DNC import complete. {$inserted} number(s) added" . ($skipped > 0 ? ", {$skipped} duplicate(s) skipped." : "."),
+            ];
+
+        } catch (\Exception $e) {
+            return ['success' => 'false', 'message' => 'Server error during import: ' . $e->getMessage()];
         }
     }
 }

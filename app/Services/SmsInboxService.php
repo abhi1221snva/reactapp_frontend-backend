@@ -142,20 +142,25 @@ class SmsInboxService
         $conn         = "mysql_{$clientId}";
         $conversation = CrmSmsConversation::on($conn)->findOrFail($conversationId);
 
-        // Use caller-supplied number, then fall back to a campaign number, then config default
+        // Use caller-supplied number, then reuse previous outbound from_number for this conversation,
+        // then fall back to any active Twilio number, then config default
         if (!$fromNumber) {
+            // Reuse the from_number already in use for this conversation
+            $fromNumber = DB::connection($conn)
+                ->table('crm_sms_messages')
+                ->where('conversation_id', $conversationId)
+                ->where('direction', 'outbound')
+                ->whereNotNull('from_number')
+                ->orderByDesc('created_at')
+                ->value('from_number');
+        }
+        if (!$fromNumber) {
+            // Any active Twilio number (no SMS capability filter — local DB has stale capability data)
             $fromNumber = DB::connection($conn)
                 ->table('twilio_numbers')
                 ->where('status', 'active')
-                ->whereRaw("JSON_EXTRACT(capabilities, '$.sms') = true")
+                ->orderBy('phone_number')
                 ->value('phone_number');
-        }
-        if (!$fromNumber) {
-            $fromNumber = DB::connection($conn)
-                ->table('campaign_numbers')
-                ->join('twilio_numbers', 'twilio_numbers.id', '=', 'campaign_numbers.twilio_number_id')
-                ->whereNotNull('twilio_numbers.phone_number')
-                ->value('twilio_numbers.phone_number');
         }
         if (!$fromNumber) {
             $fromNumber = config('services.twilio.from_number', '+10000000000');
@@ -207,20 +212,26 @@ class SmsInboxService
         // Normalise the inbound number for lookup
         $normalised = preg_replace('/\D/', '', $from);
 
-        // Find lead by phone_number — try exact match then suffix match
+        // Find lead by phone — EAV lookup via crm_lead_values
         $lead = DB::connection($conn)
-            ->table('crm_leads')
-            ->where('phone_number', $from)
-            ->orWhere('phone_number', $normalised)
-            ->first();
+            ->table('crm_lead_values')
+            ->where('field_key', 'phone_number')
+            ->where(function ($q) use ($from, $normalised) {
+                $q->where('field_value', $from)
+                  ->orWhere('field_value', $normalised);
+            })
+            ->first(['lead_id']);
+        $lead = $lead ? (object)['id' => $lead->lead_id] : null;
 
         if (!$lead) {
             // Fallback: ends-with last 10 digits
             $last10 = substr($normalised, -10);
-            $lead   = DB::connection($conn)
-                ->table('crm_leads')
-                ->whereRaw("RIGHT(REGEXP_REPLACE(phone_number, '[^0-9]', ''), 10) = ?", [$last10])
-                ->first();
+            $leadValue = DB::connection($conn)
+                ->table('crm_lead_values')
+                ->where('field_key', 'phone_number')
+                ->whereRaw("RIGHT(REGEXP_REPLACE(field_value, '[^0-9]', ''), 10) = ?", [$last10])
+                ->first(['lead_id']);
+            $lead = $leadValue ? (object)['id' => $leadValue->lead_id] : null;
         }
 
         $leadId = $lead ? $lead->id : 0;
@@ -267,15 +278,17 @@ class SmsInboxService
             ->first();
 
         if (!$conversation) {
-            // Try to match an existing CRM lead by phone_number
+            // Try to match an existing CRM lead by phone — EAV lookup via crm_lead_values
             $normalised = preg_replace('/\D/', '', $phone);
-            $lead = DB::connection($conn)
-                ->table('crm_leads')
+            $leadValue = DB::connection($conn)
+                ->table('crm_lead_values')
+                ->where('field_key', 'phone_number')
                 ->where(function ($q) use ($phone, $normalised) {
-                    $q->where('phone_number', $phone)
-                      ->orWhere('phone_number', $normalised);
+                    $q->where('field_value', $phone)
+                      ->orWhere('field_value', $normalised);
                 })
-                ->first(['id']);
+                ->first(['lead_id']);
+            $lead = $leadValue ? (object)['id' => $leadValue->lead_id] : null;
 
             $conversation = CrmSmsConversation::on($conn)->create([
                 'lead_id'         => $lead->id ?? null,

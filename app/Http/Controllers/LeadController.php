@@ -2482,15 +2482,20 @@ class LeadController extends Controller
      * POST /crm/lead/{id}/submit-application
      *
      * Body:
-     *   lender_ids:    int[]   (required)
-     *   notes:         string  (optional)
-     *   pdf_path:      string  (optional) — relative storage path of application PDF
+     *   lender_ids:      int[]   (required)
+     *   notes:           string  (optional)
+     *   pdf_path:        string  (optional) — legacy single PDF storage path
+     *   document_ids:    int[]   (optional) — IDs from crm_documents to attach
+     *   email_subject:   string  (optional) — custom subject line
+     *   email_html:      string  (optional) — custom HTML body
      */
     public function submitApplication(Request $request, $id)
     {
         $this->validate($request, [
-            'lender_ids'   => 'required|array|min:1',
-            'lender_ids.*' => 'integer',
+            'lender_ids'     => 'required|array|min:1',
+            'lender_ids.*'   => 'integer',
+            'document_ids'   => 'nullable|array',
+            'document_ids.*' => 'integer',
         ]);
 
         try {
@@ -2505,7 +2510,6 @@ class LeadController extends Controller
                 ->first();
 
             if (!$lead) {
-                // Fall back to legacy table
                 $lead = DB::connection("mysql_{$clientId}")
                     ->table('crm_lead_data')
                     ->where('id', $leadId)
@@ -2535,6 +2539,9 @@ class LeadController extends Controller
                 $businessName,
                 $request->input('pdf_path'),
                 $request->input('notes'),
+                $request->input('document_ids', []),
+                $request->input('email_subject'),
+                $request->input('email_html'),
             );
 
             $message = count($result['submitted']) . ' application(s) submitted';
@@ -2589,7 +2596,7 @@ class LeadController extends Controller
             $isHtml = (bool) $request->input('is_html', false);
             $html   = $isHtml ? $body : nl2br(e($body));
 
-            EmailService::forClient($clientId, 'notification')->send(
+            EmailService::forClient($clientId, 'online application')->send(
                 to:      $to,
                 subject: $subject,
                 html:    $html,
@@ -2609,6 +2616,42 @@ class LeadController extends Controller
             return $this->successResponse("Email sent successfully to {$to}");
         } catch (\Throwable $e) {
             return $this->failResponse("Failed to send email: " . $e->getMessage(), [], $e, 500);
+        }
+    }
+
+    public function sendLeadSms(Request $request, $id)
+    {
+        $this->validate($request, [
+            'to'          => 'required|string|max:30',
+            'body'        => 'required|string|max:1600',
+            'from_number' => 'nullable|string|max:30',
+        ]);
+
+        try {
+            $clientId   = $request->auth->parent_id;
+            $userId     = (int) $request->auth->id;
+            $leadId     = (int) $id;
+            $to         = trim($request->input('to'));
+            $body       = trim($request->input('body'));
+            $fromNumber = $request->input('from_number') ?: null;
+
+            /** @var \App\Services\SmsInboxService $smsSvc */
+            $smsSvc = app(\App\Services\SmsInboxService::class);
+            $result = $smsSvc->startNewConversation($clientId, $to, $body, $userId, $fromNumber);
+
+            DB::connection("mysql_{$clientId}")->table('crm_lead_activity')->insert([
+                'lead_id'       => $leadId,
+                'user_id'       => $userId,
+                'activity_type' => 'sms_sent',
+                'subject'       => "SMS sent to: {$to}",
+                'body'          => $body,
+                'created_at'    => now(),
+                'updated_at'    => now(),
+            ]);
+
+            return $this->successResponse('SMS sent successfully.', $result);
+        } catch (\Throwable $e) {
+            return $this->failResponse('Failed to send SMS: ' . $e->getMessage(), [], $e, 500);
         }
     }
 

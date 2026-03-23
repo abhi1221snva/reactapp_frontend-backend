@@ -83,27 +83,48 @@ class CrmSmsInboxController extends Controller
 
     /**
      * GET /crm/sms/sender-numbers
-     * Returns active Twilio numbers that have SMS capability.
+     * Returns all Twilio numbers for the account (no SMS capability filter —
+     * local DB has bad capability data; let Twilio reject on send if truly incapable).
+     * Primary source: live Twilio API (always up-to-date).
+     * Fallback: local twilio_numbers table (if Twilio API unreachable).
      */
     public function getSenderNumbers(Request $request)
     {
         $clientId = (int) $request->auth->parent_id;
         try {
+            // Always try the live Twilio API first so all account numbers are shown
+            try {
+                $twilio      = \App\Services\TwilioService::forClient($clientId);
+                $liveNumbers = $twilio->listNumbers(100);
+
+                $numbers = collect($liveNumbers)
+                    ->values()
+                    ->map(fn ($n) => [
+                        'id'            => 0,
+                        'phone_number'  => $n['phone_number'],
+                        'friendly_name' => $n['phone_number'],
+                    ]);
+
+                if ($numbers->isNotEmpty()) {
+                    return $this->successResponse('Sender numbers retrieved.', ['numbers' => $numbers]);
+                }
+            } catch (\Exception $te) {
+                \Illuminate\Support\Facades\Log::debug("getSenderNumbers Twilio API failed for client {$clientId}: " . $te->getMessage());
+            }
+
+            // Fallback: read all active numbers from local synced table
             $numbers = \Illuminate\Support\Facades\DB::connection("mysql_{$clientId}")
                 ->table('twilio_numbers')
                 ->where('status', 'active')
                 ->orderBy('phone_number')
-                ->get(['id', 'phone_number', 'friendly_name', 'capabilities'])
-                ->filter(function ($row) {
-                    $caps = is_string($row->capabilities) ? json_decode($row->capabilities, true) : (array) $row->capabilities;
-                    return !empty($caps['sms']);
-                })
+                ->get(['id', 'phone_number', 'friendly_name'])
                 ->values()
                 ->map(fn ($r) => [
                     'id'            => $r->id,
                     'phone_number'  => $r->phone_number,
                     'friendly_name' => $r->friendly_name ?: $r->phone_number,
                 ]);
+
             return $this->successResponse('Sender numbers retrieved.', ['numbers' => $numbers]);
         } catch (\Exception $e) {
             return $this->failResponse('Failed to retrieve sender numbers.', [], $e, 500);

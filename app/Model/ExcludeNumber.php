@@ -552,93 +552,108 @@ public function excludeNumberUpdate($request)
     }
 
 
-            public function uploadExcludeNumber($request, $filePath)
+    /**
+     * Normalise a raw spreadsheet cell value into a phone-number string.
+     */
+    private function parsePhoneNumber($raw): string
     {
+        if ($raw === null || $raw === '' || $raw === false) return '';
+        $num = (string)(int) round((float) $raw);
+        return (strlen($num) >= 7 && $num !== '0') ? $num : '';
+    }
 
-        
-        try
-        {
-            if
-            (!empty($filePath))
-            {
-                $dataBase = 'mysql_'.$request->auth->parent_id;
-                try
-                {
-                    $reader = Excel::toArray(new Excel(), $filePath);
-                }
-                catch (\Exception $e)
-                {
-                    return array(
-                        'success'=> 'false',
-                        'message'=> 'Unable to read excel.'
-                    );
-                }
-               
-                   
-                       
-                        if(!empty($reader))
-                        {
-                            $count = 0;
-                            foreach ($reader as $row)
-                            {
-                                $i=0;
-                                 foreach ($row as $item=>$value)
-                                    {
-                                        if($item!=0){
-                               $data['number'] = $value[0];
-                               $data['campaign_id'] = $value[1];
-                               $data['first_name'] = $value[2];
-                               $data['last_name'] = $value[3];
-                               $data['company_name'] = $value[4];
-
-                               $data['updated_at'] = $value[5];
-
-                               //echo "<pre>";print_r($data);
-
-                            $query = "INSERT INTO ".$this->table." (number, campaign_id, first_name,last_name,company_name,updated_at) VALUE (:number, :campaign_id, :first_name,:last_name,:company_name,:updated_at)";
-                $add =  DB::connection('mysql_'.$request->auth->parent_id)->insert($query, $data);
-
-                            }
-
-                                    }
-                                }
-
-
-                                if($add == 1)
-                {
-                    return array(
-                        'success'=> 'true',
-                        'message'=> 'ExcludeNumber added successfully.'
-                    );
-                }
-
-                                
-                                
-                                           
-                        }
-                        else
-                        {
-                            return array(
-                                'success'=> 'false',
-                                'message'=> 'ExcludeNumber not added successfully, File is empty',
-                                
-                            );
-                        }
-                                     
+    public function uploadExcludeNumber($request, $filePath)
+    {
+        try {
+            if (empty($filePath)) {
+                return ['success' => 'false', 'message' => 'No file path provided.'];
             }
 
-            return array(
-                'success'=> 'false',
-                'message'=> 'ExcludeNumber are not added successfully.'
-            );
-        }
-        catch (Exception $e)
-        {
-            Log::log($e->getMessage());
-        }
-        catch (InvalidArgumentException $e)
-        {
-            Log::log($e->getMessage());
+            try {
+                $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($filePath);
+                // formatData=false → raw cell values, no comma-separated number formatting
+                $rows = $spreadsheet->getActiveSheet()->toArray(null, false, false, false);
+            } catch (\Exception $e) {
+                return ['success' => 'false', 'message' => 'Unable to read Excel file. Please upload a valid .xls, .xlsx, or .csv file.'];
+            }
+
+            array_shift($rows); // remove header row
+
+            $inserted   = 0;
+            $skipped    = 0;
+            $firstError = null;
+            $db = DB::connection('mysql_' . $request->auth->parent_id);
+
+            foreach ($rows as $row) {
+                // Scan ALL columns to find the phone number (handles any column order)
+                $number     = '';
+                $numberCol  = -1;
+                foreach ($row as $colIdx => $cellVal) {
+                    $parsed = $this->parsePhoneNumber($cellVal);
+                    if ($parsed !== '') {
+                        $number    = $parsed;
+                        $numberCol = $colIdx;
+                        break;
+                    }
+                }
+
+                if ($number === '') { $skipped++; continue; }
+
+                // Collect remaining non-empty string values (in column order) for name/company
+                $strings    = [];
+                $campaignId = 0;
+                foreach ($row as $colIdx => $cellVal) {
+                    if ($colIdx === $numberCol || $cellVal === null || $cellVal === '') continue;
+                    $val = trim((string)$cellVal);
+                    if ($val === '') continue;
+                    // Small integer in its own column → treat as campaign_id
+                    if (is_numeric($cellVal) && (int)$cellVal > 0) {
+                        $campaignId = (int)$cellVal;
+                    } else {
+                        $strings[] = $val;
+                    }
+                }
+
+                $firstName   = $strings[0] ?? '';
+                $lastName    = $strings[1] ?? '';
+                $companyName = $strings[2] ?? '';
+
+                // Check for existing record to avoid duplicate inserts
+                $exists = $db->table($this->table)
+                    ->where('number', $number)
+                    ->where('campaign_id', $campaignId)
+                    ->exists();
+
+                if ($exists) { $skipped++; continue; }
+
+                try {
+                    $db->table($this->table)->insert([
+                        'number'       => $number,
+                        'campaign_id'  => $campaignId,
+                        'first_name'   => $firstName,
+                        'last_name'    => $lastName,
+                        'company_name' => $companyName,
+                    ]);
+                    $inserted++;
+                } catch (\Exception $e) {
+                    $skipped++;
+                    if ($firstError === null) $firstError = $e->getMessage();
+                }
+            }
+
+            if ($inserted === 0 && $skipped > 0) {
+                $msg = "No new numbers inserted — {$skipped} row(s) were either duplicates or contained invalid phone numbers.";
+                if ($firstError !== null) $msg .= " DB error: {$firstError}";
+                return ['success' => 'false', 'message' => $msg];
+            }
+
+            return [
+                'success' => 'true',
+                'message' => "Exclude List import complete. {$inserted} number(s) added" . ($skipped > 0 ? ", {$skipped} duplicate(s) skipped." : "."),
+            ];
+
+        } catch (\Exception $e) {
+            return ['success' => 'false', 'message' => 'Server error during import: ' . $e->getMessage()];
         }
     }
 }

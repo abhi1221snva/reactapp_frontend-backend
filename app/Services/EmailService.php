@@ -57,6 +57,40 @@ class EmailService
         return self::forSetting($setting);
     }
 
+    // ── Factory: any active SMTP for client (fallback when type is unknown) ────
+    public static function forClientAny(int $clientId): self
+    {
+        $setting = EmailSetting::on("mysql_{$clientId}")
+            ->where('status', 1)
+            ->orderByRaw("FIELD(mail_type,'submission','notification','general') DESC")
+            ->first();
+
+        if (!$setting) {
+            throw new \RuntimeException("No active email config found for client {$clientId}.");
+        }
+
+        return self::forSetting($setting);
+    }
+
+    // ── Factory: system default from .env MAIL_* settings ─────────────────────
+    public static function systemDefault(): self
+    {
+        $host = env('MAIL_HOST');
+        if (!$host) {
+            throw new \RuntimeException('No system default MAIL_HOST configured.');
+        }
+
+        return self::buildFromParams(
+            host:       $host,
+            port:       (int) env('MAIL_PORT', 587),
+            username:   env('MAIL_USERNAME', ''),
+            password:   env('MAIL_PASSWORD', ''),
+            encryption: env('MAIL_ENCRYPTION', 'tls'),
+            fromEmail:  env('MAIL_FROM_ADDRESS', env('DEFAULT_EMAIL', 'noreply@example.com')),
+            fromName:   env('MAIL_FROM_NAME',    env('DEFAULT_NAME',  'Rocket Dialer')),
+        );
+    }
+
     // ── Factory: from raw array (for test-before-save) ─────────────────────────
     public static function fromRaw(array $config): self
     {

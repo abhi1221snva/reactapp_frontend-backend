@@ -43,6 +43,16 @@ class LeadEavService
     }
 
     /**
+     * Core lead fields that are always saveable regardless of crm_labels config.
+     * These represent the fundamental lead attributes every lead form should support.
+     */
+    private const CORE_FIELDS = [
+        'first_name', 'last_name', 'email', 'phone_number',
+        'company_name', 'address', 'city', 'state', 'zip',
+        'loan_amount', 'temperature',
+    ];
+
+    /**
      * Upsert all dynamic field values for a lead into crm_lead_values.
      * Skips system-column keys. Empty/null values delete the existing row.
      */
@@ -50,15 +60,14 @@ class LeadEavService
     {
         try {
             // Load active field keys from crm_labels
-            $fieldKeys = DB::connection("mysql_{$clientId}")
+            $configuredKeys = DB::connection("mysql_{$clientId}")
                 ->table('crm_labels')
                 ->where('status', true)
                 ->pluck('field_key')
                 ->toArray();
 
-            if (empty($fieldKeys)) {
-                return;
-            }
+            // Always include core fields in addition to configured crm_labels fields
+            $fieldKeys = array_unique(array_merge(self::CORE_FIELDS, $configuredKeys));
 
             $now = Carbon::now();
 

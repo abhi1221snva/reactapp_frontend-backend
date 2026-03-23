@@ -541,7 +541,26 @@ public function getList($request)
 
                 //call screening audio file
                 $data['call_screening_status'] = $request->input('call_screening_status');
-                $data['call_screening_ivr_id'] = $request->input('call_screening_ivr_id');
+
+                // Support audio file upload for call screening on add (same logic as saveEdit)
+                $addAudioFilePath = null;
+                if ($request->hasFile('audio_file')) {
+                    $addFile = $request->file('audio_file');
+                    $addAllowedExt = ['mp3', 'wav', 'ogg'];
+                    $addExt = $addFile->getClientOriginalExtension();
+                    if (!in_array(strtolower($addExt), $addAllowedExt)) {
+                        return ['success' => 'false', 'message' => 'Invalid audio format. Allowed: mp3, wav, ogg'];
+                    }
+                    $addFilename = time() . '_' . $addFile->getClientOriginalName();
+                    $addPath = 'uploads/dids/audio/';
+                    $addPublicPath = base_path('public/' . $addPath);
+                    if (!File::exists($addPublicPath)) {
+                        File::makeDirectory($addPublicPath, 0777, true, true);
+                    }
+                    $addFile->move($addPublicPath, $addFilename);
+                    $addAudioFilePath = $addPath . $addFilename;
+                }
+                $data['call_screening_ivr_id'] = $addAudioFilePath ?? $request->input('call_screening_ivr_id');
                 //$didObj->ann_id = $request->ann_id;
                 $data['language'] = $request->input('language');
                 $data['voice_name'] = $request->input('voice_name');
@@ -831,7 +850,13 @@ $didObj->sms_email      = (!empty($request->sms)) ? $request->sms_email : '';
 
                 //call screening audio file
                 $didObj->call_screening_status = $request->input('call_screening_status');
-                $didObj->call_screening_ivr_id = $audioFilePath;
+                // Only overwrite call_screening_ivr_id when a new audio file was uploaded;
+                // otherwise preserve the IVR ID (or existing file path) from the request.
+                if (!is_null($audioFilePath)) {
+                    $didObj->call_screening_ivr_id = $audioFilePath;
+                } else {
+                    $didObj->call_screening_ivr_id = $request->input('call_screening_ivr_id', $didObj->call_screening_ivr_id);
+                }
                 //$didObj->ann_id = $request->input('ann_id;
                 $didObj->language = $request->input('language');
                 $didObj->voice_name = $request->input('voice_name');

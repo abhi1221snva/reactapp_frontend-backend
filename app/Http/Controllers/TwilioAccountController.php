@@ -252,8 +252,9 @@ class TwilioAccountController extends Controller
     public function usage(Request $request)
     {
         $clientId  = $request->auth->parent_id ?: $request->auth->id;
-        $startDate = $request->input('start_date');
-        $endDate   = $request->input('end_date');
+        // Default to the current calendar month so the dashboard shows "this month's" data
+        $startDate = $request->input('start_date', \Carbon\Carbon::now()->startOfMonth()->toDateString());
+        $endDate   = $request->input('end_date',   \Carbon\Carbon::now()->toDateString());
 
         try {
             $service = TwilioService::forClient($clientId);
@@ -285,13 +286,26 @@ class TwilioAccountController extends Controller
             $sms   = collect($records)->where('category', 'sms')->first();
             $mins  = collect($records)->where('category', 'calls')->first();
 
+            // Use Twilio's 'totalprice' category for the spend total — it is the
+            // authoritative non-duplicated sum. Fallback: sum only the leaf
+            // categories that do not overlap (calls, sms, recordings, phonenumbers).
+            $totalRecord = collect($records)->where('category', 'totalprice')->first();
+            if ($totalRecord) {
+                $totalSpend = (float) ($totalRecord['price'] ?? 0);
+            } else {
+                $leafCategories = ['calls', 'sms', 'recordings', 'phonenumbers', 'transcriptions'];
+                $totalSpend = collect($records)
+                    ->filter(fn($r) => in_array($r['category'], $leafCategories, true))
+                    ->sum(fn($r) => (float) ($r['price'] ?? 0));
+            }
+
             return $this->successResponse('OK', [
                 'records' => $records,
                 'summary' => [
                     'total_calls'    => (int)   ($calls['count'] ?? 0),
                     'total_sms'      => (int)   ($sms['count']   ?? 0),
                     'minutes_used'   => (float) ($mins['usage']  ?? 0),
-                    'total_spend'    => collect($records)->sum(fn($r) => (float)($r['price'] ?? 0)),
+                    'total_spend'    => round($totalSpend, 2),
                 ],
             ]);
 

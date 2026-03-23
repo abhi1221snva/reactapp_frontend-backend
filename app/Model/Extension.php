@@ -226,6 +226,10 @@ public function extensionDetailold(Request $request, int $extension_id = null)
 public function extensionDetail(Request $request, int $extension_id = null)
 {
     $parentId = $request->auth->parent_id;
+    // Users are stored in the master DB keyed by base_parent_id (the root account).
+    // A sub-account user has parent_id=11 but base_parent_id=3, so agents live
+    // under base_parent_id=3, not base_parent_id=11.
+    $baseParentId = $request->auth->base_parent_id ?? $parentId;
 
     // ----------------- DID LIST -----------------
     $didList = Dids::on('mysql_' . $parentId)
@@ -332,7 +336,7 @@ if ($request->auth->level > 5) {
     ";
 
     $countBindings = [
-        $parentId,
+        $baseParentId,
         $request->auth->id,
         $request->auth->id
     ];
@@ -366,7 +370,7 @@ if ($request->auth->level > 5) {
     ";
 
     $dataBindings = [
-        $parentId,
+        $baseParentId,
         $request->auth->id,
         $request->auth->id
     ];
@@ -388,7 +392,7 @@ if ($request->auth->level > 5) {
             SELECT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
             FROM users
             LEFT JOIN user_extensions ON user_extensions.name = users.extension
-            WHERE users.parent_id = ?
+            WHERE users.base_parent_id = ?
               AND users.id = ?
               AND users.is_deleted = ?
               AND (
@@ -405,14 +409,13 @@ if ($request->auth->level > 5) {
         ";
 
         $dataBindings = [
-            $parentId,
+            $baseParentId,
             $request->auth->id,
             $isDeleted,
             $status,
             $request->auth->id,
-            $parentId,
+            $baseParentId,
             $request->auth->id,
-
         ];
 
         $dataBindings = array_merge($dataBindings, $searchBindings);

@@ -11,6 +11,7 @@ use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use Firebase\JWT\ExpiredException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class JwtMiddleware
 {
@@ -95,9 +96,37 @@ class JwtMiddleware
         // ── Client override (system admin switching into a client workspace) ──
         // If the JWT carries a `client_override` claim and the authenticated user
         // is a superadmin (level ≥ 9), swap parent_id so all controllers query
-        // the target client's DB. The user's identity and level stay unchanged.
+        // the target client's DB. Also update base_parent_id so queries against
+        // the master users table (e.g. Extension lookups) use the correct root
+        // account, not the admin's own root.
         if (isset($credentials->client_override) && ($userData["level"] ?? 0) >= 9) {
-            $userData["parent_id"] = (int) $credentials->client_override;
+            $overrideParentId = (int) $credentials->client_override;
+            $userData["parent_id"] = $overrideParentId;
+
+            // Look up the base_parent_id used by users in the target client.
+            // First preference: users that are native to this client (base_parent_id = parent_id).
+            // This avoids picking up cross-client sub-account users who share the same
+            // parent_id but belong to a different base tree.
+            $clientBaseParentId = DB::connection('master')
+                ->table('users')
+                ->where('parent_id', $overrideParentId)
+                ->where('base_parent_id', $overrideParentId)
+                ->whereNotNull('base_parent_id')
+                ->value('base_parent_id');
+
+            // Fallback for true sub-accounts (base_parent_id != parent_id).
+            if (!$clientBaseParentId) {
+                $clientBaseParentId = DB::connection('master')
+                    ->table('users')
+                    ->where('parent_id', $overrideParentId)
+                    ->whereNotNull('base_parent_id')
+                    ->orderByDesc('user_level')
+                    ->value('base_parent_id');
+            }
+
+            if ($clientBaseParentId) {
+                $userData["base_parent_id"] = (int) $clientBaseParentId;
+            }
         }
 
         $request->setUserResolver(fn () => $user);

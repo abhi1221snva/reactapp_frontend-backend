@@ -16,9 +16,11 @@ $router->group(['middleware' => ['throttle:60,1']], function () use ($router) {
     $router->get('public/apply/{code}',                  'PublicApplicationController@getApplyForm');
     $router->post('public/apply/{code}',                 'PublicApplicationController@submitApplication');
     $router->get('public/apply/{token}/pdf',             'PublicApplicationController@renderApplicationPdf');
+    $router->get('public/apply/{token}/download',        'PublicApplicationController@downloadApplicationPdf');
     $router->get('public/merchant/{token}',              'PublicApplicationController@getMerchantPortal');
     $router->post('public/merchant/{token}',             'PublicApplicationController@updateMerchant');
     $router->get('public/merchant/{token}/render-pdf',   'PublicApplicationController@renderMerchantPdf');
+    $router->get('public/merchant/{token}/download',     'PublicApplicationController@downloadMerchantPdf');
     $router->get('public/merchant/{token}/document-types', 'PublicApplicationController@getDocumentTypes');
     $router->post('public/merchant/{token}/upload',        'PublicApplicationController@uploadDocument');
 
@@ -41,6 +43,10 @@ $router->group(['middleware' => ['throttle:60,1']], function () use ($router) {
     // Lead signature serve + merchant signature save
     $router->get('public/lead/{token}/signature',         'PublicApplicationController@serveSignature');
     $router->post('public/merchant/{token}/signature',    'PublicApplicationController@saveMerchantSignature');
+
+    // Document delete + secure inline view (never exposes direct storage URL)
+    $router->delete('public/merchant/{token}/document/{docId}', 'PublicApplicationController@deleteDocument');
+    $router->get('public/document/{token}/view/{docId}',        'PublicApplicationController@viewDocument');
 });
 
 $router->get('/list-all-cache', 'RedisCacheController@listAllCache');
@@ -1215,6 +1221,9 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   $router->post('merge-call-transfer', 'DialerController@mergeCallWithTransfer');
   $router->post('leave-call-transfer', 'DialerController@leaveConferenceTransfer');
 
+  # Unified call-transfer endpoint (replaces check-line-details +
+  # check-extension-live-for-transfer + warm-call-transfer-c2c-crm)
+  $router->post('call-transfer/initiate', 'CallTransferController@initiate');
 
   $router->post('check-line-details', 'DialerController@checkLineDetails');
   $router->post('check-extension-live-for-transfer', 'DialerController@checkExtensionLiveDetails');
@@ -1732,6 +1741,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   // PDF Application Generator
   $router->get('crm/lead/{id}/render-pdf',                                'LeadController@renderPdf');
   $router->post('crm/lead/{id}/send-merchant-email',                      'LeadController@sendMerchantEmail');
+  $router->post('crm/lead/{id}/send-sms',                                'LeadController@sendLeadSms');
   $router->get('crm/lead/{id}/resolve-email-template/{templateId}',       'LeadController@resolveEmailTemplate');
 
   // ── Offers ─────────────────────────────────────────────────────────────────

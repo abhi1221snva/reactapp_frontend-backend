@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Jobs\SendLeadByLenderApi;
-use App\Mail\LenderApplicationMail;
+use App\Services\EmailService;
 use App\Model\Client\CrmLenderSubmission;
 use App\Model\Client\CrmSendLeadToLender;
 use App\Model\Client\Lender;
@@ -11,7 +11,6 @@ use App\Model\Client\LenderStatus;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -243,9 +242,12 @@ class LeadLenderService
      * @param  int[]    $lenderIds
      * @param  int      $userId
      * @param  string   $submitterName  Display name shown in the email body
-     * @param  string   $businessName   Business / lead display name for email subject
-     * @param  string|null $pdfStoragePath  Relative storage path (e.g. crm_documents/…/app.pdf)
-     * @param  string|null $notes
+     * @param  string        $businessName     Business / lead display name for email subject
+     * @param  string|null   $pdfStoragePath   Relative storage path (legacy single PDF)
+     * @param  string|null   $notes            Cover note
+     * @param  array         $documentIds      IDs from crm_documents to attach
+     * @param  string|null   $emailSubject     Custom subject (overrides default)
+     * @param  string|null   $emailHtmlOverride Pre-rendered HTML body (overrides blade template)
      * @return array{submitted: int[], failed: int[], records: array<int, array>}
      */
     public function submitApplication(
@@ -255,24 +257,81 @@ class LeadLenderService
         int     $userId,
         string  $submitterName,
         string  $businessName,
-        ?string $pdfStoragePath = null,
-        ?string $notes          = null
+        ?string $pdfStoragePath      = null,
+        ?string $notes               = null,
+        array   $documentIds         = [],
+        ?string $emailSubject        = null,
+        ?string $emailHtmlOverride   = null
     ): array {
-        $conn        = "mysql_{$clientId}";
-        $submitted   = [];
-        $failed      = [];
-        $records     = [];
+        $conn      = "mysql_{$clientId}";
+        $submitted = [];
+        $failed    = [];
+        $records   = [];
 
-        // Resolve absolute PDF path once
-        $pdfAbsPath  = null;
-        $pdfFileName = null;
+        // ── Resolve attachments ──────────────────────────────────────────────────
+        $attachments = [];
+
+        // Legacy single PDF path
         if ($pdfStoragePath) {
-            $pdfAbsPath  = storage_path('app/public/' . ltrim($pdfStoragePath, '/'));
-            $pdfFileName = basename($pdfAbsPath);
-            if (!file_exists($pdfAbsPath)) {
-                $pdfAbsPath = null; // won't attach if file is missing
+            $abs = storage_path('app/public/' . ltrim($pdfStoragePath, '/'));
+            if (file_exists($abs)) {
+                $attachments[] = $abs;
             }
         }
+
+        // Documents from crm_documents table
+        if (!empty($documentIds)) {
+            $docs = DB::connection($conn)
+                ->table('crm_documents')
+                ->whereIn('id', $documentIds)
+                ->get(['file_path']);
+
+            foreach ($docs as $doc) {
+                // file_path is a public URL — convert to storage abs path
+                $storagePath = storage_path('app/public') . parse_url($doc->file_path, PHP_URL_PATH);
+                // Strip /storage prefix if URL contains it
+                $storagePath = preg_replace('#/storage/#', '/', $storagePath, 1);
+                if (file_exists($storagePath)) {
+                    $attachments[] = $storagePath;
+                } else {
+                    // Try direct mapping: remove domain from URL, prepend storage root
+                    $relative = ltrim(parse_url($doc->file_path, PHP_URL_PATH), '/');
+                    $alt = storage_path('app/public/' . preg_replace('#^storage/#', '', $relative));
+                    if (file_exists($alt)) {
+                        $attachments[] = $alt;
+                    }
+                }
+            }
+        }
+
+        // ── Resolve submission SMTP ──────────────────────────────────────────────
+        $emailSvc = null;
+        $resolvers = [
+            fn() => EmailService::forClient((int) $clientId, 'submission'),
+            fn() => EmailService::forClient((int) $clientId, 'notification'),
+            fn() => EmailService::forClientAny((int) $clientId),
+            fn() => EmailService::systemDefault(),
+        ];
+        foreach ($resolvers as $resolver) {
+            try {
+                $emailSvc = $resolver();
+                break;
+            } catch (\Throwable) {
+                // try next
+            }
+        }
+        if (!$emailSvc) {
+            Log::warning("submitApplication: no email config available for client {$clientId}");
+        }
+
+        // ── Render email body once ───────────────────────────────────────────────
+        $emailHtml = $emailHtmlOverride ?? view('emails.lender_application', [
+            'businessName' => $businessName,
+            'senderName'   => $submitterName,
+            'customNote'   => $notes,
+        ])->render();
+
+        $subject = $emailSubject ?: "New Funding Application — {$businessName}";
 
         foreach ($lenderIds as $lenderId) {
             $lender = DB::connection($conn)->table('crm_lender')->where('id', $lenderId)->first();
@@ -282,42 +341,43 @@ class LeadLenderService
             }
 
             try {
-                $now    = Carbon::now();
-                $subId  = DB::connection($conn)->table('crm_lender_submissions')->insertGetId([
-                    'lead_id'          => $leadId,
-                    'lender_id'        => $lenderId,
-                    'lender_name'      => $lender->lender_name,
-                    'lender_email'     => $lender->email,
-                    'application_pdf'  => $pdfStoragePath,
-                    'submission_status'=> 'submitted',
-                    'response_status'  => 'pending',
-                    'notes'            => $notes,
-                    'submitted_by'     => $userId,
-                    'submitted_at'     => $now,
-                    'created_at'       => $now,
-                    'updated_at'       => $now,
+                $now   = Carbon::now();
+                $subId = DB::connection($conn)->table('crm_lender_submissions')->insertGetId([
+                    'lead_id'           => $leadId,
+                    'lender_id'         => $lenderId,
+                    'lender_name'       => $lender->lender_name,
+                    'lender_email'      => $lender->email,
+                    'application_pdf'   => $pdfStoragePath,
+                    'submission_status' => 'submitted',
+                    'response_status'   => 'pending',
+                    'notes'             => $notes,
+                    'submitted_by'      => $userId,
+                    'submitted_at'      => $now,
+                    'created_at'        => $now,
+                    'updated_at'        => $now,
                 ]);
 
-                // Send email if lender has an email address
-                $emailTargets = array_filter([
+                // Send to primary + all CC/secondary emails
+                $emailTargets = array_values(array_filter([
                     $lender->email,
                     $lender->secondary_email  ?? null,
                     $lender->secondary_email2 ?? null,
                     $lender->secondary_email3 ?? null,
                     $lender->secondary_email4 ?? null,
-                ]);
+                ]));
 
-                foreach ($emailTargets as $email) {
+                if ($emailSvc && !empty($emailTargets)) {
+                    $primaryTo  = array_shift($emailTargets);
                     try {
-                        Mail::to(trim($email))->send(new LenderApplicationMail(
-                            $businessName,
-                            $submitterName,
-                            $pdfAbsPath,
-                            $pdfFileName,
-                            $notes,
-                        ));
+                        $emailSvc->send(
+                            to:          trim($primaryTo),
+                            subject:     $subject,
+                            html:        $emailHtml,
+                            attachments: $attachments,
+                            cc:          array_map('trim', $emailTargets),
+                        );
                     } catch (\Throwable $mailEx) {
-                        Log::warning("LenderApplicationMail failed for lender {$lenderId} → {$email}: " . $mailEx->getMessage());
+                        Log::warning("LenderApplicationMail failed for lender {$lenderId} → {$primaryTo}: " . $mailEx->getMessage());
                     }
                 }
 
@@ -334,12 +394,12 @@ class LeadLenderService
 
                 $submitted[] = $lenderId;
                 $records[$lenderId] = [
-                    'id'               => $subId,
-                    'lender_id'        => $lenderId,
-                    'lender_name'      => $lender->lender_name,
-                    'submission_status'=> 'submitted',
-                    'response_status'  => 'pending',
-                    'submitted_at'     => $now->toDateTimeString(),
+                    'id'                => $subId,
+                    'lender_id'         => $lenderId,
+                    'lender_name'       => $lender->lender_name,
+                    'submission_status' => 'submitted',
+                    'response_status'   => 'pending',
+                    'submitted_at'      => $now->toDateTimeString(),
                 ];
             } catch (\Throwable $e) {
                 Log::error("submitApplication failed for lender {$lenderId}: " . $e->getMessage());

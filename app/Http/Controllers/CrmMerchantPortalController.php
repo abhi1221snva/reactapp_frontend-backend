@@ -39,6 +39,18 @@ class CrmMerchantPortalController extends Controller
             $lead->unique_url   = $url;
             $lead->save();
 
+            // Register portal token in master index for instant future lookups
+            try {
+                \DB::table('lead_token_map')->insertOrIgnore([
+                    'lead_token' => $token,
+                    'client_id'  => $clientId,
+                    'lead_id'    => $id,
+                    'created_at' => now(),
+                ]);
+            } catch (\Throwable $e) {
+                \Log::warning("[CrmMerchantPortal::generate] lead_token_map insert failed: " . $e->getMessage());
+            }
+
             return $this->successResponse("Merchant Portal Link Generated", [
                 'portal_id'  => $portal->id,
                 'token'      => $token,
@@ -70,6 +82,16 @@ class CrmMerchantPortalController extends Controller
             if (!$portal) {
                 return $this->failResponse("No active merchant portal found for this lead", [], null, 404);
             }
+
+            // Always ensure portal token is indexed in master map (idempotent)
+            try {
+                \DB::table('lead_token_map')->insertOrIgnore([
+                    'lead_token' => $portal->token,
+                    'client_id'  => $clientId,
+                    'lead_id'    => $id,
+                    'created_at' => now(),
+                ]);
+            } catch (\Throwable $e) { /* non-fatal */ }
 
             // Rebuild URL from current company_domain — this fixes stale/legacy URLs
             // that may contain an old domain (e.g. portal.voiptella.com) or HTML anchor wrapping.

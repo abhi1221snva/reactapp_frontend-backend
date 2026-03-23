@@ -17,12 +17,32 @@ class PublicApplicationService
     // Fields excluded from the public apply form (sensitive / internal)
     private const EXCLUDED_APPLY_KEYS = ['credit_score', 'unique_url', 'unique_token', 'signature_image', 'owner_2_ssn'];
 
-    // Map crm_label.heading → section title
+    // Map crm_label.heading_type → section title (used by legacy getSectionsFromLegacy)
     private const SECTION_LABELS = [
         'business'     => 'Business Information',
         'owner'        => 'Owner Information',
         'second_owner' => 'Owner 2 Information',
         'other'        => 'Additional Information',
+    ];
+
+    // Map crm_labels.section key → display label (mirrors SECTION_MAP in CrmLeadFields.tsx)
+    private const SECTION_LABEL_MAP = [
+        // Current structured sections
+        'owner'        => 'Owner Information',
+        'business'     => 'Business Information',
+        'funding'      => 'Funding Information',
+        'contact'      => 'Contact Information',
+        'financial'    => 'Financial Information',
+        'documents'    => 'Documents / Verification',
+        'custom'       => 'Custom Fields',
+        // Legacy section keys (backward compatibility)
+        'second_owner' => 'Owner 2 Information',
+        'general'      => 'General Information',
+        'other'        => 'Additional Information',
+        'address'      => 'Address Information',
+        'banking'      => 'Bank Information',
+        'bank'         => 'Bank Information',
+        'details'      => 'Business Details',
     ];
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -112,10 +132,83 @@ class PublicApplicationService
     {
         $conn = "mysql_{$clientId}";
 
-        if (!DB::connection($conn)->getSchemaBuilder()->hasTable('crm_label')) {
-            return $this->defaultSections();
+        // ── Priority 1: New EAV crm_labels table (source of truth from CRM lead-fields) ──
+        if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_labels')) {
+            $sections = $this->getSectionsFromEav($conn, $includeAll);
+            if (!empty($sections)) return $sections;
         }
 
+        // ── Priority 2: Legacy crm_label table ────────────────────────────────
+        if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_label')) {
+            $sections = $this->getSectionsFromLegacy($conn, $includeAll);
+            if (!empty($sections)) return $sections;
+        }
+
+        // ── Fallback: hardcoded defaults ──────────────────────────────────────
+        return $this->defaultSections();
+    }
+
+    /**
+     * Build sections from crm_labels (EAV, source of truth for CRM lead-fields page).
+     */
+    private function getSectionsFromEav(string $conn, bool $includeAll): array
+    {
+        $labels = DB::connection($conn)
+            ->table('crm_labels')
+            ->where('status', 1)
+            ->orderBy('display_order')
+            ->select('label_name', 'field_key', 'field_type', 'section', 'options', 'required', 'placeholder', 'display_order')
+            ->get();
+
+        // Track section insertion order by the first field's display_order
+        $sectionFirstOrder = [];
+        $grouped           = [];
+
+        foreach ($labels as $lbl) {
+            $key = $lbl->field_key;
+            if (!$includeAll && in_array($key, self::EXCLUDED_APPLY_KEYS, true)) continue;
+
+            $rawSection = (isset($lbl->section) && trim((string) $lbl->section) !== '')
+                ? strtolower(trim((string) $lbl->section))
+                : 'general';
+            // Resolve display label: map known keys, fall back to title-casing the raw value
+            $section = self::SECTION_LABEL_MAP[$rawSection]
+                ?? ucwords(str_replace('_', ' ', $rawSection));
+
+            if (!isset($sectionFirstOrder[$section])) {
+                $sectionFirstOrder[$section] = $lbl->display_order ?? 9999;
+            }
+
+            $grouped[$section][] = [
+                'key'         => $key,
+                'label'       => $lbl->label_name,
+                'type'        => $this->normalizeEavFieldType($lbl->field_type),
+                'required'    => (bool) $lbl->required,
+                'placeholder' => $lbl->placeholder ?? '',
+                'options'     => $this->parseJsonOptions($lbl->options),
+            ];
+        }
+
+        if (empty($grouped)) return [];
+
+        // Sort sections by the display_order of their first field
+        asort($sectionFirstOrder);
+
+        $sections = [];
+        foreach (array_keys($sectionFirstOrder) as $title) {
+            if (isset($grouped[$title])) {
+                $sections[] = ['title' => $title, 'fields' => $grouped[$title]];
+            }
+        }
+
+        return $sections;
+    }
+
+    /**
+     * Build sections from legacy crm_label table (fallback).
+     */
+    private function getSectionsFromLegacy(string $conn, bool $includeAll): array
+    {
         $labels = DB::connection($conn)
             ->table('crm_label')
             ->where('status', 1)
@@ -158,7 +251,7 @@ class PublicApplicationService
             }
         }
 
-        return $sections ?: $this->defaultSections();
+        return $sections;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -174,6 +267,16 @@ class PublicApplicationService
         // Extract signature before EAV storage (stored separately)
         $signatureData = $formData['signature_image'] ?? null;
         unset($formData['signature_image']);
+
+        // Normalize phone field — ensure 'mobile' alias exists for legacy mapping
+        if (empty($formData['mobile'])) {
+            foreach (['phone_number', 'phone', 'cell_phone', 'telephone', 'cell'] as $alt) {
+                if (!empty($formData[$alt])) {
+                    $formData['mobile'] = $formData[$alt];
+                    break;
+                }
+            }
+        }
 
         $columnMap = $this->buildColumnMap($conn);
 
@@ -259,6 +362,18 @@ class PublicApplicationService
             'domain'    => $portalBase,
             'url'       => $merchantUrl,
         ]);
+
+        // ── Register in master index for instant future lookups ──────────────
+        try {
+            DB::table('lead_token_map')->insertOrIgnore([
+                'lead_token' => $leadToken,
+                'client_id'  => $clientId,
+                'lead_id'    => $leadId,
+                'created_at' => $now,
+            ]);
+        } catch (\Throwable $e) {
+            \Log::warning("[PublicApp createLead] lead_token_map insert failed: " . $e->getMessage());
+        }
 
         return [
             'lead_id'       => $leadId,
@@ -452,38 +567,127 @@ HTML;
 
     public function resolveLeadToken(string $token): array
     {
-        $clients = DB::table('clients')->where('is_deleted', 0)->pluck('id');
+        // ── Fast path: master lead_token_map index (single query, no per-client DB open) ──
+        // This avoids opening 50+ client connections per request (MySQL max_connections risk).
+        $mapped = DB::table('lead_token_map')
+            ->where('lead_token', $token)
+            ->select('client_id', 'lead_id')
+            ->first();
+
+        if ($mapped) {
+            $result = $this->fetchLeadFromClient((int) $mapped->client_id, $token);
+            if ($result !== null) return $result;
+            // Map entry exists but lead was deleted — fall through to full scan
+        }
+
+        // ── Fallback scan: iterate all clients (for leads created before the index existed) ──
+        // Opens one DB connection at a time and closes it immediately on success.
+        $clients = DB::table('clients')->where('is_deleted', 0)->orderBy('id')->pluck('id');
 
         foreach ($clients as $clientId) {
-            $conn = "mysql_{$clientId}";
             try {
-                if (!DB::connection($conn)->getSchemaBuilder()->hasTable('crm_leads')) continue;
-                $lead = DB::connection($conn)->table('crm_leads')
-                    ->where(function ($q) use ($token) {
-                        $q->where('lead_token', $token)
-                          ->orWhere('unique_token', $token);
-                    })
-                    ->whereNull('deleted_at')
-                    ->first();
-                if ($lead) {
-                    $client = DB::connection($conn)->table('crm_system_setting')->orderBy('id')->first();
-                    if (!$client) {
-                        $mc = DB::table('clients')->where('id', $clientId)->first();
-                        $client = (object) [
-                            'company_name' => $mc->company_name ?? '',
-                            'company_email' => null, 'company_phone' => null,
-                            'company_address' => null, 'city' => null, 'state' => null,
-                            'zipcode' => null, 'logo' => $mc->logo ?? null, 'company_domain' => null,
-                        ];
-                    }
-                    return [$lead, $clientId, $client];
+                $result = $this->fetchLeadFromClient((int) $clientId, $token);
+                if ($result !== null) {
+                    // Back-fill the index so next access is instant
+                    $lead = $result[0];
+                    DB::table('lead_token_map')->insertOrIgnore([
+                        'lead_token' => $token,
+                        'client_id'  => $clientId,
+                        'lead_id'    => $lead->id,
+                        'created_at' => now(),
+                    ]);
+                    return $result;
                 }
             } catch (\Throwable $e) {
+                \Log::warning("[resolveLeadToken] client_{$clientId} error: " . $e->getMessage());
                 continue;
             }
         }
 
         throw new \RuntimeException('Application not found or link expired.', 404);
+    }
+
+    /**
+     * Attempt to load a lead by token from a single client DB.
+     * Returns [$lead, $clientId, $client] on success, null if not found.
+     * Checks crm_leads (EAV), crm_merchant_portals (portal tokens), and crm_lead_data (legacy).
+     */
+    private function fetchLeadFromClient(int $clientId, string $token): ?array
+    {
+        $conn = "mysql_{$clientId}";
+
+        // Check crm_leads (new EAV architecture)
+        if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_leads')) {
+            $lead = DB::connection($conn)->table('crm_leads')
+                ->where(function ($q) use ($token) {
+                    $q->where('lead_token', $token)->orWhere('unique_token', $token);
+                })
+                ->whereNull('deleted_at')
+                ->first();
+
+            if ($lead) {
+                return [$lead, $clientId, $this->loadClientSettings($conn, $clientId)];
+            }
+        }
+
+        // Check crm_merchant_portals — portal token may differ from crm_leads.lead_token
+        // (happens when portal was generated before lead_token sync was added)
+        if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_merchant_portals')) {
+            $portal = DB::connection($conn)->table('crm_merchant_portals')
+                ->where('token', $token)
+                ->where('status', 1)
+                ->first();
+
+            if ($portal) {
+                $lead = DB::connection($conn)->table('crm_leads')
+                    ->where('id', $portal->lead_id)
+                    ->whereNull('deleted_at')
+                    ->first();
+
+                if ($lead) {
+                    // Sync crm_leads.lead_token so future fast-path lookups work
+                    DB::connection($conn)->table('crm_leads')
+                        ->where('id', $lead->id)
+                        ->update(['lead_token' => $token, 'unique_token' => $token, 'updated_at' => now()]);
+                    $lead->lead_token   = $token;
+                    $lead->unique_token = $token;
+
+                    return [$lead, $clientId, $this->loadClientSettings($conn, $clientId)];
+                }
+            }
+        }
+
+        // Check crm_lead_data (legacy architecture — client_78 and similar)
+        if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_data')) {
+            $cols = DB::connection($conn)->getSchemaBuilder()->getColumnListing('crm_lead_data');
+            if (in_array('lead_token', $cols, true)) {
+                $lead = DB::connection($conn)->table('crm_lead_data')
+                    ->where('lead_token', $token)
+                    ->whereNull('deleted_at')
+                    ->first();
+
+                if ($lead) {
+                    return [$lead, $clientId, $this->loadClientSettings($conn, $clientId)];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function loadClientSettings(string $conn, int $clientId): object
+    {
+        $client = DB::connection($conn)->table('crm_system_setting')->orderBy('id')->first();
+        if (!$client) {
+            $mc = DB::table('clients')->where('id', $clientId)->first();
+            $client = (object) [
+                'company_name' => $mc->company_name ?? '', 'company_email' => null,
+                'company_phone' => null, 'company_address' => null, 'city' => null,
+                'state' => null, 'zipcode' => null, 'logo' => $mc->logo ?? null,
+                'company_domain' => null,
+            ];
+        }
+        return $client;
     }
 
     public function getMerchantLeadData(object $lead, int $clientId): array
@@ -755,6 +959,85 @@ HTML;
         return [$absPath, $mime, $filename];
     }
 
+    /**
+     * Serve a lead document inline — never redirects to direct storage URL.
+     * Validates token ownership. Returns [absPath, mimeType, filename].
+     */
+    public function serveDocumentInline(string $token, int $docId): array
+    {
+        [$lead, $clientId] = $this->resolveLeadToken($token);
+        $conn = "mysql_{$clientId}";
+
+        if (!DB::connection($conn)->getSchemaBuilder()->hasTable('crm_documents')) {
+            throw new \RuntimeException('Document not found.', 404);
+        }
+
+        $doc = DB::connection($conn)->table('crm_documents')
+            ->where('id', $docId)->where('lead_id', $lead->id)->whereNull('deleted_at')->first();
+
+        if (!$doc) {
+            throw new \RuntimeException('Document not found.', 404);
+        }
+
+        $filePath = $doc->file_path ?? '';
+        $filename = $doc->file_name ?? basename($filePath);
+
+        // Convert public URL to physical path (never redirect)
+        $appUrl = rtrim(env('APP_URL'), '/');
+        if (str_starts_with($filePath, $appUrl . '/storage/')) {
+            $relativePath = ltrim(substr($filePath, strlen($appUrl . '/storage/')), '/');
+            $absPath = storage_path('app/public/' . $relativePath);
+        } elseif (!str_starts_with($filePath, 'http')) {
+            // Legacy: relative path on disk
+            $absPath = TenantStorageService::getPath($clientId, $filePath);
+            if (!file_exists($absPath)) {
+                $absPath = storage_path('app/public/' . $filePath);
+            }
+        } else {
+            // External URL — cannot stream inline safely
+            throw new \RuntimeException('This document cannot be viewed inline.', 400);
+        }
+
+        if (!file_exists($absPath)) {
+            throw new \RuntimeException('Document file not found.', 404);
+        }
+
+        $mime = mime_content_type($absPath) ?: 'application/pdf';
+        return [$absPath, $mime, $filename];
+    }
+
+    /**
+     * Delete a lead document (soft-delete DB row + delete physical file).
+     */
+    public function deleteLeadDocument(object $lead, int $clientId, int $docId): void
+    {
+        $conn = "mysql_{$clientId}";
+
+        if (!DB::connection($conn)->getSchemaBuilder()->hasTable('crm_documents')) {
+            throw new \RuntimeException('Document not found.', 404);
+        }
+
+        $doc = DB::connection($conn)->table('crm_documents')
+            ->where('id', $docId)->where('lead_id', $lead->id)->whereNull('deleted_at')->first();
+
+        if (!$doc) {
+            throw new \RuntimeException('Document not found.', 404);
+        }
+
+        // Delete physical file from storage
+        $filePath = $doc->file_path ?? '';
+        $appUrl   = rtrim(env('APP_URL'), '/');
+        if (str_starts_with($filePath, $appUrl . '/storage/')) {
+            $relativePath = ltrim(substr($filePath, strlen($appUrl . '/storage/')), '/');
+            \Storage::disk('public')->delete($relativePath);
+        }
+
+        // Soft-delete the DB row
+        DB::connection($conn)->table('crm_documents')
+            ->where('id', $docId)
+            ->update(['deleted_at' => now()]);
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // AFFILIATE CODE MANAGEMENT
     // ─────────────────────────────────────────────────────────────────────────
@@ -836,6 +1119,38 @@ HTML;
         return compact('direct', 'mapped');
     }
 
+    /**
+     * Normalise field types from the new crm_labels table.
+     * crm_labels uses: text|number|email|phone_number|date|textarea|dropdown|checkbox|radio
+     * Frontend expects: text|number|email|tel|date|textarea|select|checkbox|ssn
+     */
+    private function normalizeEavFieldType(string $type): string
+    {
+        return [
+            'phone_number' => 'tel',
+            'phone'        => 'tel',
+            'number'       => 'number',
+            'date'         => 'date',
+            'email'        => 'email',
+            'text'         => 'text',
+            'textarea'     => 'textarea',
+            'dropdown'     => 'select',
+            'checkbox'     => 'select',
+            'radio'        => 'select',
+            'ssn'          => 'ssn',
+        ][$type] ?? 'text';
+    }
+
+    /**
+     * Parse options stored as JSON in crm_labels.options.
+     */
+    private function parseJsonOptions(?string $options): array
+    {
+        if (empty($options)) return [];
+        $decoded = json_decode($options, true);
+        return is_array($decoded) ? $decoded : [];
+    }
+
     private function normalizeFieldType(string $type): string
     {
         return [
@@ -871,9 +1186,13 @@ HTML;
             ->orderBy('id', 'desc')
             ->get()
             ->map(function ($d) {
+                // file_name can be null for legacy uploads — fall back to basename of file_path
+                $filename = $d->file_name ?? basename((string) ($d->file_path ?? ''));
+                if (empty($filename)) $filename = 'document_' . $d->id;
+
                 return [
                     'id'       => $d->id,
-                    'filename' => $d->file_name,
+                    'filename' => $filename,
                     'doc_type' => $d->document_type,
                     'url'      => $d->file_path,  // already a full public URL
                     'uploaded' => $d->created_at,

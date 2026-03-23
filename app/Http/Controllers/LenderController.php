@@ -463,13 +463,13 @@ class LenderController extends Controller
             if ($request->has("min_deposits"))
                 $user->min_deposits = $request->input("min_deposits");
             if ($request->has("nsfs"))
-                $user->state = $request->input("nsfs");
+                $user->nsfs = $request->input("nsfs");
             if ($request->has("min_time_business"))
                 $user->min_time_business = $request->input("min_time_business");
             if ($request->has("min_amount"))
                 $user->min_amount = $request->input("min_amount");
             if ($request->has("max_position"))
-                $user->max_position = $request->input("max_position");
+                $user->max_position = is_array($request->input("max_position")) ? json_encode($request->input("max_position")) : $request->input("max_position");
             if ($request->has("max_term"))
                 $user->max_term = $request->input("max_term");
             if ($request->has("white_label"))
@@ -499,7 +499,7 @@ class LenderController extends Controller
             if ($request->has("industry"))
                 $user->industry = $request->input("industry");
             if ($request->has("guideline_state"))
-                $user->guideline_state = $request->input("guideline_state");
+                $user->guideline_state = is_array($request->input("guideline_state")) ? json_encode($request->input("guideline_state")) : $request->input("guideline_state");
             if ($request->has("guideline_file"))
                 $user->guideline_file = $request->input("guideline_file");
             if ($request->has("notes"))

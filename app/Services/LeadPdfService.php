@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use Dompdf\Dompdf;
+use Dompdf\Options;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -57,6 +59,46 @@ class LeadPdfService
             'template_id'   => $template->id,
             'template_name' => $template->template_name,
         ];
+    }
+
+    /**
+     * Same as renderPdfHtml() but returns binary PDF bytes via Dompdf.
+     * Used by download endpoints — forces a file download instead of opening
+     * an HTML preview in the browser.
+     *
+     * @return array{pdf: string, filename: string}
+     * @throws \RuntimeException with HTTP-style code on failure
+     */
+    public function renderPdfBinary(int $clientId, int $leadId): array
+    {
+        $result = $this->renderPdfHtml($clientId, $leadId);
+
+        $binary = $this->htmlToPdfBytes($result['html']);
+        $safe   = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $result['lead_name'] ?: "lead_{$leadId}");
+
+        return [
+            'pdf'      => $binary,
+            'filename' => "application_{$safe}.pdf",
+        ];
+    }
+
+    /**
+     * Convert an HTML string to PDF bytes using Dompdf.
+     */
+    public function htmlToPdfBytes(string $html): string
+    {
+        $opts = new Options();
+        $opts->set('isRemoteEnabled', false);    // no external HTTP — all images are data URIs
+        $opts->set('isHtml5ParserEnabled', true);
+        $opts->set('defaultFont', 'DejaVu Sans');
+        $opts->set('chroot', storage_path());    // restrict FS access to storage dir
+
+        $dompdf = new Dompdf($opts);
+        $dompdf->loadHtml($html, 'UTF-8');
+        $dompdf->setPaper('A4', 'portrait');
+        $dompdf->render();
+
+        return $dompdf->output();
     }
 
     // ── Private: build the full placeholder-substitution map for a lead ──────
@@ -260,7 +302,63 @@ class LeadPdfService
             }
         }
 
+        // ── Signature images → inline <img> tags ─────────────────────────────
+        foreach (['signature_image', 'owner_2_signature_image'] as $sigKey) {
+            if (isset($data[$sigKey])) {
+                $data[$sigKey] = $this->resolveSignatureImg($clientId, (string) $data[$sigKey]);
+            }
+        }
+
         return $data;
+    }
+
+    /**
+     * Convert a stored signature path into an inline <img> HTML tag.
+     *
+     * Stored value is a relative path like "leads/19/signatures/signature_xxx.png".
+     * We try two storage locations (new TenantStorageService path, then legacy public
+     * disk), embed the file as a base64 data URI, and return the <img> element so
+     * that [[signature_image]] renders as an actual image in any PDF template.
+     *
+     * Returns '' (empty string) when no path is provided.
+     * Returns a "No signature on file" notice when the path exists but the file
+     * cannot be found — avoids showing raw file paths in the rendered output.
+     */
+    private function resolveSignatureImg(int $clientId, string $rawValue): string
+    {
+        if (empty($rawValue)) {
+            return '';
+        }
+
+        // Already resolved (data URI or full <img> tag) — pass through unchanged.
+        if (str_starts_with($rawValue, 'data:') || str_contains($rawValue, '<img')) {
+            return $rawValue;
+        }
+
+        // Strip any accidental leading slash.
+        $relPath = ltrim($rawValue, '/');
+
+        // Try new per-tenant storage: storage/app/clients/client_{id}/leads/…
+        $absPath = \App\Services\TenantStorageService::getPath($clientId, $relPath);
+
+        // Fallback: legacy public disk storage/app/public/…
+        if (!file_exists($absPath)) {
+            $absPath = storage_path('app/public/' . $relPath);
+        }
+
+        if (!file_exists($absPath)) {
+            return '<span style="color:#94a3b8;font-size:12px;font-style:italic;">No signature on file</span>';
+        }
+
+        try {
+            $mime = mime_content_type($absPath) ?: 'image/png';
+            $b64  = base64_encode(file_get_contents($absPath));
+            return '<img src="data:' . $mime . ';base64,' . $b64
+                . '" style="max-height:80px;max-width:300px;display:block;" alt="Signature" />';
+        } catch (\Throwable $e) {
+            Log::warning("[LeadPdfService] Could not embed signature for lead (client {$clientId}): " . $e->getMessage());
+            return '<span style="color:#94a3b8;font-size:12px;font-style:italic;">Signature unavailable</span>';
+        }
     }
 
     // ── Substitute [[key]] and [key] placeholders in an HTML string ───────────

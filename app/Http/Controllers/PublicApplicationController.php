@@ -62,11 +62,22 @@ class PublicApplicationController extends Controller
      */
     public function submitApplication(Request $request, string $code)
     {
+        // Normalize phone field — CRM dynamic fields may use phone_number, phone,
+        // cell_phone, etc. instead of 'mobile'. Copy the first non-empty match.
+        if (!$request->filled('mobile')) {
+            foreach (['phone_number', 'phone', 'cell_phone', 'telephone', 'cell'] as $alt) {
+                if ($request->filled($alt)) {
+                    $request->merge(['mobile' => $request->input($alt)]);
+                    break;
+                }
+            }
+        }
+
         $this->validate($request, [
             'first_name'      => 'required|string|max:100',
             'last_name'       => 'required|string|max:100',
             'email'           => 'required|email|max:255',
-            'mobile'          => 'required|string|max:30',
+            'mobile'          => 'nullable|string|max:30',
             'signature_image' => 'nullable|string',
         ]);
 
@@ -193,6 +204,89 @@ class PublicApplicationController extends Controller
     }
 
     /**
+     * GET /public/apply/{token}/download
+     * Download the affiliate application as a PDF file (Content-Disposition: attachment).
+     * Falls back to the built-in apply-form HTML→PDF if no CRM template is configured.
+     */
+    public function downloadApplicationPdf(Request $request, string $token)
+    {
+        try {
+            [$lead, $clientId, $client] = $this->svc->resolveLeadToken($token);
+
+            // Try CRM template first (same as merchant render-pdf)
+            try {
+                $result   = $this->pdfSvc->renderPdfBinary($clientId, $lead->id);
+                $filename = $result['filename'];
+                $binary   = $result['pdf'];
+            } catch (\RuntimeException $e) {
+                if ($e->getCode() !== 404) throw $e;
+
+                // Fallback: built-in apply-form template
+                $company  = $this->svc->getCompanyBranding($client, $clientId);
+                $sections = $this->svc->getFormSections($clientId, true);
+                $html     = $this->svc->generateApplicationHtml($clientId, $lead, $sections, $company);
+                $binary   = $this->pdfSvc->htmlToPdfBytes($html);
+                $filename = 'application.pdf';
+            }
+
+            return response($binary, 200, [
+                'Content-Type'        => 'application/pdf',
+                'Content-Disposition' => 'attachment; filename="' . addslashes($filename) . '"',
+                'Content-Length'      => strlen($binary),
+                'Cache-Control'       => 'no-store',
+            ]);
+        } catch (\RuntimeException $e) {
+            return response('<h1>Error</h1><p>' . htmlspecialchars($e->getMessage()) . '</p>', $e->getCode() ?: 400)
+                ->header('Content-Type', 'text/html');
+        } catch (\Throwable $e) {
+            \Log::error('downloadApplicationPdf: ' . $e->getMessage());
+            return response('<h1>Error</h1><p>Unable to generate PDF.</p>', 500)
+                ->header('Content-Type', 'text/html');
+        }
+    }
+
+    /**
+     * GET /public/merchant/{token}/download
+     * Download the merchant application PDF (same template as render-pdf, forced download).
+     * Falls back to the built-in apply-form HTML→PDF if no CRM template is configured.
+     */
+    public function downloadMerchantPdf(Request $request, string $token)
+    {
+        try {
+            [$lead, $clientId, $client] = $this->svc->resolveLeadToken($token);
+
+            try {
+                $result   = $this->pdfSvc->renderPdfBinary($clientId, $lead->id);
+                $filename = $result['filename'];
+                $binary   = $result['pdf'];
+            } catch (\RuntimeException $e) {
+                if ($e->getCode() !== 404) throw $e;
+
+                // Fallback: built-in apply-form template
+                $company  = $this->svc->getCompanyBranding($client, $clientId);
+                $sections = $this->svc->getFormSections($clientId, true);
+                $html     = $this->svc->generateApplicationHtml($clientId, $lead, $sections, $company);
+                $binary   = $this->pdfSvc->htmlToPdfBytes($html);
+                $filename = 'application.pdf';
+            }
+
+            return response($binary, 200, [
+                'Content-Type'        => 'application/pdf',
+                'Content-Disposition' => 'attachment; filename="' . addslashes($filename) . '"',
+                'Content-Length'      => strlen($binary),
+                'Cache-Control'       => 'no-store',
+            ]);
+        } catch (\RuntimeException $e) {
+            return response('<h1>Error</h1><p>' . htmlspecialchars($e->getMessage()) . '</p>', $e->getCode() ?: 400)
+                ->header('Content-Type', 'text/html');
+        } catch (\Throwable $e) {
+            \Log::error('downloadMerchantPdf: ' . $e->getMessage());
+            return response('<h1>Error</h1><p>Unable to generate PDF.</p>', 500)
+                ->header('Content-Type', 'text/html');
+        }
+    }
+
+    /**
      * GET /public/lead/{token}/signature
      * Serve the lead's signature image (no auth — validated by lead_token ownership).
      */
@@ -296,13 +390,57 @@ class PublicApplicationController extends Controller
     }
 
     /**
+     * DELETE /public/merchant/{token}/document/{docId}
+     * Delete a document from the merchant portal (removes file + DB row).
+     */
+    public function deleteDocument(Request $request, string $token, int $docId)
+    {
+        try {
+            [$lead, $clientId] = $this->svc->resolveLeadToken($token);
+            $this->svc->deleteLeadDocument($lead, $clientId, $docId);
+
+            return response()->json(['success' => true, 'message' => 'Document deleted.']);
+        } catch (\RuntimeException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], $e->getCode() ?: 400);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => 'Failed to delete document.'], 500);
+        }
+    }
+
+    /**
+     * GET /public/document/{token}/view/{docId}
+     * Serve a lead document inline (never redirects to direct storage URL).
+     * Authenticated by lead_token ownership.
+     */
+    public function viewDocument(Request $request, string $token, int $docId)
+    {
+        try {
+            [$absPath, $mime, $filename] = $this->svc->serveDocumentInline($token, $docId);
+
+            return response()->file($absPath, [
+                'Content-Type'        => $mime,
+                'Content-Disposition' => 'inline; filename="' . addslashes($filename) . '"',
+                'X-Frame-Options'     => 'SAMEORIGIN',
+                'Cache-Control'       => 'private, no-store',
+            ]);
+        } catch (\RuntimeException $e) {
+            $code = $e->getCode() ?: 404;
+            return response('<h1>Not Found</h1><p>' . htmlspecialchars($e->getMessage()) . '</p>', $code)
+                ->header('Content-Type', 'text/html');
+        } catch (\Throwable $e) {
+            return response('<h1>Error</h1><p>Unable to load document.</p>', 500)
+                ->header('Content-Type', 'text/html');
+        }
+    }
+
+    /**
      * POST /public/merchant/{token}/upload
      * Upload a document from the merchant portal or initial submission.
      */
     public function uploadDocument(Request $request, string $token)
     {
         $this->validate($request, [
-            'document'      => 'required|file|max:10240|mimes:pdf,jpg,jpeg,png,doc,docx',
+            'document'      => 'required|file|max:10240|mimes:pdf',
             'document_type' => 'nullable|string|max:100',
         ]);
 
