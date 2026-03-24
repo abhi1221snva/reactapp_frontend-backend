@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Model\Client\CrmLabel;
 use App\Services\LeadFieldService;
+use App\Services\ValidationSuggestionService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use App\Model\Role;
@@ -509,7 +510,7 @@ class CrmLabelController extends Controller
 
         $clientId = $request->auth->parent_id;
 
-        $position = $request->display_order;
+        $position = $request->ids ?? $request->display_order;
 
 
 
@@ -523,13 +524,13 @@ class CrmLabelController extends Controller
             }
             return $this->successResponse("Label Updated Successfully", $objLead->toArray());
         } catch (ModelNotFoundException $exception) {
-            return $this->failResponse("Lead Not Found", [
-                "Invalid Lead id: $id"
-            ], $exception, 404);
-        } catch (\Throwable $exception) {
-            return $this->failResponse("Failed to update Lead", [
+            return $this->failResponse("Label Not Found", [
                 $exception->getMessage()
             ], $exception, 404);
+        } catch (\Throwable $exception) {
+            return $this->failResponse("Failed to update display order", [
+                $exception->getMessage()
+            ], $exception, 500);
         }
     }
 
@@ -571,11 +572,12 @@ class CrmLabelController extends Controller
         $clientId = $request->auth->parent_id;
 
         $this->validate($request, [
-            'label_name' => ['required', 'string', 'max:255'],
+            'label_name'       => ['required', 'string', 'max:255'],
             // 'file' added to support MCA Documents section
-            'field_type' => 'required|string|in:text,number,email,phone_number,date,textarea,dropdown,checkbox,radio,file',
+            'field_type'       => 'required|string|in:text,number,email,phone_number,date,textarea,dropdown,checkbox,radio,file',
             // field_key is optional — auto-generated from label_name when absent
-            'field_key'  => ['sometimes', 'nullable', 'string', 'max:100', 'alpha_dash'],
+            'field_key'        => ['sometimes', 'nullable', 'string', 'max:100', 'alpha_dash'],
+            'validation_rules' => 'sometimes|nullable|array',
         ]);
 
         try {
@@ -651,11 +653,12 @@ class CrmLabelController extends Controller
         $clientId = $request->auth->parent_id;
 
         $this->validate($request, [
-            'label_name' => 'sometimes|required|string|max:255',
-            'field_type' => 'sometimes|string|in:text,number,email,phone_number,date,textarea,dropdown,checkbox,radio',
-            'section'    => 'sometimes|string|max:100',
-            'required'   => 'sometimes|boolean',
-            'status'     => 'sometimes|boolean',
+            'label_name'       => 'sometimes|required|string|max:255',
+            'field_type'       => 'sometimes|string|in:text,number,email,phone_number,date,textarea,dropdown,checkbox,radio',
+            'section'          => 'sometimes|string|max:100',
+            'required'         => 'sometimes|boolean',
+            'status'           => 'sometimes|boolean',
+            'validation_rules' => 'sometimes|nullable|array',
         ]);
 
         try {
@@ -702,6 +705,33 @@ class CrmLabelController extends Controller
         } catch (\Throwable $e) {
             return $this->failResponse("Failed to save field order", [$e->getMessage()], $e, 500);
         }
+    }
+
+    /**
+     * GET /crm/lead-fields/suggest-validation
+     * Return auto-suggested validation rules for a given field_key / label / type.
+     *
+     * Query params:
+     *   field_key   string  required  EAV field key
+     *   label_name  string  optional  Display label (improves matching)
+     *   field_type  string  optional  field_type (text|number|email|…)
+     */
+    public function suggestValidation(Request $request)
+    {
+        $this->validate($request, [
+            'field_key'  => 'required|string|max:100',
+            'label_name' => 'sometimes|string|max:255',
+            'field_type' => 'sometimes|string|max:50',
+        ]);
+
+        $svc   = new ValidationSuggestionService();
+        $rules = $svc->suggest(
+            (string) $request->input('field_key', ''),
+            (string) $request->input('label_name', ''),
+            (string) $request->input('field_type', 'text'),
+        );
+
+        return $this->successResponse('Validation suggestions', $rules);
     }
 
     /**

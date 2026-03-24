@@ -40,8 +40,9 @@ $router->group(['middleware' => ['throttle:60,1']], function () use ($router) {
     // Lead document serve — validated by lead_token ownership
     $router->get('public/lead/{token}/document/{docId}', 'PublicApplicationController@serveDocument');
 
-    // Lead signature serve + merchant signature save
+    // Lead signature serve (Sig 1 + Sig 2) + merchant signature save
     $router->get('public/lead/{token}/signature',         'PublicApplicationController@serveSignature');
+    $router->get('public/lead/{token}/signature2',        'PublicApplicationController@serveSignature2');
     $router->post('public/merchant/{token}/signature',    'PublicApplicationController@saveMerchantSignature');
 
     // Document delete + secure inline view (never exposes direct storage URL)
@@ -1489,12 +1490,13 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   $router->post('/crm-label/updateDisplayOrder', 'CrmLabelController@updateDisplayOrder');
 
   // REST-style Lead Fields API
-  $router->get('crm/lead-fields',           'CrmLabelController@leadFieldsList');
-  $router->post('crm/lead-fields',          'CrmLabelController@leadFieldsCreate');
-  // reorder must be declared before the {id} param route to avoid route collision
-  $router->post('crm/lead-fields/reorder',  'CrmLabelController@leadFieldsReorder');
-  $router->post('crm/lead-fields/{id}',     'CrmLabelController@leadFieldsUpdate');
-  $router->delete('crm/lead-fields/{id}',   'CrmLabelController@leadFieldsDelete');
+  $router->get('crm/lead-fields',                         'CrmLabelController@leadFieldsList');
+  $router->post('crm/lead-fields',                        'CrmLabelController@leadFieldsCreate');
+  // static-path routes must be declared before {id} param routes to avoid collision
+  $router->get('crm/lead-fields/suggest-validation',      'CrmLabelController@suggestValidation');
+  $router->post('crm/lead-fields/reorder',                'CrmLabelController@leadFieldsReorder');
+  $router->post('crm/lead-fields/{id}',                   'CrmLabelController@leadFieldsUpdate');
+  $router->delete('crm/lead-fields/{id}',                 'CrmLabelController@leadFieldsDelete');
 
   // ── Tenant private file serving ─────────────────────────────────────────────
   $router->get('crm/tenant-file/{subdir}/{filename}', 'TenantFileController@serveFile');

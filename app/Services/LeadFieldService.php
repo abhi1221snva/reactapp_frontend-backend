@@ -51,14 +51,17 @@ class LeadFieldService
                 'field_key'     => $data['field_key'],
                 'field_type'    => $data['field_type']    ?? 'text',
                 'section'       => $data['section']       ?? 'general',
-                'options'       => isset($data['options'])
+                'options'          => isset($data['options'])
                     ? (is_array($data['options']) ? json_encode($data['options']) : $data['options'])
                     : null,
-                'placeholder'   => $data['placeholder']   ?? null,
-                'conditions'    => isset($data['conditions'])
+                'placeholder'      => $data['placeholder']   ?? null,
+                'conditions'       => isset($data['conditions'])
                     ? (is_array($data['conditions']) ? json_encode($data['conditions']) : $data['conditions'])
                     : null,
-                'required'      => !empty($data['required']),
+                'validation_rules' => isset($data['validation_rules'])
+                    ? (is_array($data['validation_rules']) ? json_encode($data['validation_rules']) : $data['validation_rules'])
+                    : null,
+                'required'         => !empty($data['required']),
                 'display_order' => $data['display_order'] ?? $this->nextOrder($clientId),
                 'status'        => true,
                 'created_at'    => $now,
@@ -80,7 +83,7 @@ class LeadFieldService
             }
         }
 
-        foreach (['options', 'conditions'] as $json) {
+        foreach (['options', 'conditions', 'validation_rules'] as $json) {
             if (array_key_exists($json, $data)) {
                 $update[$json] = is_array($data[$json])
                     ? json_encode($data[$json])

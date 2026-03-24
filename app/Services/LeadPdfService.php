@@ -99,6 +99,47 @@ class LeadPdfService
     }
 
     /**
+     * Resolve first_name / last_name for a lead from EAV (crm_lead_values),
+     * falling back to system columns on the crm_leads row if present.
+     * Used by fallback download paths where no CRM template exists.
+     *
+     * @return array{first_name: string|null, last_name: string|null}
+     */
+    public function resolveLeadName(int $clientId, int $leadId): array
+    {
+        $conn  = "mysql_{$clientId}";
+        $names = ['first_name' => null, 'last_name' => null];
+
+        // EAV lookup (crm_lead_values) — primary source
+        if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_values')) {
+            $rows = DB::connection($conn)->table('crm_lead_values')
+                ->where('lead_id', $leadId)
+                ->whereIn('field_key', ['first_name', 'last_name'])
+                ->pluck('field_value', 'field_key');
+            $names['first_name'] = $rows['first_name'] ?? null;
+            $names['last_name']  = $rows['last_name']  ?? null;
+        }
+
+        // System-column fallback (legacy crm_lead_data or crm_leads with cols)
+        if (empty($names['first_name']) && empty($names['last_name'])) {
+            $tables = ['crm_leads', 'crm_lead_data'];
+            foreach ($tables as $tbl) {
+                if (!DB::connection($conn)->getSchemaBuilder()->hasTable($tbl)) continue;
+                $cols = DB::connection($conn)->getSchemaBuilder()->getColumnListing($tbl);
+                if (!in_array('first_name', $cols, true)) continue;
+                $row = DB::connection($conn)->table($tbl)->where('id', $leadId)->first();
+                if ($row) {
+                    $names['first_name'] = $row->first_name ?? null;
+                    $names['last_name']  = $row->last_name  ?? null;
+                    break;
+                }
+            }
+        }
+
+        return $names;
+    }
+
+    /**
      * Same as renderPdfHtml() but returns binary PDF bytes via Dompdf.
      * Used by download endpoints — forces a file download instead of opening
      * an HTML preview in the browser.
@@ -120,9 +161,24 @@ class LeadPdfService
 
     /**
      * Convert an HTML string to PDF bytes using Dompdf.
+     * Prepends a compact CSS override so any template (custom or fallback)
+     * fits on a single A4 page regardless of its own font-size declarations.
      */
     public function htmlToPdfBytes(string $html): string
     {
+        // Prepend compact overrides — forces small fonts & tight page margins
+        // on every template. !important wins over inline styles and template CSS.
+        $compact = '<style>'
+            . '@page { size: A4 portrait; margin: 8mm 10mm; }'
+            . 'body { font-size: 8px !important; line-height: 1.3 !important; }'
+            . 'table { font-size: 8px !important; border-collapse: collapse; }'
+            . 'th, td { font-size: 8px !important; padding: 2px 4px !important; line-height: 1.3 !important; }'
+            . 'h1, h2, h3, h4 { font-size: 10px !important; margin: 2px 0 !important; padding: 2px 0 !important; }'
+            . 'p, div, span { line-height: 1.3 !important; }'
+            . 'p { margin: 1px 0 !important; }'
+            . '</style>';
+        $html = $compact . $html;
+
         $opts = new Options();
         $opts->set('isRemoteEnabled', false);    // no external HTTP — all images are data URIs
         $opts->set('isHtml5ParserEnabled', true);

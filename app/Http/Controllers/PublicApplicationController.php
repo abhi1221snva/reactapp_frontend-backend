@@ -244,12 +244,13 @@ class PublicApplicationController extends Controller
             } catch (\RuntimeException $e) {
                 if ($e->getCode() !== 404) throw $e;
 
-                // Fallback: built-in apply-form template
+                // Fallback: built-in apply-form template — still use lead name
                 $company  = $this->svc->getCompanyBranding($client, $clientId);
                 $sections = $this->svc->getFormSections($clientId, true);
                 $html     = $this->svc->generateApplicationHtml($clientId, $lead, $sections, $company);
                 $binary   = $this->pdfSvc->htmlToPdfBytes($html);
-                $filename = 'application.pdf';
+                $names    = $this->pdfSvc->resolveLeadName($clientId, $lead->id);
+                $filename = LeadPdfService::pdfFilename($names['first_name'], $names['last_name']);
             }
 
             return response($binary, 200, [
@@ -285,12 +286,13 @@ class PublicApplicationController extends Controller
             } catch (\RuntimeException $e) {
                 if ($e->getCode() !== 404) throw $e;
 
-                // Fallback: built-in apply-form template
+                // Fallback: built-in apply-form template — still use lead name
                 $company  = $this->svc->getCompanyBranding($client, $clientId);
                 $sections = $this->svc->getFormSections($clientId, true);
                 $html     = $this->svc->generateApplicationHtml($clientId, $lead, $sections, $company);
                 $binary   = $this->pdfSvc->htmlToPdfBytes($html);
-                $filename = 'application.pdf';
+                $names    = $this->pdfSvc->resolveLeadName($clientId, $lead->id);
+                $filename = LeadPdfService::pdfFilename($names['first_name'], $names['last_name']);
             }
 
             return response($binary, 200, [
@@ -332,26 +334,43 @@ class PublicApplicationController extends Controller
 
     /**
      * POST /public/merchant/{token}/signature
-     * Save or replace the signature from the merchant portal.
-     * Accepts { signature_image: "data:image/png;base64,..." }
+     * Save or replace a signature from the merchant portal.
+     *
+     * Accepts:
+     *   { signature_image: "data:image/png;base64,...", field?: "signature_image"|"owner_2_signature_image" }
+     *
+     * `field` defaults to "signature_image" (Sig 1).
+     * Pass field="owner_2_signature_image" to save Signature 2 (Co-Applicant).
      */
     public function saveMerchantSignature(Request $request, string $token)
     {
         $this->validate($request, [
             'signature_image' => 'required|string|min:50',
+            'field'           => 'nullable|string',
         ]);
+
+        // Whitelist allowed field keys — reject anything else
+        $allowed = ['signature_image', 'owner_2_signature_image'];
+        $field   = $request->input('field', 'signature_image');
+        if (!in_array($field, $allowed, true)) {
+            $field = 'signature_image';
+        }
 
         try {
             [$lead, $clientId] = $this->svc->resolveLeadToken($token);
             $conn   = "mysql_{$clientId}";
-            $result = $this->svc->storeSignature($clientId, $lead->id, $request->input('signature_image'), $conn);
+            $result = $this->svc->storeSignature($clientId, $lead->id, $request->input('signature_image'), $conn, $field);
 
             if (!$result) {
                 return response()->json(['success' => false, 'message' => 'Failed to process signature image.'], 422);
             }
 
-            // Return the backend-served URL (not the data URI) for immediate display
-            $serveUrl = rtrim(env('APP_URL'), '/') . '/public/lead/' . $lead->lead_token . '/signature';
+            // Return the backend-served URL matching the field saved
+            $base     = rtrim(env('APP_URL'), '/');
+            $token2   = $lead->lead_token;
+            $serveUrl = $field === 'owner_2_signature_image'
+                ? "{$base}/public/lead/{$token2}/signature2"
+                : "{$base}/public/lead/{$token2}/signature";
 
             return response()->json([
                 'success'       => true,
@@ -362,6 +381,27 @@ class PublicApplicationController extends Controller
             return response()->json(['success' => false, 'message' => $e->getMessage()], $e->getCode() ?: 400);
         } catch (\Throwable $e) {
             return response()->json(['success' => false, 'message' => 'Failed to save signature.'], 500);
+        }
+    }
+
+    /**
+     * GET /public/lead/{token}/signature2
+     * Serve the lead's Co-Applicant (Signature 2) image.
+     */
+    public function serveSignature2(Request $request, string $token)
+    {
+        try {
+            [$lead, $clientId] = $this->svc->resolveLeadToken($token);
+            [$absPath, $mime]  = $this->svc->serveLeadSignature($clientId, $lead->id, 'owner_2_signature_image');
+
+            return response()->file($absPath, [
+                'Content-Type'  => $mime,
+                'Cache-Control' => 'public, max-age=86400',
+            ]);
+        } catch (\RuntimeException $e) {
+            return response('<h1>Not Found</h1>', 404)->header('Content-Type', 'text/html');
+        } catch (\Throwable $e) {
+            return response('<h1>Error</h1>', 500)->header('Content-Type', 'text/html');
         }
     }
 
@@ -505,7 +545,7 @@ class PublicApplicationController extends Controller
             ->toArray();
 
         $svc    = new FieldValidationService();
-        $input  = $request->except(['_token', '_method', 'signature_image']);
+        $input  = $request->except(['_token', '_method', 'signature_image', 'owner_2_signature_image']);
         $errors = [];
 
         foreach ($labels as $label) {

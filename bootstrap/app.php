@@ -18,6 +18,7 @@ if (in_array($origin, $allowedOrigins, true)) {
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, x-client, parent-id, X-Easify-App-Key, X-Easify-User-Token');
 header('Access-Control-Allow-Credentials: true');
+header('Access-Control-Expose-Headers: Content-Disposition');
 header('Vary: Origin');
 
 // Handle OPTIONS preflight requests immediately

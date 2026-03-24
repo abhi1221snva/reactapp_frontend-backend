@@ -124,7 +124,7 @@ class IvrMenu extends Model {
 
                      $sql = "select * from ivr where id='".$ivr."'";
                      $record = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql);
-                     $ivr_id = $record->ann_id;
+                     $ivr_id = $record->ivr_id;
 
 
                     $data['ivr_table_id'] = $ivr;

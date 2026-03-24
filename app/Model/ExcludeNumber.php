@@ -41,6 +41,8 @@ class ExcludeNumber extends Model
         $countQuery = "SELECT COUNT(*) as count " . substr($query, strpos($query, 'FROM'));
         $countParameters = $parameters;
 
+        $query .= " ORDER BY updated_at DESC";
+
         if ($request->has('lower_limit') && $request->has('upper_limit') && is_numeric($request->input('lower_limit')) && is_numeric($request->input('upper_limit'))) {
             $query .= " LIMIT ?, ?";
             $parameters[] = $request->input('lower_limit');

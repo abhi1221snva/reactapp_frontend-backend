@@ -29,6 +29,7 @@ use App\Model\Client\CrmLeadActivity;
 use App\Jobs\SendReminderEmail;
 use App\Jobs\SendLeadByLenderApi;
 use App\Services\FieldValidationService;
+use App\Services\LeadValidationService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
@@ -1194,42 +1195,51 @@ class LeadController extends Controller
         $fields = DB::connection("mysql_{$clientId}")
             ->table('crm_labels')
             ->where('status', true)
-            ->get(['field_key', 'field_type', 'required', 'label_name', 'options'])
+            ->get(['field_key', 'field_type', 'required', 'label_name', 'options', 'validation_rules'])
             ->toArray();
 
-        $svc    = new FieldValidationService();
-        $errors = [];
+        $fieldSvc = new FieldValidationService();
+        $leadSvc  = new LeadValidationService();
+        $errors   = [];
 
-        foreach ($fields as $field) {
+        // ── Fields with stored validation_rules: use LeadValidationService ──
+        $withRules    = array_filter($fields, fn($f) => !empty($f->validation_rules));
+        $withoutRules = array_filter($fields, fn($f) => empty($f->validation_rules));
+
+        if (!empty($withRules)) {
+            $builtRules  = $leadSvc->buildRules(array_values($withRules));
+            $ruleErrors  = $leadSvc->validate($input, $builtRules, array_values($withRules));
+            foreach ($ruleErrors as $key => $msgs) {
+                $errors[$key] = $msgs;
+            }
+        }
+
+        // ── Fields without validation_rules: legacy FieldValidationService ──
+        foreach ($withoutRules as $field) {
             $key = $field->field_key;
 
-            // Only validate fields that are present in the request
-            if (!array_key_exists($key, $input)) {
+            if (!array_key_exists($key, $input) || isset($errors[$key])) {
                 continue;
             }
 
             $fieldType  = strtolower(trim((string) $field->field_type));
             $isRequired = !empty($field->required);
 
-            // Sanitize (strips non-numeric chars for phone, trims others)
-            $raw = $svc->sanitize($input[$key], $fieldType, $input, $key);
+            $raw = $fieldSvc->sanitize($input[$key], $fieldType, $input, $key);
 
             $isEmpty = ($raw === null || $raw === '');
 
-            // Required check
             if ($isRequired && $isEmpty) {
                 $errors[$key] = [$field->label_name . ' is required.'];
                 continue;
             }
 
-            // Optional and empty — skip type validation
             if ($isEmpty) {
                 continue;
             }
 
-            // Delegate to centralized validation service
-            $options = $svc->decodeOptions($field->options ?? null);
-            $errMsg  = $svc->validate($raw, $fieldType, $field->label_name, $options);
+            $options = $fieldSvc->decodeOptions($field->options ?? null);
+            $errMsg  = $fieldSvc->validate($raw, $fieldType, $field->label_name, $options);
 
             if ($errMsg !== null) {
                 $errors[$key] = [$errMsg];

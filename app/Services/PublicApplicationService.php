@@ -264,9 +264,10 @@ class PublicApplicationService
         $leadToken = Str::random(32);
         $now       = now();
 
-        // Extract signature before EAV storage (stored separately)
-        $signatureData = $formData['signature_image'] ?? null;
-        unset($formData['signature_image']);
+        // Extract both signatures before EAV storage (stored separately, not as EAV fields)
+        $signatureData  = $formData['signature_image'] ?? null;
+        $signatureData2 = $formData['owner_2_signature_image'] ?? null;
+        unset($formData['signature_image'], $formData['owner_2_signature_image']);
 
         // Normalize phone field — ensure 'mobile' alias exists for legacy mapping
         if (empty($formData['mobile'])) {
@@ -338,10 +339,13 @@ class PublicApplicationService
             }
         }
 
-        // ── Signature ─────────────────────────────────────────────────────────
+        // ── Signatures ────────────────────────────────────────────────────────
         $signatureUrl = null;
         if ($signatureData) {
-            $signatureUrl = $this->storeSignature($clientId, $leadId, $signatureData, $conn);
+            $signatureUrl = $this->storeSignature($clientId, $leadId, $signatureData, $conn, 'signature_image');
+        }
+        if ($signatureData2) {
+            $this->storeSignature($clientId, $leadId, $signatureData2, $conn, 'owner_2_signature_image');
         }
 
         // ── Activity log ──────────────────────────────────────────────────────
@@ -388,7 +392,13 @@ class PublicApplicationService
     // SIGNATURE STORAGE
     // ─────────────────────────────────────────────────────────────────────────
 
-    public function storeSignature(int $clientId, int $leadId, string $base64Data, string $conn): ?string
+    /**
+     * Store a base64 signature image for a lead.
+     *
+     * @param  string $fieldKey  'signature_image' (Sig 1) or 'owner_2_signature_image' (Sig 2)
+     * @return string|null       Inline data URI on success, null on failure
+     */
+    public function storeSignature(int $clientId, int $leadId, string $base64Data, string $conn, string $fieldKey = 'signature_image'): ?string
     {
         try {
             $imgData = preg_replace('/^data:image\/\w+;base64,/', '', $base64Data);
@@ -402,23 +412,25 @@ class PublicApplicationService
                 mkdir($dir, 0775, true);
             }
 
-            $filename = 'signature_' . time() . '.png';
+            // Use field key prefix in filename to keep both signatures distinct
+            $prefix   = ($fieldKey === 'owner_2_signature_image') ? 'signature2_' : 'signature_';
+            $filename = $prefix . time() . '.png';
             file_put_contents($dir . DIRECTORY_SEPARATOR . $filename, $decoded);
 
             // Relative path stored in EAV (relative from client base)
             $relPath = "leads/{$leadId}/signatures/{$filename}";
 
-            // Store path in crm_lead_data signature_image column
+            // Mirror to legacy crm_lead_data column (same field key = column name)
             try {
                 DB::connection($conn)->table('crm_lead_data')
                     ->where('id', $leadId)
-                    ->update(['signature_image' => $relPath, 'updated_at' => now()]);
+                    ->update([$fieldKey => $relPath, 'updated_at' => now()]);
             } catch (\Throwable $e) {}
 
             // Store in EAV
             if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_values')) {
                 DB::connection($conn)->table('crm_lead_values')->updateOrInsert(
-                    ['lead_id' => $leadId, 'field_key' => 'signature_image'],
+                    ['lead_id' => $leadId, 'field_key' => $fieldKey],
                     ['field_value' => $relPath, 'updated_at' => now(), 'created_at' => now()]
                 );
             }
@@ -426,7 +438,7 @@ class PublicApplicationService
             // Return inline data URI (used immediately in success response)
             return 'data:image/png;base64,' . base64_encode($decoded);
         } catch (\Throwable $e) {
-            \Log::warning("PublicApp: storeSignature failed for lead {$leadId}: " . $e->getMessage());
+            \Log::warning("PublicApp: storeSignature({$fieldKey}) failed for lead {$leadId}: " . $e->getMessage());
             return null;
         }
     }
@@ -440,18 +452,22 @@ class PublicApplicationService
         $leadData = $this->getMerchantLeadData($lead, $clientId);
         $fields   = $leadData['fields'];
 
-        $sigPath   = $fields['signature_image'] ?? null;
+        // Resolve Signature 1 (Applicant)
         $sigInline = null;
+        $sigPath   = $fields['signature_image'] ?? null;
         if ($sigPath) {
-            // Try new TenantStorageService path (leads/{leadId}/signatures/...)
             $absPath = TenantStorageService::getPath($clientId, $sigPath);
-            if (!file_exists($absPath)) {
-                // Backward compat: old public disk path (crm_documents/{clientId}/{leadId}/...)
-                $absPath = storage_path('app/public/' . $sigPath);
-            }
-            if (file_exists($absPath)) {
-                $sigInline = 'data:image/png;base64,' . base64_encode(file_get_contents($absPath));
-            }
+            if (!file_exists($absPath)) $absPath = storage_path('app/public/' . $sigPath);
+            if (file_exists($absPath)) $sigInline = 'data:image/png;base64,' . base64_encode(file_get_contents($absPath));
+        }
+
+        // Resolve Signature 2 (Co-Applicant)
+        $sig2Inline = null;
+        $sig2Path   = $fields['owner_2_signature_image'] ?? null;
+        if ($sig2Path) {
+            $abs2Path = TenantStorageService::getPath($clientId, $sig2Path);
+            if (!file_exists($abs2Path)) $abs2Path = storage_path('app/public/' . $sig2Path);
+            if (file_exists($abs2Path)) $sig2Inline = 'data:image/png;base64,' . base64_encode(file_get_contents($abs2Path));
         }
         $logoUrl = $branding['logo_url'] ?? null;
         $company = htmlspecialchars($branding['company_name'] ?? 'Funding Application');
@@ -463,37 +479,67 @@ class PublicApplicationService
             ? "<img src='" . htmlspecialchars($logoUrl) . "' class='logo' alt='Logo' />"
             : "<div class='logo-placeholder'>" . substr($company, 0, 2) . "</div>";
 
+        // Build sections using HTML tables (dompdf does NOT support CSS Grid/Flexbox reliably)
         $sectionsHtml = '';
         foreach ($sections as $section) {
-            $title = htmlspecialchars($section['title'] ?? '');
-            $sectionsHtml .= "<div class='section'><h3 class='section-title'>{$title}</h3><div class='fields'>";
+            $title      = htmlspecialchars($section['title'] ?? '');
+            $fieldCells = [];
             foreach ($section['fields'] as $field) {
                 $key   = $field['key'] ?? '';
                 $label = htmlspecialchars($field['label'] ?? '');
                 $raw   = $fields[$key] ?? '';
-                // Mask SSN
                 if (in_array($key, ['ssn', 'owner_ssn'], true) && strlen($raw) >= 4) {
                     $raw = '***-**-' . substr($raw, -4);
                 }
-                $value = htmlspecialchars($raw);
-                $sectionsHtml .= "<div class='field'><span class='label'>{$label}</span><span class='value'>" . ($value ?: '—') . "</span></div>";
+                $value        = htmlspecialchars($raw);
+                $fieldCells[] = "<td class='field'><span class='lbl'>{$label}</span><span class='val'>" . ($value ?: '&mdash;') . "</span></td>";
             }
-            $sectionsHtml .= "</div></div>";
+            // Pad last row to 3 columns
+            while (count($fieldCells) % 3 !== 0) {
+                $fieldCells[] = "<td class='field empty'></td>";
+            }
+            $rows = '';
+            foreach (array_chunk($fieldCells, 3) as $row) {
+                $rows .= '<tr>' . implode('', $row) . '</tr>';
+            }
+            $sectionsHtml .= "<div class='section'><div class='section-title'>{$title}</div>"
+                . "<table class='fields' width='100%' cellpadding='0' cellspacing='2'>{$rows}</table></div>";
         }
 
-        $sigHtml = $sigInline
-            ? "<div class='section sig-section'><h3 class='section-title'>Digital Signature</h3><img src='" . $sigInline . "' style='max-height:100px;border:1px solid #e2e8f0;padding:12px;border-radius:8px;background:#fff;' /></div>"
-            : '';
+        // Render both signatures side-by-side (show section only if at least one exists)
+        $sigHtml = '';
+        if ($sigInline || $sig2Inline) {
+            $sig1Cell = $sigInline
+                ? "<img src='" . $sigInline . "' class='sig-img' />"
+                : "<span class='sig-empty'>Not provided</span>";
+            $sig2Cell = $sig2Inline
+                ? "<img src='" . $sig2Inline . "' class='sig-img' />"
+                : "<span class='sig-empty'>Not provided</span>";
+            $sigHtml = "<div class='section'><div class='section-title'>Digital Signatures</div>"
+                . "<table width='100%' cellpadding='0' cellspacing='6'><tr>"
+                . "<td width='50%' valign='top'><div class='sig-label'>Applicant Signature</div>{$sig1Cell}</td>"
+                . "<td width='2%'></td>"
+                . "<td width='48%' valign='top'><div class='sig-label'>Co-Applicant Signature</div>{$sig2Cell}</td>"
+                . "</tr></table></div>";
+        }
 
         $docsHtml = '';
         if (!empty($leadData['documents'])) {
-            $docsHtml = "<div class='section'><h3 class='section-title'>Uploaded Documents</h3><ul class='doc-list'>";
+            $docCells = [];
             foreach ($leadData['documents'] as $doc) {
-                $name = htmlspecialchars($doc['filename'] ?? '');
-                $type = htmlspecialchars($doc['doc_type'] ?? '');
-                $docsHtml .= "<li>{$name} <span class='doc-type'>({$type})</span></li>";
+                $name       = htmlspecialchars($doc['filename'] ?? '');
+                $type       = htmlspecialchars($doc['doc_type'] ?? '');
+                $docCells[] = "<td class='doc-cell'>{$name} <span class='doc-type'>({$type})</span></td>";
             }
-            $docsHtml .= "</ul></div>";
+            if (count($docCells) % 2 !== 0) {
+                $docCells[] = "<td class='doc-cell empty'></td>";
+            }
+            $docRows = '';
+            foreach (array_chunk($docCells, 2) as $row) {
+                $docRows .= '<tr>' . implode('', $row) . '</tr>';
+            }
+            $docsHtml = "<div class='section'><div class='section-title'>Uploaded Documents</div>"
+                . "<table class='doc-table' width='100%' cellpadding='0' cellspacing='2'>{$docRows}</table></div>";
         }
 
         return <<<HTML
@@ -501,47 +547,68 @@ class PublicApplicationService
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Funding Application — {$company}</title>
+<title>Funding Application &mdash; {$company}</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; color: #1e293b; background: #f8fafc; padding: 0; }
-  .page { max-width: 900px; margin: 0 auto; background: #fff; min-height: 100vh; }
-  .header { background: linear-gradient(135deg, #0f172a, #1e293b); color: #fff; padding: 32px 40px; display: flex; align-items: center; gap: 20px; }
-  .logo { max-height: 56px; max-width: 140px; object-fit: contain; border-radius: 6px; }
-  .logo-placeholder { width: 56px; height: 56px; background: #4f46e5; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 800; color: #fff; }
-  .company-name { font-size: 22px; font-weight: 700; color: #fff; }
-  .company-sub  { font-size: 13px; color: #94a3b8; margin-top: 4px; }
-  .badge { display: inline-block; background: #4f46e5; color: #fff; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 20px; margin-top: 8px; }
-  .body { padding: 32px 40px; }
-  .section { margin-bottom: 28px; page-break-inside: avoid; }
-  .section-title { font-size: 13px; font-weight: 700; color: #4f46e5; text-transform: uppercase; letter-spacing: 1px; padding-bottom: 8px; border-bottom: 2px solid #e0e7ff; margin-bottom: 14px; }
-  .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .field { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; }
-  .label { font-size: 10px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.6px; display: block; margin-bottom: 4px; }
-  .value { font-size: 14px; font-weight: 500; color: #1e293b; }
-  .sig-section { margin-top: 24px; }
-  .doc-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
-  .doc-list li { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 14px; font-size: 13px; }
-  .doc-type { color: #64748b; font-size: 11px; }
-  .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 40px; font-size: 12px; color: #94a3b8; display: flex; justify-content: space-between; }
-  .contact { display: flex; gap: 24px; }
-  @media print {
-    body { background: #fff; }
-    .page { box-shadow: none; }
-    @page { margin: 0.5in; }
-  }
+  @page { size: A4 portrait; margin: 8mm 10mm; }
+  * { margin: 0; padding: 0; }
+  body { font-family: Arial, DejaVu Sans, sans-serif; color: #1e293b; background: #fff; font-size: 9px; line-height: 1.35; }
+  .page { width: 100%; background: #fff; }
+
+  /* Header */
+  .header { background: #0f172a; color: #fff; padding: 0; }
+  .header-table { width: 100%; }
+  .header-logo-cell { width: 38px; padding: 6px 0 6px 10px; vertical-align: middle; }
+  .header-text-cell { padding: 6px 10px 6px 8px; vertical-align: middle; }
+  .logo { max-height: 26px; max-width: 70px; }
+  .logo-placeholder { width: 28px; height: 28px; background: #4f46e5; text-align: center; font-size: 12px; font-weight: 800; color: #fff; line-height: 28px; }
+  .company-name { font-size: 11px; font-weight: 700; color: #fff; }
+  .company-sub  { font-size: 7px; color: #94a3b8; margin-top: 1px; }
+  .badge { background: #4f46e5; color: #fff; font-size: 6px; font-weight: 700; padding: 1px 4px; margin-top: 2px; display: inline-block; }
+
+  /* Body */
+  .body { padding: 5px 0 0; }
+
+  /* Sections */
+  .section { margin-bottom: 5px; }
+  .section-title { font-size: 7px; font-weight: 700; color: #4f46e5; text-transform: uppercase; letter-spacing: 0.6px; padding-bottom: 2px; border-bottom: 1px solid #c7d2fe; margin-bottom: 3px; }
+
+  /* Field table — 3 columns via HTML table (dompdf-safe) */
+  .fields { border-collapse: separate; border-spacing: 2px; }
+  .field { width: 33.33%; background: #f8fafc; border: 1px solid #e2e8f0; padding: 3px 5px; vertical-align: top; }
+  .field.empty { background: transparent; border-color: transparent; }
+  .lbl { font-size: 6px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.3px; display: block; margin-bottom: 1px; }
+  .val { font-size: 8.5px; font-weight: 500; color: #1e293b; }
+
+  /* Signatures */
+  .sig-img { max-height: 36px; border: 1px solid #e2e8f0; padding: 2px; background: #fff; }
+  .sig-label { font-size: 6.5px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 3px; }
+  .sig-empty { font-size: 7.5px; color: #94a3b8; font-style: italic; }
+
+  /* Documents — 2 columns via HTML table */
+  .doc-table { border-collapse: separate; border-spacing: 2px; }
+  .doc-cell { width: 50%; background: #f8fafc; border: 1px solid #e2e8f0; padding: 2px 6px; font-size: 7.5px; vertical-align: top; }
+  .doc-cell.empty { background: transparent; border-color: transparent; }
+  .doc-type { color: #64748b; }
+
+  /* Footer */
+  .footer { border-top: 1px solid #e2e8f0; margin-top: 4px; padding-top: 3px; font-size: 6.5px; color: #94a3b8; }
+  .footer-table { width: 100%; }
+  .footer-right { text-align: right; }
 </style>
 </head>
 <body>
 <div class="page">
   <div class="header">
-    {$logoHtml}
-    <div>
-      <div class="company-name">{$company}</div>
-      <div class="company-sub">Funding Application — {$date}</div>
-      <span class="badge">CONFIDENTIAL</span>
-    </div>
+    <table class="header-table" cellpadding="0" cellspacing="0">
+      <tr>
+        <td class="header-logo-cell">{$logoHtml}</td>
+        <td class="header-text-cell">
+          <div class="company-name">{$company}</div>
+          <div class="company-sub">Funding Application &mdash; {$date}</div>
+          <span class="badge">CONFIDENTIAL</span>
+        </td>
+      </tr>
+    </table>
   </div>
   <div class="body">
     {$sectionsHtml}
@@ -549,13 +616,14 @@ class PublicApplicationService
     {$docsHtml}
   </div>
   <div class="footer">
-    <span>Application submitted on {$date}</span>
-    <div class="contact">
-      {$email}<span>{$phone}</span>
-    </div>
+    <table class="footer-table" cellpadding="0" cellspacing="0">
+      <tr>
+        <td>Submitted on {$date}</td>
+        <td class="footer-right">{$email}&nbsp;&nbsp;{$phone}</td>
+      </tr>
+    </table>
   </div>
 </div>
-<script>window.addEventListener('load', () => setTimeout(() => window.print(), 300))</script>
 </body>
 </html>
 HTML;
@@ -713,7 +781,7 @@ HTML;
                     $val = ((array) $row)[$col] ?? null;
                     if ($val !== null && $val !== '') $legacyData[$fieldKey] = $val;
                 }
-                foreach (['first_name','last_name','email','phone_number','dob','city','state','country','address','company_name','signature_image'] as $col) {
+                foreach (['first_name','last_name','email','phone_number','dob','city','state','country','address','company_name','signature_image','owner_2_signature_image'] as $col) {
                     if (!empty(((array) $row)[$col])) $legacyData[$col] = ((array) $row)[$col];
                 }
             }
@@ -721,23 +789,28 @@ HTML;
 
         $merged = array_merge($legacyData, $eavData);
 
-        // Build a backend-served signature URL so the frontend never needs to
-        // construct a path into the non-public app storage directory.
-        $hasSig      = !empty($merged['signature_image']);
-        $signatureUrl = $hasSig
-            ? rtrim(env('APP_URL'), '/') . '/public/lead/' . $lead->lead_token . '/signature'
+        // Build backend-served signature URLs so the frontend never needs to
+        // construct paths into non-public app storage directories.
+        $base          = rtrim(env('APP_URL'), '/');
+        $token         = $lead->lead_token;
+        $signatureUrl  = !empty($merged['signature_image'])
+            ? "{$base}/public/lead/{$token}/signature"
+            : null;
+        $signatureUrl2 = !empty($merged['owner_2_signature_image'])
+            ? "{$base}/public/lead/{$token}/signature2"
             : null;
 
         return [
-            'id'             => $lead->id,
-            'lead_status'    => $lead->lead_status,
-            'lead_type'      => $lead->lead_type,
-            'lead_token'     => $lead->lead_token,
-            'affiliate_code' => $lead->affiliate_code ?? null,
-            'created_at'     => $lead->created_at,
-            'fields'         => $merged,
-            'signature_url'  => $signatureUrl,
-            'documents'      => $this->getDocuments($clientId, $leadId),
+            'id'              => $lead->id,
+            'lead_status'     => $lead->lead_status,
+            'lead_type'       => $lead->lead_type,
+            'lead_token'      => $token,
+            'affiliate_code'  => $lead->affiliate_code ?? null,
+            'created_at'      => $lead->created_at,
+            'fields'          => $merged,
+            'signature_url'   => $signatureUrl,
+            'signature_url_2' => $signatureUrl2,
+            'documents'       => $this->getDocuments($clientId, $leadId),
         ];
     }
 
@@ -884,7 +957,7 @@ HTML;
      * Serve the signature image for a lead (public, no auth).
      * Returns [absPath, mimeType] or throws RuntimeException.
      */
-    public function serveLeadSignature(int $clientId, int $leadId): array
+    public function serveLeadSignature(int $clientId, int $leadId, string $fieldKey = 'signature_image'): array
     {
         $conn    = "mysql_{$clientId}";
         $sigPath = null;
@@ -892,7 +965,7 @@ HTML;
         if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_values')) {
             $sigPath = DB::connection($conn)->table('crm_lead_values')
                 ->where('lead_id', $leadId)
-                ->where('field_key', 'signature_image')
+                ->where('field_key', $fieldKey)
                 ->value('field_value');
         }
 
@@ -900,7 +973,7 @@ HTML;
         if (!$sigPath && DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_data')) {
             $sigPath = DB::connection($conn)->table('crm_lead_data')
                 ->where('id', $leadId)
-                ->value('signature_image');
+                ->value($fieldKey);
         }
 
         if (!$sigPath) {

@@ -143,7 +143,7 @@ class TenantStorageService
             mkdir($dir, 0755, true);
         }
         $ext      = strtolower($file->getClientOriginalExtension()) ?: 'bin';
-        $filename = time() . '_' . uniqid() . '.' . $ext;
+        $filename = bin2hex(random_bytes(12)) . '.' . $ext;  // 24-char hex name; full path fits varchar(255)
         $file->move($dir, $filename);
         return $subdir . '/' . $filename;
     }
