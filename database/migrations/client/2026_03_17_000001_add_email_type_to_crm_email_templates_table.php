@@ -8,10 +8,12 @@ class AddEmailTypeToCrmEmailTemplatesTable extends Migration
 {
     public function up()
     {
-        Schema::table('crm_email_templates', function (Blueprint $table) {
-            $table->string('email_type', 50)->default('general')->after('send_bcc')
-                ->comment('Template category: general, online_application, etc.');
-        });
+        if (!Schema::hasColumn('crm_email_templates', 'email_type')) {
+            Schema::table('crm_email_templates', function (Blueprint $table) {
+                $table->string('email_type', 50)->default('general')->after('send_bcc')
+                    ->comment('Template category: general, online_application, etc.');
+            });
+        }
     }
 
     public function down()

@@ -12,6 +12,7 @@ class CreateCrmNotificationsTable extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasTable('crm_notifications')) { return; }
         Schema::create('crm_notifications', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('lead_id')->nullable()->index();

@@ -9,8 +9,12 @@ class AddStatusAndMetaToCrmSmtpSettingTable extends Migration
     public function up()
     {
         Schema::table('crm_smtp_setting', function (Blueprint $table) {
-            $table->tinyInteger('status')->default(1)->after('mail_type');
-            $table->text('meta_json')->nullable()->after('status');
+            if (!Schema::hasColumn('crm_smtp_setting', 'status')) {
+                $table->tinyInteger('status')->default(1)->after('mail_type');
+            }
+            if (!Schema::hasColumn('crm_smtp_setting', 'meta_json')) {
+                $table->text('meta_json')->nullable()->after('status');
+            }
         });
     }
 
