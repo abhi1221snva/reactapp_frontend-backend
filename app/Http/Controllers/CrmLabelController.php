@@ -572,13 +572,48 @@ class CrmLabelController extends Controller
 
         $this->validate($request, [
             'label_name' => ['required', 'string', 'max:255'],
-            'field_type' => 'required|string|in:text,number,email,phone_number,date,textarea,dropdown,checkbox,radio',
+            // 'file' added to support MCA Documents section
+            'field_type' => 'required|string|in:text,number,email,phone_number,date,textarea,dropdown,checkbox,radio,file',
             // field_key is optional — auto-generated from label_name when absent
             'field_key'  => ['sometimes', 'nullable', 'string', 'max:100', 'alpha_dash'],
         ]);
 
         try {
-            // Auto-generate field_key from label_name (Task 2)
+            $svc     = new LeadFieldService();
+            $section = trim((string) $request->input('section', ''));
+
+            // ── MCA Auto-Seed (client_id = 3, or any configured MCA client) ───────
+            // When a section is provided and the client is an MCA client, insert
+            // the full predefined field set for that section instead of one field.
+            // Falls through to single-field creation when section is unknown to MCA.
+            $mcaClientIds = config('mca_fields.mca_client_ids', [3]);
+
+            if (!empty($section) && in_array((int) $clientId, $mcaClientIds, true)) {
+                $result = $svc->seedMcaFields((string) $clientId, $section);
+
+                // seedMcaFields returns non-empty arrays when the section is in the config
+                if (!empty($result['created']) || !empty($result['skipped'])) {
+                    Log::info("MCA auto-seed completed", [
+                        'client_id'     => $clientId,
+                        'section'       => $section,
+                        'created_count' => count($result['created']),
+                        'skipped_count' => count($result['skipped']),
+                    ]);
+
+                    return $this->successResponse(
+                        "MCA fields created for section: {$section}",
+                        [
+                            'created'       => $result['created'],
+                            'skipped'       => $result['skipped'],
+                            'created_count' => count($result['created']),
+                            'skipped_count' => count($result['skipped']),
+                        ]
+                    );
+                }
+                // Section not found in MCA config — fall through to standard creation
+            }
+
+            // ── Standard single-field creation (all other clients / unknown sections) ─
             $baseKey  = preg_replace('/[^a-z0-9]+/', '_',
                             trim(strtolower($request->input('label_name'))));
             $baseKey  = trim($baseKey, '_');
@@ -596,12 +631,12 @@ class CrmLabelController extends Controller
                 $candidate = $fieldKey . '_' . $suffix++;
             }
 
-            $data            = $request->all();
+            $data              = $request->all();
             $data['field_key'] = $candidate;
 
-            $svc   = new LeadFieldService();
             $field = $svc->create($clientId, $data);
             return $this->successResponse("Field created successfully", (array) $field);
+
         } catch (\Throwable $e) {
             return $this->failResponse("Failed to create field", [$e->getMessage()], $e, 500);
         }
@@ -629,6 +664,43 @@ class CrmLabelController extends Controller
             return $this->successResponse("Field updated successfully", (array) $field);
         } catch (\Throwable $e) {
             return $this->failResponse("Failed to update field", [$e->getMessage()], $e, 500);
+        }
+    }
+
+    /**
+     * POST /crm/lead-fields/reorder
+     * Persist a new display_order for ALL fields in one atomic transaction.
+     *
+     * Request body:
+     *   ids  int[]  required  Flat ordered array of crm_labels.id values.
+     *                         The array must include every field ID the client
+     *                         wants to keep — position is the array index (1-based).
+     *
+     * Example:
+     *   { "ids": [5, 2, 8, 1, 3, 7, 4, 6] }
+     *
+     * On success the field at ids[0] gets display_order = 1,
+     * ids[1] gets display_order = 2, etc.
+     */
+    public function leadFieldsReorder(Request $request)
+    {
+        $clientId = $request->auth->parent_id;
+
+        $this->validate($request, [
+            'ids'   => 'required|array|min:1',
+            'ids.*' => 'required|integer',
+        ]);
+
+        try {
+            $svc = new LeadFieldService();
+
+            DB::connection("mysql_{$clientId}")->transaction(function () use ($svc, $clientId, $request) {
+                $svc->reorder((string) $clientId, $request->ids);
+            });
+
+            return $this->successResponse("Field order saved successfully", []);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to save field order", [$e->getMessage()], $e, 500);
         }
     }
 

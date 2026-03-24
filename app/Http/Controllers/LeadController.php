@@ -28,6 +28,7 @@ use App\Model\Client\CrmLeadStatusHistory;
 use App\Model\Client\CrmLeadActivity;
 use App\Jobs\SendReminderEmail;
 use App\Jobs\SendLeadByLenderApi;
+use App\Services\FieldValidationService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
@@ -1196,27 +1197,22 @@ class LeadController extends Controller
             ->get(['field_key', 'field_type', 'required', 'label_name', 'options'])
             ->toArray();
 
+        $svc    = new FieldValidationService();
         $errors = [];
 
         foreach ($fields as $field) {
             $key = $field->field_key;
 
-            // Only validate fields that are actually present in the request
+            // Only validate fields that are present in the request
             if (!array_key_exists($key, $input)) {
                 continue;
             }
 
             $fieldType  = strtolower(trim((string) $field->field_type));
-            $raw        = $input[$key];
             $isRequired = !empty($field->required);
 
-            // Pre-clean phone: strip spaces, symbols, and non-numeric characters
-            if (in_array($fieldType, ['phone_number', 'phone'], true)) {
-                $raw        = preg_replace('/[^0-9]/', '', (string) $raw);
-                $input[$key] = $raw; // mutate so the sanitized value is saved
-            } else {
-                $raw = is_string($raw) ? trim($raw) : $raw;
-            }
+            // Sanitize (strips non-numeric chars for phone, trims others)
+            $raw = $svc->sanitize($input[$key], $fieldType, $input, $key);
 
             $isEmpty = ($raw === null || $raw === '');
 
@@ -1231,55 +1227,12 @@ class LeadController extends Controller
                 continue;
             }
 
-            // Type-based validation
-            switch ($fieldType) {
-                case 'phone_number':
-                case 'phone':
-                    if (!preg_match('/^\d{10}$/', (string) $raw)) {
-                        $errors[$key] = [$field->label_name . ' must be exactly 10 digits.'];
-                    }
-                    break;
+            // Delegate to centralized validation service
+            $options = $svc->decodeOptions($field->options ?? null);
+            $errMsg  = $svc->validate($raw, $fieldType, $field->label_name, $options);
 
-                case 'email':
-                    if (!filter_var($raw, FILTER_VALIDATE_EMAIL)) {
-                        $errors[$key] = [$field->label_name . ' must be a valid email address.'];
-                    }
-                    break;
-
-                case 'number':
-                    if (!is_numeric($raw)) {
-                        $errors[$key] = [$field->label_name . ' must be a numeric value.'];
-                    }
-                    break;
-
-                case 'date':
-                    $parsed = date_create((string) $raw);
-                    if (!$parsed) {
-                        $errors[$key] = [$field->label_name . ' must be a valid date.'];
-                    }
-                    break;
-
-                case 'text':
-                case 'textarea':
-                case 'text_area':
-                    if (mb_strlen((string) $raw) > 500) {
-                        $errors[$key] = [$field->label_name . ' must not exceed 500 characters.'];
-                    }
-                    break;
-
-                case 'dropdown':
-                case 'select':
-                case 'select_option':
-                    if (!empty($field->options)) {
-                        $opts = json_decode($field->options, true);
-                        if (is_array($opts)) {
-                            $opts = array_map('strval', $opts);
-                            if (!in_array((string) $raw, $opts, true)) {
-                                $errors[$key] = [$field->label_name . ' must be a valid option.'];
-                            }
-                        }
-                    }
-                    break;
+            if ($errMsg !== null) {
+                $errors[$key] = [$errMsg];
             }
         }
 

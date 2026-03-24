@@ -129,10 +129,10 @@ class EmailService
         foreach ($bcc as $addr) { $email->addBcc($addr); }
 
         foreach ($attachments as $path) {
-            if (file_exists($path)) {
+            if (is_file($path)) {
                 $email->attachFromPath($path);
             } else {
-                Log::warning("EmailService: attachment not found: {$path}");
+                Log::warning("EmailService: attachment not found or not a file: {$path}");
             }
         }
 

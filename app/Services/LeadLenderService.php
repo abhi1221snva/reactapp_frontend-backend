@@ -433,27 +433,50 @@ class LeadLenderService
                     ]);
                 }
 
-                // Send to primary + all CC/secondary emails
-                $emailTargets = array_values(array_filter([
-                    $lender->email,
-                    $lender->secondary_email  ?? null,
-                    $lender->secondary_email2 ?? null,
-                    $lender->secondary_email3 ?? null,
-                    $lender->secondary_email4 ?? null,
-                ]));
+                // ── Route: API or Email ──────────────────────────────────────────────
+                $apiRouted = false;
+                if (!empty($lender->api_status) && $lender->api_status == '1') {
+                    $hasApiCreds = DB::connection($conn)
+                        ->table('crm_lender_apis')
+                        ->where('crm_lender_id', $lenderId)
+                        ->exists();
 
-                if ($emailSvc && !empty($emailTargets)) {
-                    $primaryTo  = array_shift($emailTargets);
-                    try {
-                        $emailSvc->send(
-                            to:          trim($primaryTo),
-                            subject:     $subject,
-                            html:        $emailHtml,
-                            attachments: $attachments,
-                            cc:          array_map('trim', $emailTargets),
-                        );
-                    } catch (\Throwable $mailEx) {
-                        Log::warning("LenderApplicationMail failed for lender {$lenderId} → {$primaryTo}: " . $mailEx->getMessage());
+                    if ($hasApiCreds) {
+                        $jobData = [
+                            'lead_id'     => $leadId,
+                            'lender_id'   => [['lender_id' => $lenderId]],
+                            'lender_name' => [['lender_name' => $lender->lender_name]],
+                            'user_id'     => $userId,
+                        ];
+                        dispatch(new SendLeadByLenderApi($clientId, $jobData, 'lender_api'))
+                            ->onConnection('lender_api_schedule_job');
+                        $apiRouted = true;
+                    }
+                }
+
+                // Send via email only when not routed through API
+                if (!$apiRouted) {
+                    $emailTargets = array_values(array_filter([
+                        $lender->email,
+                        $lender->secondary_email  ?? null,
+                        $lender->secondary_email2 ?? null,
+                        $lender->secondary_email3 ?? null,
+                        $lender->secondary_email4 ?? null,
+                    ]));
+
+                    if ($emailSvc && !empty($emailTargets)) {
+                        $primaryTo  = array_shift($emailTargets);
+                        try {
+                            $emailSvc->send(
+                                to:          trim($primaryTo),
+                                subject:     $subject,
+                                html:        $emailHtml,
+                                attachments: $attachments,
+                                cc:          array_map('trim', $emailTargets),
+                            );
+                        } catch (\Throwable $mailEx) {
+                            Log::warning("LenderApplicationMail failed for lender {$lenderId} → {$primaryTo}: " . $mailEx->getMessage());
+                        }
                     }
                 }
 

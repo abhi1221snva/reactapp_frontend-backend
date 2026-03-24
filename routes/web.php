@@ -652,6 +652,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
 
   $router->post('agent-campaign', 'DialerController@getAgentCampaign');
   $router->post('lead-temp', 'DialerController@getLeadCountInTemp');
+  $router->get('my-extension-status', 'DialerController@myExtensionStatus');
   $router->post('extension-login', 'DialerController@extensionLogin');
   $router->post('call-number', 'DialerController@callNumber');
   $router->post('hang-up', 'DialerController@hangUp');
@@ -834,6 +835,8 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   $router->get('audio-message', 'AudioMessageController@list');
   $router->post('add-audio-message', 'AudioMessageController@addAudioMessage');
   $router->post('edit-audio-message', 'AudioMessageController@ediAudioMessage');
+  $router->post('upload-audio', 'AudioMessageController@uploadAudio');
+  $router->post('delete-audio-message', 'AudioMessageController@deleteAudioMessage');
 
 
 
@@ -1224,6 +1227,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   # Unified call-transfer endpoint (replaces check-line-details +
   # check-extension-live-for-transfer + warm-call-transfer-c2c-crm)
   $router->post('call-transfer/initiate', 'CallTransferController@initiate');
+  $router->post('call-transfer/initiate-updated', 'DialerController@initiateTransferUpdated');
 
   $router->post('check-line-details', 'DialerController@checkLineDetails');
   $router->post('check-extension-live-for-transfer', 'DialerController@checkExtensionLiveDetails');
@@ -1485,10 +1489,12 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   $router->post('/crm-label/updateDisplayOrder', 'CrmLabelController@updateDisplayOrder');
 
   // REST-style Lead Fields API
-  $router->get('crm/lead-fields',         'CrmLabelController@leadFieldsList');
-  $router->post('crm/lead-fields',         'CrmLabelController@leadFieldsCreate');
-  $router->post('crm/lead-fields/{id}',    'CrmLabelController@leadFieldsUpdate');
-  $router->delete('crm/lead-fields/{id}',  'CrmLabelController@leadFieldsDelete');
+  $router->get('crm/lead-fields',           'CrmLabelController@leadFieldsList');
+  $router->post('crm/lead-fields',          'CrmLabelController@leadFieldsCreate');
+  // reorder must be declared before the {id} param route to avoid route collision
+  $router->post('crm/lead-fields/reorder',  'CrmLabelController@leadFieldsReorder');
+  $router->post('crm/lead-fields/{id}',     'CrmLabelController@leadFieldsUpdate');
+  $router->delete('crm/lead-fields/{id}',   'CrmLabelController@leadFieldsDelete');
 
   // ── Tenant private file serving ─────────────────────────────────────────────
   $router->get('crm/tenant-file/{subdir}/{filename}', 'TenantFileController@serveFile');

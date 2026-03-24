@@ -56,9 +56,46 @@ class LeadPdfService
         return [
             'html'          => $html,
             'lead_name'     => $leadName,
+            'first_name'    => $firstName,
+            'last_name'     => $lastName,
             'template_id'   => $template->id,
             'template_name' => $template->template_name,
         ];
+    }
+
+    /**
+     * Generate a sanitized PDF filename from lead first/last name.
+     *
+     * Rules:
+     *  - Lowercase
+     *  - Spaces and special chars → underscore
+     *  - Consecutive underscores collapsed to one
+     *  - Leading/trailing underscores stripped
+     *  - Format: {first}_{last}_application.pdf
+     *           {first}_application.pdf  (if no last name)
+     *           application.pdf           (if both empty)
+     */
+    public static function pdfFilename(?string $firstName, ?string $lastName): string
+    {
+        $sanitize = static function (?string $s): string {
+            $s = trim((string) $s);
+            // Decompose accented chars (é→e+accent) then strip the accent marks
+            if (class_exists('Normalizer')) {
+                $s = \Normalizer::normalize($s, \Normalizer::FORM_D);
+                $s = preg_replace('/[\x{0300}-\x{036f}]/u', '', $s);
+            }
+            $s = strtolower($s);
+            $s = preg_replace('/[^a-z0-9]+/', '_', $s);
+            return trim($s, '_');
+        };
+
+        $first = $sanitize($firstName);
+        $last  = $sanitize($lastName);
+
+        if ($first !== '' && $last !== '') return "{$first}_{$last}_application.pdf";
+        if ($first !== '')                  return "{$first}_application.pdf";
+        if ($last  !== '')                  return "{$last}_application.pdf";
+        return 'application.pdf';
     }
 
     /**
@@ -71,14 +108,13 @@ class LeadPdfService
      */
     public function renderPdfBinary(int $clientId, int $leadId): array
     {
-        $result = $this->renderPdfHtml($clientId, $leadId);
-
-        $binary = $this->htmlToPdfBytes($result['html']);
-        $safe   = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $result['lead_name'] ?: "lead_{$leadId}");
+        $result   = $this->renderPdfHtml($clientId, $leadId);
+        $binary   = $this->htmlToPdfBytes($result['html']);
+        $filename = self::pdfFilename($result['first_name'] ?? null, $result['last_name'] ?? null);
 
         return [
             'pdf'      => $binary,
-            'filename' => "application_{$safe}.pdf",
+            'filename' => $filename,
         ];
     }
 

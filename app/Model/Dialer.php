@@ -941,11 +941,36 @@ $totalRows = count($campaign);
 
             $getExtensionLive = $this->getExtensionLive($extension, $request->auth->parent_id);
             if (empty($getExtensionLive)) {
-                $asterisk = $this->getAsterisk($request->auth->asterisk_server_id, $extension, $request->auth->parent_id);
-                $asterisk->asteriskLogin($request->input('campaign_id'));
+
+                // ── WebRTC mode (dialer_mode=2): browser SIP stack is already registered
+                // to Asterisk via WSS. We do NOT need the AMI originate handshake —
+                // just INSERT the extension_live row directly and proceed.
+                if ($dialer_mode == 2) {
+                    DB::connection('mysql_' . $request->auth->parent_id)->statement(
+                        "INSERT INTO extension_live (extension, status, campaign_id, lead_id)
+                         VALUES (?, ?, ?, NULL)
+                         ON DUPLICATE KEY UPDATE status = ?, campaign_id = ?, lead_id = NULL",
+                        [
+                            $extension,
+                            Asterisk::STATUS_READY,
+                            $request->input('campaign_id'),
+                            Asterisk::STATUS_READY,
+                            $request->input('campaign_id'),
+                        ]
+                    );
+                    Log::info("extensionLogin: WebRTC extension {$extension} inserted into extension_live directly", [
+                        'user_id'     => $request->auth->id,
+                        'campaign_id' => $request->input('campaign_id'),
+                    ]);
+                    $getExtensionLive = $this->getExtensionLive($extension, $request->auth->parent_id);
+                } else {
+                    // Hardware phone (mode 1) or mobile (mode 3): use legacy AMI originate
+                    $asterisk = $this->getAsterisk($request->auth->asterisk_server_id, $extension, $request->auth->parent_id);
+                    $asterisk->asteriskLogin($request->input('campaign_id'));
+                }
+
                 $count = 1;
                 while (true) {
-                    $getExtensionLive = $this->getExtensionLive($extension, $request->auth->parent_id);
                     if (!empty($getExtensionLive)) {
                         $this->getLeadCountInTemp($request->input('campaign_id'), $request->auth->parent_id);
                         $modeType = $this->getHopperModeInCampaign($request->input('campaign_id'), $request->auth->parent_id);
@@ -964,13 +989,6 @@ $totalRows = count($campaign);
                         ], 402);
                     }
                     if ($response["status"] === false) {
-
-                        // if (isset($response["code"]) && $response["code"] == "NO_LEADS") {
-
-                        //     // ✅ Call common logout function
-                        //     $this->extensionlogout($request);
-                        // }
-
                         return response()->json([
                             'success' => false,
                             'message' => $response["message"]
@@ -984,12 +1002,14 @@ $totalRows = count($campaign);
                     } elseif ($count == 5) {
                         return array(
                             'success' => false,
-                            'message' => 'Unable to log you in to system. Extenstion not reachable.'
+                            'message' => 'WebPhone is not connected. Please enable your WebPhone in the browser (click the phone icon → Enable WebPhone) and wait until it shows "Ready" before joining a campaign.',
+                            'error_code' => 'WEBPHONE_NOT_CONNECTED',
                         );
                     } else {
                         sleep(5);
                     }
                     $count++;
+                    $getExtensionLive = $this->getExtensionLive($extension, $request->auth->parent_id);
                 }
             } else {
                 if ($getExtensionLive['lead_id']) {
@@ -1219,6 +1239,8 @@ $totalRows = count($campaign);
         //check lead on temp table
         $db = $clientId;
 
+        $lead = null; // initialise — prevents "Undefined variable $lead" when hopper_mode is 0/null/unset
+
         // hopper mode linear type
         if ($hopperMode == '1') {
             $lead = DB::connection('mysql_' . $db)->selectOne(
@@ -1228,9 +1250,7 @@ $totalRows = count($campaign);
         }
 
         // hopper mode random type
-
-        else
-            if ($hopperMode == '2') {
+        elseif ($hopperMode == '2') {
             $lead = DB::connection('mysql_' . $db)->selectOne(
                 "SELECT * FROM lead_temp WHERE campaign_id = :campaign_id and redial = '1'",
                 ['campaign_id' => $campaignId]
@@ -1242,8 +1262,13 @@ $totalRows = count($campaign);
                     ['campaign_id' => $campaignId]
                 );
             }
+        } else {
+            // hopper_mode is 0 / null / any other value — fall back to linear fetch
+            $lead = DB::connection('mysql_' . $db)->selectOne(
+                "SELECT * FROM lead_temp WHERE campaign_id = :campaign_id",
+                ['campaign_id' => $campaignId]
+            );
         }
-
 
         $lead = (array)$lead;
 

@@ -210,7 +210,6 @@ class CallTransferService
     private function validateExtensionTarget(int $parentId, string $extension, int $campaignId): array
     {
         $live = ExtensionLive::on("mysql_{$parentId}")
-            ->where('campaign_id', $campaignId)
             ->where('extension', $extension)
             ->first();
 
@@ -296,11 +295,13 @@ class CallTransferService
      */
     private function resolveCampaignId($request): int
     {
-        if (!empty($request->domain) && $request->domain === 'crm') {
-            return 45;
+        // Use explicit campaign_id when provided
+        if (!empty($request->campaign_id)) {
+            return (int) $request->campaign_id;
         }
 
-        return (int) ($request->campaign_id ?? 45);
+        // Fallback: legacy CRM domain default
+        return 45;
     }
 
     /**
@@ -309,5 +310,156 @@ class CallTransferService
     private function generateSessionId(): string
     {
         return bin2hex(random_bytes(8));
+    }
+
+    // =========================================================================
+    // Legacy-exact pipeline  (used by initiateTransferUpdated)
+    //
+    // These three methods reproduce the original DialerController behaviour
+    // exactly so that /call-transfer/initiate-updated is a drop-in replacement
+    // for the old 3-endpoint sequential flow.
+    // =========================================================================
+
+    /**
+     * Step 1 — Mirrors DialerController@checkLineDetails exactly.
+     *
+     * Looks up a live line_detail row using:
+     *   - lead_id, campaign_id, customer_phone_number
+     *   - alt_extension taken from the **request body** (not JWT)
+     *
+     * @throws \RuntimeException  "Call is Already Hung Up" when no row found
+     */
+    public function legacyCheckLineDetails($request, int $parentId): array
+    {
+        $campaignId = (int) ($request->campaign_id ?? 0);
+
+        $lineDetail = LineDetail::on("mysql_{$parentId}")
+            ->where('lead_id',    $request->lead_id)
+            ->where('campaign_id', $campaignId)
+            ->where('number',     $request->customer_phone_number)
+            ->where('extension',  $request->alt_extension)   // request body, not JWT
+            ->first();
+
+        if (!$lineDetail) {
+            Log::warning('CallTransferService.legacyCheckLineDetails.notFound', [
+                'lead_id'     => $request->lead_id,
+                'campaign_id' => $campaignId,
+                'extension'   => $request->alt_extension,
+                'parent_id'   => $parentId,
+            ]);
+
+            throw new \RuntimeException('Call is Already Hung Up');
+        }
+
+        Log::debug('CallTransferService.legacyCheckLineDetails.ok', [
+            'lead_id'     => $request->lead_id,
+            'campaign_id' => $campaignId,
+            'extension'   => $request->alt_extension,
+        ]);
+
+        return $lineDetail->toArray();
+    }
+
+    /**
+     * Step 2 — Mirrors DialerController@checkExtensionLiveDetails exactly.
+     *
+     * - Resolves campaign_id (domain='crm' → 45, otherwise from request)
+     * - Checks extension_live for forward_extension with transfer_status = 1
+     * - Fires channelRedirect (AMI) using the CALLER's channel
+     * - Sets forward_extension transfer_status = 2 (busy)
+     *
+     * @throws \RuntimeException  "Extension Live detail Not Found" when unavailable
+     */
+    public function legacyCheckExtensionLive($request, int $parentId): array
+    {
+        // Same domain→campaign_id resolution as the original method
+        $campaignId = ($request->domain === 'crm') ? 45 : (int) ($request->campaign_id ?? 0);
+
+        // Must have transfer_status = 1 (available / ringing) — same as original
+        $liveDetail = ExtensionLive::on("mysql_{$parentId}")
+            ->where('campaign_id',     $campaignId)
+            ->where('extension',       $request->forward_extension)
+            ->where('transfer_status', 1)
+            ->first();
+
+        if (!$liveDetail) {
+            Log::warning('CallTransferService.legacyCheckExtensionLive.notFound', [
+                'forward_extension' => $request->forward_extension,
+                'campaign_id'       => $campaignId,
+                'parent_id'         => $parentId,
+            ]);
+
+            throw new \RuntimeException('Extension Live detail Not Found');
+        }
+
+        // Caller's channel — needed for the AMI redirect command
+        $callerLive = ExtensionLive::on("mysql_{$parentId}")
+            ->where('campaign_id', $campaignId)
+            ->where('extension',   $request->auth->alt_extension)
+            ->first();
+
+        // Fire the AMI channel-redirect (Asterisk bridges caller → target conference)
+        $this->dialer->channelRedirect($request, $callerLive['channel'] ?? null, $request->forward_extension);
+
+        // Mark the target extension as busy so no second transfer races in
+        DB::connection("mysql_{$parentId}")->update(
+            "UPDATE extension_live SET transfer_status = :status WHERE campaign_id = :cid AND extension = :ext",
+            [
+                'status' => 2,
+                'cid'    => $campaignId,
+                'ext'    => $request->forward_extension,
+            ]
+        );
+
+        Log::debug('CallTransferService.legacyCheckExtensionLive.ok', [
+            'forward_extension' => $request->forward_extension,
+            'campaign_id'       => $campaignId,
+        ]);
+
+        return $liveDetail->toArray();
+    }
+
+    /**
+     * Step 3 — Mirrors DialerController@warmCallTransfer exactly.
+     *
+     * Routes to warmCallTransferDid or warmCallTransfer on the Dialer model
+     * depending on warm_call_transfer_type, and generates a session ID on success.
+     *
+     * @return string  Unique hex transfer session ID
+     *
+     * @throws \RuntimeException  When the Asterisk AMI command fails
+     */
+    public function legacyWarmCallTransfer($request, int $parentId): string
+    {
+        if ($request->warm_call_transfer_type === 'did') {
+            $result = $this->dialer->warmCallTransferDid($request, $parentId);
+        } else {
+            $result = $this->dialer->warmCallTransfer($request, $parentId);
+        }
+
+        if (empty($result['success']) || $result['success'] !== true) {
+            $reason = $result['message'] ?? 'Asterisk AMI rejected the transfer request.';
+
+            Log::error('CallTransferService.legacyWarmCallTransfer.failed', [
+                'reason'                   => $reason,
+                'warm_call_transfer_type'  => $request->warm_call_transfer_type,
+                'forward_extension'        => $request->forward_extension,
+                'lead_id'                  => $request->lead_id,
+                'parent_id'                => $parentId,
+            ]);
+
+            throw new \RuntimeException($reason);
+        }
+
+        $sessionId = $this->generateSessionId();
+
+        Log::info('CallTransferService.legacyWarmCallTransfer.ok', [
+            'warm_call_transfer_type' => $request->warm_call_transfer_type,
+            'forward_extension'       => $request->forward_extension,
+            'lead_id'                 => $request->lead_id,
+            'transfer_session_id'     => $sessionId,
+        ]);
+
+        return $sessionId;
     }
 }

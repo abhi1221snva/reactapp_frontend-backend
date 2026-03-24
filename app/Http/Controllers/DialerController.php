@@ -1308,6 +1308,63 @@ class DialerController extends Controller
         return response()->json($response);
     }
 
+    /**
+     * GET /my-extension-status
+     * Returns whether the current user's SIP extension is registered in extension_live.
+     * Used by the frontend to check WebPhone connectivity before joining a campaign.
+     */
+    public function myExtensionStatus()
+    {
+        $auth = $this->request->auth;
+
+        // Resolve extension based on dialer_mode (same logic as extensionLogin)
+        $extension = $auth->extension;
+        $dialerMode = \App\Model\User::where('id', $auth->id)->value('dialer_mode');
+
+        if ($dialerMode == 3) {
+            $user = \App\Model\User::where('id', $auth->id)->first();
+            $extension = $user->app_extension;
+        } elseif ($dialerMode == 2) {
+            $extension = $auth->alt_extension;
+        }
+
+        if (empty($extension)) {
+            return response()->json([
+                'success' => false,
+                'registered' => false,
+                'message' => 'No extension configured for this user.',
+                'error_code' => 'NO_EXTENSION',
+            ], 200);
+        }
+
+        $row = \Illuminate\Support\Facades\DB::connection('mysql_' . $auth->parent_id)
+            ->selectOne('SELECT extension, status, campaign_id, lead_id, call_status FROM extension_live WHERE extension = ?', [$extension]);
+
+        if (!$row) {
+            return response()->json([
+                'success' => true,
+                'registered' => false,
+                'message' => 'WebPhone is not connected. Please enable your WebPhone first.',
+                'error_code' => 'WEBPHONE_NOT_CONNECTED',
+                'extension' => $extension,
+                'dialer_mode' => $dialerMode,
+            ], 200);
+        }
+
+        $status = (array) $row;
+        return response()->json([
+            'success' => true,
+            'registered' => true,
+            'message' => 'Extension is online.',
+            'extension' => $extension,
+            'dialer_mode' => $dialerMode,
+            'status' => $status['status'],
+            'campaign_id' => $status['campaign_id'],
+            'lead_id' => $status['lead_id'],
+            'call_status' => $status['call_status'],
+        ], 200);
+    }
+
     /*
      * listen Call
      * @return json
@@ -2150,6 +2207,122 @@ class DialerController extends Controller
             );
         }
         return response()->json($response);*/
+    }
+
+    // =========================================================================
+    // POST /call-transfer/initiate-updated
+    // =========================================================================
+
+    /**
+     * Unified warm-transfer endpoint — replaces the old 3-call sequential flow:
+     *   1. POST /check-line-details
+     *   2. POST /check-extension-live-for-transfer
+     *   3. POST /warm-call-transfer-c2c-crm
+     *
+     * All three steps are executed server-side in sequence.
+     * Any failure short-circuits immediately (fail-fast) and returns HTTP 422.
+     *
+     * Request body:
+     * {
+     *   "lead_id":                 786989,
+     *   "alt_extension":           "31057",        // caller's own extension (body)
+     *   "customer_phone_number":   "2602612010",
+     *   "campaign_id":             498,
+     *   "forward_extension":       "31057",        // transfer target extension
+     *   "domain":                  "crm",
+     *   "warm_call_transfer_type": "extension",    // extension | ring_group | did
+     *   "ring_group":              null,           // optional
+     *   "did_number":              null            // required when type = did
+     * }
+     *
+     * Success (200):
+     * { "status": "success", "message": "Call transfer initiated successfully",
+     *   "transfer_session_id": "a1b2c3d4e5f6a7b8" }
+     *
+     * Error (422):
+     * { "status": "error", "message": "Call is Already Hung Up" }
+     */
+    public function initiateTransferUpdated(Request $request)
+    {
+        $this->validate($this->request, [
+            'lead_id'                 => 'required|numeric',
+            'alt_extension'           => 'required|string',
+            'customer_phone_number'   => 'required|string',
+            'campaign_id'             => 'numeric',
+            'forward_extension'       => 'required_unless:warm_call_transfer_type,did|string',
+            'domain'                  => 'required|string',
+            'warm_call_transfer_type' => 'required|in:extension,ring_group,did',
+            'ring_group'              => 'string',
+            'did_number'              => 'required_if:warm_call_transfer_type,did|string',
+        ]);
+
+        $parentId        = (int) $request->auth->parent_id;
+        $transferService = new \App\Services\CallTransferService($this->model);
+
+        try {
+            // ------------------------------------------------------------------
+            // Step 1: Confirm the agent has an active call for this lead
+            // ------------------------------------------------------------------
+            Log::info('DialerController.initiateTransferUpdated.step1', [
+                'lead_id'       => $request->lead_id,
+                'alt_extension' => $request->alt_extension,
+                'parent_id'     => $parentId,
+            ]);
+
+            $transferService->legacyCheckLineDetails($request, $parentId);
+
+            // ------------------------------------------------------------------
+            // Step 2: Verify the target extension is online, ring it, mark busy
+            // ------------------------------------------------------------------
+            Log::info('DialerController.initiateTransferUpdated.step2', [
+                'forward_extension' => $request->forward_extension,
+                'domain'            => $request->domain,
+                'parent_id'         => $parentId,
+            ]);
+
+            $transferService->legacyCheckExtensionLive($request, $parentId);
+
+            // ------------------------------------------------------------------
+            // Step 3: Fire the Asterisk AMI warm-transfer command
+            // ------------------------------------------------------------------
+            Log::info('DialerController.initiateTransferUpdated.step3', [
+                'warm_call_transfer_type' => $request->warm_call_transfer_type,
+                'forward_extension'       => $request->forward_extension,
+                'lead_id'                 => $request->lead_id,
+                'parent_id'               => $parentId,
+            ]);
+
+            $sessionId = $transferService->legacyWarmCallTransfer($request, $parentId);
+
+        } catch (\RuntimeException $e) {
+            Log::warning('DialerController.initiateTransferUpdated.failed', [
+                'reason'                  => $e->getMessage(),
+                'lead_id'                 => $request->lead_id,
+                'forward_extension'       => $request->forward_extension,
+                'warm_call_transfer_type' => $request->warm_call_transfer_type,
+                'user_id'                 => $request->auth->id ?? null,
+                'parent_id'               => $parentId,
+            ]);
+
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+
+        Log::info('DialerController.initiateTransferUpdated.success', [
+            'lead_id'             => $request->lead_id,
+            'forward_extension'   => $request->forward_extension,
+            'transfer_session_id' => $sessionId,
+            'user_id'             => $request->auth->id ?? null,
+            'parent_id'           => $parentId,
+        ]);
+
+        return response()->json([
+            'status'              => 'success',
+            'message'             => 'Call transfer initiated successfully',
+            'transfer_session_id' => $sessionId,
+        ]);
     }
 
     /**

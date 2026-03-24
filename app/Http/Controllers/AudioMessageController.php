@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Model\Client\AudioMessage;
 
 use App\Model\Client\TariffLabelValues;
+use App\Services\TenantStorageService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -240,6 +241,51 @@ class AudioMessageController extends Controller
      *     )
      * )
      */
+
+    public function uploadAudio(Request $request)
+    {
+        $this->validate($request, [
+            'audio' => 'required|file|mimes:mp3,wav,ogg,webm,mp4,m4a|max:20480',
+        ]);
+
+        try {
+            $clientId     = (int) $request->auth->parent_id;
+            $relativePath = TenantStorageService::storeFile($clientId, $request->file('audio'), 'uploads');
+
+            return $this->successResponse("Audio uploaded", [
+                'relative_path' => $relativePath,
+                'filename'      => basename($relativePath),
+            ]);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to upload audio", [], $e);
+        }
+    }
+
+    public function deleteAudioMessage(Request $request)
+    {
+        $this->validate($request, ['auto_id' => 'required|numeric']);
+
+        $clientId = (int) $request->auth->parent_id;
+        $id       = (int) $request->auto_id;
+
+        try {
+            $msg = AudioMessage::on("mysql_{$clientId}")->where('id', $id)->first();
+            if (!$msg) {
+                return $this->failResponse("Audio message not found");
+            }
+
+            // Delete the stored file if it's a local relative path
+            if (!empty($msg->ann_id) && !str_starts_with($msg->ann_id, 'http')) {
+                TenantStorageService::deleteFile($clientId, $msg->ann_id);
+            }
+
+            AudioMessage::on("mysql_{$clientId}")->where('id', $id)->delete();
+
+            return $this->successResponse("Audio message deleted");
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to delete audio message", [], $e);
+        }
+    }
 
     public function ediAudioMessage(Request $request)
     {

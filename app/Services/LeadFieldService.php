@@ -125,4 +125,89 @@ class LeadFieldService
     {
         return (int)(DB::connection("mysql_{$clientId}")->table('crm_labels')->max('display_order') ?? 0) + 1;
     }
+
+    // =========================================================================
+    // MCA Auto-Seed
+    // =========================================================================
+
+    /**
+     * Bulk-insert all predefined MCA fields for a given section.
+     *
+     * Behaviour:
+     *   - Reads field definitions from config/mca_fields.php
+     *   - Skips any field whose field_key already exists (idempotent / safe to retry)
+     *   - Runs inside a single DB transaction — all succeed or none
+     *
+     * @param  string $clientId  Tenant DB ID (e.g. "3")
+     * @param  string $section   Raw section string from the request
+     *                           (e.g. "Owner Information", "owner_information")
+     * @return array{created: object[], skipped: string[]}
+     */
+    /**
+     * Sections permanently excluded from MCA seeding regardless of config.
+     * Matches the normalised key form (lowercase, underscores).
+     */
+    private const EXCLUDED_SECTIONS = ['documents_verification'];
+
+    public function seedMcaFields(string $clientId, string $section): array
+    {
+        $sectionKey  = $this->normalizeSectionKey($section);
+
+        // Hard guard — never seed excluded sections even if someone re-adds
+        // them to the config or passes them directly from the request.
+        if (in_array($sectionKey, self::EXCLUDED_SECTIONS, true)) {
+            return ['created' => [], 'skipped' => []];
+        }
+
+        $definitions = config("mca_fields.sections.{$sectionKey}", []);
+
+        $created = [];
+        $skipped = [];
+
+        if (empty($definitions)) {
+            return compact('created', 'skipped');
+        }
+
+        DB::connection("mysql_{$clientId}")->transaction(
+            function () use ($clientId, $section, $definitions, &$created, &$skipped) {
+                foreach ($definitions as $def) {
+                    $fieldKey = $def['field_key'];
+
+                    // Duplicate prevention — skip if field_key already exists
+                    $exists = DB::connection("mysql_{$clientId}")
+                        ->table('crm_labels')
+                        ->where('field_key', $fieldKey)
+                        ->exists();
+
+                    if ($exists) {
+                        $skipped[] = $fieldKey;
+                        continue;
+                    }
+
+                    $created[] = $this->create($clientId, [
+                        'label_name' => $def['label_name'],
+                        'field_key'  => $fieldKey,
+                        'field_type' => $def['field_type'],
+                        'section'    => $section,          // preserve original casing
+                        'required'   => $def['required'] ?? false,
+                    ]);
+                }
+            }
+        );
+
+        return compact('created', 'skipped');
+    }
+
+    /**
+     * Normalise a section string to a config lookup key.
+     *
+     * Examples:
+     *   "Owner Information"        → "owner_information"
+     *   "Documents / Verification" → "documents_verification"
+     *   "custom_fields"            → "custom_fields"
+     */
+    public function normalizeSectionKey(string $section): string
+    {
+        return trim(preg_replace('/[^a-z0-9]+/', '_', strtolower($section)), '_');
+    }
 }

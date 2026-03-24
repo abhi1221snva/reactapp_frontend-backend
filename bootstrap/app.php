@@ -136,6 +136,7 @@ $app->configure('cache');
 $app->configure('otp');
 $app->configure('sms');
 $app->configure('firebase');
+$app->configure('mca_fields');
 $app->register(Illuminate\Mail\MailServiceProvider::class);
 $app->register(Sichikawa\LaravelSendgridDriver\MailServiceProvider::class);
 $app->register(Maatwebsite\Excel\ExcelServiceProvider::class);

@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Services\PublicApplicationService;
 use App\Services\LeadPdfService;
+use App\Services\FieldValidationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * PublicApplicationController
@@ -83,6 +85,16 @@ class PublicApplicationController extends Controller
 
         try {
             [$user, $clientId] = $this->svc->resolveAffiliate($code);
+
+            // Dynamic field validation from crm_labels
+            $dynErrors = $this->validateEavFields($request, $clientId, true);
+            if (!empty($dynErrors)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Please correct the highlighted fields.',
+                    'errors'  => $dynErrors,
+                ], 422);
+            }
 
             $formData = $request->except(['_token', '_method']);
             $result   = $this->svc->createLead($clientId, $user, $formData);
@@ -193,6 +205,17 @@ class PublicApplicationController extends Controller
     {
         try {
             [$lead, $clientId] = $this->svc->resolveLeadToken($token);
+
+            // Type-only validation for submitted fields (required not enforced on partial save)
+            $dynErrors = $this->validateEavFields($request, $clientId, false);
+            if (!empty($dynErrors)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Please correct the highlighted fields.',
+                    'errors'  => $dynErrors,
+                ], 422);
+            }
+
             $this->svc->updateMerchantLead($lead, $clientId, $request->all());
 
             return response()->json(['success' => true, 'message' => 'Application updated successfully.']);
@@ -455,5 +478,67 @@ class PublicApplicationController extends Controller
         } catch (\Throwable $e) {
             return response()->json(['success' => false, 'message' => 'Failed to upload document.'], 500);
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // PRIVATE HELPERS
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Validate submitted form data against crm_labels field definitions.
+     *
+     * Generates validation rules dynamically from each label's field_type.
+     * No field names are hardcoded — works for any crm_labels configuration.
+     *
+     * @param  Request $request     Incoming HTTP request
+     * @param  string  $clientId    Tenant client ID (used to select DB connection)
+     * @param  bool    $requireAll  When true: also enforce required on fields NOT in request.
+     *                              When false: only validate fields that ARE in the request (partial save).
+     * @return array                { field_key: [errorMessage] } — empty means valid
+     */
+    private function validateEavFields(Request $request, string $clientId, bool $requireAll): array
+    {
+        $labels = DB::connection("mysql_{$clientId}")
+            ->table('crm_labels')
+            ->where('status', true)
+            ->get(['field_key', 'field_type', 'required', 'label_name', 'options'])
+            ->toArray();
+
+        $svc    = new FieldValidationService();
+        $input  = $request->except(['_token', '_method', 'signature_image']);
+        $errors = [];
+
+        foreach ($labels as $label) {
+            $key        = $label->field_key;
+            $fieldType  = strtolower(trim((string) $label->field_type));
+            $isRequired = !empty($label->required);
+
+            if (!array_key_exists($key, $input)) {
+                // Field not submitted — only flag as error when $requireAll is true
+                if ($requireAll && $isRequired) {
+                    $errors[$key] = [$label->label_name . ' is required.'];
+                }
+                continue;
+            }
+
+            // Sanitize (strips non-numerics for phone, trims others)
+            $raw     = $svc->sanitize($input[$key], $fieldType, $input, $key);
+            $isEmpty = ($raw === null || $raw === '');
+
+            if ($isRequired && $isEmpty) {
+                $errors[$key] = [$label->label_name . ' is required.'];
+                continue;
+            }
+
+            if ($isEmpty) continue;
+
+            $options = $svc->decodeOptions($label->options ?? null);
+            $errMsg  = $svc->validate($raw, $fieldType, $label->label_name, $options);
+            if ($errMsg !== null) {
+                $errors[$key] = [$errMsg];
+            }
+        }
+
+        return $errors;
     }
 }

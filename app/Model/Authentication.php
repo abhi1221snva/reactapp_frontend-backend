@@ -10,6 +10,7 @@ use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
 use Illuminate\Database\Eloquent\Model;
 use Laravel\Lumen\Auth\Authorizable;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 use App\Http\Helper\JwtToken;
 use App\Model\Dids;
 use App\Model\Master\Client;
@@ -73,7 +74,7 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
             if (Hash::check($password, $user->password)) {
                 $data = $user->toArray();
                 $data['permissions'] = $user->getPermissions(true);
-				
+
 				if($didObj){
 					$data['did'] = $didObj->cli;
 				}else{
@@ -83,6 +84,9 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
                 $roleInfo = RolesService::getById($data['role']);
                 $data['role'] = $roleInfo["name"];
                 $data['level'] = $roleInfo["level"];
+
+                // Add Asterisk server + SIP secret for webphone
+                $this->enrichWithSipConfig($data, $user);
 
                 $token = JwtToken::createToken($user->id);
                 $data['token'] = $token[0];
@@ -131,7 +135,7 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
             {
                 $data = $user->toArray();
                 $data['permissions'] = $user->getPermissions(true);
-                
+
                 if($didObj){
                     $data['did'] = $didObj->cli;
                 }else{
@@ -141,6 +145,8 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
                 $roleInfo = RolesService::getById($data['role']);
                 $data['role'] = $roleInfo["name"];
                 $data['level'] = $roleInfo["level"];
+
+                $this->enrichWithSipConfig($data, $user);
 
                 $token = JwtToken::createToken($user->id);
                 $data['token'] = $token[0];
@@ -154,7 +160,7 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
 
                 $data = $user->toArray();
                 $data['permissions'] = $user->getPermissions(true);
-                
+
                 if($didObj){
                     $data['did'] = $didObj->cli;
                 }else{
@@ -164,6 +170,8 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
                 $roleInfo = RolesService::getById($data['role']);
                 $data['role'] = $roleInfo["name"];
                 $data['level'] = $roleInfo["level"];
+
+                $this->enrichWithSipConfig($data, $user);
 
                 $token = JwtToken::createToken($user->id);
                 $data['token'] = $token[0];
@@ -175,7 +183,48 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
         // Bad Request response
         throw new RenderableException('Invalid email or ApiKey', [], 401);
     }
-public function loginByUserId(int $userId)
+/**
+     * Enrich a login response array with the Asterisk server address and SIP
+     * extension secret required by the frontend WebRTC webphone.
+     *
+     * - `server`  → asterisk_server.host   (IP/hostname for WSS cert URL)
+     * - `domain`  → asterisk_server.domain (SIP realm / domain)
+     * - `secret`  → user_extensions.secret (plain-text SIP password for the
+     *               alt_extension; falls back to extension if alt is empty)
+     *
+     * The frontend's decodeSipSecret() already handles plain-text passwords
+     * gracefully (atob throws on non-base64 input → catch → returns raw value).
+     */
+    private function enrichWithSipConfig(array &$data, User $user): void
+    {
+        // Asterisk server address
+        if ($user->asterisk_server_id) {
+            $asterisk = DB::table('asterisk_server')
+                ->where('id', $user->asterisk_server_id)
+                ->select('host', 'domain')
+                ->first();
+
+            $data['server'] = $asterisk->host  ?? null;
+            $data['domain'] = $asterisk->domain ?? null;
+        } else {
+            $data['server'] = null;
+            $data['domain'] = null;
+        }
+
+        // SIP secret — prefer alt_extension (WebRTC), fall back to extension
+        $sipExt = $user->alt_extension ?: (string) $user->extension;
+        if ($sipExt) {
+            $extRow = DB::table('user_extensions')
+                ->where('username', $sipExt)
+                ->select('secret')
+                ->first();
+            $data['secret'] = $extRow->secret ?? null;
+        } else {
+            $data['secret'] = null;
+        }
+    }
+
+    public function loginByUserId(int $userId)
 {
     /** @var User $user */
     $user = User::findOrFail($userId);
@@ -203,6 +252,9 @@ protected function loginWithoutPassword(User $user)
     $roleInfo = RolesService::getById($data['role']);
     $data['role']  = $roleInfo["name"];
     $data['level'] = $roleInfo["level"];
+
+    // Add Asterisk server + SIP secret for webphone
+    $this->enrichWithSipConfig($data, $user);
 
     // 🔑 generate JWT token (same as login)
     $token = JwtToken::createToken($user->id);
