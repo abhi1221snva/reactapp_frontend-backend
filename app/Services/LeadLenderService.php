@@ -280,26 +280,61 @@ class LeadLenderService
         }
 
         // Documents from crm_documents table
+        $docs = collect();
         if (!empty($documentIds)) {
             $docs = DB::connection($conn)
                 ->table('crm_documents')
                 ->whereIn('id', $documentIds)
-                ->get(['file_path']);
+                ->get(['id', 'file_path', 'file_name', 'document_type', 'document_name']);
 
             foreach ($docs as $doc) {
-                // file_path is a public URL — convert to storage abs path
-                $storagePath = storage_path('app/public') . parse_url($doc->file_path, PHP_URL_PATH);
-                // Strip /storage prefix if URL contains it
-                $storagePath = preg_replace('#/storage/#', '/', $storagePath, 1);
-                if (file_exists($storagePath)) {
-                    $attachments[] = $storagePath;
-                } else {
-                    // Try direct mapping: remove domain from URL, prepend storage root
-                    $relative = ltrim(parse_url($doc->file_path, PHP_URL_PATH), '/');
-                    $alt = storage_path('app/public/' . preg_replace('#^storage/#', '', $relative));
-                    if (file_exists($alt)) {
-                        $attachments[] = $alt;
+                if (empty($doc->file_path)) continue;
+
+                $abs = null;
+
+                // Strategy 1: already an absolute filesystem path
+                if (str_starts_with($doc->file_path, '/') && !str_starts_with($doc->file_path, '//')) {
+                    if (is_file($doc->file_path)) {
+                        $abs = $doc->file_path;
                     }
+                }
+
+                // Strategy 2: full URL or URL-path  (e.g. https://domain/storage/crm_documents/…)
+                if (!$abs) {
+                    $urlPath  = parse_url($doc->file_path, PHP_URL_PATH) ?? $doc->file_path;
+                    $relative = ltrim($urlPath, '/');
+
+                    // Strip leading "storage/" — Laravel public disk symlink
+                    if (str_starts_with($relative, 'storage/')) {
+                        $relative = substr($relative, strlen('storage/'));
+                    }
+
+                    $candidate = rtrim(storage_path('app/public'), '/') . '/' . $relative;
+                    if (is_file($candidate)) {
+                        $abs = $candidate;
+                    }
+                }
+
+                // Strategy 3: use Storage::disk('public') directly with the relative path
+                if (!$abs) {
+                    $urlPath2  = parse_url($doc->file_path, PHP_URL_PATH) ?? $doc->file_path;
+                    $rel2 = ltrim($urlPath2, '/');
+                    // strip leading "storage/" if present
+                    if (str_starts_with($rel2, 'storage/')) {
+                        $rel2 = substr($rel2, strlen('storage/'));
+                    }
+                    if (\Illuminate\Support\Facades\Storage::disk('public')->exists($rel2)) {
+                        $abs = \Illuminate\Support\Facades\Storage::disk('public')->path($rel2);
+                    }
+                }
+
+                if ($abs) {
+                    $attachments[] = $abs;
+                } else {
+                    Log::warning("LeadLenderService: document #{$doc->id} not found on disk", [
+                        'original'  => $doc->file_path,
+                        'candidate' => $candidate ?? null,
+                    ]);
                 }
             }
         }
@@ -333,6 +368,13 @@ class LeadLenderService
 
         $subject = $emailSubject ?: "New Funding Application — {$businessName}";
 
+        // Build a list of doc labels for notes
+        $docLabels = [];
+        foreach ($docs as $docItem) {
+            $label = $docItem->document_type ?: ($docItem->document_name ?: basename($docItem->file_path ?? ''));
+            if ($label) $docLabels[] = $label;
+        }
+
         foreach ($lenderIds as $lenderId) {
             $lender = DB::connection($conn)->table('crm_lender')->where('id', $lenderId)->first();
             if (!$lender) {
@@ -341,21 +383,55 @@ class LeadLenderService
             }
 
             try {
-                $now   = Carbon::now();
-                $subId = DB::connection($conn)->table('crm_lender_submissions')->insertGetId([
-                    'lead_id'           => $leadId,
-                    'lender_id'         => $lenderId,
-                    'lender_name'       => $lender->lender_name,
-                    'lender_email'      => $lender->email,
-                    'application_pdf'   => $pdfStoragePath,
-                    'submission_status' => 'submitted',
-                    'response_status'   => 'pending',
-                    'notes'             => $notes,
-                    'submitted_by'      => $userId,
-                    'submitted_at'      => $now,
-                    'created_at'        => $now,
-                    'updated_at'        => $now,
-                ]);
+                $now        = Carbon::now();
+                $dateLabel  = $now->format('Y-m-d H:i');
+                $docsStr    = !empty($docLabels)
+                    ? implode(', ', $docLabels)
+                    : null;
+                $autoNote   = $docsStr
+                    ? "[{$dateLabel}] {$submitterName} sent: {$docsStr}"
+                    : "[{$dateLabel}] {$submitterName} submitted application (no documents)";
+
+                $existingSub = DB::connection($conn)
+                    ->table('crm_lender_submissions')
+                    ->where('lead_id', $leadId)
+                    ->where('lender_id', $lenderId)
+                    ->first();
+
+                if ($existingSub) {
+                    // Append new auto-note on top of existing history
+                    $oldNotes   = $existingSub->notes ?? '';
+                    $newNotes   = $oldNotes ? "{$autoNote}\n\n{$oldNotes}" : $autoNote;
+
+                    DB::connection($conn)
+                        ->table('crm_lender_submissions')
+                        ->where('id', $existingSub->id)
+                        ->update([
+                            'submission_status' => 'submitted',
+                            'application_pdf'   => $pdfStoragePath ?? $existingSub->application_pdf,
+                            'submitted_by'      => $userId,
+                            'submitted_at'      => $now,
+                            'notes'             => $newNotes,
+                            'updated_at'        => $now,
+                        ]);
+                    $subId = $existingSub->id;
+                } else {
+                    $initNotes = $notes ? "{$autoNote}\n\n{$notes}" : $autoNote;
+                    $subId = DB::connection($conn)->table('crm_lender_submissions')->insertGetId([
+                        'lead_id'           => $leadId,
+                        'lender_id'         => $lenderId,
+                        'lender_name'       => $lender->lender_name,
+                        'lender_email'      => $lender->email,
+                        'application_pdf'   => $pdfStoragePath,
+                        'submission_status' => 'submitted',
+                        'response_status'   => 'pending',
+                        'notes'             => $initNotes,
+                        'submitted_by'      => $userId,
+                        'submitted_at'      => $now,
+                        'created_at'        => $now,
+                        'updated_at'        => $now,
+                    ]);
+                }
 
                 // Send to primary + all CC/secondary emails
                 $emailTargets = array_values(array_filter([
@@ -387,7 +463,7 @@ class LeadLenderService
                     'user_id'       => $userId,
                     'activity_type' => 'lender_submitted',
                     'subject'       => 'Application sent to lender: ' . $lender->lender_name,
-                    'body'          => $notes,
+                    'body'          => $autoNote,
                     'created_at'    => $now,
                     'updated_at'    => $now,
                 ]);
@@ -398,8 +474,9 @@ class LeadLenderService
                     'lender_id'         => $lenderId,
                     'lender_name'       => $lender->lender_name,
                     'submission_status' => 'submitted',
-                    'response_status'   => 'pending',
+                    'response_status'   => ($existingSub->response_status ?? 'pending'),
                     'submitted_at'      => $now->toDateTimeString(),
+                    'notes'             => ($existingSub->notes ?? null),
                 ];
             } catch (\Throwable $e) {
                 Log::error("submitApplication failed for lender {$lenderId}: " . $e->getMessage());

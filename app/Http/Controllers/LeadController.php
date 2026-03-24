@@ -2516,16 +2516,29 @@ class LeadController extends Controller
                     ->first();
             }
 
-            $firstName    = $lead->first_name ?? '';
-            $lastName     = $lead->last_name  ?? '';
-            $companyName  = $lead->company_name ?? '';
+            // EAV: fetch company_name, first_name, last_name from crm_lead_values
+            $eavKeys = ['company_name', 'first_name', 'last_name'];
+            $eavRows = DB::connection("mysql_{$clientId}")
+                ->table('crm_lead_values')
+                ->where('lead_id', $leadId)
+                ->whereIn('field_key', $eavKeys)
+                ->pluck('field_value', 'field_key');
+
+            $firstName    = $eavRows['first_name']   ?? ($lead->first_name   ?? '');
+            $lastName     = $eavRows['last_name']    ?? ($lead->last_name    ?? '');
+            $companyName  = $eavRows['company_name'] ?? ($lead->company_name ?? '');
             $businessName = trim($companyName ?: "$firstName $lastName") ?: "Lead #{$leadId}";
 
-            // Submitter display name
+            // Submitter display name — users live in master DB, fall back if not in client DB
             $user = DB::connection("mysql_{$clientId}")
                 ->table('users')
                 ->where('id', $userId)
                 ->first(['first_name', 'last_name', 'email']);
+            if (!$user) {
+                $user = DB::table('users')
+                    ->where('id', $userId)
+                    ->first(['first_name', 'last_name', 'email']);
+            }
             $submitterName = $user
                 ? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: ($user->email ?? 'CRM Agent')
                 : 'CRM Agent';
