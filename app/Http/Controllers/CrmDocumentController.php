@@ -87,7 +87,8 @@ class CrmDocumentController extends Controller
                     $u = $uploaders[$uid];
                     $d['uploaded_by_name'] = trim(($u['first_name'] ?? '') . ' ' . ($u['last_name'] ?? ''));
                 }
-                $d['file_name'] = !empty($d['file_path']) ? basename($d['file_path']) : ($d['file_name'] ?? '');
+                $d['file_name']  = !empty($d['file_path']) ? basename($d['file_path']) : ($d['file_name'] ?? '');
+                $d['attachable'] = !empty($d['file_path']);
                 return $d;
             })->values();
 
