@@ -157,7 +157,7 @@ class PublicApplicationService
             ->table('crm_labels')
             ->where('status', 1)
             ->orderBy('display_order')
-            ->select('label_name', 'field_key', 'field_type', 'section', 'options', 'required', 'placeholder', 'display_order')
+            ->select('label_name', 'field_key', 'field_type', 'section', 'options', 'required', 'placeholder', 'display_order', 'validation_rules')
             ->get();
 
         // Track section insertion order by the first field's display_order
@@ -180,12 +180,15 @@ class PublicApplicationService
             }
 
             $grouped[$section][] = [
-                'key'         => $key,
-                'label'       => $lbl->label_name,
-                'type'        => $this->normalizeEavFieldType($lbl->field_type),
-                'required'    => (bool) $lbl->required,
-                'placeholder' => $lbl->placeholder ?? '',
-                'options'     => $this->parseJsonOptions($lbl->options),
+                'key'              => $key,
+                'label'            => $lbl->label_name,
+                'type'             => $this->normalizeEavFieldType($lbl->field_type),
+                'required'         => (bool) $lbl->required,
+                'placeholder'      => $lbl->placeholder ?? '',
+                'options'          => $this->parseJsonOptions($lbl->options),
+                'validation_rules' => $lbl->validation_rules
+                    ? (is_string($lbl->validation_rules) ? json_decode($lbl->validation_rules, true) : $lbl->validation_rules)
+                    : [],
             ];
         }
 

@@ -191,7 +191,7 @@ class IvrController extends Controller
     // ✅ Validation (auto 422)
     $this->validate($this->request, [
         'ivr_id'   => 'required|string',
-        'ann_id'   => 'required|string',
+        'ann_id'   => 'nullable|string',
         'ivr_desc' => 'required|string',
     ]);
 

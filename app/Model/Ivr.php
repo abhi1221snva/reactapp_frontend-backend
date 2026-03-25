@@ -144,7 +144,7 @@ class Ivr extends Model
             /**
              * 📄 Query
              */
-            $sql = "SELECT * FROM {$this->table}{$where}";
+            $sql = "SELECT * FROM {$this->table}{$where} ORDER BY id DESC";
             $records = DB::connection('mysql_' . $request->auth->parent_id)
                 ->select($sql, $params);
     

@@ -6,6 +6,7 @@ use App\Model\Client\AudioMessage;
 
 use App\Model\Client\TariffLabelValues;
 use App\Services\TenantStorageService;
+use GuzzleHttp\Client as GuzzleClient;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -64,7 +65,8 @@ class AudioMessageController extends Controller
     // }
     public function list(Request $request)
 {
-    $query = AudioMessage::on("mysql_" . $request->auth->parent_id);
+    $query = AudioMessage::on("mysql_" . $request->auth->parent_id)
+        ->orderBy('id', 'desc');
 
     // 🔎 SEARCH (only if not empty)
     if ($request->filled('search')) {
@@ -175,8 +177,8 @@ class AudioMessageController extends Controller
 
         $AudioMessage = new AudioMessage();
         $AudioMessage->setConnection("mysql_" . $request->auth->parent_id);
-        $AudioMessage->ivr_id = $request->ivr_id;
-        $AudioMessage->ann_id = $request->ann_id;
+        $AudioMessage->ivr_id = $request->ivr_id ?? '';
+        $AudioMessage->ann_id = $request->ann_id ?? '';
         $AudioMessage->ivr_desc = $request->ivr_desc;
         $AudioMessage->language = $request->language;
         $AudioMessage->voice_name = $request->voice_name;
@@ -241,6 +243,147 @@ class AudioMessageController extends Controller
      *     )
      * )
      */
+
+    public function generateTts(Request $request)
+    {
+        $this->validate($request, [
+            'speech_text' => 'required|string|max:5000',
+            'language'    => 'required|string',
+        ]);
+
+        try {
+            $clientId  = (int) $request->auth->parent_id;
+            $text      = $request->speech_text;
+            $langCode  = $request->language;
+            $genderRaw = strtoupper($request->voice_gender ?? 'FEMALE');
+            $speed     = $this->parseSpeedToFloat($request->speed ?? 'medium');
+
+            $apiKey = env('OPENAI_API_KEY');
+            if (empty($apiKey)) {
+                return $this->failResponse('TTS API key not configured');
+            }
+
+            $http = new GuzzleClient(['timeout' => 30]);
+
+            // Translate text to target language (skip for English variants)
+            $translatedText = $this->translateText($text, $langCode, $apiKey, $http);
+
+            // Map gender to OpenAI voice
+            $voice = $genderRaw === 'MALE' ? 'onyx' : 'nova';
+
+            $ttsResponse = $http->post('https://api.openai.com/v1/audio/speech', [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $apiKey,
+                    'Content-Type'  => 'application/json',
+                ],
+                'json' => [
+                    'model'           => 'tts-1',
+                    'input'           => $translatedText,
+                    'voice'           => $voice,
+                    'speed'           => $speed,
+                    'response_format' => 'mp3',
+                ],
+            ]);
+
+            TenantStorageService::ensureDirectories($clientId);
+            $filename = 'tts_' . time() . '_' . rand(1000, 9999) . '.mp3';
+            $destPath = TenantStorageService::getPath($clientId, 'uploads') . DIRECTORY_SEPARATOR . $filename;
+            file_put_contents($destPath, $ttsResponse->getBody()->getContents());
+
+            $relativePath = 'uploads/' . $filename;
+
+            return $this->successResponse('TTS audio generated', [
+                'relative_path'   => $relativePath,
+                'filename'        => $filename,
+                'translated_text' => $translatedText,
+            ]);
+        } catch (\Throwable $e) {
+            return $this->failResponse('Failed to generate TTS audio', [], $e);
+        }
+    }
+
+    private function translateText(string $text, string $langCode, string $apiKey, GuzzleClient $http): string
+    {
+        // English variants — no translation needed
+        if (str_starts_with($langCode, 'en-')) {
+            return $text;
+        }
+
+        $langName = $this->getLangName($langCode);
+
+        try {
+            $response = $http->post('https://api.openai.com/v1/chat/completions', [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $apiKey,
+                    'Content-Type'  => 'application/json',
+                ],
+                'json' => [
+                    'model' => 'gpt-4o-mini',
+                    'messages' => [
+                        [
+                            'role'    => 'system',
+                            'content' => "You are a professional translator. Translate the given text to {$langName}. Return ONLY the translated text — no explanations, no quotes, no extra words.",
+                        ],
+                        ['role' => 'user', 'content' => $text],
+                    ],
+                    'temperature' => 0.2,
+                    'max_tokens'  => 2000,
+                ],
+            ]);
+
+            $data = json_decode($response->getBody()->getContents(), true);
+            $translated = trim($data['choices'][0]['message']['content'] ?? '');
+            return $translated ?: $text;
+        } catch (\Throwable $e) {
+            return $text; // fallback: use original text
+        }
+    }
+
+    private function getLangName(string $langCode): string
+    {
+        $map = [
+            'ar-XA' => 'Arabic',
+            'zh-CN' => 'Chinese (Simplified)',
+            'zh-TW' => 'Chinese (Traditional)',
+            'da-DK' => 'Danish',
+            'nl-NL' => 'Dutch',
+            'en-AU' => 'English',
+            'en-IN' => 'English',
+            'en-GB' => 'English',
+            'en-US' => 'English',
+            'fi-FI' => 'Finnish',
+            'fr-CA' => 'French',
+            'fr-FR' => 'French',
+            'de-DE' => 'German',
+            'el-GR' => 'Greek',
+            'hi-IN' => 'Hindi',
+            'id-ID' => 'Indonesian',
+            'it-IT' => 'Italian',
+            'ja-JP' => 'Japanese',
+            'ko-KR' => 'Korean',
+            'ms-MY' => 'Malay',
+            'nb-NO' => 'Norwegian',
+            'pl-PL' => 'Polish',
+            'pt-BR' => 'Portuguese (Brazilian)',
+            'pt-PT' => 'Portuguese (European)',
+            'ro-RO' => 'Romanian',
+            'ru-RU' => 'Russian',
+            'es-ES' => 'Spanish (Spain)',
+            'es-MX' => 'Spanish (Mexican)',
+            'es-US' => 'Spanish (American)',
+            'sv-SE' => 'Swedish',
+            'tr-TR' => 'Turkish',
+            'uk-UA' => 'Ukrainian',
+            'cy-GB' => 'Welsh',
+        ];
+        return $map[$langCode] ?? $langCode;
+    }
+
+    private function parseSpeedToFloat(string $speed): float
+    {
+        $map = ['slow' => 0.75, 'medium' => 1.0, 'fast' => 1.5];
+        return $map[strtolower(trim($speed))] ?? 1.0;
+    }
 
     public function uploadAudio(Request $request)
     {

@@ -62,6 +62,11 @@ class LeadValidationService
                         }
                     }
                     if (!empty($built)) {
+                        // Honour the required column flag if it is not already
+                        // expressed as a rule object inside validation_rules JSON.
+                        if (!empty($label->required) && !in_array('required', $built, true)) {
+                            array_unshift($built, 'required');
+                        }
                         $rules[$key] = $built;
                         continue;
                     }

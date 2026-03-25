@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Services\PublicApplicationService;
 use App\Services\LeadPdfService;
 use App\Services\FieldValidationService;
+use App\Services\LeadValidationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -541,28 +542,59 @@ class PublicApplicationController extends Controller
         $labels = DB::connection("mysql_{$clientId}")
             ->table('crm_labels')
             ->where('status', true)
-            ->get(['field_key', 'field_type', 'required', 'label_name', 'options'])
+            ->get(['field_key', 'field_type', 'required', 'label_name', 'options', 'validation_rules'])
             ->toArray();
 
-        $svc    = new FieldValidationService();
-        $input  = $request->except(['_token', '_method', 'signature_image', 'owner_2_signature_image']);
-        $errors = [];
+        $fieldSvc = new FieldValidationService();
+        $leadSvc  = new LeadValidationService();
+        $input    = $request->except(['_token', '_method', 'signature_image', 'owner_2_signature_image']);
+        $errors   = [];
 
-        foreach ($labels as $label) {
+        // ── Fields with stored validation_rules → LeadValidationService ──────
+        $withRules    = array_filter($labels, fn($l) => !empty($l->validation_rules));
+        $withoutRules = array_filter($labels, fn($l) => empty($l->validation_rules));
+
+        if (!empty($withRules)) {
+            // When $requireAll=false (merchant update), remove 'required' from rules
+            // for fields that aren't present in the input so optional edits work.
+            $labelsToValidate = $requireAll
+                ? array_values($withRules)
+                : array_values(array_filter($withRules, fn($l) => array_key_exists($l->field_key, $input)));
+
+            $builtRules = $leadSvc->buildRules($labelsToValidate);
+            $ruleErrors = $leadSvc->validate($input, $builtRules, $labelsToValidate);
+            foreach ($ruleErrors as $key => $msgs) {
+                $errors[$key] = $msgs;
+            }
+
+            // Required-but-missing check for $requireAll mode
+            if ($requireAll) {
+                foreach ($withRules as $label) {
+                    $key = $label->field_key;
+                    if (isset($errors[$key])) continue;
+                    if (!array_key_exists($key, $input) && !empty($label->required)) {
+                        $errors[$key] = [$label->label_name . ' is required.'];
+                    }
+                }
+            }
+        }
+
+        // ── Fields without validation_rules → legacy FieldValidationService ──
+        foreach ($withoutRules as $label) {
             $key        = $label->field_key;
             $fieldType  = strtolower(trim((string) $label->field_type));
             $isRequired = !empty($label->required);
 
             if (!array_key_exists($key, $input)) {
-                // Field not submitted — only flag as error when $requireAll is true
                 if ($requireAll && $isRequired) {
                     $errors[$key] = [$label->label_name . ' is required.'];
                 }
                 continue;
             }
 
-            // Sanitize (strips non-numerics for phone, trims others)
-            $raw     = $svc->sanitize($input[$key], $fieldType, $input, $key);
+            if (isset($errors[$key])) continue;
+
+            $raw     = $fieldSvc->sanitize($input[$key], $fieldType, $input, $key);
             $isEmpty = ($raw === null || $raw === '');
 
             if ($isRequired && $isEmpty) {
@@ -572,8 +604,8 @@ class PublicApplicationController extends Controller
 
             if ($isEmpty) continue;
 
-            $options = $svc->decodeOptions($label->options ?? null);
-            $errMsg  = $svc->validate($raw, $fieldType, $label->label_name, $options);
+            $options = $fieldSvc->decodeOptions($label->options ?? null);
+            $errMsg  = $fieldSvc->validate($raw, $fieldType, $label->label_name, $options);
             if ($errMsg !== null) {
                 $errors[$key] = [$errMsg];
             }

@@ -838,6 +838,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   $router->post('edit-audio-message', 'AudioMessageController@ediAudioMessage');
   $router->post('upload-audio', 'AudioMessageController@uploadAudio');
   $router->post('delete-audio-message', 'AudioMessageController@deleteAudioMessage');
+  $router->post('generate-tts', 'AudioMessageController@generateTts');
 
 
 

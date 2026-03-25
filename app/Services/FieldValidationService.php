@@ -12,7 +12,7 @@ namespace App\Services;
  * Field types supported:
  *   text, textarea, text_area, email, phone_number, phone,
  *   number, date, dropdown, select, select_option,
- *   percentage, file, radio, checkbox
+ *   percentage, ssn, file, radio, checkbox
  */
 class FieldValidationService
 {
@@ -117,6 +117,14 @@ class FieldValidationService
                     if (!in_array((string) $value, $opts, true)) {
                         return "{$label} must be a valid option.";
                     }
+                }
+                break;
+
+            // ── SSN ────────────────────────────────────────────────────────────
+            case 'ssn':
+                $digits = preg_replace('/[^0-9]/', '', (string) $value);
+                if (strlen($digits) !== 9) {
+                    return "{$label} must be 9 digits (XXX-XX-XXXX).";
                 }
                 break;
 

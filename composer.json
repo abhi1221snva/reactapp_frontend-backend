@@ -12,6 +12,7 @@
         "doctrine/dbal": "^3.0",
         "dompdf/dompdf": "^3.1",
         "firebase/php-jwt": "^6.9",
+        "google/cloud-text-to-speech": "^2.7",
         "guzzlehttp/guzzle": "^7.0",
         "illuminate/redis": "^10.0",
         "laravel/lumen-framework": "^10.0",
