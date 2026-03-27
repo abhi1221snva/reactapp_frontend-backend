@@ -46,7 +46,7 @@ use Illuminate\Support\Facades\Log;
 class SendLeadByLenderApi extends Job
 {
     // ── Job config ─────────────────────────────────────────────────────────────
-    private const TIMEOUT_SECONDS = 30;
+    private const TIMEOUT_SECONDS = 60; // OnDeck takes ~28s to respond
     private const MAX_RETRIES     = 2;
     private const RETRY_DELAY_MS  = 1500;
 

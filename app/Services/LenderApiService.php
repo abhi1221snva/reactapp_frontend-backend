@@ -70,7 +70,7 @@ class LenderApiService
         $headers      = $this->resolveHeaders($config);
         $payload      = $this->buildPayload($config, $leadData);
         $maxAttempts  = max(1, (int) ($config->retry_attempts ?? 3));
-        $timeoutSecs  = max(5,  (int) ($config->timeout_seconds ?? 30));
+        $timeoutSecs  = max(5,  (int) ($config->timeout_seconds ?? 60)); // OnDeck takes ~28s; default 60s
 
         $lastResult   = null;
         $attempt      = 0;
