@@ -1412,6 +1412,9 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   // ── Manual trigger for a lead ──────────────────────────────────────────────
   $router->post('crm/lead/{leadId}/dispatch-lender-api', 'LenderApiController@triggerForLead');
 
+  // ── Apply field fix + optional resubmit ───────────────────────────────────
+  $router->post('crm/lead/{leadId}/apply-lender-fix',    'LenderApiController@applyFix');
+
   //crm lead status (legacy routes — kept for backward compat)
   $router->get('leadStatus', 'LeadStatusController@list');
   $router->put('add-lead-status', 'LeadStatusController@create');

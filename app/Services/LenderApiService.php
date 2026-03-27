@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Model\Client\CrmLenderAPis;
 use App\Model\Client\CrmLenderApiLog;
+use App\Services\ErrorParserService;
+use App\Services\FixSuggestionService;
 use Carbon\Carbon;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -114,6 +116,11 @@ class LenderApiService
                     'attempt'           => $attempt,
                     'created_at'        => Carbon::now(),
                 ]);
+
+                // ── Enrich failed logs with structured error analysis ──────────
+                if (!$isSuccess && $logId) {
+                    $this->enrichLog($clientId, $logId, $code, $body, $leadData);
+                }
 
                 $lastResult = [
                     'success'       => $isSuccess,
@@ -458,6 +465,50 @@ class LenderApiService
             }
         }
         return $safe;
+    }
+
+    // ── Error Enrichment ───────────────────────────────────────────────────────
+
+    /**
+     * Parse and enrich a failed log entry with structured error data.
+     * Runs after writeLog() — silently skipped if the columns don't exist yet.
+     *
+     * @param string     $clientId
+     * @param int        $logId       ID returned by writeLog()
+     * @param int        $statusCode  HTTP response code
+     * @param string|null $body       Raw response body
+     * @param array      $leadData    Flat EAV map used to suggest auto-fixes
+     */
+    private function enrichLog(
+        string  $clientId,
+        int     $logId,
+        int     $statusCode,
+        ?string $body,
+        array   $leadData
+    ): void {
+        try {
+            $parser    = new ErrorParserService();
+            $suggester = new FixSuggestionService();
+
+            $parsedErrors    = $parser->parse($statusCode, $body);
+            $fixSuggestions  = $suggester->suggest($parsedErrors, $leadData);
+
+            $isFixable = !empty(array_filter(
+                $fixSuggestions,
+                fn ($e) => !in_array($e['fix_type'] ?? '', ['unknown'], true)
+            ));
+
+            DB::connection("mysql_{$clientId}")
+                ->table('crm_lender_api_logs')
+                ->where('id', $logId)
+                ->update([
+                    'error_json'      => json_encode($parsedErrors,   JSON_UNESCAPED_UNICODE),
+                    'fix_suggestions' => json_encode($fixSuggestions, JSON_UNESCAPED_UNICODE),
+                    'is_fixable'      => $isFixable,
+                ]);
+        } catch (\Throwable $e) {
+            // Non-fatal — error enrichment must never break the main dispatch flow
+        }
     }
 
     // ── Logging ────────────────────────────────────────────────────────────────

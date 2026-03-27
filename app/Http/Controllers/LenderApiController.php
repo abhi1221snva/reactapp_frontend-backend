@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Jobs\DispatchLenderApiJob;
 use App\Model\Client\CrmLenderAPis;
 use App\Model\Client\CrmLenderApiLog;
+use App\Services\ErrorParserService;
+use App\Services\FixSuggestionService;
 use App\Services\LenderApiService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -428,6 +430,110 @@ class LenderApiController extends Controller
             return $this->successResponse('Log detail', (array) $row);
         } catch (\Throwable $e) {
             return $this->failResponse('Failed to retrieve log', [$e->getMessage()], $e);
+        }
+    }
+
+    // ── Apply fix to lead field and optionally re-dispatch ─────────────────────
+
+    /**
+     * POST /crm/lead/{leadId}/apply-lender-fix
+     *
+     * Body:
+     *   field_key  string   CRM EAV field_key to update (e.g. "home_state")
+     *   new_value  string   The corrected value
+     *   lender_id  int      Lender to resubmit to (required when resubmit=true)
+     *   resubmit   bool     If true, queue a new DispatchLenderApiJob after saving
+     *   log_id     int?     Optional — log entry to fetch before responding
+     *
+     * Saves the field value to crm_lead_values, then optionally redispatches.
+     * Returns the updated lead field value and, when resubmit=true, queued info.
+     */
+    public function applyFix(Request $request, int $leadId)
+    {
+        $clientId = $request->auth->parent_id;
+        $userId   = $request->auth->id ?? 0;
+
+        $validator = Validator::make($request->all(), [
+            'field_key' => 'required|string|max:200',
+            'new_value' => 'required|string|max:1000',
+            'lender_id' => 'nullable|integer',
+            'resubmit'  => 'nullable|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+        }
+
+        try {
+            $fieldKey = $request->input('field_key');
+            $newValue = $request->input('new_value');
+            $resubmit = $request->boolean('resubmit', false);
+            $lenderId = $request->integer('lender_id', 0);
+            $conn     = "mysql_{$clientId}";
+
+            // ── Verify lead exists ────────────────────────────────────────────
+            $leadExists = DB::connection($conn)->table('crm_leads')->where('id', $leadId)->exists();
+            if (!$leadExists) {
+                return $this->failResponse('Lead not found', [], null, 404);
+            }
+
+            // ── Save to crm_lead_values (upsert) ─────────────────────────────
+            $existing = DB::connection($conn)
+                ->table('crm_lead_values')
+                ->where('lead_id', $leadId)
+                ->where('field_key', $fieldKey)
+                ->first();
+
+            $now = Carbon::now();
+
+            if ($existing) {
+                DB::connection($conn)
+                    ->table('crm_lead_values')
+                    ->where('lead_id', $leadId)
+                    ->where('field_key', $fieldKey)
+                    ->update(['field_value' => $newValue, 'updated_at' => $now]);
+            } else {
+                DB::connection($conn)->table('crm_lead_values')->insert([
+                    'lead_id'     => $leadId,
+                    'field_key'   => $fieldKey,
+                    'field_value' => $newValue,
+                    'created_at'  => $now,
+                    'updated_at'  => $now,
+                ]);
+            }
+
+            $response = [
+                'lead_id'   => $leadId,
+                'field_key' => $fieldKey,
+                'new_value' => $newValue,
+                'saved_at'  => $now->toDateTimeString(),
+            ];
+
+            // ── Optionally re-dispatch to lender ──────────────────────────────
+            if ($resubmit && $lenderId > 0) {
+                $config = DB::connection($conn)
+                    ->table('crm_lender_apis')
+                    ->where('crm_lender_id', $lenderId)
+                    ->where('status', true)
+                    ->first();
+
+                if (!$config) {
+                    return $this->failResponse('No active API configuration found for this lender', [], null, 404);
+                }
+
+                dispatch(new DispatchLenderApiJob($clientId, $leadId, $lenderId, $userId))
+                    ->onConnection('redis')
+                    ->onQueue('default');
+
+                $response['resubmitted'] = true;
+                $response['lender_id']   = $lenderId;
+                $response['queued_at']   = $now->toDateTimeString();
+            }
+
+            return $this->successResponse('Fix applied', $response);
+
+        } catch (\Throwable $e) {
+            return $this->failResponse('Failed to apply fix', [$e->getMessage()], $e, 500);
         }
     }
 

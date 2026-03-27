@@ -23,6 +23,9 @@ class CrmLenderApiLog extends Model
         'response_body',
         'status',
         'error_message',
+        'error_json',
+        'fix_suggestions',
+        'is_fixable',
         'duration_ms',
         'attempt',
         'created_at',
@@ -30,6 +33,9 @@ class CrmLenderApiLog extends Model
 
     protected $casts = [
         'request_headers' => 'array',
+        'error_json'      => 'array',
+        'fix_suggestions' => 'array',
+        'is_fixable'      => 'boolean',
         'response_code'   => 'integer',
         'duration_ms'     => 'integer',
         'attempt'         => 'integer',
