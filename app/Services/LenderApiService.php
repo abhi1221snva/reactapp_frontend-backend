@@ -84,7 +84,7 @@ class LenderApiService
                 // Build an Http client with auth and headers
                 $client = Http::withHeaders($headers)
                               ->timeout($timeoutSecs)
-                              ->retry(1, 0); // Http::retry is separate from our outer loop
+                              ->retry(1, 0, fn ($e) => !($e instanceof \Illuminate\Http\Client\ConnectionException)); // Never retry timeouts
 
                 $client = $this->applyAuth($client, $config, $clientId);
 

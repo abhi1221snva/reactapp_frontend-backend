@@ -1135,11 +1135,15 @@ class SendLeadByLenderApi extends Job
             $response = Http::withHeaders($headers)
                 ->timeout(self::TIMEOUT_SECONDS)
                 ->retry(self::MAX_RETRIES, self::RETRY_DELAY_MS, function ($exception) {
-                    // Only retry on connection/server errors, not 4xx
+                    // Never retry connection timeouts — server is hanging, retrying just wastes time
+                    if ($exception instanceof \Illuminate\Http\Client\ConnectionException) {
+                        return false;
+                    }
+                    // Retry only on 5xx server errors, not 4xx client errors
                     if ($exception instanceof \Illuminate\Http\Client\RequestException) {
                         return $exception->response->serverError();
                     }
-                    return true;
+                    return false;
                 }, throw: false)
                 ->{$method}($url, $payload);
 
