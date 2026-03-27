@@ -255,7 +255,12 @@ class LenderApiService
 
             case 'oauth2':
                 $token = $this->fetchOAuth2Token($creds, $clientId, $config->id);
-                return $token ? $client->withToken($token) : $client;
+                if ($token) {
+                    // Some APIs (e.g. Salesforce) use "OAuth" prefix instead of "Bearer"
+                    $prefix = $creds['auth_header_prefix'] ?? 'Bearer';
+                    return $client->withHeaders(['Authorization' => "$prefix $token"]);
+                }
+                return $client;
 
             default:
                 return $client;
@@ -263,7 +268,8 @@ class LenderApiService
     }
 
     /**
-     * Fetch an OAuth2 client_credentials token and cache it per API config.
+     * Fetch an OAuth2 token and cache it per API config.
+     * Supports grant_type: client_credentials (default) and password (Salesforce-style).
      * Cache key lives in the process (static array) — reused within a single job.
      */
     private static array $tokenCache = [];
@@ -276,23 +282,35 @@ class LenderApiService
             return self::$tokenCache[$cacheKey];
         }
 
-        try {
-            $response = Http::asForm()->post($creds['token_url'], [
+        $grantType = $creds['grant_type'] ?? 'client_credentials';
+
+        $params = $grantType === 'password'
+            ? [
+                'grant_type'    => 'password',
+                'client_id'     => $creds['client_id']     ?? '',
+                'client_secret' => $creds['client_secret'] ?? '',
+                'username'      => $creds['username']       ?? '',
+                'password'      => urldecode($creds['password'] ?? ''),
+            ]
+            : [
                 'grant_type'    => 'client_credentials',
                 'client_id'     => $creds['client_id']     ?? '',
                 'client_secret' => $creds['client_secret'] ?? '',
                 'scope'         => $creds['scope']          ?? '',
-            ]);
+            ];
+
+        try {
+            $response = Http::timeout(15)->asForm()->post($creds['token_url'] ?? '', $params);
 
             if ($response->successful()) {
                 $token = $response->json('access_token');
-                self::$tokenCache[$cacheKey] = $token;
-                return $token;
+                if ($token) {
+                    self::$tokenCache[$cacheKey] = $token;
+                    return $token;
+                }
             }
-
-            // Log suppressed
         } catch (\Throwable $e) {
-            //Log::error("LenderApiService: OAuth2 token exception: " . $e->getMessage());
+            // Token fetch failed — caller will skip auth
         }
 
         return null;

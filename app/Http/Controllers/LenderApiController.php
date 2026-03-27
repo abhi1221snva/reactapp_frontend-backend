@@ -392,7 +392,17 @@ class LenderApiController extends Controller
             $total   = (clone $query)->count();
             $page    = max(1, (int) $request->input('page', 1));
             $records = $query->offset(($page - 1) * $perPage)->limit($perPage)->get()
-                ->map(fn ($r) => (array) $r)
+                ->map(function ($r) {
+                    $row = (array) $r;
+                    foreach (['error_json', 'fix_suggestions'] as $col) {
+                        if (isset($row[$col]) && is_string($row[$col])) {
+                            $decoded = json_decode($row[$col], true);
+                            $row[$col] = is_array($decoded) ? $decoded : null;
+                        }
+                    }
+                    $row['is_fixable'] = (bool) ($row['is_fixable'] ?? false);
+                    return $row;
+                })
                 ->values();
 
             return $this->successResponse('Lender API logs', [
@@ -427,7 +437,15 @@ class LenderApiController extends Controller
                 return $this->failResponse('Log entry not found', [], null, 404);
             }
 
-            return $this->successResponse('Log detail', (array) $row);
+            $data = (array) $row;
+            foreach (['error_json', 'fix_suggestions'] as $col) {
+                if (isset($data[$col]) && is_string($data[$col])) {
+                    $decoded = json_decode($data[$col], true);
+                    $data[$col] = is_array($decoded) ? $decoded : null;
+                }
+            }
+            $data['is_fixable'] = (bool) ($data['is_fixable'] ?? false);
+            return $this->successResponse('Log detail', $data);
         } catch (\Throwable $e) {
             return $this->failResponse('Failed to retrieve log', [$e->getMessage()], $e);
         }
@@ -454,10 +472,11 @@ class LenderApiController extends Controller
         $userId   = $request->auth->id ?? 0;
 
         $validator = Validator::make($request->all(), [
-            'field_key' => 'required|string|max:200',
-            'new_value' => 'required|string|max:1000',
-            'lender_id' => 'nullable|integer',
-            'resubmit'  => 'nullable|boolean',
+            'field_key'    => 'required|string|max:200',
+            'new_value'    => 'required|string|max:1000',
+            'lender_field' => 'nullable|string|max:500',
+            'lender_id'    => 'nullable|integer',
+            'resubmit'     => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -465,11 +484,40 @@ class LenderApiController extends Controller
         }
 
         try {
-            $fieldKey = $request->input('field_key');
-            $newValue = $request->input('new_value');
-            $resubmit = $request->boolean('resubmit', false);
-            $lenderId = $request->integer('lender_id', 0);
-            $conn     = "mysql_{$clientId}";
+            $fieldKey    = $request->input('field_key');
+            $newValue    = $request->input('new_value');
+            $lenderField = $request->input('lender_field'); // original lender dot-path e.g. "owners.0.homeAddress.state"
+            $resubmit    = $request->boolean('resubmit', false);
+            $lenderId    = $request->integer('lender_id', 0);
+            $conn        = "mysql_{$clientId}";
+
+            // ── Resolve actual CRM key from payload_mapping ───────────────────
+            // The heuristic crm_key from FixSuggestionService might not match
+            // the key used in the lender API's payload_mapping.  Reverse-look up
+            // the mapping to find the CRM key that feeds into $lenderField.
+            if ($lenderField && $lenderId > 0) {
+                $apiConfig = DB::connection($conn)
+                    ->table('crm_lender_apis')
+                    ->where('crm_lender_id', $lenderId)
+                    ->where('status', true)
+                    ->first();
+
+                if ($apiConfig && !empty($apiConfig->payload_mapping)) {
+                    $mapping = is_string($apiConfig->payload_mapping)
+                        ? json_decode($apiConfig->payload_mapping, true)
+                        : (array) $apiConfig->payload_mapping;
+
+                    if (is_array($mapping)) {
+                        foreach ($mapping as $crmKey => $lenderPath) {
+                            $paths = is_array($lenderPath) ? $lenderPath : [$lenderPath];
+                            if (in_array($lenderField, $paths, true)) {
+                                $fieldKey = $crmKey; // override with the correct CRM key
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
 
             // ── Verify lead exists ────────────────────────────────────────────
             $leadExists = DB::connection($conn)->table('crm_leads')->where('id', $leadId)->exists();
