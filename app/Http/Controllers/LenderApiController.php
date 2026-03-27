@@ -617,8 +617,7 @@ class LenderApiController extends Controller
             }
 
             // Verify active API config exists
-            $config = DB::connection("mysql_{$clientId}")
-                ->table('crm_lender_apis')
+            $config = CrmLenderAPis::on("mysql_{$clientId}")
                 ->where('crm_lender_id', $lenderId)
                 ->where('status', true)
                 ->first();
@@ -627,11 +626,49 @@ class LenderApiController extends Controller
                 return $this->failResponse('No active API configuration found for this lender', [], null, 404);
             }
 
+            // ── Pre-dispatch validation ───────────────────────────────────────
+            // Load lead data and check required fields are present before queuing.
+            // This gives the user an immediate error instead of a silent timeout.
+            $svc      = new LenderApiService();
+            $leadData = $svc->resolveLeadData((string) $clientId, $leadId);
+
+            if (empty($leadData)) {
+                return $this->failResponse(
+                    'Lead has no data. Fill in the lead fields before submitting.',
+                    [], null, 422
+                );
+            }
+
+            $mapping = $config->payload_mapping;
+            if (!empty($mapping) && is_array($mapping)) {
+                $missingFields = [];
+                $totalMapped   = 0;
+
+                foreach ($mapping as $crmKey => $lenderPath) {
+                    if (str_starts_with((string) $crmKey, '=')) continue; // static literal value
+                    $totalMapped++;
+                    $value = $leadData[$crmKey] ?? null;
+                    if ($value === null || $value === '') {
+                        $paths           = is_array($lenderPath) ? $lenderPath : [$lenderPath];
+                        $missingFields[] = $paths[0];
+                    }
+                }
+
+                // Block if ALL mapped fields are empty — nothing useful will be sent
+                if ($totalMapped > 0 && count($missingFields) === $totalMapped) {
+                    return response()->json([
+                        'success'        => false,
+                        'message'        => 'Lead is missing all required fields for this lender. Fill in the lead data first.',
+                        'missing_fields' => array_values(array_slice($missingFields, 0, 10)),
+                    ], 422);
+                }
+            }
+
             dispatch(new DispatchLenderApiJob($clientId, $leadId, $lenderId, $userId))
                 ->onConnection('redis')
                 ->onQueue('default');
 
-            return $this->successResponse('API call queued', [
+            return $this->successResponse('Lead submitted to lender API', [
                 'lead_id'   => $leadId,
                 'lender_id' => $lenderId,
                 'api_name'  => $config->api_name ?: $config->type,
