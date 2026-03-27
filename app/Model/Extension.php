@@ -1984,6 +1984,10 @@ public function checkExtension($request)
 
         $user = User::createAndSave($data);
 
+        // Define these here so they are always available below, regardless of group_id
+        $extension = $request->auth->parent_id . $request->input('extension');
+        $serverData = $user->toArray();
+        $updateGroup = false;
 
         $users_package['user_id'] = $user->id;
         // $users_package['client_package_id'] = $request->input('package_id');
@@ -1996,7 +2000,7 @@ public function checkExtension($request)
         if (isset($request->group_id)) {
             if (count($request->group_id) > 0) {
 
-                $extension = $request->auth->parent_id . $request->input('extension');
+                // $extension already defined above
 
                 $sql = "SELECT * FROM " . $this->table . "  WHERE extension = :extension";
                 $record = DB::connection('master')->selectOne($sql, array('extension' => $extension));

@@ -496,7 +496,21 @@ class Dialer extends Model
                 //     AND c.status = 1
                 // ", $data);
                 $campaign = DB::connection($connection)->select("
-                SELECT c.*, ct.week_plan
+                SELECT c.*,
+                       c.title AS campaign_name,
+                       'active' AS campaign_status,
+                       ct.week_plan,
+                       COALESCE((
+                           SELECT SUM(l.lead_count)
+                           FROM campaign_list cl
+                           JOIN list l ON l.id = cl.list_id
+                           WHERE cl.campaign_id = c.id AND cl.is_deleted = 0
+                       ), 0) AS total_leads,
+                       COALESCE((
+                           SELECT COUNT(*)
+                           FROM lead_report lr
+                           WHERE lr.campaign_id = c.id
+                       ), 0) AS called_leads
                 FROM campaign c
                 LEFT JOIN call_timers ct ON ct.id = c.call_schedule_id
                 WHERE c.group_id IN (" . implode(' , ', $inStr) . ")
@@ -508,115 +522,87 @@ class Dialer extends Model
                     'campaign' => $campaign
                 ]);
                 $filteredCampaign = [];
-            foreach ($campaign as $row) {
-// $dialed = DB::connection($connection)->selectOne(
-//     "SELECT COUNT(1) AS total
-//      FROM lead_report
-//      WHERE campaign_id = :campaign_id",
-//     ['campaign_id' => $row->id]
-// );
+                foreach ($campaign as $row) {
+                    // ── SCHEDULE ENFORCEMENT ──────────────────────────────────────────
+                    // Priority 1: Advanced week-plan schedule (call_schedule_id → call_timers)
+                    if (!empty($row->call_schedule_id) && !empty($row->week_plan)) {
+                        $weekPlan = json_decode($row->week_plan, true);
+                        if (json_last_error() !== JSON_ERROR_NONE || !is_array($weekPlan)) {
+                            Log::error('Invalid week_plan JSON', [
+                                'campaign_id' => $row->id,
+                                'error'       => json_last_error_msg(),
+                            ]);
+                            continue;
+                        }
+                        $plan = $weekPlan[$dayKey] ?? $weekPlan['default'] ?? null;
+                        Log::info('Campaign week_plan debug', [
+                            'campaign_id' => $row->id,
+                            'day'         => $dayKey,
+                            'now'         => $now_timezone_time,
+                            'plan'        => $plan,
+                        ]);
+                        if (!$plan || empty($plan['start']) || empty($plan['end'])) {
+                            continue; // no schedule for today → closed
+                        }
+                        $start = $plan['start'] . ':00';
+                        $end   = $plan['end']   . ':00';
+                        $isInWindow = ($start <= $end)
+                            ? ($now_timezone_time >= $start && $now_timezone_time <= $end)
+                            : ($now_timezone_time >= $start || $now_timezone_time <= $end);
+                        if (!$isInWindow) {
+                            continue;
+                        }
 
-// $dialedLeads = $dialed->total ?? 0;
-// Log::info('dialed leads',['dialedLeads'=>$dialedLeads]);
-// $total = DB::connection($connection)->selectOne(
-//     "SELECT COUNT(1) AS total
-//      FROM list_data
-//      WHERE list_id IN (
-//          SELECT list_id
-//          FROM campaign_list
-//          WHERE campaign_id = :campaign_id
-//            AND status = 1
-//            AND is_deleted = 0
-//      )",
-//     ['campaign_id' => $row->id]
-// );
+                    // Priority 2: Simple time_based_calling window (uses campaign's own timezone)
+                    } elseif (!empty($row->time_based_calling)) {
+                        $campaignTz = !empty($row->timezone)
+                            ? $row->timezone
+                            : ($request->auth->timezone ?? 'America/New_York');
+                        try {
+                            $dtCampaign        = new \DateTime('now', new \DateTimeZone($campaignTz));
+                            $nowInCampaignTz   = $dtCampaign->format('H:i:s');
+                        } catch (\Exception $tzEx) {
+                            Log::warning('Invalid campaign timezone — falling back to agent tz', [
+                                'campaign_id' => $row->id,
+                                'timezone'    => $campaignTz,
+                            ]);
+                            $nowInCampaignTz = $now_timezone_time;
+                        }
+                        $start = !empty($row->call_time_start) ? (string) $row->call_time_start : '00:00:00';
+                        $end   = !empty($row->call_time_end)   ? (string) $row->call_time_end   : '23:59:59';
+                        if (strlen($start) === 5) $start .= ':00';
+                        if (strlen($end)   === 5) $end   .= ':00';
+                        Log::info('Campaign simple time debug', [
+                            'campaign_id'   => $row->id,
+                            'campaign_tz'   => $campaignTz,
+                            'now_in_tz'     => $nowInCampaignTz,
+                            'window_start'  => $start,
+                            'window_end'    => $end,
+                        ]);
+                        $isInWindow = ($start <= $end)
+                            ? ($nowInCampaignTz >= $start && $nowInCampaignTz <= $end)
+                            : ($nowInCampaignTz >= $start || $nowInCampaignTz <= $end);
+                        if (!$isInWindow) {
+                            continue;
+                        }
+                    }
+                    // Priority 3: No restriction (time_based_calling=0, no call_schedule_id) → always available
 
-// $totalLeads = $total->total ?? 0;
-// Log::info('total leads',['totalLeads'=>$totalLeads]);
+                    // Check campaign has at least one active list
+                    $hasList = DB::connection($connection)
+                        ->table('campaign_list')
+                        ->where('campaign_id', $row->id)
+                        ->where('is_deleted', 0)
+                        ->exists();
+                    if (!$hasList) {
+                        continue;
+                    }
 
-// if ($totalLeads > 0 && $dialedLeads >= $totalLeads) {
+                    $filteredCampaign[] = $row;
+                }
 
-//     DB::connection($connection)->update(
-//         "UPDATE campaign
-//          SET status = 0
-//          WHERE id = :campaign_id",
-//         ['campaign_id' => $row->id]
-//     );
-
-//     continue;
-// }
-
-
-               $weekPlan = json_decode($row->week_plan, true);
-
-if (json_last_error() !== JSON_ERROR_NONE) {
-    Log::error('Invalid week_plan JSON', [
-        'campaign_id' => $row->id,
-        'error' => json_last_error_msg(),
-        'week_plan' => $row->week_plan
-    ]);
-    continue;
-}
-
-
-                // Pick today's plan or default
-                $plan = $weekPlan[$dayKey] ?? $weekPlan['default'] ?? null;
-               Log::info('Campaign Time Debug', [
-                    'timezone' => $request->auth->timezone,
-                    'day' => $dayKey,
-                    'now' => $now_timezone_time,
-                    'plan' => $weekPlan
-                ]);
-            if (!$plan || empty($plan['start']) || empty($plan['end'])) {
-                continue;
-            }
-   
-            $start = $plan['start'] . ':00';
-            $end   = $plan['end'] . ':00';
-
-            // Normal shift
-    //         if ($start <= $end) {
-    //             if ($now_timezone_time >= $start && $now_timezone_time <= $end) {
-    //                 $filteredCampaign[] = $row;
-    //             }
-    //         }
-    // // Overnight shift (e.g. 22:00 → 06:00)
-    //     else {
-    //         if ($now_timezone_time >= $start || $now_timezone_time <= $end) {
-    //             $filteredCampaign[] = $row;
-    //         }
-    //     }
-    //shikha code
-       // ✅ Check time first
-    $isTimeValid = false;
-
-    if ($start <= $end) {
-        $isTimeValid = ($now_timezone_time >= $start && $now_timezone_time <= $end);
-    } else {
-        $isTimeValid = ($now_timezone_time >= $start || $now_timezone_time <= $end);
-    }
-
-    if (!$isTimeValid) {
-        continue;
-    }
-
-    // ✅ THEN check if campaign has list
-    $hasList = DB::connection($connection)
-        ->table('campaign_list')
-        ->where('campaign_id', $row->id)
-        ->where('is_deleted', 0)
-        ->exists();
-
-    if (!$hasList) {
-        continue;
-    }
-
-    // ✅ Only push once
-    $filteredCampaign[] = $row;
-}
-
-$campaign = $filteredCampaign;
-$totalRows = count($campaign);
+                $campaign  = $filteredCampaign;
+                $totalRows = count($campaign);
 
 
                     $extensionLive = ExtensionLive::on($connection)->find($extension);

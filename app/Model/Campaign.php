@@ -946,6 +946,11 @@ if ($request->filled('title')) {
         $data['call_time_start'] = $callTimeStart;
         $data['call_time_end']   = $callTimeEnd;
 
+        if ($request->has('timezone') && !empty($request->input('timezone'))) {
+            array_push($string, 'timezone = :timezone');
+            $data['timezone'] = $request->input('timezone');
+        }
+
         if ($request->has('dial_mode') && !empty($request->input('dial_mode')) && ($request->input('dial_mode') == 'preview_and_dial' || $request->input('dial_mode') == 'power_dial' || $request->input('dial_mode') == 'super_power_dial' || $request->input('dial_mode') == 'predictive_dial') || $request->input('dial_mode') == 'outbound_ai') {
             array_push($string, 'dial_mode = :dial_mode');
             $data['dial_mode'] = $request->input('dial_mode');

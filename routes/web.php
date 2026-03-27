@@ -290,6 +290,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($ro
   $router->put('extension-group', 'GroupController@add');
   $router->patch('extension-group/{id}', 'GroupController@patch');
   $router->patch('extension-group-update', 'GroupController@patchNew');
+  $router->post('extension-group-update', 'GroupController@patchNew');
 
   $router->delete('extension-group/{id}', 'GroupController@delete');
   $router->delete('extension-group-delete', 'GroupController@deleteNew');
@@ -1394,6 +1395,22 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   $router->delete('delete-lender/{id}', 'LenderController@delete');
   $router->post('change-lender-status', 'LenderController@changeLenderStatus');
   $router->get('crm-lender-apis/{id}', 'LenderController@crmLenderApi');
+
+  // ── Lender API Configs (new scalable system) ─────────────────────────────
+  $router->get('crm/lender-api-configs',                'LenderApiController@index');
+  $router->get('crm/lender-api-configs/{id}',           'LenderApiController@show');
+  $router->post('crm/lender-api-configs',               'LenderApiController@store');
+  $router->put('crm/lender-api-configs/{id}',           'LenderApiController@update');
+  $router->delete('crm/lender-api-configs/{id}',        'LenderApiController@destroy');
+  $router->patch('crm/lender-api-configs/{id}/toggle',  'LenderApiController@toggle');
+  $router->post('crm/lender-api-configs/{id}/test',     'LenderApiController@testConfig');
+
+  // ── Lender API Logs ────────────────────────────────────────────────────────
+  $router->get('crm/lender-api-logs',      'LenderApiController@logs');
+  $router->get('crm/lender-api-logs/{id}', 'LenderApiController@logDetail');
+
+  // ── Manual trigger for a lead ──────────────────────────────────────────────
+  $router->post('crm/lead/{leadId}/dispatch-lender-api', 'LenderApiController@triggerForLead');
 
   //crm lead status (legacy routes — kept for backward compat)
   $router->get('leadStatus', 'LeadStatusController@list');

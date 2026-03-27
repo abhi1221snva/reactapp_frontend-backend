@@ -43,7 +43,8 @@ class PublicApplicationController extends Controller
                 'success' => true,
                 'data'    => [
                     'company'        => $this->svc->getCompanyBranding($client, $clientId),
-                    'sections'       => $this->svc->getFormSections($clientId),
+                    // 'affiliate' context: only fields with apply_to = NULL, 'affiliate', or 'both'
+                    'sections'       => $this->svc->getFormSections($clientId, false, 'affiliate'),
                     'affiliate_user' => [
                         'name'  => trim($user->first_name . ' ' . $user->last_name),
                         'email' => $user->email,
@@ -87,8 +88,8 @@ class PublicApplicationController extends Controller
         try {
             [$user, $clientId] = $this->svc->resolveAffiliate($code);
 
-            // Dynamic field validation from crm_labels
-            $dynErrors = $this->validateEavFields($request, $clientId, true);
+            // Dynamic field validation — only validate fields relevant to affiliate form
+            $dynErrors = $this->validateEavFields($request, $clientId, true, 'affiliate');
             if (!empty($dynErrors)) {
                 return response()->json([
                     'success' => false,
@@ -128,7 +129,8 @@ class PublicApplicationController extends Controller
             [$lead, $clientId, $client] = $this->svc->resolveLeadToken($token);
 
             $company  = $this->svc->getCompanyBranding($client, $clientId);
-            $sections = $this->svc->getFormSections($clientId, true);
+            // PDF includes all affiliate-scoped fields (apply_to = NULL | affiliate | both)
+            $sections = $this->svc->getFormSections($clientId, true, 'affiliate');
             $html     = $this->svc->generateApplicationHtml($clientId, $lead, $sections, $company);
 
             return response($html, 200)
@@ -161,7 +163,8 @@ class PublicApplicationController extends Controller
                 'data'    => [
                     'company'  => $this->svc->getCompanyBranding($client, $clientId),
                     'lead'     => $this->svc->getMerchantLeadData($lead, $clientId),
-                    'sections' => $this->svc->getFormSections($clientId, true),
+                    // 'merchant' context: only fields with apply_to = NULL, 'merchant', or 'both'
+                    'sections' => $this->svc->getFormSections($clientId, true, 'merchant'),
                 ],
             ]);
         } catch (\RuntimeException $e) {
@@ -207,8 +210,8 @@ class PublicApplicationController extends Controller
         try {
             [$lead, $clientId] = $this->svc->resolveLeadToken($token);
 
-            // Type-only validation for submitted fields (required not enforced on partial save)
-            $dynErrors = $this->validateEavFields($request, $clientId, false);
+            // Type-only validation — only validate merchant-scoped fields (partial save)
+            $dynErrors = $this->validateEavFields($request, $clientId, false, 'merchant');
             if (!empty($dynErrors)) {
                 return response()->json([
                     'success' => false,
@@ -245,9 +248,9 @@ class PublicApplicationController extends Controller
             } catch (\RuntimeException $e) {
                 if ($e->getCode() !== 404) throw $e;
 
-                // Fallback: built-in apply-form template — still use lead name
+                // Fallback: built-in apply-form template — affiliate context
                 $company  = $this->svc->getCompanyBranding($client, $clientId);
-                $sections = $this->svc->getFormSections($clientId, true);
+                $sections = $this->svc->getFormSections($clientId, true, 'affiliate');
                 $html     = $this->svc->generateApplicationHtml($clientId, $lead, $sections, $company);
                 $binary   = $this->pdfSvc->htmlToPdfBytes($html);
                 $names    = $this->pdfSvc->resolveLeadName($clientId, $lead->id);
@@ -287,9 +290,9 @@ class PublicApplicationController extends Controller
             } catch (\RuntimeException $e) {
                 if ($e->getCode() !== 404) throw $e;
 
-                // Fallback: built-in apply-form template — still use lead name
+                // Fallback: built-in apply-form template — merchant context
                 $company  = $this->svc->getCompanyBranding($client, $clientId);
-                $sections = $this->svc->getFormSections($clientId, true);
+                $sections = $this->svc->getFormSections($clientId, true, 'merchant');
                 $html     = $this->svc->generateApplicationHtml($clientId, $lead, $sections, $company);
                 $binary   = $this->pdfSvc->htmlToPdfBytes($html);
                 $names    = $this->pdfSvc->resolveLeadName($clientId, $lead->id);
@@ -535,14 +538,37 @@ class PublicApplicationController extends Controller
      * @param  string  $clientId    Tenant client ID (used to select DB connection)
      * @param  bool    $requireAll  When true: also enforce required on fields NOT in request.
      *                              When false: only validate fields that ARE in the request (partial save).
+     * @param  string  $context     'affiliate' | 'merchant' | 'system'
+     *                              Restricts validation to labels whose apply_to is compatible.
+     *                              'affiliate' → apply_to IN (NULL, 'affiliate', 'both')
+     *                              'merchant'  → apply_to IN (NULL, 'merchant', 'both')
+     *                              'system'    → all labels (no filter)
      * @return array                { field_key: [errorMessage] } — empty means valid
      */
-    private function validateEavFields(Request $request, string $clientId, bool $requireAll): array
+    private function validateEavFields(Request $request, string $clientId, bool $requireAll, string $context = 'system'): array
     {
-        $labels = DB::connection("mysql_{$clientId}")
+        $query = DB::connection("mysql_{$clientId}")
             ->table('crm_labels')
-            ->where('status', true)
-            ->get(['field_key', 'field_type', 'required', 'label_name', 'options', 'validation_rules'])
+            ->where('status', true);
+
+        // ── Filter by apply_to scope ──────────────────────────────────────────
+        // Only validate fields that are visible / applicable to this form context.
+        // Fields with apply_to = NULL have no restriction and are always validated.
+        if ($context === 'affiliate') {
+            $query->where(function ($q) {
+                $q->whereNull('apply_to')
+                  ->orWhereIn('apply_to', ['affiliate', 'both']);
+            });
+        } elseif ($context === 'merchant') {
+            $query->where(function ($q) {
+                $q->whereNull('apply_to')
+                  ->orWhereIn('apply_to', ['merchant', 'both']);
+            });
+        }
+        // 'system' context → no additional WHERE clause
+
+        $labels = $query
+            ->get(['field_key', 'field_type', 'required', 'required_in', 'label_name', 'options', 'validation_rules'])
             ->toArray();
 
         $fieldSvc = new FieldValidationService();
@@ -572,7 +598,9 @@ class PublicApplicationController extends Controller
                 foreach ($withRules as $label) {
                     $key = $label->field_key;
                     if (isset($errors[$key])) continue;
-                    if (!array_key_exists($key, $input) && !empty($label->required)) {
+                    $ri        = is_string($label->required_in ?? null) ? json_decode($label->required_in, true) : ($label->required_in ?? null);
+                    $isReq     = !empty($ri) ? in_array($context, $ri, true) : !empty($label->required);
+                    if (!array_key_exists($key, $input) && $isReq) {
                         $errors[$key] = [$label->label_name . ' is required.'];
                     }
                 }
@@ -583,7 +611,9 @@ class PublicApplicationController extends Controller
         foreach ($withoutRules as $label) {
             $key        = $label->field_key;
             $fieldType  = strtolower(trim((string) $label->field_type));
-            $isRequired = !empty($label->required);
+            // required_in takes precedence; fall back to legacy required boolean
+            $ri         = is_string($label->required_in ?? null) ? json_decode($label->required_in, true) : ($label->required_in ?? null);
+            $isRequired = !empty($ri) ? in_array($context, $ri, true) : !empty($label->required);
 
             if (!array_key_exists($key, $input)) {
                 if ($requireAll && $isRequired) {

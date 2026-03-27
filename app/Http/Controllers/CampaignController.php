@@ -253,6 +253,8 @@ class CampaignController extends Controller
             'time_based_calling' => 'numeric',
             'call_time_start'   => 'date_format:H:i',
             'call_time_end'     => 'date_format:H:i',
+            'timezone'          => 'sometimes|nullable|string|max:64',
+            'call_schedule_id'  => 'sometimes|nullable|numeric',
             'dial_mode'         => 'string|max:255',
                // 👇 CONDITIONAL RULE
              'group_id'           => 'required_if:dial_mode,super_power_dial|numeric',
@@ -360,6 +362,8 @@ class CampaignController extends Controller
             'time_based_calling' => 'numeric',
             'call_time_start'   => 'date_format:H:i',
             'call_time_end'     => 'date_format:H:i',
+            'timezone'          => 'sometimes|nullable|string|max:64',
+            'call_schedule_id'  => 'sometimes|nullable|numeric',
             'dial_mode'         => 'string|max:255',
             // 'group_id'          => 'numeric',
             'max_lead_temp'     => 'numeric',

@@ -128,13 +128,23 @@ class PublicApplicationService
     // FORM FIELD CONFIGURATION
     // ─────────────────────────────────────────────────────────────────────────
 
-    public function getFormSections(int $clientId, bool $includeAll = false): array
+    /**
+     * Build the list of form sections + fields for a given context.
+     *
+     * @param  int    $clientId   Tenant ID
+     * @param  bool   $includeAll Include fields normally excluded from public forms (e.g. SSN)
+     * @param  string $context    'affiliate' | 'merchant' | 'system'
+     *                            - 'affiliate' → only fields with apply_to IN (NULL, 'affiliate', 'both')
+     *                            - 'merchant'  → only fields with apply_to IN (NULL, 'merchant', 'both')
+     *                            - 'system'    → all fields (no apply_to filter)
+     */
+    public function getFormSections(int $clientId, bool $includeAll = false, string $context = 'system'): array
     {
         $conn = "mysql_{$clientId}";
 
         // ── Priority 1: New EAV crm_labels table (source of truth from CRM lead-fields) ──
         if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_labels')) {
-            $sections = $this->getSectionsFromEav($conn, $includeAll);
+            $sections = $this->getSectionsFromEav($conn, $includeAll, $context);
             if (!empty($sections)) return $sections;
         }
 
@@ -150,15 +160,37 @@ class PublicApplicationService
 
     /**
      * Build sections from crm_labels (EAV, source of truth for CRM lead-fields page).
+     *
+     * Applies apply_to scope filtering based on $context:
+     *   'affiliate' → include fields where apply_to IS NULL OR apply_to IN ('affiliate', 'both')
+     *   'merchant'  → include fields where apply_to IS NULL OR apply_to IN ('merchant', 'both')
+     *   'system'    → include all fields (no filter — internal CRM sees everything)
      */
-    private function getSectionsFromEav(string $conn, bool $includeAll): array
+    private function getSectionsFromEav(string $conn, bool $includeAll, string $context = 'system'): array
     {
-        $labels = DB::connection($conn)
+        $query = DB::connection($conn)
             ->table('crm_labels')
             ->where('status', 1)
             ->orderBy('display_order')
-            ->select('label_name', 'field_key', 'field_type', 'section', 'options', 'required', 'placeholder', 'display_order', 'validation_rules')
-            ->get();
+            ->select('label_name', 'field_key', 'field_type', 'section', 'options', 'required', 'required_in', 'placeholder', 'display_order', 'validation_rules');
+
+        // ── apply_to scope filter ──────────────────────────────────────────────
+        // Fields with apply_to = NULL have no restriction and appear in all contexts.
+        // Fields scoped to a specific form appear only in that form (and 'both').
+        if ($context === 'affiliate') {
+            $query->where(function ($q) {
+                $q->whereNull('apply_to')
+                  ->orWhereIn('apply_to', ['affiliate', 'both']);
+            });
+        } elseif ($context === 'merchant') {
+            $query->where(function ($q) {
+                $q->whereNull('apply_to')
+                  ->orWhereIn('apply_to', ['merchant', 'both']);
+            });
+        }
+        // 'system' context → no additional WHERE clause (all fields)
+
+        $labels = $query->get();
 
         // Track section insertion order by the first field's display_order
         $sectionFirstOrder = [];
@@ -179,11 +211,20 @@ class PublicApplicationService
                 $sectionFirstOrder[$section] = $lbl->display_order ?? 9999;
             }
 
+            // Resolve required per-context: required_in array takes precedence;
+            // fall back to legacy `required` boolean when required_in is null.
+            $requiredIn = is_string($lbl->required_in ?? null)
+                ? json_decode($lbl->required_in, true)
+                : ($lbl->required_in ?? null);
+            $isRequired = !empty($requiredIn)
+                ? in_array($context, $requiredIn, true)
+                : (bool) $lbl->required;
+
             $grouped[$section][] = [
                 'key'              => $key,
                 'label'            => $lbl->label_name,
                 'type'             => $this->normalizeEavFieldType($lbl->field_type),
-                'required'         => (bool) $lbl->required,
+                'required'         => $isRequired,
                 'placeholder'      => $lbl->placeholder ?? '',
                 'options'          => $this->parseJsonOptions($lbl->options),
                 'validation_rules' => $lbl->validation_rules

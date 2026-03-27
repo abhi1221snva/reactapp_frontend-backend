@@ -578,6 +578,13 @@ class CrmLabelController extends Controller
             // field_key is optional — auto-generated from label_name when absent
             'field_key'        => ['sometimes', 'nullable', 'string', 'max:100', 'alpha_dash'],
             'validation_rules' => 'sometimes|nullable|array',
+            // apply_to: which public forms show this field (visibility scope)
+            // null = no restriction (all forms); 'affiliate', 'merchant', or 'both'
+            'apply_to'         => 'sometimes|nullable|in:affiliate,merchant,both',
+            // required_in: JSON array of contexts where the field is required
+            // null = fall back to legacy `required` boolean; [] = not required anywhere
+            'required_in'      => 'sometimes|nullable|array',
+            'required_in.*'    => 'string|in:system,affiliate,merchant',
         ]);
 
         try {
@@ -659,6 +666,11 @@ class CrmLabelController extends Controller
             'required'         => 'sometimes|boolean',
             'status'           => 'sometimes|boolean',
             'validation_rules' => 'sometimes|nullable|array',
+            // apply_to: which public forms show this field (visibility scope)
+            'apply_to'         => 'sometimes|nullable|in:affiliate,merchant,both',
+            // required_in: JSON array of contexts where the field is required
+            'required_in'      => 'sometimes|nullable|array',
+            'required_in.*'    => 'string|in:system,affiliate,merchant',
         ]);
 
         try {

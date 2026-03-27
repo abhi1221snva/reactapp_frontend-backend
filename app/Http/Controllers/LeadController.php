@@ -1195,7 +1195,7 @@ class LeadController extends Controller
         $fields = DB::connection("mysql_{$clientId}")
             ->table('crm_labels')
             ->where('status', true)
-            ->get(['field_key', 'field_type', 'required', 'label_name', 'options', 'validation_rules'])
+            ->get(['field_key', 'field_type', 'required', 'required_in', 'label_name', 'options', 'validation_rules'])
             ->toArray();
 
         $fieldSvc = new FieldValidationService();
@@ -1222,8 +1222,11 @@ class LeadController extends Controller
                 continue;
             }
 
-            $fieldType  = strtolower(trim((string) $field->field_type));
-            $isRequired = !empty($field->required);
+            $fieldType = strtolower(trim((string) $field->field_type));
+            // required_in takes precedence; fall back to legacy required boolean.
+            // buildEavValidation() is always called from system context.
+            $ri         = is_string($field->required_in ?? null) ? json_decode($field->required_in, true) : ($field->required_in ?? null);
+            $isRequired = !empty($ri) ? in_array('system', $ri, true) : !empty($field->required);
 
             $raw = $fieldSvc->sanitize($input[$key], $fieldType, $input, $key);
 
@@ -2610,6 +2613,10 @@ class LeadController extends Controller
             $to         = trim($request->input('to'));
             $body       = trim($request->input('body'));
             $fromNumber = $request->input('from_number') ?: null;
+
+            // Resolve [[key]] / {{key}} merge tags using lead's EAV data
+            $body = (new \App\Services\MergeTagService())
+                ->resolve((string) $clientId, $leadId, $body, $userId);
 
             /** @var \App\Services\SmsInboxService $smsSvc */
             $smsSvc = app(\App\Services\SmsInboxService::class);

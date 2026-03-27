@@ -315,6 +315,16 @@ public function sendSms()
        $from = $this->request->from;
        $message = $this->request->message ?? '';
 
+        // Resolve [[key]] / {{key}} merge tags when a lead_id is provided
+        $leadId = $this->request->input('lead_id');
+        if ($leadId && is_numeric($leadId)) {
+            $clientId = (string) $this->request->auth->parent_id;
+            $agentId  = (int) ($this->request->auth->id ?? 0) ?: null;
+            $message  = (new \App\Services\MergeTagService())
+                ->resolve($clientId, (int) $leadId, $message, $agentId);
+            $this->request->merge(['message' => $message]);
+        }
+
         // Detect if message contains Unicode
         $isUnicode = preg_match('/[^\x00-\x7F]/', $message);
 

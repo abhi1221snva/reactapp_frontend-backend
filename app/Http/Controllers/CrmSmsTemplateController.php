@@ -368,7 +368,7 @@ class CrmSmsTemplateController extends Controller
         $clientId = $request->auth->parent_id;
         try {
             $SmsTemplates = CrmSmsTemplate::on("mysql_$clientId")->findOrFail($request->sms_template_id);
-            $SmsTemplates->status = $request->status;
+            $SmsTemplates->status = (string)(int)$request->status;
             $SmsTemplates->saveOrFail();
             return $this->successResponse("Sms Template Status Updated", $SmsTemplates->toArray());
         } catch (ModelNotFoundException $exception) {

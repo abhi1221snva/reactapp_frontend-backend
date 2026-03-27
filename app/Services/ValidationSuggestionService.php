@@ -10,10 +10,12 @@ namespace App\Services;
  * validation rules when a user creates or names a new field.
  *
  * Rule object format:
- *   { "rule": "required" }
  *   { "rule": "digits", "value": 9 }
  *   { "rule": "digits_between", "value": 5, "value2": 17 }
  *   { "rule": "regex", "value": "/^[a-zA-Z\\s]+$/" }
+ *
+ * NOTE: "required" is intentionally excluded from suggestions — required status
+ * is controlled by the label's `required` column + `apply_to` scope, not inline rules.
  *
  * To add new keyword mappings — append entries to $keywordMap.
  * To add new rule types — add cases to LeadValidationService::buildRuleString().
@@ -31,28 +33,28 @@ class ValidationSuggestionService
      */
     private array $keywordMap = [
         // ── SSN / Social Security ────────────────────────────────────────────
-        'social_security_number' => [['rule' => 'required'], ['rule' => 'numeric'], ['rule' => 'digits', 'value' => 9]],
-        'social_security'        => [['rule' => 'required'], ['rule' => 'numeric'], ['rule' => 'digits', 'value' => 9]],
-        'ssn'                    => [['rule' => 'required'], ['rule' => 'numeric'], ['rule' => 'digits', 'value' => 9]],
+        'social_security_number' => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 9]],
+        'social_security'        => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 9]],
+        'ssn'                    => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 9]],
 
         // ── Phone / Mobile ───────────────────────────────────────────────────
-        'phone_number'           => [['rule' => 'required'], ['rule' => 'numeric'], ['rule' => 'digits', 'value' => 10]],
-        'mobile_number'          => [['rule' => 'required'], ['rule' => 'numeric'], ['rule' => 'digits', 'value' => 10]],
-        'phone'                  => [['rule' => 'required'], ['rule' => 'numeric'], ['rule' => 'digits', 'value' => 10]],
-        'mobile'                 => [['rule' => 'required'], ['rule' => 'numeric'], ['rule' => 'digits', 'value' => 10]],
+        'phone_number'           => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 10]],
+        'mobile_number'          => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 10]],
+        'phone'                  => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 10]],
+        'mobile'                 => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 10]],
         'cell'                   => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 10]],
         'fax'                    => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 10]],
 
         // ── Email ────────────────────────────────────────────────────────────
-        'email_address'          => [['rule' => 'required'], ['rule' => 'email'], ['rule' => 'max', 'value' => 100]],
-        'email'                  => [['rule' => 'required'], ['rule' => 'email'], ['rule' => 'max', 'value' => 100]],
+        'email_address'          => [['rule' => 'email'], ['rule' => 'max', 'value' => 100]],
+        'email'                  => [['rule' => 'email'], ['rule' => 'max', 'value' => 100]],
 
         // ── Name fields ──────────────────────────────────────────────────────
-        'first_name'             => [['rule' => 'required'], ['rule' => 'alpha_spaces'], ['rule' => 'min', 'value' => 2], ['rule' => 'max', 'value' => 50]],
-        'last_name'              => [['rule' => 'required'], ['rule' => 'alpha_spaces'], ['rule' => 'min', 'value' => 2], ['rule' => 'max', 'value' => 50]],
+        'first_name'             => [['rule' => 'alpha_spaces'], ['rule' => 'min', 'value' => 2], ['rule' => 'max', 'value' => 50]],
+        'last_name'              => [['rule' => 'alpha_spaces'], ['rule' => 'min', 'value' => 2], ['rule' => 'max', 'value' => 50]],
         'middle_name'            => [['rule' => 'alpha_spaces'], ['rule' => 'max', 'value' => 50]],
-        'full_name'              => [['rule' => 'required'], ['rule' => 'alpha_spaces'], ['rule' => 'min', 'value' => 2], ['rule' => 'max', 'value' => 100]],
-        'owner_name'             => [['rule' => 'required'], ['rule' => 'alpha_spaces'], ['rule' => 'min', 'value' => 2], ['rule' => 'max', 'value' => 100]],
+        'full_name'              => [['rule' => 'alpha_spaces'], ['rule' => 'min', 'value' => 2], ['rule' => 'max', 'value' => 100]],
+        'owner_name'             => [['rule' => 'alpha_spaces'], ['rule' => 'min', 'value' => 2], ['rule' => 'max', 'value' => 100]],
 
         // ── Zip / Postal ─────────────────────────────────────────────────────
         'zip_code'               => [['rule' => 'numeric'], ['rule' => 'digits_between', 'value' => 5, 'value2' => 10]],
@@ -60,26 +62,26 @@ class ValidationSuggestionService
         'zip'                    => [['rule' => 'numeric'], ['rule' => 'digits_between', 'value' => 5, 'value2' => 10]],
 
         // ── Date of Birth ────────────────────────────────────────────────────
-        'date_of_birth'          => [['rule' => 'required'], ['rule' => 'date'], ['rule' => 'before', 'value' => 'today']],
-        'birth_date'             => [['rule' => 'required'], ['rule' => 'date'], ['rule' => 'before', 'value' => 'today']],
-        'dob'                    => [['rule' => 'required'], ['rule' => 'date'], ['rule' => 'before', 'value' => 'today']],
+        'date_of_birth'          => [['rule' => 'date'], ['rule' => 'before', 'value' => 'today']],
+        'birth_date'             => [['rule' => 'date'], ['rule' => 'before', 'value' => 'today']],
+        'dob'                    => [['rule' => 'date'], ['rule' => 'before', 'value' => 'today']],
 
         // ── EIN / Tax ID ─────────────────────────────────────────────────────
-        'tax_id_number'          => [['rule' => 'required'], ['rule' => 'numeric'], ['rule' => 'digits', 'value' => 9]],
-        'employer_id'            => [['rule' => 'required'], ['rule' => 'numeric'], ['rule' => 'digits', 'value' => 9]],
-        'tax_id'                 => [['rule' => 'required'], ['rule' => 'numeric'], ['rule' => 'digits', 'value' => 9]],
-        'ein'                    => [['rule' => 'required'], ['rule' => 'numeric'], ['rule' => 'digits', 'value' => 9]],
+        'tax_id_number'          => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 9]],
+        'employer_id'            => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 9]],
+        'tax_id'                 => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 9]],
+        'ein'                    => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 9]],
 
         // ── Bank routing / account ───────────────────────────────────────────
-        'routing_number'         => [['rule' => 'required'], ['rule' => 'numeric'], ['rule' => 'digits', 'value' => 9]],
-        'account_number'         => [['rule' => 'required'], ['rule' => 'numeric'], ['rule' => 'digits_between', 'value' => 5, 'value2' => 17]],
-        'bank_account'           => [['rule' => 'required'], ['rule' => 'numeric'], ['rule' => 'digits_between', 'value' => 5, 'value2' => 17]],
+        'routing_number'         => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 9]],
+        'account_number'         => [['rule' => 'numeric'], ['rule' => 'digits_between', 'value' => 5, 'value2' => 17]],
+        'bank_account'           => [['rule' => 'numeric'], ['rule' => 'digits_between', 'value' => 5, 'value2' => 17]],
 
         // ── Amounts / Revenue ────────────────────────────────────────────────
-        'annual_revenue'         => [['rule' => 'required'], ['rule' => 'numeric'], ['rule' => 'min_value', 'value' => 0]],
-        'monthly_revenue'        => [['rule' => 'required'], ['rule' => 'numeric'], ['rule' => 'min_value', 'value' => 0]],
-        'requested_amount'       => [['rule' => 'required'], ['rule' => 'numeric'], ['rule' => 'min_value', 'value' => 1]],
-        'loan_amount'            => [['rule' => 'required'], ['rule' => 'numeric'], ['rule' => 'min_value', 'value' => 1]],
+        'annual_revenue'         => [['rule' => 'numeric'], ['rule' => 'min_value', 'value' => 0]],
+        'monthly_revenue'        => [['rule' => 'numeric'], ['rule' => 'min_value', 'value' => 0]],
+        'requested_amount'       => [['rule' => 'numeric'], ['rule' => 'min_value', 'value' => 1]],
+        'loan_amount'            => [['rule' => 'numeric'], ['rule' => 'min_value', 'value' => 1]],
         'average_balance'        => [['rule' => 'numeric'], ['rule' => 'min_value', 'value' => 0]],
         'amount'                 => [['rule' => 'numeric'], ['rule' => 'min_value', 'value' => 0]],
         'revenue'                => [['rule' => 'numeric'], ['rule' => 'min_value', 'value' => 0]],
@@ -100,8 +102,8 @@ class ValidationSuggestionService
         'years_at_address'       => [['rule' => 'numeric'], ['rule' => 'min_value', 'value' => 0]],
 
         // ── Business / Company ───────────────────────────────────────────────
-        'business_name'          => [['rule' => 'required'], ['rule' => 'min', 'value' => 2], ['rule' => 'max', 'value' => 200]],
-        'company_name'           => [['rule' => 'required'], ['rule' => 'min', 'value' => 2], ['rule' => 'max', 'value' => 200]],
+        'business_name'          => [['rule' => 'min', 'value' => 2], ['rule' => 'max', 'value' => 200]],
+        'company_name'           => [['rule' => 'min', 'value' => 2], ['rule' => 'max', 'value' => 200]],
         'dba'                    => [['rule' => 'min', 'value' => 2], ['rule' => 'max', 'value' => 200]],
     ];
 

@@ -62,6 +62,10 @@ class LeadFieldService
                     ? (is_array($data['validation_rules']) ? json_encode($data['validation_rules']) : $data['validation_rules'])
                     : null,
                 'required'         => !empty($data['required']),
+                'apply_to'         => $data['apply_to'] ?? null,
+                'required_in'      => isset($data['required_in'])
+                    ? (is_array($data['required_in']) ? json_encode($data['required_in']) : $data['required_in'])
+                    : null,
                 'display_order' => $data['display_order'] ?? $this->nextOrder($clientId),
                 'status'        => true,
                 'created_at'    => $now,
@@ -76,14 +80,14 @@ class LeadFieldService
     {
         $update = ['updated_at' => Carbon::now()];
 
-        $scalars = ['label_name', 'field_type', 'section', 'placeholder', 'required', 'display_order', 'status'];
+        $scalars = ['label_name', 'field_type', 'section', 'placeholder', 'required', 'apply_to', 'display_order', 'status'];
         foreach ($scalars as $field) {
             if (array_key_exists($field, $data)) {
                 $update[$field] = $data[$field];
             }
         }
 
-        foreach (['options', 'conditions', 'validation_rules'] as $json) {
+        foreach (['options', 'conditions', 'validation_rules', 'required_in'] as $json) {
             if (array_key_exists($json, $data)) {
                 $update[$json] = is_array($data[$json])
                     ? json_encode($data[$json])
