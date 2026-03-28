@@ -15,6 +15,7 @@ class CrmLenderSubmission extends Model
         'lender_email',
         'application_pdf',
         'submission_status',
+        'submission_type',
         'response_status',
         'notes',
         'response_note',
@@ -27,6 +28,8 @@ class CrmLenderSubmission extends Model
         'submitted_at'          => 'datetime',
         'response_received_at'  => 'datetime',
     ];
+
+    public const SUBMISSION_TYPES = ['normal', 'api'];
 
     public const SUBMISSION_STATUSES = [
         'pending', 'submitted', 'viewed', 'approved', 'declined', 'no_response',

@@ -180,3 +180,694 @@ Stack trace:
 #12 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
 #13 {main}
   thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-25.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-25.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Error while reading line from the server. [tcp://127.0.0.1:6379]
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-25.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-25.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-25.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Error while reading line from the server. [tcp://127.0.0.1:6379]
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(137): Laravel\Lumen\Application->handleException()
+#11 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(55): Laravel\Lumen\Application->handleShutdown()
+#12 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#13 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-25.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-25.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Error while reading line from the server. [tcp://127.0.0.1:6379]
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-25.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-25.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-25.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Error while reading line from the server. [tcp://127.0.0.1:6379]
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(137): Laravel\Lumen\Application->handleException()
+#11 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(55): Laravel\Lumen\Application->handleShutdown()
+#12 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#13 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Error while reading line from the server. [tcp://127.0.0.1:6379]
+Context: {"exception":{}}
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Error while reading line from the server. [tcp://127.0.0.1:6379]
+Context: {"exception":{}}
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(137): Laravel\Lumen\Application->handleException()
+#11 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(55): Laravel\Lumen\Application->handleShutdown()
+#12 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#13 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Error while reading line from the server. [tcp://127.0.0.1:6379]
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Error while reading line from the server. [tcp://127.0.0.1:6379]
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(137): Laravel\Lumen\Application->handleException()
+#11 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(55): Laravel\Lumen\Application->handleShutdown()
+#12 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#13 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+  2026-03-26 19:37:17 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-26 19:37:17 App\Jobs\DispatchLenderApiJob .............. 6.50ms FAIL
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: DispatchLenderApiJob: start
+Context: {"client":"11","lead_id":12216,"lender":7}
+Context: {"exception":{}}
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: DispatchLenderApiJob: start
+Context: {"client":"11","lead_id":12216,"lender":7}
+Context: {"exception":{}}
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(137): Laravel\Lumen\Application->handleException()
+#11 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(55): Laravel\Lumen\Application->handleShutdown()
+#12 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#13 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+  2026-03-26 19:37:23 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-26 19:37:23 App\Jobs\DispatchLenderApiJob .............. 6.13ms FAIL
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: DispatchLenderApiJob: start
+Context: {"client":"11","lead_id":12216,"lender":7}
+Context: {"exception":{}}
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: DispatchLenderApiJob: start
+Context: {"client":"11","lead_id":12216,"lender":7}
+Context: {"exception":{}}
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(137): Laravel\Lumen\Application->handleException()
+#11 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(55): Laravel\Lumen\Application->handleShutdown()
+#12 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#13 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+  2026-03-26 19:37:30 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-26 19:37:30 App\Jobs\DispatchLenderApiJob .............. 6.16ms FAIL
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: DispatchLenderApiJob: start
+Context: {"client":"11","lead_id":12216,"lender":7}
+Context: {"exception":{}}
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: DispatchLenderApiJob: start
+Context: {"client":"11","lead_id":12216,"lender":7}
+Context: {"exception":{}}
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(137): Laravel\Lumen\Application->handleException()
+#11 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(55): Laravel\Lumen\Application->handleShutdown()
+#12 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#13 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+  2026-03-26 19:43:48 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-26 19:43:48 App\Jobs\DispatchLenderApiJob ............. 14.55ms FAIL
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: syntax error, unexpected token "=>"
+Context: {"exception":{}}
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: syntax error, unexpected token "=>"
+Context: {"exception":{}}
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(137): Laravel\Lumen\Application->handleException()
+#11 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(55): Laravel\Lumen\Application->handleShutdown()
+#12 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#13 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+  2026-03-26 19:43:54 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-26 19:43:54 App\Jobs\DispatchLenderApiJob ............. 13.48ms FAIL
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: syntax error, unexpected token "=>"
+Context: {"exception":{}}
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: syntax error, unexpected token "=>"
+Context: {"exception":{}}
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(137): Laravel\Lumen\Application->handleException()
+#11 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(55): Laravel\Lumen\Application->handleShutdown()
+#12 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#13 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+  2026-03-26 19:43:55 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-26 19:43:55 App\Jobs\DispatchLenderApiJob ............. 19.46ms FAIL
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: syntax error, unexpected token "=>"
+Context: {"exception":{}}
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-03-26.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: syntax error, unexpected token "=>"
+Context: {"exception":{}}
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(137): Laravel\Lumen\Application->handleException()
+#11 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(55): Laravel\Lumen\Application->handleShutdown()
+#12 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#13 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+  2026-03-26 20:16:14 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-26 20:18:22 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-26 20:18:50 App\Jobs\DispatchLenderApiJob ................. 27s DONE
+  2026-03-26 20:24:57 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-26 20:24:58 App\Jobs\DispatchLenderApiJob ............ 162.85ms DONE
+  2026-03-26 20:46:51 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-26 20:46:51 App\Jobs\DispatchLenderApiJob ............. 71.59ms DONE
+  2026-03-27 06:30:09 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 06:30:09 App\Jobs\DispatchLenderApiJob ............ 255.74ms DONE
+  2026-03-27 06:50:40 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 06:50:40 App\Jobs\DispatchLenderApiJob ............ 160.24ms DONE
+  2026-03-27 06:59:12 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 06:59:12 App\Jobs\DispatchLenderApiJob ............ 171.97ms DONE
+  2026-03-27 07:12:57 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 07:12:57 App\Jobs\DispatchLenderApiJob ............ 173.02ms DONE
+  2026-03-27 07:13:27 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 07:13:28 App\Jobs\DispatchLenderApiJob ............ 137.11ms DONE
+  2026-03-27 07:17:54 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 07:17:54 App\Jobs\DispatchLenderApiJob ............ 215.89ms DONE
+  2026-03-27 07:18:09 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 07:18:09 App\Jobs\DispatchLenderApiJob ............ 132.60ms DONE
+  2026-03-27 07:24:57 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 07:25:27 App\Jobs\DispatchLenderApiJob ................. 30s DONE
+  2026-03-27 07:25:45 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 07:26:15 App\Jobs\DispatchLenderApiJob ................. 30s DONE
+  2026-03-27 07:27:16 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 07:27:44 App\Jobs\DispatchLenderApiJob ................. 28s DONE
+  2026-03-27 07:29:58 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 07:30:28 App\Jobs\DispatchLenderApiJob ................. 30s DONE
+  2026-03-27 08:08:42 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 08:09:12 App\Jobs\DispatchLenderApiJob ................. 30s DONE
+  2026-03-27 08:10:49 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 08:11:19 App\Jobs\DispatchLenderApiJob ................. 30s DONE
+  2026-03-27 08:11:52 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 08:12:22 App\Jobs\DispatchLenderApiJob ................. 30s DONE
+  2026-03-27 08:13:09 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 08:13:09 App\Jobs\DispatchLenderApiJob ............ 248.80ms DONE
+  2026-03-27 08:13:27 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 08:13:27 App\Jobs\DispatchLenderApiJob ............ 197.12ms DONE
+  2026-03-27 08:16:25 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 08:16:25 App\Jobs\DispatchLenderApiJob ............ 328.30ms DONE
+  2026-03-27 08:16:39 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 08:16:40 App\Jobs\DispatchLenderApiJob ............ 212.33ms DONE
+  2026-03-27 08:20:05 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 08:20:05 App\Jobs\DispatchLenderApiJob ............ 178.40ms DONE
+  2026-03-27 08:20:12 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 08:20:12 App\Jobs\DispatchLenderApiJob ............ 242.76ms DONE
+  2026-03-27 08:21:27 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 08:21:27 App\Jobs\DispatchLenderApiJob ............ 103.30ms DONE
+  2026-03-27 08:21:37 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 08:21:37 App\Jobs\DispatchLenderApiJob ............. 86.82ms DONE
+  2026-03-27 08:22:01 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 08:22:31 App\Jobs\DispatchLenderApiJob ................. 30s DONE
+  2026-03-27 12:07:13 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 12:07:39 App\Jobs\DispatchLenderApiJob ................. 26s DONE
+  2026-03-27 12:14:42 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 12:15:06 App\Jobs\DispatchLenderApiJob ................. 24s DONE
+  2026-03-27 18:00:29 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-03-27 18:01:15 App\Jobs\DispatchLenderApiJob ................. 45s DONE

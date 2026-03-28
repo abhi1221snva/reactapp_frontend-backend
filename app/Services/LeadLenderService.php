@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\DispatchLenderApiJob;
 use App\Jobs\SendLeadByLenderApi;
 use App\Services\EmailService;
 use App\Model\Client\CrmLenderSubmission;
@@ -248,6 +249,7 @@ class LeadLenderService
      * @param  array         $documentIds      IDs from crm_documents to attach
      * @param  string|null   $emailSubject     Custom subject (overrides default)
      * @param  string|null   $emailHtmlOverride Pre-rendered HTML body (overrides blade template)
+     * @param  string        $submissionType    'normal' (email) or 'api' (lender API dispatch)
      * @return array{submitted: int[], failed: int[], records: array<int, array>}
      */
     public function submitApplication(
@@ -261,7 +263,8 @@ class LeadLenderService
         ?string $notes               = null,
         array   $documentIds         = [],
         ?string $emailSubject        = null,
-        ?string $emailHtmlOverride   = null
+        ?string $emailHtmlOverride   = null,
+        string  $submissionType      = 'normal'
     ): array {
         $conn      = "mysql_{$clientId}";
         $submitted = [];
@@ -408,6 +411,7 @@ class LeadLenderService
                         ->where('id', $existingSub->id)
                         ->update([
                             'submission_status' => 'submitted',
+                            'submission_type'   => $submissionType,
                             'application_pdf'   => $pdfStoragePath ?? $existingSub->application_pdf,
                             'submitted_by'      => $userId,
                             'submitted_at'      => $now,
@@ -424,6 +428,7 @@ class LeadLenderService
                         'lender_email'      => $lender->email,
                         'application_pdf'   => $pdfStoragePath,
                         'submission_status' => 'submitted',
+                        'submission_type'   => $submissionType,
                         'response_status'   => 'pending',
                         'notes'             => $initNotes,
                         'submitted_by'      => $userId,
@@ -433,7 +438,53 @@ class LeadLenderService
                     ]);
                 }
 
-                // ── Route: API or Email ──────────────────────────────────────────────
+                // ── Route: explicit API dispatch ─────────────────────────────────────
+                if ($submissionType === 'api') {
+                    $hasActiveConfig = DB::connection($conn)
+                        ->table('crm_lender_apis')
+                        ->where('crm_lender_id', $lenderId)
+                        ->where('status', true)
+                        ->exists();
+
+                    if (!$hasActiveConfig) {
+                        Log::warning("submitApplication[api]: no active API config for lender {$lenderId}, skipping", [
+                            'client_id' => $clientId,
+                            'lead_id'   => $leadId,
+                        ]);
+                        $failed[] = $lenderId;
+                        continue;
+                    }
+
+                    dispatch(new DispatchLenderApiJob($clientId, $leadId, $lenderId, $userId))
+                        ->onConnection('redis')
+                        ->onQueue('default');
+
+                    // Activity log
+                    DB::connection($conn)->table('crm_lead_activity')->insert([
+                        'lead_id'       => $leadId,
+                        'user_id'       => $userId,
+                        'activity_type' => 'lender_submitted',
+                        'subject'       => 'Application sent via API to lender: ' . $lender->lender_name,
+                        'body'          => $autoNote,
+                        'created_at'    => $now,
+                        'updated_at'    => $now,
+                    ]);
+
+                    $submitted[] = $lenderId;
+                    $records[$lenderId] = [
+                        'id'                => $subId,
+                        'lender_id'         => $lenderId,
+                        'lender_name'       => $lender->lender_name,
+                        'submission_status' => 'submitted',
+                        'submission_type'   => 'api',
+                        'response_status'   => ($existingSub->response_status ?? 'pending'),
+                        'submitted_at'      => $now->toDateTimeString(),
+                        'notes'             => ($existingSub->notes ?? null),
+                    ];
+                    continue;
+                }
+
+                // ── Route: normal (email, or auto-route via lender api_status) ────────
                 $apiRouted = false;
                 if (!empty($lender->api_status) && $lender->api_status == '1') {
                     $hasApiCreds = DB::connection($conn)
@@ -497,6 +548,7 @@ class LeadLenderService
                     'lender_id'         => $lenderId,
                     'lender_name'       => $lender->lender_name,
                     'submission_status' => 'submitted',
+                    'submission_type'   => $submissionType,
                     'response_status'   => ($existingSub->response_status ?? 'pending'),
                     'submitted_at'      => $now->toDateTimeString(),
                     'notes'             => ($existingSub->notes ?? null),
