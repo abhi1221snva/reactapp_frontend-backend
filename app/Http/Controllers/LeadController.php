@@ -2458,11 +2458,10 @@ class LeadController extends Controller
     public function submitApplication(Request $request, $id)
     {
         $this->validate($request, [
-            'lender_ids'      => 'required|array|min:1',
-            'lender_ids.*'    => 'integer',
-            'document_ids'    => 'nullable|array',
-            'document_ids.*'  => 'integer',
-            'submission_type' => 'nullable|string|in:normal,api',
+            'lender_ids'     => 'required|array|min:1',
+            'lender_ids.*'   => 'integer',
+            'document_ids'   => 'nullable|array',
+            'document_ids.*' => 'integer',
         ]);
 
         try {
@@ -2510,8 +2509,6 @@ class LeadController extends Controller
                 ? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: ($user->email ?? 'CRM Agent')
                 : 'CRM Agent';
 
-            $submissionType = $request->input('submission_type', 'normal');
-
             $result = $this->lenderService->submitApplication(
                 $clientId,
                 $leadId,
@@ -2524,11 +2521,9 @@ class LeadController extends Controller
                 $request->input('document_ids', []),
                 $request->input('email_subject'),
                 $request->input('email_html'),
-                $submissionType,
             );
 
-            $typeLabel = $submissionType === 'api' ? 'API' : 'email';
-            $message = count($result['submitted']) . " application(s) submitted via {$typeLabel}";
+            $message = count($result['submitted']) . ' application(s) submitted';
             if (!empty($result['failed'])) {
                 $message .= ', ' . count($result['failed']) . ' failed';
             }
