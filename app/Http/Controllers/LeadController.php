@@ -835,8 +835,11 @@ class LeadController extends Controller
                 $objLead->$strLeadLabel = $strLeadValue;
             }
 
-            $oldlead_status      = $objLead->getOriginal('lead_status');
-            $objLead->group_id   = $request->get('group_id');
+            $oldlead_status = $objLead->getOriginal('lead_status');
+            // Only overwrite group_id when it is explicitly provided in the request
+            if ($request->has('group_id')) {
+                $objLead->group_id = $request->get('group_id');
+            }
             $objLead->updated_by = $request->auth->id;
             $objLead->saveOrFail();
 
@@ -851,7 +854,7 @@ class LeadController extends Controller
                 $activity->user_id       = $request->auth->id;
                 $activity->activity_type = 'field_update';
                 $activity->subject       = 'Lead updated by ' . ($request->auth->first_name ?? 'user');
-                $activity->meta          = json_encode(['changed_fields' => $changedFields]);
+                $activity->meta          = ['changed_fields' => $changedFields];
                 $activity->source_type   = 'api';
                 $activity->save();
             } catch (\Throwable $e) {}
@@ -926,7 +929,7 @@ class LeadController extends Controller
         $clientId = $request->auth->parent_id;
 
         try {
-            $objLead = Lead::on("mysql_$clientId")->findOrFail($id);
+            $objLead = CrmLeadRecord::on("mysql_$clientId")->findOrFail($id);
             $objLead->lead_status = $request->lead_status;
             $objLead->lead_type = $request->lead_type;
             $objLead->assigned_to = $request->assigned_to;
@@ -973,12 +976,12 @@ class LeadController extends Controller
                 $activity->user_id       = $request->auth->id;
                 $activity->activity_type = 'status_change';
                 $activity->subject       = "Status changed from {$oldlead_status} to {$request->lead_status}";
-                $activity->meta          = json_encode([
+                $activity->meta          = [
                     'from_status'      => $oldlead_status,
                     'to_status'        => $request->lead_status,
                     'from_assigned_to' => $oldassigned_to,
                     'to_assigned_to'   => $request->assigned_to,
-                ]);
+                ];
                 $activity->source_type = 'api';
                 $activity->save();
             } catch (\Throwable $e) {}
@@ -1041,9 +1044,11 @@ class LeadController extends Controller
         try {
             $sqlNotifications = "DELETE FROM crm_notifications WHERE lead_id = :lead_id";
             DB::connection("mysql_$clientId")->delete($sqlNotifications, ['lead_id' => $id]);
-            // Delete from crm_documents table based on lead_id
-            $sqlDocuments = "DELETE FROM crm_documents WHERE lead_id = :lead_id";
-            DB::connection("mysql_$clientId")->delete($sqlDocuments, ['lead_id' => $id]);
+            // Soft-delete documents (keep files on disk, just hide from UI)
+            DB::connection("mysql_$clientId")
+                ->table('crm_documents')
+                ->where('lead_id', $id)
+                ->update(['deleted_at' => now()]);
 
             // ── CRM Activity: log lead deletion (additive — never breaks existing response) ──
             try {
@@ -1057,9 +1062,19 @@ class LeadController extends Controller
                 $activity->save();
             } catch (\Throwable $e) {}
 
-            // Soft delete from crm_lead_data table
-            $sqlLeadData = "UPDATE crm_lead_data SET deleted_at = NOW(), is_deleted = 1 WHERE id = :id";
-            DB::connection("mysql_$clientId")->update($sqlLeadData, ['id' => $id]);
+            // Soft-delete from crm_leads (EAV architecture — primary table)
+            CrmLeadRecord::on("mysql_$clientId")
+                ->where('id', $id)
+                ->update(['is_deleted' => 1, 'deleted_at' => \Carbon\Carbon::now()]);
+
+            // Also soft-delete from legacy crm_lead_data if it exists (backwards compat)
+            try {
+                DB::connection("mysql_$clientId")->update(
+                    "UPDATE crm_lead_data SET deleted_at = NOW(), is_deleted = 1 WHERE id = :id",
+                    ['id' => $id]
+                );
+            } catch (\Throwable $e) {}
+
             return $this->successResponse("Lead Deleted Successfully");
         } catch (ModelNotFoundException $exception) {
             throw new NotFoundHttpException("No Lead with id $id");

@@ -164,7 +164,7 @@ class CrmLeadActivityController extends Controller
             $activity->activity_type = $request->input('activity_type', 'system');
             $activity->subject       = $request->input('subject');
             $activity->body          = $request->input('body');
-            $activity->meta          = $request->input('meta') ? json_encode($request->input('meta')) : null;
+            $activity->meta          = $request->input('meta') ?: null;
             $activity->source_type   = 'manual';
             $activity->is_pinned     = $request->input('is_pinned', false);
             $activity->saveOrFail();

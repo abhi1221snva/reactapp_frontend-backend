@@ -87,7 +87,7 @@ class CrmDocumentController extends Controller
                     $u = $uploaders[$uid];
                     $d['uploaded_by_name'] = trim(($u['first_name'] ?? '') . ' ' . ($u['last_name'] ?? ''));
                 }
-                $d['file_name']  = !empty($d['file_path']) ? basename($d['file_path']) : ($d['file_name'] ?? '');
+                $d['file_name']  = !empty($d['file_name']) ? $d['file_name'] : (!empty($d['file_path']) ? basename($d['file_path']) : '');
                 $d['attachable'] = !empty($d['file_path']);
                 return $d;
             })->values();
@@ -138,6 +138,7 @@ class CrmDocumentController extends Controller
                     ->insertGetId([
                         'lead_id'       => $id,
                         'document_type' => $docType,
+                        'file_name'     => substr($origName, 0, 50),
                         'file_path'     => $publicPath,
                         'uploaded_by'   => $request->auth->id,
                         'file_size'     => $file->getSize(),
@@ -176,11 +177,11 @@ class CrmDocumentController extends Controller
                 $activity->subject       = count($uploaded) === 1
                     ? "Document uploaded: {$docType} ({$uploaded[0]['file_name']})"
                     : count($uploaded) . " documents uploaded: {$docType}";
-                $activity->meta          = json_encode([
+                $activity->meta          = [
                     'document_type' => $docType,
                     'files'         => array_column($uploaded, 'file_name'),
                     'count'         => count($uploaded),
-                ]);
+                ];
                 $activity->source_type   = 'api';
                 $activity->save();
             } catch (\Throwable $e) {}
@@ -200,6 +201,122 @@ class CrmDocumentController extends Controller
             'failed'   => $failed,
             'count'    => count($uploaded),
         ]);
+    }
+
+    /**
+     * GET /crm/lead/{id}/documents/{did}/view
+     * Stream a document inline for iframe/browser preview.
+     */
+    public function view(Request $request, int $id, int $did)
+    {
+        $clientId = $request->auth->parent_id;
+        try {
+            $doc = DB::connection("mysql_$clientId")
+                ->table('crm_documents')
+                ->where('id', $did)
+                ->where('lead_id', $id)
+                ->whereNull('deleted_at')
+                ->first();
+
+            if (!$doc) {
+                return $this->failResponse("Document not found", [], null, 404);
+            }
+
+            $absPath = $this->resolveStoragePath($doc->file_path ?? '');
+            if (!$absPath) {
+                return $this->failResponse("File not found on server", [], null, 404);
+            }
+
+            $mimeType = mime_content_type($absPath) ?: 'application/octet-stream';
+            $fileName = basename($absPath);
+
+            return response()->file($absPath, [
+                'Content-Type'        => $mimeType,
+                'Content-Disposition' => 'inline; filename="' . $fileName . '"',
+                'X-Frame-Options'     => 'SAMEORIGIN',
+                'Cache-Control'       => 'private, no-store',
+            ]);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to stream document", [$e->getMessage()], $e, 500);
+        }
+    }
+
+    /**
+     * GET /crm/lead/{id}/documents/{did}/download
+     * Force-download with filename: first_last_doctype.ext
+     */
+    public function download(Request $request, int $id, int $did)
+    {
+        $clientId = $request->auth->parent_id;
+        try {
+            $doc = DB::connection("mysql_$clientId")
+                ->table('crm_documents')
+                ->where('id', $did)
+                ->where('lead_id', $id)
+                ->whereNull('deleted_at')
+                ->first();
+
+            if (!$doc) {
+                return $this->failResponse("Document not found", [], null, 404);
+            }
+
+            // Fetch lead name from EAV values table
+            $firstName = DB::connection("mysql_$clientId")
+                ->table('crm_lead_values')
+                ->where('lead_id', $id)
+                ->where('field_key', 'first_name')
+                ->value('field_value') ?? '';
+
+            $lastName = DB::connection("mysql_$clientId")
+                ->table('crm_lead_values')
+                ->where('lead_id', $id)
+                ->where('field_key', 'last_name')
+                ->value('field_value') ?? '';
+
+            // Build clean download filename: john_doe_contract.pdf
+            $clean     = fn(string $s): string => preg_replace('/[^a-z0-9]+/', '_', strtolower(trim($s)));
+            $nameParts = array_filter([$clean($firstName), $clean($lastName)]);
+            $docType   = $clean($doc->document_type ?? 'document');
+            $ext       = strtolower(pathinfo($doc->file_path ?? '', PATHINFO_EXTENSION)) ?: 'pdf';
+            $baseName  = (empty($nameParts) ? "lead_{$id}" : implode('_', $nameParts))
+                         . '_' . $docType . '.' . $ext;
+
+            $absPath = $this->resolveStoragePath($doc->file_path ?? '');
+            if (!$absPath) {
+                return $this->failResponse("File not found on server", [], null, 404);
+            }
+
+            return response()->download($absPath, $baseName, [
+                'Content-Type'  => mime_content_type($absPath) ?: 'application/octet-stream',
+                'Cache-Control' => 'private, no-store',
+            ]);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to download document", [$e->getMessage()], $e, 500);
+        }
+    }
+
+    /**
+     * Resolve a stored file_path (public URL) to an absolute filesystem path.
+     * Stored format: APP_URL/storage/relative/path/file.pdf
+     */
+    private function resolveStoragePath(string $fileUrl): ?string
+    {
+        if (empty($fileUrl)) return null;
+
+        $appUrl = rtrim(config('app.url'), '/');
+        $prefix = $appUrl . '/storage/';
+
+        if (!str_starts_with($fileUrl, $prefix)) {
+            return null; // External URL — cannot serve directly
+        }
+
+        $relative = substr($fileUrl, strlen($prefix));
+
+        if (!Storage::disk('public')->exists($relative)) {
+            return null;
+        }
+
+        return Storage::disk('public')->path($relative);
     }
 
     /**

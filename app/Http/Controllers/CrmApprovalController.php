@@ -101,11 +101,11 @@ class CrmApprovalController extends Controller
                 $activity->user_id       = $request->auth->id;
                 $activity->activity_type = 'approval_requested';
                 $activity->subject       = 'Approval requested: ' . $approval->approval_type;
-                $activity->meta          = json_encode([
+                $activity->meta          = [
                     'approval_id'   => $approval->id,
                     'approval_type' => $approval->approval_type,
                     'request_note'  => $approval->request_note,
-                ]);
+                ];
                 $activity->source_type = 'manual';
                 $activity->save();
             } catch (\Throwable $e) {}
@@ -156,12 +156,12 @@ class CrmApprovalController extends Controller
                 $activity->user_id       = $request->auth->id;
                 $activity->activity_type = $approval->status === 'approved' ? 'approval_granted' : 'approval_declined';
                 $activity->subject       = 'Approval ' . $approval->status . ': ' . $approval->approval_type;
-                $activity->meta          = json_encode([
+                $activity->meta          = [
                     'approval_id'      => $approval->id,
                     'decision'         => $approval->status,
                     'review_note'      => $approval->review_note,
                     'approved_amount'  => $approval->approved_amount,
-                ]);
+                ];
                 $activity->source_type = 'manual';
                 $activity->save();
             } catch (\Throwable $e) {}
