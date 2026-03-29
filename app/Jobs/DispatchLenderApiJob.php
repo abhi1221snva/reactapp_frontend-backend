@@ -3,10 +3,11 @@
 namespace App\Jobs;
 
 use App\Model\Client\CrmLenderAPis;
-use App\Model\Client\CrmLeadLenderApi;
+use App\Services\ActivityService;
 use App\Services\LenderApiService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * DispatchLenderApiJob
@@ -26,13 +27,20 @@ class DispatchLenderApiJob extends Job
     private int    $leadId;
     private int    $lenderId;
     private int    $userId;
+    private array  $documentIds;
 
-    public function __construct(string $clientId, int $leadId, int $lenderId, int $userId = 0)
-    {
-        $this->clientId = $clientId;
-        $this->leadId   = $leadId;
-        $this->lenderId = $lenderId;
-        $this->userId   = $userId;
+    public function __construct(
+        string $clientId,
+        int    $leadId,
+        int    $lenderId,
+        int    $userId      = 0,
+        array  $documentIds = []
+    ) {
+        $this->clientId    = $clientId;
+        $this->leadId      = $leadId;
+        $this->lenderId    = $lenderId;
+        $this->userId      = $userId;
+        $this->documentIds = $documentIds;
     }
 
     public function handle(): void
@@ -57,50 +65,147 @@ class DispatchLenderApiJob extends Job
 
         // ── Execute ────────────────────────────────────────────────────────────
         $result = $svc->dispatch(
-            clientId:  $this->clientId,
-            config:    $config,
-            leadData:  $leadData,
-            leadId:    $this->leadId,
-            lenderId:  $this->lenderId,
-            userId:    $this->userId
+            clientId:    $this->clientId,
+            config:      $config,
+            leadData:    $leadData,
+            leadId:      $this->leadId,
+            lenderId:    $this->lenderId,
+            userId:      $this->userId,
+            documentIds: $this->documentIds
         );
 
-        // ── Persist extracted application ID if present ────────────────────────
-        $appId = $result['parsed']['id_field'] ?? null;
-        if ($appId) {
-            $existing = CrmLeadLenderApi::on("mysql_{$this->clientId}")
-                ->where('lead_id', $this->leadId)
-                ->where('lender_id', $this->lenderId)
-                ->first();
+        // ── Derive update values ───────────────────────────────────────────────
+        $submissionStatus = $result['submission_status'] ?? ($result['success'] ? 'submitted' : 'pending');
+        $apiError         = $result['error'] ?? null;
+        $docUpload        = $result['document_upload'] ?? null;
 
-            if ($existing) {
-                $existing->businessID = $appId;
-                $existing->save();
-            } else {
-                DB::connection("mysql_{$this->clientId}")
-                    ->table('crm_lead_lender_api')
-                    ->insert([
-                        'lead_id'         => $this->leadId,
-                        'lender_id'       => $this->lenderId,
-                        'client_id'       => $this->clientId,
-                        'lender_api_type' => $config->type ?: 'generic',
-                        'businessID'      => $appId,
-                        'created_at'      => Carbon::now(),
-                        'updated_at'      => Carbon::now(),
-                    ]);
+        $docUploadStatus = 'none';
+        $docUploadNotes  = null;
+
+        if ($docUpload !== null) {
+            $uploaded = count($docUpload['uploaded'] ?? []);
+            $failed   = count($docUpload['failed']   ?? []);
+            $total    = $docUpload['total'] ?? ($uploaded + $failed);
+
+            if ($total > 0) {
+                if ($failed === 0) {
+                    $docUploadStatus = 'success';
+                } elseif ($uploaded > 0) {
+                    $docUploadStatus = 'partial';
+                } else {
+                    $docUploadStatus = 'failed';
+                }
+                $docUploadNotes = "Uploaded: {$uploaded} / Failed: {$failed}";
             }
         }
 
-        // ── Update submission record ───────────────────────────────────────────
-        $submissionStatus = $result['success'] ? 'submitted' : 'pending';
-        DB::connection("mysql_{$this->clientId}")
-            ->table('crm_lender_submissions')
-            ->where('lead_id', $this->leadId)
-            ->where('lender_id', $this->lenderId)
-            ->update([
-                'submission_status' => $submissionStatus,
-                'updated_at'        => Carbon::now(),
-            ]);
+        // ── Persist status + activity log atomically ───────────────────────────
+        try {
+            $leadId   = $this->leadId;
+            $lenderId = $this->lenderId;
+            $userId   = $this->userId;
+            $clientId = $this->clientId;
 
+            // Resolve lender name for human-readable activity messages
+            $lenderName = DB::connection("mysql_{$clientId}")
+                ->table('crm_lender')
+                ->where('id', $lenderId)
+                ->value('lender_name') ?? "Lender #{$lenderId}";
+
+            $validationErrors = $result['validation_errors'] ?? [];
+            $responseCode     = $result['response_code']     ?? null;
+            $durationMs       = $result['duration_ms']       ?? null;
+            $logId            = $result['log_id']            ?? null;
+            $responseBody     = $result['response_body']     ?? null;
+
+            // Build structured meta for modal + display
+            $meta = [
+                'lender_name'       => $lenderName,
+                'lender_id'         => $lenderId,
+                'success'           => $result['success'],
+                'response_code'     => $responseCode,
+                'duration_ms'       => $durationMs,
+                'submission_status' => $submissionStatus,
+                'log_id'            => $logId,
+                'attempts'          => $result['attempts'] ?? 1,
+            ];
+            if (!empty($validationErrors)) {
+                $meta['validation_errors'] = $validationErrors;
+            }
+            if ($responseBody !== null) {
+                // Truncate to 4 KB — enough for modal display without bloating the timeline response
+                $meta['response_body'] = mb_substr($responseBody, 0, 4096);
+            }
+            if ($docUpload !== null) {
+                $meta['doc_upload'] = [
+                    'uploaded' => count((array)($docUpload['uploaded'] ?? [])),
+                    'failed'   => count((array)($docUpload['failed']   ?? [])),
+                    'total'    => $docUpload['total'] ?? 0,
+                ];
+            }
+
+            // Fetch enriched fix data written by enrichLog() in LenderApiService
+            if ($logId) {
+                $logRow = DB::connection("mysql_{$clientId}")
+                    ->table('crm_lender_api_logs')
+                    ->where('id', $logId)
+                    ->select(['fix_suggestions', 'is_fixable', 'status'])
+                    ->first();
+                if ($logRow) {
+                    $fixSuggestions = json_decode($logRow->fix_suggestions ?? '[]', true);
+                    if (!empty($fixSuggestions)) {
+                        $meta['fix_suggestions'] = $fixSuggestions;
+                    }
+                    $meta['is_fixable'] = (bool) $logRow->is_fixable;
+                    $meta['api_status'] = $logRow->status; // 'success' | 'error' | 'timeout'
+                }
+            }
+
+            // Human-readable subject + body (no raw JSON)
+            $activitySubject = ActivityService::lenderApiSubject(
+                $lenderName, $result['success'], $apiError, $validationErrors, $responseCode, $docUpload
+            );
+            $activityBody = ActivityService::lenderApiBody(
+                $result['success'], $apiError, $validationErrors, $responseCode, $durationMs, $docUpload
+            );
+
+            DB::connection("mysql_{$clientId}")->transaction(
+                function () use (
+                    $clientId, $leadId, $lenderId, $userId,
+                    $submissionStatus, $apiError, $docUploadStatus, $docUploadNotes,
+                    $activitySubject, $activityBody, $meta
+                ) {
+                    $now = Carbon::now();
+
+                    DB::connection("mysql_{$clientId}")
+                        ->table('crm_lender_submissions')
+                        ->where('lead_id', $leadId)
+                        ->where('lender_id', $lenderId)
+                        ->update([
+                            'submission_status' => $submissionStatus,
+                            'api_error'         => $apiError,
+                            'doc_upload_status' => $docUploadStatus,
+                            'doc_upload_notes'  => $docUploadNotes,
+                            'updated_at'        => $now,
+                        ]);
+
+                    ActivityService::log(
+                        clientId:   $clientId,
+                        leadId:     $leadId,
+                        type:       'lender_api_result',
+                        subject:    $activitySubject,
+                        body:       $activityBody,
+                        meta:       $meta,
+                        userId:     $userId,
+                        sourceType: 'lender_api'
+                    );
+                }
+            );
+        } catch (\Throwable $e) {
+            Log::error(
+                "DispatchLenderApiJob: failed to persist result for lead {$this->leadId}, lender {$this->lenderId}: "
+                . $e->getMessage()
+            );
+        }
     }
 }
