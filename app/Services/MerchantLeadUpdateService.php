@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\DB;
 use App\Models\Client\CrmLeadLog;
 use App\Models\Client\CrmLeadNote;
 use App\Models\Client\CrmNotification;
+use App\Services\SystemChannelService;
 
 /**
  * Handles merchant-initiated lead updates with full audit trail.
@@ -281,6 +282,21 @@ class MerchantLeadUpdateService
                 'updated_at'        => $now,
             ]);
         });
+
+        // Broadcast to #Merchant system channel
+        if (!empty($changes)) {
+            $changedLabels = implode(', ', array_map(
+                fn($f) => ucwords(str_replace('_', ' ', $f)),
+                array_keys($changes)
+            ));
+            $leadId = (int) $lead->id;
+            SystemChannelService::broadcast(
+                $clientId,
+                'merchant',
+                "🔄 Merchant updated Lead #{$leadId} — Fields: {$changedLabels}",
+                ['lead_id' => $leadId, 'merchant_id' => $merchantId, 'fields' => array_keys($changes), 'event' => 'merchant_update']
+            );
+        }
 
         return [
             'changed_fields' => array_keys($changes),

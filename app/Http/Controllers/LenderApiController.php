@@ -65,7 +65,7 @@ class LenderApiController extends Controller
             $configs = $query->get()->map(function ($row) {
                 $r = (array) $row;
                 // Decode JSON columns so the frontend gets parsed objects
-                foreach (['auth_credentials', 'default_headers', 'payload_mapping', 'response_mapping'] as $col) {
+                foreach (['auth_credentials', 'default_headers', 'payload_mapping', 'response_mapping', 'required_fields'] as $col) {
                     if (isset($r[$col]) && is_string($r[$col])) {
                         $decoded = json_decode($r[$col], true);
                         $r[$col] = is_array($decoded) ? $decoded : null;
@@ -136,7 +136,7 @@ class LenderApiController extends Controller
             }
 
             $data = (array) $row;
-            foreach (['auth_credentials', 'default_headers', 'payload_mapping', 'response_mapping'] as $col) {
+            foreach (['auth_credentials', 'default_headers', 'payload_mapping', 'response_mapping', 'required_fields'] as $col) {
                 if (isset($data[$col]) && is_string($data[$col])) {
                     $data[$col] = json_decode($data[$col], true);
                 }
@@ -165,9 +165,17 @@ class LenderApiController extends Controller
             'default_headers'   => 'nullable|array',
             'payload_mapping'   => 'nullable|array',
             'response_mapping'  => 'nullable|array',
-            'retry_attempts'    => 'nullable|integer|min:1|max:10',
-            'timeout_seconds'   => 'nullable|integer|min:5|max:300',
-            'notes'             => 'nullable|string',
+            'retry_attempts'             => 'nullable|integer|min:1|max:10',
+            'timeout_seconds'            => 'nullable|integer|min:5|max:300',
+            'notes'                      => 'nullable|string',
+            'required_fields'            => 'nullable|array',
+            'required_fields.*'          => 'string',
+            'resubmit_method'            => 'nullable|in:PUT,PATCH',
+            'resubmit_endpoint_path'     => 'nullable|string|max:500',
+            'document_upload_enabled'    => 'nullable|boolean',
+            'document_upload_endpoint'   => 'nullable|string|max:500',
+            'document_upload_method'     => 'nullable|in:POST,PUT',
+            'document_upload_field_name' => 'nullable|string|max:100',
         ]);
 
         if ($validator->fails()) {
@@ -187,10 +195,17 @@ class LenderApiController extends Controller
                 'default_headers'  => json_encode($request->input('default_headers', [])),
                 'payload_mapping'  => json_encode($request->input('payload_mapping', [])),
                 'response_mapping' => json_encode($request->input('response_mapping', [])),
-                'retry_attempts'   => $request->input('retry_attempts', 3),
-                'timeout_seconds'  => $request->input('timeout_seconds', 30),
-                'status'           => true,
-                'notes'            => $request->input('notes'),
+                'retry_attempts'             => $request->input('retry_attempts', 3),
+                'timeout_seconds'            => $request->input('timeout_seconds', 30),
+                'status'                     => true,
+                'notes'                      => $request->input('notes'),
+                'required_fields'            => json_encode($request->input('required_fields', [])),
+                'resubmit_method'            => $request->input('resubmit_method'),
+                'resubmit_endpoint_path'     => $request->input('resubmit_endpoint_path'),
+                'document_upload_enabled'    => $request->boolean('document_upload_enabled', false),
+                'document_upload_endpoint'   => $request->input('document_upload_endpoint'),
+                'document_upload_method'     => $request->input('document_upload_method', 'POST'),
+                'document_upload_field_name' => $request->input('document_upload_field_name', 'file'),
                 // Legacy compat: fill old columns from new structure
                 'url'              => rtrim($request->input('base_url'), '/') . '/' . ltrim($request->input('endpoint_path', ''), '/'),
                 'type'             => $request->input('type', ''),
@@ -224,10 +239,18 @@ class LenderApiController extends Controller
             'default_headers'  => 'nullable|array',
             'payload_mapping'  => 'nullable|array',
             'response_mapping' => 'nullable|array',
-            'retry_attempts'   => 'nullable|integer|min:1|max:10',
-            'timeout_seconds'  => 'nullable|integer|min:5|max:300',
-            'status'           => 'sometimes|boolean',
-            'notes'            => 'nullable|string',
+            'retry_attempts'             => 'nullable|integer|min:1|max:10',
+            'timeout_seconds'            => 'nullable|integer|min:5|max:300',
+            'status'                     => 'sometimes|boolean',
+            'notes'                      => 'nullable|string',
+            'required_fields'            => 'nullable|array',
+            'required_fields.*'          => 'string',
+            'resubmit_method'            => 'nullable|in:PUT,PATCH',
+            'resubmit_endpoint_path'     => 'nullable|string|max:500',
+            'document_upload_enabled'    => 'nullable|boolean',
+            'document_upload_endpoint'   => 'nullable|string|max:500',
+            'document_upload_method'     => 'nullable|in:POST,PUT',
+            'document_upload_field_name' => 'nullable|string|max:100',
         ]);
 
         if ($validator->fails()) {
@@ -242,14 +265,20 @@ class LenderApiController extends Controller
 
             $update = ['updated_at' => Carbon::now()];
 
-            $scalars = ['api_name', 'auth_type', 'base_url', 'endpoint_path', 'request_method', 'retry_attempts', 'timeout_seconds', 'status', 'notes', 'type'];
+            $scalars = [
+                'api_name', 'auth_type', 'base_url', 'endpoint_path', 'request_method',
+                'retry_attempts', 'timeout_seconds', 'status', 'notes', 'type',
+                'resubmit_method', 'resubmit_endpoint_path',
+                'document_upload_enabled', 'document_upload_endpoint',
+                'document_upload_method', 'document_upload_field_name',
+            ];
             foreach ($scalars as $field) {
                 if ($request->has($field)) {
                     $update[$field] = $request->input($field);
                 }
             }
 
-            foreach (['auth_credentials', 'default_headers', 'payload_mapping', 'response_mapping'] as $jsonField) {
+            foreach (['auth_credentials', 'default_headers', 'payload_mapping', 'response_mapping', 'required_fields'] as $jsonField) {
                 if ($request->has($jsonField)) {
                     $update[$jsonField] = json_encode($request->input($jsonField));
                 }
@@ -325,13 +354,41 @@ class LenderApiController extends Controller
             $svc     = new LenderApiService();
             $payload = $svc->buildPayload($config, $sampleData);
 
+            // Validate required fields against sample data
+            $requiredFields  = $config->required_fields ?? [];
+            $missingRequired = [];
+            if (!empty($requiredFields)) {
+                foreach ($requiredFields as $fieldKey) {
+                    $val = $sampleData[$fieldKey] ?? null;
+                    if ($val === null || $val === '') {
+                        $missingRequired[] = $fieldKey;
+                    }
+                }
+            }
+
             // Return what would be sent — no actual HTTP call
             return $this->successResponse('Dry-run payload preview', [
-                'url'             => $config->fullUrl(),
-                'method'          => $config->request_method,
-                'auth_type'       => $config->auth_type,
+                'url'              => $config->fullUrl(),
+                'method'           => $config->request_method,
+                'auth_type'        => $config->auth_type,
                 'computed_payload' => $payload,
                 'default_headers'  => $config->default_headers,
+                'required_fields_validation' => [
+                    'required'   => $requiredFields,
+                    'missing'    => $missingRequired,
+                    'all_present' => empty($missingRequired),
+                ],
+                'resubmit_config' => [
+                    'method'        => $config->resubmit_method,
+                    'endpoint_path' => $config->resubmit_endpoint_path,
+                    'configured'    => !empty($config->resubmit_method) && !empty($config->resubmit_endpoint_path),
+                ],
+                'document_upload_config' => [
+                    'enabled'    => (bool) $config->document_upload_enabled,
+                    'endpoint'   => $config->document_upload_endpoint,
+                    'method'     => $config->document_upload_method ?: 'POST',
+                    'field_name' => $config->document_upload_field_name ?: 'file',
+                ],
             ]);
         } catch (\Throwable $e) {
             return $this->failResponse('Test failed', [$e->getMessage()], $e, 500);
@@ -342,7 +399,14 @@ class LenderApiController extends Controller
 
     /**
      * GET /crm/lender-api-logs
-     * Queryable: lender_id, lead_id, crm_lender_api_id, status, per_page
+     *
+     * Queryable params:
+     *   lender_id, lead_id, crm_lender_api_id, status, date_from, date_to — exact/range filters
+     *   lender      — LIKE match on lender_name
+     *   api_name    — LIKE match on api_name
+     *   lender_type — exact match on cfg.type (ondeck, lendini, credibly, etc.)
+     *   search      — LIKE across lead_id, request_url, request_payload, response_body, status, error_message
+     *   page, per_page
      */
     public function logs(Request $request)
     {
@@ -352,65 +416,78 @@ class LenderApiController extends Controller
 
             if (!\Illuminate\Support\Facades\Schema::connection($conn)->hasTable('crm_lender_api_logs')) {
                 return $this->successResponse('Lender API logs', [
-                    'data' => [], 'total' => 0, 'page' => 1, 'per_page' => 20, 'last_page' => 1,
+                    'data' => [], 'total' => 0, 'page' => 1, 'per_page' => 15, 'last_page' => 1,
                     '_note' => 'Run migrations to create crm_lender_api_logs table.',
                 ]);
             }
 
-            $perPage  = min((int) $request->input('per_page', 20), 100);
+            $perPage = min((int) $request->input('per_page', 15), 100);
 
             $query = DB::connection($conn)
                 ->table('crm_lender_api_logs as lg')
-                ->leftJoin('crm_lender as l',        'l.id',  '=', 'lg.lender_id')
-                ->leftJoin('crm_lender_apis as cfg',  'cfg.id', '=', 'lg.crm_lender_api_id')
-                ->select(
-                    'lg.*',
-                    'l.lender_name',
-                    'cfg.api_name',
+                ->leftJoin('crm_lender as l',       'l.id',   '=', 'lg.lender_id')
+                ->leftJoin('crm_lender_apis as cfg', 'cfg.id', '=', 'lg.crm_lender_api_id')
+                ->select('lg.*', 'l.lender_name', 'cfg.api_name')
+                ->orderBy('lg.id', 'desc')
+                ->when($request->filled('lender_id'), fn ($q) =>
+                    $q->where('lg.lender_id', $request->integer('lender_id'))
                 )
-                ->orderBy('lg.id', 'desc');
+                ->when($request->filled('lead_id'), fn ($q) =>
+                    $q->where('lg.lead_id', $request->integer('lead_id'))
+                )
+                ->when($request->filled('crm_lender_api_id'), fn ($q) =>
+                    $q->where('lg.crm_lender_api_id', $request->integer('crm_lender_api_id'))
+                )
+                ->when($request->filled('status'), fn ($q) =>
+                    $q->where('lg.status', $request->input('status'))
+                )
+                ->when($request->filled('date_from'), fn ($q) =>
+                    $q->where('lg.created_at', '>=', $request->input('date_from'))
+                )
+                ->when($request->filled('date_to'), fn ($q) =>
+                    $q->where('lg.created_at', '<=', $request->input('date_to') . ' 23:59:59')
+                )
+                ->when($request->filled('lender'), fn ($q) =>
+                    $q->where('l.lender_name', 'like', '%' . $request->input('lender') . '%')
+                )
+                ->when($request->filled('api_name'), fn ($q) =>
+                    $q->where('cfg.api_name', 'like', '%' . $request->input('api_name') . '%')
+                )
+                ->when($request->filled('lender_type'), fn ($q) =>
+                    $q->where('cfg.type', $request->input('lender_type'))
+                )
+                ->when($request->filled('search'), function ($q) use ($request) {
+                    $term = '%' . $request->input('search') . '%';
+                    $q->where(function ($inner) use ($term) {
+                        $inner->where('lg.lead_id',         'like', $term)
+                              ->orWhere('lg.request_url',   'like', $term)
+                              ->orWhere('lg.request_payload', 'like', $term)
+                              ->orWhere('lg.response_body', 'like', $term)
+                              ->orWhere('lg.status',        'like', $term)
+                              ->orWhere('lg.error_message', 'like', $term);
+                    });
+                });
 
-            if ($request->filled('lender_id')) {
-                $query->where('lg.lender_id', $request->integer('lender_id'));
-            }
-            if ($request->filled('lead_id')) {
-                $query->where('lg.lead_id', $request->integer('lead_id'));
-            }
-            if ($request->filled('crm_lender_api_id')) {
-                $query->where('lg.crm_lender_api_id', $request->integer('crm_lender_api_id'));
-            }
-            if ($request->filled('status')) {
-                $query->where('lg.status', $request->input('status'));
-            }
-            if ($request->filled('date_from')) {
-                $query->where('lg.created_at', '>=', $request->input('date_from'));
-            }
-            if ($request->filled('date_to')) {
-                $query->where('lg.created_at', '<=', $request->input('date_to') . ' 23:59:59');
-            }
+            $paginator = $query->paginate($perPage);
 
-            $total   = (clone $query)->count();
-            $page    = max(1, (int) $request->input('page', 1));
-            $records = $query->offset(($page - 1) * $perPage)->limit($perPage)->get()
-                ->map(function ($r) {
-                    $row = (array) $r;
-                    foreach (['error_json', 'fix_suggestions'] as $col) {
-                        if (isset($row[$col]) && is_string($row[$col])) {
-                            $decoded = json_decode($row[$col], true);
-                            $row[$col] = is_array($decoded) ? $decoded : null;
-                        }
+            $records = collect($paginator->items())->map(function ($r) {
+                $row = (array) $r;
+                foreach (['error_json', 'fix_suggestions'] as $col) {
+                    if (isset($row[$col]) && is_string($row[$col])) {
+                        $decoded = json_decode($row[$col], true);
+                        $row[$col] = is_array($decoded) ? $decoded : null;
                     }
-                    $row['is_fixable'] = (bool) ($row['is_fixable'] ?? false);
-                    return $row;
-                })
-                ->values();
+                }
+                $row['is_fixable'] = (bool) ($row['is_fixable'] ?? false);
+                return $row;
+            })->values();
 
             return $this->successResponse('Lender API logs', [
-                'data'       => $records,
-                'total'      => $total,
-                'page'       => $page,
-                'per_page'   => $perPage,
-                'last_page'  => max(1, (int) ceil($total / $perPage)),
+                'data'      => $records,
+                'total'     => $paginator->total(),
+                'page'      => $paginator->currentPage(),
+                'per_page'  => $paginator->perPage(),
+                'last_page' => $paginator->lastPage(),
             ]);
         } catch (\Throwable $e) {
             return $this->failResponse('Failed to retrieve logs', [$e->getMessage()], $e);

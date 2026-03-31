@@ -38,6 +38,15 @@ class CrmLenderAPis extends Model
         'timeout_seconds',
         'status',
         'notes',
+
+        // ── Re-submission + document upload config (2026-03-28) ───────────────
+        'required_fields',
+        'resubmit_method',
+        'resubmit_endpoint_path',
+        'document_upload_enabled',
+        'document_upload_endpoint',
+        'document_upload_method',
+        'document_upload_field_name',
     ];
 
     protected $casts = [
@@ -45,9 +54,11 @@ class CrmLenderAPis extends Model
         'default_headers'  => 'array',
         'payload_mapping'  => 'array',
         'response_mapping' => 'array',
-        'status'           => 'boolean',
-        'retry_attempts'   => 'integer',
-        'timeout_seconds'  => 'integer',
+        'status'                  => 'boolean',
+        'retry_attempts'          => 'integer',
+        'timeout_seconds'         => 'integer',
+        'document_upload_enabled' => 'boolean',
+        'required_fields'         => 'array',
     ];
 
     // ── Relationships ──────────────────────────────────────────────────────────

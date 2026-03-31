@@ -88,7 +88,7 @@ class LenderApiService
                 'parsed'            => [],
                 'error'             => 'Validation failed — missing required fields: ' . implode(', ', $validationErrors),
                 'validation_errors' => $validationErrors,
-                'submission_status' => 'pending',
+                'submission_status' => 'failed',
                 'log_id'            => null,
                 'duration_ms'       => 0,
                 'attempts'          => 0,
@@ -435,7 +435,7 @@ class LenderApiService
     private function resolveSubmissionStatus(bool $apiSuccess, ?array $docResult): string
     {
         if (!$apiSuccess) {
-            return 'pending';
+            return 'failed';
         }
         if ($docResult === null) {
             return 'submitted'; // No docs required

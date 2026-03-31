@@ -93,26 +93,32 @@ class LenderController extends Controller
         try {
             $clientId = $request->auth->parent_id;
 
-            // Support page/per_page (new frontend) and start/limit (legacy)
-            if ($request->has('page') || $request->has('per_page')) {
-                $page    = max(1, (int)$request->input('page', 1));
-                $perPage = min((int)$request->input('per_page', 25), 200);
+            // Support page/per_page/search (new frontend) and start/limit (legacy)
+            if ($request->has('page') || $request->has('per_page') || $request->has('search')) {
+                $perPage = min((int) $request->input('per_page', 15), 200);
                 $status  = $request->input('status');
 
-                $query = Lender::on("mysql_$clientId");
-                if ($status !== null) {
-                    $query->where('status', $status);
-                }
+                $query = Lender::on("mysql_$clientId")
+                    ->when($status !== null && $status !== '', fn ($q) =>
+                        $q->where('status', $status)
+                    )
+                    ->when($request->filled('search'), function ($q) use ($request) {
+                        $term = '%' . $request->input('search') . '%';
+                        $q->where(function ($inner) use ($term) {
+                            $inner->where('lender_name',    'like', $term)
+                                  ->orWhere('email',         'like', $term)
+                                  ->orWhere('contact_person', 'like', $term);
+                        });
+                    });
 
-                $total   = $query->count();
-                $lenders = $query->skip(($page - 1) * $perPage)->take($perPage)->get();
+                $paginator = $query->paginate($perPage);
 
                 return $this->successResponse("View List of Lenders", [
-                    'data'         => $lenders,
-                    'total'        => $total,
-                    'per_page'     => $perPage,
-                    'current_page' => $page,
-                    'last_page'    => (int)ceil($total / $perPage),
+                    'data'         => $paginator->items(),
+                    'total'        => $paginator->total(),
+                    'per_page'     => $paginator->perPage(),
+                    'current_page' => $paginator->currentPage(),
+                    'last_page'    => $paginator->lastPage(),
                 ]);
             }
 

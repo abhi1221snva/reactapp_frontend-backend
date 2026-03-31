@@ -15,11 +15,14 @@ class TeamConversation extends Model
         'name',
         'avatar',
         'created_by',
-        'is_active'
+        'is_active',
+        'is_system',
+        'system_slug',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'is_system' => 'boolean',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -63,7 +66,10 @@ class TeamConversation extends Model
         $participant = $this->participants()->where('user_id', $userId)->first();
 
         if (!$participant || !$participant->last_read_message_id) {
-            return $this->messages()->where('is_deleted', false)->count();
+            return $this->messages()
+                        ->where('is_deleted', false)
+                        ->where('sender_id', '!=', $userId)
+                        ->count();
         }
 
         return $this->messages()
@@ -89,5 +95,10 @@ class TeamConversation extends Model
     public function isGroup()
     {
         return $this->type === 'group';
+    }
+
+    public function isSystem()
+    {
+        return (bool) $this->is_system;
     }
 }

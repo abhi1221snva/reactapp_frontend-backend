@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Schema\Blueprint;
 use App\Model\Client\CrmCommissionRule;
 use App\Model\Client\CrmAgentCommission;
 use App\Model\Client\CrmAgentBonus;
@@ -12,6 +13,86 @@ use App\Services\CommissionCalculationService;
 
 class AgentPerformanceController extends Controller
 {
+    /**
+     * Ensure the three commission / bonus tables exist on the tenant DB.
+     */
+    private function ensureTables(string $conn): void
+    {
+        $sb = DB::connection($conn)->getSchemaBuilder();
+
+        if (!$sb->hasTable('crm_commission_rules')) {
+            $sb->create('crm_commission_rules', function (Blueprint $table) {
+                $table->bigIncrements('id');
+                $table->string('name', 200)->default('');
+                $table->unsignedBigInteger('lender_id')->nullable();
+                $table->string('deal_type', 50)->default('new');
+                $table->string('commission_type', 30)->default('percentage');
+                $table->decimal('value', 10, 4)->default(0);
+                $table->decimal('min_funded_amount', 12, 2)->nullable();
+                $table->decimal('max_funded_amount', 12, 2)->nullable();
+                $table->decimal('split_agent_pct', 5, 2)->default(50.00);
+                $table->string('agent_role', 30)->default('closer');
+                $table->unsignedInteger('priority')->default(0);
+                $table->tinyInteger('status')->default(1);
+                $table->unsignedBigInteger('created_by')->nullable();
+                $table->timestamps();
+                $table->index(['status', 'deal_type']);
+                $table->index('lender_id');
+            });
+        }
+
+        if (!$sb->hasTable('crm_agent_commissions')) {
+            $sb->create('crm_agent_commissions', function (Blueprint $table) {
+                $table->bigIncrements('id');
+                $table->unsignedBigInteger('deal_id');
+                $table->unsignedBigInteger('lead_id');
+                $table->unsignedBigInteger('agent_id');
+                $table->unsignedBigInteger('rule_id')->nullable();
+                $table->string('agent_role', 30)->default('closer');
+                $table->string('deal_type', 50)->default('new');
+                $table->decimal('funded_amount', 12, 2)->default(0);
+                $table->string('commission_type', 30)->default('percentage');
+                $table->decimal('commission_rate', 10, 4)->default(0);
+                $table->decimal('gross_commission', 12, 2)->default(0);
+                $table->decimal('agent_commission', 12, 2)->default(0);
+                $table->decimal('company_commission', 12, 2)->default(0);
+                $table->decimal('override_amount', 12, 2)->default(0);
+                $table->unsignedBigInteger('override_from')->nullable();
+                $table->enum('status', ['pending', 'approved', 'paid', 'clawback'])->default('pending');
+                $table->date('pay_period_start')->nullable();
+                $table->date('pay_period_end')->nullable();
+                $table->timestamp('approved_at')->nullable();
+                $table->unsignedBigInteger('approved_by')->nullable();
+                $table->timestamp('paid_at')->nullable();
+                $table->unsignedBigInteger('paid_by')->nullable();
+                $table->text('notes')->nullable();
+                $table->timestamps();
+                $table->index('deal_id');
+                $table->index('lead_id');
+                $table->index('agent_id');
+                $table->index(['status', 'agent_id']);
+                $table->index(['agent_id', 'created_at']);
+            });
+        }
+
+        if (!$sb->hasTable('crm_agent_bonuses')) {
+            $sb->create('crm_agent_bonuses', function (Blueprint $table) {
+                $table->bigIncrements('id');
+                $table->unsignedBigInteger('agent_id');
+                $table->string('bonus_type', 50);
+                $table->string('description', 500)->nullable();
+                $table->decimal('amount', 12, 2)->default(0);
+                $table->string('period', 20)->nullable();
+                $table->enum('status', ['pending', 'approved', 'paid'])->default('pending');
+                $table->timestamp('paid_at')->nullable();
+                $table->unsignedBigInteger('created_by')->nullable();
+                $table->timestamps();
+                $table->index('agent_id');
+                $table->index(['agent_id', 'period']);
+            });
+        }
+    }
+
     // ─── Performance ─────────────────────────────────────────────────────────────
 
     /**
@@ -25,6 +106,7 @@ class AgentPerformanceController extends Controller
         }
 
         $conn = $this->tenantDb($request);
+        $this->ensureTables($conn);
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
 
@@ -165,10 +247,15 @@ class AgentPerformanceController extends Controller
             return response()->json(['error' => 'Forbidden'], 403);
         }
 
-        $conn = $this->tenantDb($request);
-        $rules = CrmCommissionRule::on($conn)->orderByDesc('priority')->get();
+        try {
+            $conn = $this->tenantDb($request);
+            $this->ensureTables($conn);
+            $rules = CrmCommissionRule::on($conn)->orderByDesc('priority')->get();
 
-        return $this->successResponse('Commission rules retrieved.', ['rules' => $rules->toArray()]);
+            return $this->successResponse('Commission rules retrieved.', ['rules' => $rules->toArray()]);
+        } catch (\Throwable $e) {
+            return $this->failResponse('Failed to load commission rules: ' . $e->getMessage(), [], $e);
+        }
     }
 
     /**
@@ -190,6 +277,7 @@ class AgentPerformanceController extends Controller
         ]);
 
         $conn = $this->tenantDb($request);
+        $this->ensureTables($conn);
         $data = $request->only(['lender_id', 'lender_name', 'deal_type', 'commission_type', 'value', 'min_funded_amount', 'max_funded_amount', 'agent_role', 'split_agent_pct', 'priority', 'status', 'notes']);
         if (!isset($data['status'])) {
             $data['status'] = 1;
@@ -256,34 +344,39 @@ class AgentPerformanceController extends Controller
             return response()->json(['error' => 'Forbidden'], 403);
         }
 
-        $conn = $this->tenantDb($request);
-        $perPage = (int) $request->input('per_page', 25);
-        $page = (int) $request->input('page', 1);
+        try {
+            $conn = $this->tenantDb($request);
+            $this->ensureTables($conn);
+            $perPage = (int) $request->input('per_page', 25);
+            $page = (int) $request->input('page', 1);
 
-        $query = CrmAgentCommission::on($conn)->orderByDesc('created_at');
+            $query = CrmAgentCommission::on($conn)->orderByDesc('created_at');
 
-        if ($request->input('agent_id')) {
-            $query->where('agent_id', (int) $request->input('agent_id'));
-        }
-        if ($request->input('status')) {
-            $query->where('status', $request->input('status'));
-        }
-        if ($request->input('date_from')) {
-            $query->where('created_at', '>=', $request->input('date_from'));
-        }
-        if ($request->input('date_to')) {
-            $query->where('created_at', '<=', $request->input('date_to'));
-        }
+            if ($request->input('agent_id')) {
+                $query->where('agent_id', (int) $request->input('agent_id'));
+            }
+            if ($request->input('status')) {
+                $query->where('status', $request->input('status'));
+            }
+            if ($request->input('date_from')) {
+                $query->where('created_at', '>=', $request->input('date_from'));
+            }
+            if ($request->input('date_to')) {
+                $query->where('created_at', '<=', $request->input('date_to'));
+            }
 
-        $total = $query->count();
-        $commissions = $query->skip(($page - 1) * $perPage)->take($perPage)->get();
+            $total = $query->count();
+            $commissions = $query->skip(($page - 1) * $perPage)->take($perPage)->get();
 
-        return $this->successResponse('Commissions retrieved.', [
-            'commissions' => $commissions->toArray(),
-            'total'       => $total,
-            'page'        => $page,
-            'per_page'    => $perPage,
-        ]);
+            return $this->successResponse('Commissions retrieved.', [
+                'commissions' => $commissions->toArray(),
+                'total'       => $total,
+                'page'        => $page,
+                'per_page'    => $perPage,
+            ]);
+        } catch (\Throwable $e) {
+            return $this->failResponse('Failed to load commissions: ' . $e->getMessage(), [], $e);
+        }
     }
 
     /**
@@ -295,33 +388,38 @@ class AgentPerformanceController extends Controller
             return response()->json(['error' => 'Forbidden'], 403);
         }
 
-        $conn = $this->tenantDb($request);
+        try {
+            $conn = $this->tenantDb($request);
+            $this->ensureTables($conn);
 
-        $totals = DB::connection($conn)->table('crm_agent_commissions')
-            ->select(
-                DB::raw('SUM(gross_commission) as total_gross'),
-                DB::raw('SUM(agent_commission) as total_agent'),
-                DB::raw('SUM(company_commission) as total_company'),
-                DB::raw('COUNT(id) as total_records')
-            )
-            ->first();
+            $totals = DB::connection($conn)->table('crm_agent_commissions')
+                ->select(
+                    DB::raw('SUM(gross_commission) as total_gross'),
+                    DB::raw('SUM(agent_commission) as total_agent'),
+                    DB::raw('SUM(company_commission) as total_company'),
+                    DB::raw('COUNT(id) as total_records')
+                )
+                ->first();
 
-        $byAgent = DB::connection($conn)->table('crm_agent_commissions')
-            ->select(
-                'agent_id',
-                DB::raw('SUM(gross_commission) as total_gross'),
-                DB::raw('SUM(agent_commission) as total_agent'),
-                DB::raw('SUM(company_commission) as total_company'),
-                DB::raw('COUNT(id) as total_records')
-            )
-            ->groupBy('agent_id')
-            ->orderByDesc(DB::raw('SUM(agent_commission)'))
-            ->get();
+            $byAgent = DB::connection($conn)->table('crm_agent_commissions')
+                ->select(
+                    'agent_id',
+                    DB::raw('SUM(gross_commission) as total_gross'),
+                    DB::raw('SUM(agent_commission) as total_agent'),
+                    DB::raw('SUM(company_commission) as total_company'),
+                    DB::raw('COUNT(id) as total_records')
+                )
+                ->groupBy('agent_id')
+                ->orderByDesc(DB::raw('SUM(agent_commission)'))
+                ->get();
 
-        return $this->successResponse('Commission summary retrieved.', [
-            'totals'   => (array) $totals,
-            'by_agent' => $byAgent->toArray(),
-        ]);
+            return $this->successResponse('Commission summary retrieved.', [
+                'totals'   => (array) $totals,
+                'by_agent' => $byAgent->toArray(),
+            ]);
+        } catch (\Throwable $e) {
+            return $this->failResponse('Failed to load commission summary: ' . $e->getMessage(), [], $e);
+        }
     }
 
     /**

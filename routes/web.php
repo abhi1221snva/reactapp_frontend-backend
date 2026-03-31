@@ -1409,11 +1409,34 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   $router->get('crm/lender-api-logs',      'LenderApiController@logs');
   $router->get('crm/lender-api-logs/{id}', 'LenderApiController@logDetail');
 
+  // ── Integration Configs (third-party API credentials) ─────────────────────
+  $router->get('crm/integration-configs',              'CrmIntegrationConfigController@index');
+  $router->post('crm/integration-configs',             'CrmIntegrationConfigController@upsert');
+  $router->post('crm/integration-configs/{id}/toggle', 'CrmIntegrationConfigController@toggle');
+  $router->delete('crm/integration-configs/{id}',      'CrmIntegrationConfigController@destroy');
+
   // ── Manual trigger for a lead ──────────────────────────────────────────────
   $router->post('crm/lead/{leadId}/dispatch-lender-api', 'LenderApiController@triggerForLead');
 
   // ── Apply field fix + optional resubmit ───────────────────────────────────
   $router->post('crm/lead/{leadId}/apply-lender-fix',    'LenderApiController@applyFix');
+
+  // ── OnDeck Partner API ────────────────────────────────────────────────
+  $router->get ('crm/lead/{leadId}/ondeck',                      'OnDeckController@getLocalData');
+  $router->post('crm/lead/{leadId}/ondeck/application',          'OnDeckController@submitApplication');
+  $router->put ('crm/lead/{leadId}/ondeck/application',          'OnDeckController@updateApplication');
+  $router->put ('crm/lead/{leadId}/ondeck/contactable',          'OnDeckController@markContactable');
+  $router->post('crm/lead/{leadId}/ondeck/document',             'OnDeckController@uploadDocument');
+  $router->get ('crm/lead/{leadId}/ondeck/required-documents',   'OnDeckController@getRequiredDocuments');
+  $router->get ('crm/lead/{leadId}/ondeck/local-documents',      'OnDeckController@getLocalDocuments');
+  $router->get ('crm/lead/{leadId}/ondeck/status',               'OnDeckController@getStatus');
+  $router->get ('crm/lead/{leadId}/ondeck/offers',               'OnDeckController@getOffers');
+  $router->get ('crm/lead/{leadId}/ondeck/local-offers',         'OnDeckController@getLocalOffers');
+  $router->post('crm/lead/{leadId}/ondeck/pricing',              'OnDeckController@getPricing');
+  $router->post('crm/lead/{leadId}/ondeck/confirm-offer',        'OnDeckController@confirmOffer');
+  $router->get ('crm/lead/{leadId}/ondeck/renewal-eligibility',  'OnDeckController@getRenewalEligibility');
+  $router->post('crm/lead/{leadId}/ondeck/renewal',              'OnDeckController@submitRenewal');
+  $router->get ('crm/lead/{leadId}/ondeck/logs',                 'OnDeckController@getLogs');
 
   //crm lead status (legacy routes — kept for backward compat)
   $router->get('leadStatus', 'LeadStatusController@list');
@@ -1754,15 +1777,18 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   $router->get('crm/analytics/stale-leads',       'CrmAnalyticsController@staleLeads');
 
   // Documents
-  $router->get('crm/lead/{id}/documents',          'CrmDocumentController@index');
-  $router->post('crm/lead/{id}/documents',         'CrmDocumentController@store');
-  $router->delete('crm/lead/{id}/documents/{did}', 'CrmDocumentController@destroy');
+  $router->get('crm/lead/{id}/documents',                   'CrmDocumentController@index');
+  $router->post('crm/lead/{id}/documents',                  'CrmDocumentController@store');
+  $router->delete('crm/lead/{id}/documents/{did}',          'CrmDocumentController@destroy');
+  $router->get('crm/lead/{id}/documents/{did}/view',        'CrmDocumentController@view');
+  $router->get('crm/lead/{id}/documents/{did}/download',    'CrmDocumentController@download');
 
   // Send to Lender (legacy single-lender)
   $router->get('crm/lead/{id}/lender-submissions', 'LeadController@lenderSubmissions');
   $router->post('crm/lead/{id}/send-to-lender',    'LeadController@sendToLender');
 
   // Enhanced Lender Submission System
+  $router->post('crm/lead/{id}/validate-submission',                      'LeadController@validateSubmission');
   $router->post('crm/lead/{id}/submit-application',                       'LeadController@submitApplication');
   $router->get('crm/lead/{id}/lender-submissions/enhanced',               'LeadController@enhancedLenderSubmissions');
   $router->post('crm/lead/{id}/submissions/{subId}/response',             'LeadController@updateSubmissionResponse');
@@ -1823,6 +1849,37 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   $router->post('crm/sms/conversations/{id}/assign',       'CrmSmsInboxController@assignAgent');
   $router->post('crm/sms/new-conversation',                'CrmSmsInboxController@startConversation');
   $router->get('crm/pdf/placeholders',                                    'LeadController@pdfPlaceholders');
+
+  // ── Agent Performance & Commissions ────────────────────────────────────────
+  // Performance
+  $router->get('crm/agent-performance/summary',                          'AgentPerformanceController@summary');
+  $router->get('crm/agent-performance/leaderboard',                      'AgentPerformanceController@leaderboard');
+  $router->get('crm/agent-performance/{agentId}',                        'AgentPerformanceController@agentDetail');
+
+  // Commission Rules CRUD
+  $router->get('crm/commission-rules',                                   'AgentPerformanceController@listRules');
+  $router->put('crm/commission-rules',                                   'AgentPerformanceController@createRule');
+  $router->post('crm/commission-rules/{id}',                             'AgentPerformanceController@updateRule');
+  $router->delete('crm/commission-rules/{id}',                           'AgentPerformanceController@deleteRule');
+
+  // Commission Records
+  $router->get('crm/commissions',                                        'AgentPerformanceController@listCommissions');
+  $router->get('crm/commissions/summary',                                'AgentPerformanceController@commissionSummary');
+  $router->post('crm/commissions/{id}/approve',                          'AgentPerformanceController@approveCommission');
+  $router->post('crm/commissions/{id}/mark-paid',                        'AgentPerformanceController@markPaid');
+  $router->post('crm/commissions/{id}/clawback',                         'AgentPerformanceController@clawback');
+  $router->post('crm/commissions/bulk-approve',                          'AgentPerformanceController@bulkApprove');
+  $router->post('crm/commissions/bulk-pay',                              'AgentPerformanceController@bulkPay');
+  $router->post('crm/deal/{dealId}/calculate-commission',                'AgentPerformanceController@calculateCommission');
+
+  // Renewal Pipeline
+  $router->get('crm/renewals',                                           'AgentPerformanceController@renewalPipeline');
+
+  // Bonuses CRUD
+  $router->get('crm/agent-bonuses',                                      'AgentPerformanceController@listBonuses');
+  $router->put('crm/agent-bonuses',                                      'AgentPerformanceController@createBonus');
+  $router->post('crm/agent-bonuses/{id}',                                'AgentPerformanceController@updateBonus');
+  $router->delete('crm/agent-bonuses/{id}',                              'AgentPerformanceController@deleteBonus');
 });
 
 

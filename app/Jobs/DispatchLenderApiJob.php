@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Model\Client\CrmLenderAPis;
 use App\Services\ActivityService;
+use App\Services\ApiErrorMapper;
 use App\Services\LenderApiService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -75,7 +76,7 @@ class DispatchLenderApiJob extends Job
         );
 
         // ── Derive update values ───────────────────────────────────────────────
-        $submissionStatus = $result['submission_status'] ?? ($result['success'] ? 'submitted' : 'pending');
+        $submissionStatus = $result['submission_status'] ?? ($result['success'] ? 'submitted' : 'failed');
         $apiError         = $result['error'] ?? null;
         $docUpload        = $result['document_upload'] ?? null;
 
@@ -152,7 +153,8 @@ class DispatchLenderApiJob extends Job
                     ->select(['fix_suggestions', 'is_fixable', 'status'])
                     ->first();
                 if ($logRow) {
-                    $fixSuggestions = json_decode($logRow->fix_suggestions ?? '[]', true);
+                    $raw = $logRow->fix_suggestions ?? '[]';
+                    $fixSuggestions = is_array($raw) ? $raw : json_decode($raw, true);
                     if (!empty($fixSuggestions)) {
                         $meta['fix_suggestions'] = $fixSuggestions;
                     }
@@ -169,11 +171,31 @@ class DispatchLenderApiJob extends Job
                 $result['success'], $apiError, $validationErrors, $responseCode, $durationMs, $docUpload
             );
 
+            // Build structured error_messages via ApiErrorMapper for UI display
+            $rawMapping     = $config->payload_mapping ?? '{}';
+            $payloadMapping = is_array($rawMapping) ? $rawMapping : (json_decode($rawMapping, true) ?: []);
+            $errorMessages = null;
+            if (!$result['success']) {
+                if (!empty($meta['fix_suggestions'])) {
+                    $errorMessages = ApiErrorMapper::fromFixSuggestions($meta['fix_suggestions'], $payloadMapping);
+                } elseif ($responseBody) {
+                    $errorMessages = ApiErrorMapper::map($responseCode ?? 400, $responseBody, [], $payloadMapping);
+                } elseif (!empty($validationErrors)) {
+                    $errorMessages = array_map(fn ($msg) => [
+                        'label'    => $msg,
+                        'field'    => '',
+                        'message'  => $msg,
+                        'fix_type' => 'required',
+                        'expected' => '',
+                    ], $validationErrors);
+                }
+            }
+
             DB::connection("mysql_{$clientId}")->transaction(
                 function () use (
                     $clientId, $leadId, $lenderId, $userId,
                     $submissionStatus, $apiError, $docUploadStatus, $docUploadNotes,
-                    $activitySubject, $activityBody, $meta
+                    $activitySubject, $activityBody, $meta, $errorMessages
                 ) {
                     $now = Carbon::now();
 
@@ -184,6 +206,7 @@ class DispatchLenderApiJob extends Job
                         ->update([
                             'submission_status' => $submissionStatus,
                             'api_error'         => $apiError,
+                            'error_messages'    => $errorMessages ? json_encode($errorMessages) : null,
                             'doc_upload_status' => $docUploadStatus,
                             'doc_upload_notes'  => $docUploadNotes,
                             'updated_at'        => $now,

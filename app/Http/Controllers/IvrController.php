@@ -202,6 +202,15 @@ class IvrController extends Controller
         return response()->json($response, 400);
     }
 
+    // Sync audio file to Asterisk server (failures are logged, never block the response)
+    if (!empty($this->request->ann_id)) {
+        (new \App\Services\AsteriskAudioSyncService())->run(
+            (string) $this->request->ann_id,
+            (int)    $this->request->auth->parent_id,
+            (string) $this->request->ivr_id
+        );
+    }
+
     // ✅ Success
     return response()->json($response, 201);
 }

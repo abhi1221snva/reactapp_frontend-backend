@@ -9,6 +9,7 @@ use App\Model\Client\TeamMessageAttachment;
 use App\Model\Client\TeamMessageReadReceipt;
 use App\Model\TeamUserPresence;
 use App\Model\User;
+use App\Services\SystemChannelService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -161,6 +162,9 @@ class TeamChatController extends Controller
             $userId = $request->auth->id;
             $parentId = $request->auth->parent_id;
 
+            // Lazy-init system channels + ensure current user is enrolled
+            SystemChannelService::ensureSystemChannels($parentId, $userId);
+
             // Get conversations
             $conversations = TeamConversation::on("mysql_$parentId")
                 ->whereHas('participants', function ($query) use ($userId) {
@@ -189,6 +193,8 @@ class TeamChatController extends Controller
                         ? $conversation->name
                         : $this->getDirectChatName($conversation, $userId, $users),
                     'avatar' => $conversation->avatar,
+                    'is_system' => (bool) $conversation->is_system,
+                    'system_slug' => $conversation->system_slug,
                     'participants' => $conversation->activeParticipants->map(function ($p) use ($users) {
                         $user = $users->get($p->user_id);
                         return [
@@ -259,6 +265,9 @@ class TeamChatController extends Controller
             $userId = $request->auth->id;
             $parentId = $request->auth->parent_id;
 
+            // Lazy-init system channels + ensure current user is enrolled
+            SystemChannelService::ensureSystemChannels($parentId, $userId);
+
             $conversations = TeamConversation::on("mysql_$parentId")
                 ->whereHas('participants', function ($query) use ($userId) {
                     $query->where('user_id', $userId)->where('is_active', true);
@@ -286,6 +295,8 @@ class TeamChatController extends Controller
                         ? $conversation->name
                         : $this->getDirectChatName($conversation, $userId, $users),
                     'avatar' => $conversation->avatar,
+                    'is_system' => (bool) $conversation->is_system,
+                    'system_slug' => $conversation->system_slug,
                     'participants' => $conversation->activeParticipants->map(function ($p) use ($users) {
                         $user = $users->get($p->user_id);
                         return [
@@ -345,6 +356,8 @@ class TeamChatController extends Controller
                     ? $conversation->name
                     : $this->getDirectChatName($conversation, $userId, $users),
                 'avatar' => $conversation->avatar,
+                'is_system' => (bool) $conversation->is_system,
+                'system_slug' => $conversation->system_slug,
                 'participants' => $conversation->activeParticipants->map(function ($p) use ($users) {
                     $user = $users->get($p->user_id);
                     return [
@@ -454,6 +467,12 @@ class TeamChatController extends Controller
             $currentUserId = $request->auth->id;
             $parentId = $request->auth->parent_id;
             $participantIds = $request->input('participant_ids');
+
+            // Block reserved system channel names
+            $reservedNames = ['#Lender', '#Merchant', '#lender', '#merchant'];
+            if (in_array($request->input('name'), $reservedNames, true)) {
+                return $this->failResponse("This name is reserved for system channels", [], null, 400);
+            }
 
             // Verify all participants belong to same parent_id and are not deleted
             $validUsers = User::whereIn('id', $participantIds)
@@ -648,6 +667,10 @@ class TeamChatController extends Controller
 
             if (!$conversation->isParticipant($userId)) {
                 return $this->failResponse("Access denied", [], null, 403);
+            }
+
+            if ($conversation->isSystem()) {
+                return $this->failResponse("System channels are read-only", [], null, 403);
             }
 
             $message = new TeamMessage();
@@ -858,6 +881,7 @@ class TeamChatController extends Controller
         try {
             $parentId = $request->auth->parent_id;
             $result = [];
+            $staleThreshold = Carbon::now()->subSeconds(60);
 
             try {
                 // Get all users in the organization
@@ -866,7 +890,11 @@ class TeamChatController extends Controller
                                ->pluck('id')
                                ->toArray();
 
-                $onlineUsers = TeamUserPresence::getOnlineUsers($orgUsers);
+                // Only return users who have a recent heartbeat (last 60s) and are not offline
+                $onlineUsers = TeamUserPresence::whereIn('user_id', $orgUsers)
+                    ->where('status', '!=', 'offline')
+                    ->where('last_seen_at', '>=', $staleThreshold)
+                    ->get();
 
                 $userIds = $onlineUsers->pluck('user_id')->toArray();
                 $users = User::whereIn('id', $userIds)->where('is_deleted', 0)->get()->keyBy('id');
@@ -913,23 +941,36 @@ class TeamChatController extends Controller
                         ->get();
 
             // Get presence status (non-critical)
+            // A user is considered stale (offline) if their last heartbeat was > 60s ago
             $userIds = $users->pluck('id')->toArray();
             $presences = collect([]);
+            $staleThreshold = Carbon::now()->subSeconds(60);
             try {
                 $presences = TeamUserPresence::whereIn('user_id', $userIds)->get()->keyBy('user_id');
             } catch (\Throwable $e) {
                 Log::warning('Team Chat: Could not fetch user presences', ['error' => $e->getMessage()]);
             }
 
-            $result = $users->map(function ($user) use ($presences) {
+            $result = $users->map(function ($user) use ($presences, $staleThreshold) {
                 $presence = $presences->get($user->id);
                 $fullName = trim($user->first_name . ' ' . $user->last_name);
+
+                $status = 'offline';
+                if ($presence) {
+                    // If the user hasn't sent a heartbeat in 60s, they're offline regardless of stored status
+                    if ($presence->last_seen_at && $presence->last_seen_at->lt($staleThreshold)) {
+                        $status = 'offline';
+                    } else {
+                        $status = $presence->status;
+                    }
+                }
+
                 return [
                     'id' => $user->id,
                     'name' => $fullName ?: $user->email,
                     'email' => $user->email,
                     'extension' => $user->extension,
-                    'status' => $presence ? $presence->status : 'offline',
+                    'status' => $status,
                 ];
             });
 
@@ -1221,6 +1262,10 @@ class TeamChatController extends Controller
 
             if (!$conversation) {
                 return $this->failResponse("Group not found", [], null, 404);
+            }
+
+            if ($conversation->isSystem()) {
+                return $this->failResponse("Cannot leave a system channel", [], null, 403);
             }
 
             $participant = TeamConversationParticipant::on("mysql_$parentId")

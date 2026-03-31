@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Services\TenantStorageService;
+use App\Services\SystemChannelService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -394,6 +395,16 @@ class PublicApplicationService
 
         // ── Activity log ──────────────────────────────────────────────────────
         $this->logActivity($conn, $leadId, $affiliateUser->id, 'affiliate_application', 'Lead created via affiliate application form.');
+
+        // Broadcast to #Merchant system channel
+        $businessLabel = $formData['business_name'] ?? $formData['dba'] ?? 'New Lead';
+        $affCode = $affiliateUser->affiliate_code ?? 'direct';
+        SystemChannelService::broadcast(
+            $clientId,
+            'merchant',
+            "📋 New application submitted for {$businessLabel} via {$affCode} (Lead #{$leadId})",
+            ['lead_id' => $leadId, 'affiliate_code' => $affCode, 'event' => 'new_application']
+        );
 
         // ── Merchant URL ──────────────────────────────────────────────────────
         $portalBase  = $this->resolvePortalBase($clientId);

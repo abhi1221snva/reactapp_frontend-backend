@@ -49,85 +49,76 @@ class CrmLeadActivityController extends Controller
 {
     /**
      * GET /crm/lead/{id}/activity
-     * Returns unified timeline for a lead — merges crm_lead_activity,
-     * crm_notifications, and crm_log into a single chronological feed.
+     * Returns unified timeline for a lead — merges crm_lead_activity and
+     * crm_notifications into a single chronological feed.
      */
     public function timeline(Request $request, $id)
     {
         try {
-            $clientId    = $request->auth->parent_id;
-            $limit       = min((int)($request->input('limit', 50)), 200);
-            $offset      = (int)$request->input('offset', 0);
+            $clientId = $request->auth->parent_id;
+            $limit    = min((int)($request->input('limit', 50)), 200);
+            $offset   = (int)$request->input('offset', 0);
+
             // Support ?type=system (single) and ?types[]=system (array)
             $types = (array) $request->input('types', []);
             if (empty($types) && $request->has('type')) {
                 $types = [$request->input('type')];
             }
-            $includeSrc  = $request->input('include_sources', 'crm_lead_activity');
 
-            // Base: crm_lead_activity
+            // ── Base: crm_lead_activity ───────────────────────────────────────
             $query = CrmLeadActivity::on("mysql_$clientId")
                 ->where('lead_id', $id)
-                ->select([
-                    'id', 'lead_id', 'user_id', 'activity_type',
-                    'subject', 'body', 'meta', 'is_pinned', 'created_at',
-                ]);
+                ->select(['id', 'lead_id', 'user_id', 'activity_type',
+                          'subject', 'body', 'meta', 'is_pinned', 'created_at']);
 
             if (!empty($types)) {
                 $query->whereIn('activity_type', $types);
             }
 
-            $total   = $query->count();
-            $items   = $query->orderBy('created_at', 'desc')
-                             ->skip($offset)
-                             ->take($limit)
-                             ->get();
+            $total = $query->count();
+            $items = $query->orderBy('created_at', 'desc')->skip($offset)->take($limit)->get();
 
-            // Attach user names
+            // ── User map ──────────────────────────────────────────────────────
             $userIds = $items->pluck('user_id')->filter()->unique()->values();
-            $users   = [];
-            if ($userIds->isNotEmpty()) {
-                $users = User::whereIn('id', $userIds)
-                    ->get(['id', 'first_name', 'last_name'])
-                    ->keyBy('id');
-            }
+            $users   = $userIds->isNotEmpty()
+                ? User::whereIn('id', $userIds)->get(['id', 'first_name', 'last_name'])->keyBy('id')
+                : collect();
 
             $result = $items->map(function ($item) use ($users) {
                 $arr              = $item->toArray();
-                $arr['user_name'] = isset($users[$item->user_id])
+                $arr['user_name'] = $users->has($item->user_id)
                     ? $users[$item->user_id]->first_name . ' ' . $users[$item->user_id]->last_name
                     : null;
                 return $arr;
             });
 
-            // Optionally merge crm_notifications (notes & updates)
-            if (str_contains($includeSrc, 'crm_notifications')) {
-                $notes = DB::connection("mysql_$clientId")
-                    ->table('crm_notifications')
-                    ->where('lead_id', $id)
-                    ->orderBy('id', 'desc')
-                    ->get(['id', 'user_id', 'lead_id', 'message', 'type', 'created_at']);
+            // ── Always merge crm_notifications (lender API history) ───────────
+            $notes = DB::connection("mysql_$clientId")
+                ->table('crm_notifications')
+                ->where('lead_id', $id)
+                ->orderBy('id', 'desc')
+                ->limit(300)
+                ->get(['id', 'user_id', 'lead_id', 'message', 'type', 'created_at']);
+
+            if ($notes->isNotEmpty()) {
+                // Extend user map with any notification-only user IDs
+                $extraIds = $notes->pluck('user_id')->filter()->unique()->diff($userIds)->values();
+                if ($extraIds->isNotEmpty()) {
+                    $extraUsers = User::whereIn('id', $extraIds)
+                        ->get(['id', 'first_name', 'last_name'])->keyBy('id');
+                    $users = $users->merge($extraUsers);
+                }
 
                 foreach ($notes as $n) {
-                    $result->push([
-                        'id'            => 'n_' . $n->id,
-                        'lead_id'       => $n->lead_id,
-                        'user_id'       => $n->user_id,
-                        'activity_type' => $n->type == 1 ? 'note_added' : 'system',
-                        'subject'       => $n->message,
-                        'body'          => null,
-                        'meta'          => ['notification_type' => $n->type],
-                        'is_pinned'     => false,
-                        'user_name'     => isset($users[$n->user_id])
-                            ? $users[$n->user_id]->first_name . ' ' . $users[$n->user_id]->last_name
-                            : null,
-                        'created_at'    => $n->created_at,
-                        'source'        => 'crm_notifications',
-                    ]);
+                    $mapped = $this->mapNotification($n, $users);
+                    // Apply type filter
+                    if (empty($types) || in_array($mapped['activity_type'], $types)) {
+                        $result->push($mapped);
+                    }
                 }
             }
 
-            // Sort merged result by created_at desc
+            // ── Sort merged result by created_at desc ─────────────────────────
             $sorted = $result->sortByDesc('created_at')->values();
 
             return $this->successResponse("Lead Activity Timeline", [
@@ -141,6 +132,75 @@ class CrmLeadActivityController extends Controller
         } catch (\Throwable $e) {
             return $this->failResponse("Failed to load activity timeline", [$e->getMessage()], $e, 500);
         }
+    }
+
+    /**
+     * Map a crm_notifications row to a unified timeline activity array.
+     * Detects lender API messages and extracts lender name, success, doc filename.
+     */
+    private function mapNotification(object $n, $users): array
+    {
+        $rawMsg   = (string)($n->message ?? '');
+        $cleanMsg = trim(html_entity_decode(strip_tags($rawMsg)));
+
+        // Detect lender-related messages
+        $isLender = (
+            stripos($rawMsg,   'Lender ')             !== false ||
+            stripos($cleanMsg, 'Document Sent')        !== false ||
+            stripos($cleanMsg, 'consentAccepted')      !== false ||
+            stripos($cleanMsg, 'attachment was received') !== false
+        );
+
+        $activityType = $isLender ? 'lender_api_result' : ($n->type == 1 ? 'note_added' : 'system');
+
+        // Parse lender name from trailing ( LenderName ) or (LenderName)
+        $lenderName = null;
+        if (preg_match('/\(\s*([^)]+?)\s*\)\s*$/', $cleanMsg, $m)) {
+            $lenderName = trim($m[1]);
+        }
+
+        // Determine success / failure
+        $isSuccess   = null;
+        $isDocUpload = stripos($cleanMsg, 'Document Sent file name is') !== false;
+
+        if ($isLender && !$isDocUpload) {
+            foreach (['successfully', 'consentAccepted', 'being processed'] as $kw) {
+                if (stripos($cleanMsg, $kw) !== false) { $isSuccess = true; break; }
+            }
+            if ($isSuccess === null) {
+                foreach (['went wrong', 'Validation Error', 'declined', 'already started',
+                          'must be', 'should be', 'Error:', 'failed', 'invalid'] as $kw) {
+                    if (stripos($cleanMsg, $kw) !== false) { $isSuccess = false; break; }
+                }
+            }
+        }
+
+        $meta = ['source' => 'notification'];
+        if ($lenderName)         $meta['lender_name'] = $lenderName;
+        if ($isSuccess !== null) $meta['success']      = $isSuccess;
+        if ($isDocUpload && preg_match('/file name is\s+(\S+)/i', $cleanMsg, $fm)) {
+            $meta['doc_filename'] = $fm[1];
+        }
+
+        $userName = null;
+        if ($n->user_id && $users->has($n->user_id)) {
+            $u = $users[$n->user_id];
+            $userName = trim($u->first_name . ' ' . $u->last_name) ?: null;
+        }
+
+        return [
+            'id'            => 'n_' . $n->id,
+            'lead_id'       => $n->lead_id,
+            'user_id'       => $n->user_id,
+            'activity_type' => $activityType,
+            'subject'       => $cleanMsg,
+            'body'          => null,
+            'meta'          => $meta,
+            'is_pinned'     => false,
+            'user_name'     => $userName,
+            'created_at'    => $n->created_at,
+            'source'        => 'crm_notifications',
+        ];
     }
 
     /**

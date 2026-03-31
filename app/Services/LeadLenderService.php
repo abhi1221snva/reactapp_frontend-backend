@@ -5,7 +5,9 @@ namespace App\Services;
 use App\Jobs\DispatchLenderApiJob;
 use App\Jobs\SendLeadByLenderApi;
 use App\Services\EmailService;
+use App\Services\LenderApiService;
 use App\Model\Client\CrmLenderSubmission;
+use App\Model\Client\CrmLenderAPis;
 use App\Model\Client\CrmSendLeadToLender;
 use App\Model\Client\Lender;
 use App\Model\Client\LenderStatus;
@@ -13,6 +15,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use App\Services\SystemChannelService;
 
 /**
  * Handles all lender-related CRM operations.
@@ -232,6 +235,113 @@ class LeadLenderService
     // ──────────────────────────────────────────────────────────────────────────
 
     /**
+     * Pre-validate required fields for each lender before submission.
+     *
+     * @param  string  $clientId
+     * @param  int     $leadId
+     * @param  int[]   $lenderIds
+     * @return array{results: array, valid_lender_ids: int[], invalid_lender_ids: int[], email_only_ids: int[]}
+     */
+    public function preValidateLenders(string $clientId, int $leadId, array $lenderIds): array
+    {
+        $conn      = "mysql_{$clientId}";
+        $apiSvc    = new LenderApiService();
+        $leadData  = $apiSvc->resolveLeadData($clientId, $leadId);
+        $results   = [];
+        $validIds  = [];
+        $invalidIds = [];
+        $emailIds   = [];
+
+        // Resolve field labels from crm_labels for human-readable names
+        $allLabels = [];
+        try {
+            $allLabels = DB::connection($conn)
+                ->table('crm_labels')
+                ->where('status', 'active')
+                ->pluck('label_name', 'field_key')
+                ->toArray();
+        } catch (\Throwable) {}
+
+        foreach ($lenderIds as $lenderId) {
+            $lender = DB::connection($conn)->table('crm_lender')->where('id', $lenderId)->first();
+            if (!$lender) continue;
+
+            $lenderName = $lender->lender_name ?? "Lender #{$lenderId}";
+
+            // Check if API lender
+            $apiConfig = null;
+            if (!empty($lender->api_status) && $lender->api_status == '1') {
+                $apiConfig = CrmLenderAPis::on($conn)
+                    ->where('crm_lender_id', $lenderId)
+                    ->where('status', true)
+                    ->first();
+            }
+
+            if (!$apiConfig) {
+                // Email-only lender — no validation needed
+                $emailIds[] = $lenderId;
+                $validIds[] = $lenderId;
+                $results[$lenderId] = [
+                    'lender_id'     => $lenderId,
+                    'lender_name'   => $lenderName,
+                    'is_api_lender' => false,
+                    'valid'         => true,
+                    'missing_fields' => [],
+                    'field_labels'  => [],
+                ];
+                continue;
+            }
+
+            // API lender — check required_fields
+            $required = $apiConfig->required_fields;
+            if (empty($required) || !is_array($required)) {
+                // Also check payload_mapping keys as fallback
+                $mapping = $apiConfig->payload_mapping;
+                if (is_array($mapping)) {
+                    $required = array_keys($mapping);
+                } else {
+                    $required = [];
+                }
+            }
+
+            $missing      = [];
+            $fieldLabels  = [];
+            foreach ($required as $fieldKey) {
+                if (!is_string($fieldKey)) continue;
+                $value = $leadData[$fieldKey] ?? null;
+                if ($value === null || $value === '' || $value === []) {
+                    $missing[] = $fieldKey;
+                }
+                $fieldLabels[$fieldKey] = $allLabels[$fieldKey]
+                    ?? str_replace('_', ' ', ucfirst($fieldKey));
+            }
+
+            $isValid = empty($missing);
+            if ($isValid) {
+                $validIds[] = $lenderId;
+            } else {
+                $invalidIds[] = $lenderId;
+            }
+
+            $results[$lenderId] = [
+                'lender_id'      => $lenderId,
+                'lender_name'    => $lenderName,
+                'is_api_lender'  => true,
+                'valid'          => $isValid,
+                'missing_fields' => $missing,
+                'field_labels'   => $fieldLabels,
+            ];
+        }
+
+        return [
+            'results'            => $results,
+            'valid_lender_ids'   => $validIds,
+            'invalid_lender_ids' => $invalidIds,
+            'email_only_ids'     => $emailIds,
+        ];
+    }
+
+    /**
      * Submit a funding application to one or more lenders.
      *
      * - Records a row in crm_lender_submissions for each lender.
@@ -249,7 +359,8 @@ class LeadLenderService
      * @param  array         $documentIds      IDs from crm_documents to attach
      * @param  string|null   $emailSubject     Custom subject (overrides default)
      * @param  string|null   $emailHtmlOverride Pre-rendered HTML body (overrides blade template)
-     * @return array{submitted: int[], failed: int[], records: array<int, array>}
+     * @param  bool          $skipInvalid       When true, skip lenders that fail pre-validation instead of submitting them
+     * @return array{submitted: int[], failed: int[], skipped: int[], records: array<int, array>, validation_results: array}
      *
      * Routing is automatic per lender:
      *   - lender.api_status = 1  AND  active crm_lender_apis row  →  DispatchLenderApiJob
@@ -266,12 +377,25 @@ class LeadLenderService
         ?string $notes               = null,
         array   $documentIds         = [],
         ?string $emailSubject        = null,
-        ?string $emailHtmlOverride   = null
+        ?string $emailHtmlOverride   = null,
+        bool    $skipInvalid         = false
     ): array {
         $conn      = "mysql_{$clientId}";
         $submitted = [];
         $failed    = [];
+        $skipped   = [];
         $records   = [];
+        $validationResults = [];
+
+        // ── Pre-validation when skip_invalid is enabled ───────────────────────
+        $skipSet = [];
+        if ($skipInvalid) {
+            $preValidation     = $this->preValidateLenders($clientId, $leadId, $lenderIds);
+            $validationResults = $preValidation['results'];
+            foreach ($preValidation['invalid_lender_ids'] as $invalidId) {
+                $skipSet[$invalidId] = true;
+            }
+        }
 
         // ── Resolve attachments ──────────────────────────────────────────────────
         $attachments = [];
@@ -364,6 +488,16 @@ class LeadLenderService
             Log::warning("submitApplication: no email config available for client {$clientId}");
         }
 
+        // ── Resolve merge tags in custom subject / body ────────────────────────
+        $mergeTagSvc = new MergeTagService();
+
+        if ($emailHtmlOverride) {
+            $emailHtmlOverride = $mergeTagSvc->resolve((string) $clientId, $leadId, $emailHtmlOverride);
+        }
+        if ($emailSubject) {
+            $emailSubject = $mergeTagSvc->resolve((string) $clientId, $leadId, $emailSubject);
+        }
+
         // ── Render email body once ───────────────────────────────────────────────
         $emailHtml = $emailHtmlOverride ?? view('emails.lender_application', [
             'businessName' => $businessName,
@@ -381,6 +515,21 @@ class LeadLenderService
         }
 
         foreach ($lenderIds as $lenderId) {
+            // Skip lenders that failed pre-validation
+            if (isset($skipSet[$lenderId])) {
+                $skipped[] = $lenderId;
+                $vr = $validationResults[$lenderId] ?? null;
+                $records[$lenderId] = [
+                    'lender_id'         => $lenderId,
+                    'lender_name'       => $vr['lender_name'] ?? "Lender #{$lenderId}",
+                    'submission_status' => 'skipped',
+                    'submission_type'   => 'api',
+                    'error'             => 'Missing required fields: ' . implode(', ', $vr['missing_fields'] ?? []),
+                    'validation_errors' => $vr['missing_fields'] ?? [],
+                ];
+                continue;
+            }
+
             $lender = DB::connection($conn)->table('crm_lender')->where('id', $lenderId)->first();
             if (!$lender) {
                 $failed[] = $lenderId;
@@ -415,59 +564,72 @@ class LeadLenderService
 
                 $actualType = $apiConfig ? 'api' : 'normal';
 
-                // ── Persist / update submission record ───────────────────────────────
-                if ($existingSub) {
-                    $oldNotes = $existingSub->notes ?? '';
-                    $newNotes = $oldNotes ? "{$autoNote}\n\n{$oldNotes}" : $autoNote;
+                // ── Persist / update submission record + activity log (atomic) ───────
+                $subId = null;
+                $activitySubject = $apiConfig
+                    ? 'Application submitted via API to: ' . $lender->lender_name
+                    : 'Application submitted via email to: ' . $lender->lender_name;
 
-                    DB::connection($conn)
-                        ->table('crm_lender_submissions')
-                        ->where('id', $existingSub->id)
-                        ->update([
-                            'submission_status' => 'submitted',
-                            'submission_type'   => $actualType,
-                            'application_pdf'   => $pdfStoragePath ?? $existingSub->application_pdf,
-                            'submitted_by'      => $userId,
-                            'submitted_at'      => $now,
-                            'notes'             => $newNotes,
-                            'updated_at'        => $now,
+                DB::connection($conn)->transaction(
+                    function () use (
+                        $conn, $leadId, $lenderId, $userId, $lender, $now,
+                        $pdfStoragePath, $existingSub, $autoNote, $notes,
+                        $actualType, $activitySubject, &$subId
+                    ) {
+                        if ($existingSub) {
+                            $oldNotes = $existingSub->notes ?? '';
+                            $newNotes = $oldNotes ? "{$autoNote}\n\n{$oldNotes}" : $autoNote;
+
+                            DB::connection($conn)
+                                ->table('crm_lender_submissions')
+                                ->where('id', $existingSub->id)
+                                ->update([
+                                    'submission_status' => 'submitted',
+                                    'submission_type'   => $actualType,
+                                    'application_pdf'   => $pdfStoragePath ?? $existingSub->application_pdf,
+                                    'submitted_by'      => $userId,
+                                    'submitted_at'      => $now,
+                                    'notes'             => $newNotes,
+                                    'updated_at'        => $now,
+                                ]);
+                            $subId = $existingSub->id;
+                        } else {
+                            $initNotes = $notes ? "{$autoNote}\n\n{$notes}" : $autoNote;
+                            $subId = DB::connection($conn)->table('crm_lender_submissions')->insertGetId([
+                                'lead_id'           => $leadId,
+                                'lender_id'         => $lenderId,
+                                'lender_name'       => $lender->lender_name,
+                                'lender_email'      => $lender->email,
+                                'application_pdf'   => $pdfStoragePath,
+                                'submission_status' => 'submitted',
+                                'submission_type'   => $actualType,
+                                'response_status'   => 'pending',
+                                'notes'             => $initNotes,
+                                'submitted_by'      => $userId,
+                                'submitted_at'      => $now,
+                                'created_at'        => $now,
+                                'updated_at'        => $now,
+                            ]);
+                        }
+
+                        DB::connection($conn)->table('crm_lead_activity')->insert([
+                            'lead_id'       => $leadId,
+                            'user_id'       => $userId,
+                            'activity_type' => 'lender_submitted',
+                            'subject'       => $activitySubject,
+                            'body'          => $autoNote,
+                            'created_at'    => $now,
+                            'updated_at'    => $now,
                         ]);
-                    $subId = $existingSub->id;
-                } else {
-                    $initNotes = $notes ? "{$autoNote}\n\n{$notes}" : $autoNote;
-                    $subId = DB::connection($conn)->table('crm_lender_submissions')->insertGetId([
-                        'lead_id'           => $leadId,
-                        'lender_id'         => $lenderId,
-                        'lender_name'       => $lender->lender_name,
-                        'lender_email'      => $lender->email,
-                        'application_pdf'   => $pdfStoragePath,
-                        'submission_status' => 'submitted',
-                        'submission_type'   => $actualType,
-                        'response_status'   => 'pending',
-                        'notes'             => $initNotes,
-                        'submitted_by'      => $userId,
-                        'submitted_at'      => $now,
-                        'created_at'        => $now,
-                        'updated_at'        => $now,
-                    ]);
-                }
+                    }
+                );
 
-                // ── Dispatch based on route ───────────────────────────────────────────
+                // ── Dispatch based on route (AFTER transaction commits) ────────────
                 if ($apiConfig) {
-                    // API submission
-                    dispatch(new DispatchLenderApiJob($clientId, $leadId, $lenderId, $userId))
+                    // API submission — job handles actual HTTP call + final status update
+                    dispatch(new DispatchLenderApiJob($clientId, $leadId, $lenderId, $userId, $documentIds))
                         ->onConnection('redis')
                         ->onQueue('default');
-
-                    DB::connection($conn)->table('crm_lead_activity')->insert([
-                        'lead_id'       => $leadId,
-                        'user_id'       => $userId,
-                        'activity_type' => 'lender_submitted',
-                        'subject'       => 'Application submitted via API to: ' . $lender->lender_name,
-                        'body'          => $autoNote,
-                        'created_at'    => $now,
-                        'updated_at'    => $now,
-                    ]);
                 } else {
                     // Email submission
                     $emailTargets = array_values(array_filter([
@@ -492,17 +654,15 @@ class LeadLenderService
                             Log::warning("LenderApplicationMail failed for lender {$lenderId} → {$primaryTo}: " . $mailEx->getMessage());
                         }
                     }
-
-                    DB::connection($conn)->table('crm_lead_activity')->insert([
-                        'lead_id'       => $leadId,
-                        'user_id'       => $userId,
-                        'activity_type' => 'lender_submitted',
-                        'subject'       => 'Application submitted via email to: ' . $lender->lender_name,
-                        'body'          => $autoNote,
-                        'created_at'    => $now,
-                        'updated_at'    => $now,
-                    ]);
                 }
+
+                // Broadcast to #Lender system channel
+                SystemChannelService::broadcast(
+                    (int) $clientId,
+                    'lender',
+                    "📤 Application submitted to {$lender->lender_name} for Lead #{$leadId} ({$businessName}) by {$submitterName}",
+                    ['lead_id' => $leadId, 'lender_id' => $lenderId, 'lender_name' => $lender->lender_name, 'event' => 'submission']
+                );
 
                 $submitted[] = $lenderId;
                 $records[$lenderId] = [
@@ -521,7 +681,7 @@ class LeadLenderService
             }
         }
 
-        return compact('submitted', 'failed', 'records');
+        return compact('submitted', 'failed', 'skipped', 'records', 'validationResults');
     }
 
     /**
@@ -590,6 +750,19 @@ class LeadLenderService
             'created_at'    => $now,
             'updated_at'    => $now,
         ]);
+
+        // Broadcast to #Lender system channel
+        $lenderLabel = $row->lender_name ?? "Lender #{$row->lender_id}";
+        $responseMsg = "📩 {$lenderLabel} responded '{$responseStatus}' for Lead #{$leadId}";
+        if ($responseNote) {
+            $responseMsg .= " — {$responseNote}";
+        }
+        SystemChannelService::broadcast(
+            (int) $clientId,
+            'lender',
+            $responseMsg,
+            ['lead_id' => $leadId, 'lender_id' => $row->lender_id, 'lender_name' => $lenderLabel, 'response_status' => $responseStatus, 'event' => 'response']
+        );
 
         // ── Sync linked approval record ────────────────────────────────────────
         $lenderName    = $row->lender_name ?? "Lender #{$row->lender_id}";

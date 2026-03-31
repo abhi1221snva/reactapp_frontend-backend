@@ -2185,8 +2185,10 @@ class LeadController extends Controller
                     $data['office_zip']     = $officeSetting->zipcode         ?? '';
                     $data['office_domain']  = $officeSetting->company_domain  ?? '';
 
-                    // [company_name] — alias for the Company Details company name
-                    $data['company_name'] = $officeSetting->company_name ?? '';
+                    // [company_name] — keep lead's own value if present; fall back to Company Details
+                    if (empty($data['company_name'])) {
+                        $data['company_name'] = $officeSetting->company_name ?? '';
+                    }
 
                     // Override company_name_agent with setting name if agent didn't set it
                     if (empty($data['company_name_agent'])) {
@@ -2460,6 +2462,33 @@ class LeadController extends Controller
     }
 
     /**
+     * POST /crm/lead/{id}/validate-submission
+     *
+     * Pre-validate required fields for each selected lender before submission.
+     * Body: { lender_ids: int[] }
+     */
+    public function validateSubmission(Request $request, $id)
+    {
+        $this->validate($request, [
+            'lender_ids'   => 'required|array|min:1',
+            'lender_ids.*' => 'integer',
+        ]);
+
+        try {
+            $clientId = $request->auth->parent_id;
+            $result   = $this->lenderService->preValidateLenders(
+                $clientId,
+                (int) $id,
+                $request->input('lender_ids')
+            );
+
+            return $this->successResponse('Validation complete', $result);
+        } catch (\Throwable $e) {
+            return $this->failResponse('Validation failed', [$e->getMessage()], $e, 500);
+        }
+    }
+
+    /**
      * POST /crm/lead/{id}/submit-application
      *
      * Body:
@@ -2469,6 +2498,7 @@ class LeadController extends Controller
      *   document_ids:    int[]   (optional) — IDs from crm_documents to attach
      *   email_subject:   string  (optional) — custom subject line
      *   email_html:      string  (optional) — custom HTML body
+     *   skip_invalid:    bool    (optional) — skip lenders that fail pre-validation
      */
     public function submitApplication(Request $request, $id)
     {
@@ -2536,11 +2566,15 @@ class LeadController extends Controller
                 $request->input('document_ids', []),
                 $request->input('email_subject'),
                 $request->input('email_html'),
+                (bool) $request->input('skip_invalid', false),
             );
 
             $message = count($result['submitted']) . ' application(s) submitted';
             if (!empty($result['failed'])) {
                 $message .= ', ' . count($result['failed']) . ' failed';
+            }
+            if (!empty($result['skipped'])) {
+                $message .= ', ' . count($result['skipped']) . ' skipped (validation)';
             }
 
             return $this->successResponse($message, $result);

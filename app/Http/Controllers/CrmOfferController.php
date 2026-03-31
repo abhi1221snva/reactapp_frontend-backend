@@ -2,6 +2,7 @@
 namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Model\Client\CrmOffer;
+use App\Services\SystemChannelService;
 
 class CrmOfferController extends Controller
 {
@@ -31,6 +32,19 @@ class CrmOfferController extends Controller
             $data['daily_payment'] = round($data['total_payback'] / $data['term_days'], 2);
         }
         $offer = CrmOffer::on($conn)->create($data);
+
+        // Broadcast to #Lender system channel
+        $lenderName = $data['lender_name'] ?? 'Unknown Lender';
+        $amount = number_format((float) $data['offered_amount'], 2);
+        $factorRate = $data['factor_rate'] ?? '?';
+        $termDays = $data['term_days'] ?? '?';
+        SystemChannelService::broadcast(
+            (int) $request->auth->parent_id,
+            'lender',
+            "💰 New offer from {$lenderName}: \${$amount} at {$factorRate}x for {$termDays} days (Lead #{$id})",
+            ['lead_id' => (int) $id, 'lender_id' => $data['lender_id'] ?? null, 'lender_name' => $lenderName, 'amount' => $data['offered_amount'], 'event' => 'offer']
+        );
+
         return $this->successResponse('Offer created.', ['offer' => $offer], 201);
     }
     public function update(Request $request, $id, $oid)
@@ -55,6 +69,17 @@ class CrmOfferController extends Controller
         $offer->update(['status' => 'accepted']);
         // decline all other offers for this lead
         CrmOffer::on($conn)->where('lead_id', (int)$id)->where('id', '!=', (int)$oid)->whereIn('status', ['pending','received'])->update(['status' => 'declined']);
+
+        // Broadcast to #Lender system channel
+        $lenderName = $offer->lender_name ?? 'Unknown Lender';
+        $amount = number_format((float) ($offer->offered_amount ?? 0), 2);
+        SystemChannelService::broadcast(
+            (int) $request->auth->parent_id,
+            'lender',
+            "✅ Offer from {$lenderName} accepted for Lead #{$id} — \${$amount}",
+            ['lead_id' => (int) $id, 'lender_id' => $offer->lender_id ?? null, 'lender_name' => $lenderName, 'amount' => $offer->offered_amount, 'event' => 'offer_accepted']
+        );
+
         return $this->successResponse('Offer accepted.', ['offer' => $offer->fresh()]);
     }
 }

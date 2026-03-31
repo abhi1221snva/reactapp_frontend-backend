@@ -615,24 +615,44 @@ public function getListwithoutCampaign($request)
     /* ---------------- All Lists ---------------- */
     else {
 
-        $sql = "SELECT
-                    l.id,
-                    l.title AS l_title,
-                    l.is_active,
-                    l.is_dialing,
-                    l.lead_count,
-                    l.updated_at,
-                    (SELECT cl2.campaign_id FROM campaign_list cl2 WHERE cl2.list_id = l.id AND cl2.is_deleted = 0 LIMIT 1) AS campaign_id,
-                    (SELECT c2.title FROM campaign c2 INNER JOIN campaign_list cl3 ON c2.id = cl3.campaign_id WHERE cl3.list_id = l.id AND cl3.is_deleted = 0 LIMIT 1) AS campaign
-                FROM list l
-                WHERE EXISTS (
-                    SELECT 1
-                    FROM campaign_list cl
-                    WHERE cl.list_id = l.id
-                      AND cl.is_deleted = 0
-                )";
+        /* If campaign_id is provided, return only lists attached to that campaign */
+        $filterByCampaign = $request->has('campaign_id') && is_numeric($request->input('campaign_id'));
 
-        $params = [];
+        if ($filterByCampaign) {
+            $sql = "SELECT
+                        l.id,
+                        l.title AS l_title,
+                        l.is_active,
+                        l.is_dialing,
+                        l.lead_count,
+                        l.updated_at,
+                        cl.campaign_id,
+                        (SELECT c2.title FROM campaign c2 WHERE c2.id = cl.campaign_id LIMIT 1) AS campaign
+                    FROM list l
+                    INNER JOIN campaign_list cl ON cl.list_id = l.id AND cl.is_deleted = 0 AND cl.status = '1' AND cl.campaign_id = :campaign_id
+                    WHERE 1=1";
+
+            $params = ['campaign_id' => $request->input('campaign_id')];
+        } else {
+            $sql = "SELECT
+                        l.id,
+                        l.title AS l_title,
+                        l.is_active,
+                        l.is_dialing,
+                        l.lead_count,
+                        l.updated_at,
+                        (SELECT cl2.campaign_id FROM campaign_list cl2 WHERE cl2.list_id = l.id AND cl2.is_deleted = 0 LIMIT 1) AS campaign_id,
+                        (SELECT c2.title FROM campaign c2 INNER JOIN campaign_list cl3 ON c2.id = cl3.campaign_id WHERE cl3.list_id = l.id AND cl3.is_deleted = 0 LIMIT 1) AS campaign
+                    FROM list l
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM campaign_list cl
+                        WHERE cl.list_id = l.id
+                          AND cl.is_deleted = 0
+                    )";
+
+            $params = [];
+        }
 
         if ($titleSearch) {
             $sql .= " AND l.title LIKE :title";
