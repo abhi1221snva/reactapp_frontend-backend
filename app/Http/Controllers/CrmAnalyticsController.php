@@ -334,7 +334,22 @@ class CrmAnalyticsController extends Controller
             $cacheKey = "analytics_{$clientId}_lender_perf_{$start}_{$end}";
 
             $data = Cache::remember($cacheKey, 300, function () use ($clientId, $start, $end) {
-                $submissions = DB::connection("mysql_$clientId")
+                $db = DB::connection("mysql_$clientId");
+
+                // Build a status-id → title map
+                $statusMap = [];
+                try {
+                    $statuses = $db->table('crm_lender_status')
+                        ->select('id', 'title')
+                        ->get();
+                    foreach ($statuses as $s) {
+                        $statusMap[(string) $s->id] = $s->title;
+                    }
+                } catch (\Throwable $e) {
+                    // table may not exist yet
+                }
+
+                $submissions = $db
                     ->table('crm_send_lead_to_lender_record as r')
                     ->join('crm_lender as l', 'l.id', '=', DB::raw('CAST(r.lender_id AS UNSIGNED)'))
                     ->whereBetween(DB::raw('DATE(r.created_at)'), [$start, $end])
@@ -347,6 +362,25 @@ class CrmAnalyticsController extends Controller
                     ->groupBy('r.lender_id', 'l.lender_name', 'r.lender_status_id')
                     ->get();
 
+                // Count funded deals per lender in the same period
+                $fundedCounts = [];
+                try {
+                    $funded = $db->table('crm_funded_deals')
+                        ->whereIn('status', ['funded', 'in_repayment', 'paid_off', 'renewed'])
+                        ->whereBetween(DB::raw('DATE(COALESCE(funding_date, created_at))'), [$start, $end])
+                        ->select('lender_id', DB::raw('COUNT(*) as cnt'), DB::raw('SUM(funded_amount) as total_amount'))
+                        ->groupBy('lender_id')
+                        ->get();
+                    foreach ($funded as $f) {
+                        $fundedCounts[(string) $f->lender_id] = [
+                            'count'  => (int) $f->cnt,
+                            'amount' => (float) $f->total_amount,
+                        ];
+                    }
+                } catch (\Throwable $e) {
+                    // table may not exist yet
+                }
+
                 $grouped = [];
                 foreach ($submissions as $row) {
                     if (!isset($grouped[$row->lender_id])) {
@@ -358,8 +392,39 @@ class CrmAnalyticsController extends Controller
                         ];
                     }
                     $grouped[$row->lender_id]['total_submissions'] += $row->total_submissions;
-                    $grouped[$row->lender_id]['by_status'][$row->lender_status_id ?? 'pending'] = $row->total_submissions;
+
+                    $statusKey = $row->lender_status_id ?? 'pending';
+                    $statusTitle = $statusMap[$statusKey] ?? $statusKey;
+                    $grouped[$row->lender_id]['by_status'][$statusTitle] = ($grouped[$row->lender_id]['by_status'][$statusTitle] ?? 0) + $row->total_submissions;
                 }
+
+                // Compute approval / funding rates
+                foreach ($grouped as &$lender) {
+                    $total = $lender['total_submissions'];
+                    $approved = 0;
+                    $declined = 0;
+                    foreach ($lender['by_status'] as $title => $count) {
+                        $lower = strtolower($title);
+                        if (str_contains($lower, 'approv') || str_contains($lower, 'accept')) {
+                            $approved += $count;
+                        }
+                        if (str_contains($lower, 'declin') || str_contains($lower, 'reject') || str_contains($lower, 'denied')) {
+                            $declined += $count;
+                        }
+                    }
+
+                    $fc = $fundedCounts[(string) $lender['lender_id']] ?? ['count' => 0, 'amount' => 0];
+                    $lender['total_approved']  = $approved;
+                    $lender['total_declined']  = $declined;
+                    $lender['total_funded']    = $fc['count'];
+                    $lender['funded_amount']   = $fc['amount'];
+                    $lender['approval_rate']   = $total > 0 ? round($approved / $total * 100, 1) : 0;
+                    $lender['funding_rate']    = $total > 0 ? round($fc['count'] / $total * 100, 1) : 0;
+                }
+                unset($lender);
+
+                // Sort by total_submissions desc
+                usort($grouped, fn($a, $b) => $b['total_submissions'] <=> $a['total_submissions']);
 
                 return array_values($grouped);
             });

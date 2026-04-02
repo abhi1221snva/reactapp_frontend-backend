@@ -757,23 +757,23 @@ class OnDeckService
     {
         $conn   = "mysql_{$clientId}";
         $config = DB::connection($conn)
-            ->table('crm_lender_apis')
+            ->table('crm_lender')
             ->where(function ($q) {
-                $q->whereRaw("LOWER(type) = 'ondeck'")
+                $q->whereRaw("LOWER(lender_api_type) = 'ondeck'")
                   ->orWhereRaw("LOWER(api_name) LIKE '%ondeck%'");
             })
-            ->where('status', 1)
+            ->where('api_status', '1')
             ->orderByDesc('id')
             ->first();
 
         if ($config) {
-            $baseUrl = rtrim($config->base_url ?: $config->url ?: self::DEFAULT_BASE, '/');
+            $baseUrl = rtrim($config->base_url ?: $config->api_url ?: self::DEFAULT_BASE, '/');
             $creds   = is_string($config->auth_credentials)
                 ? (json_decode($config->auth_credentials, true) ?? [])
                 : (array)($config->auth_credentials ?? []);
 
-            $username = $creds['username'] ?? $config->username ?? '';
-            $password = $creds['password'] ?? $config->password ?? '';
+            $username = $creds['username'] ?? $config->api_username ?? '';
+            $password = $creds['password'] ?? $config->api_password ?? '';
 
             $extraHeaders = [];
             if (!empty($config->default_headers)) {

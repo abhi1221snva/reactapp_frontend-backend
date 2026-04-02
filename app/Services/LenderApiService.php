@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Model\Client\CrmLenderAPis;
+use App\Model\Client\Lender;
 use App\Services\ErrorParserService;
 use App\Services\FixSuggestionService;
 use Carbon\Carbon;
@@ -10,13 +10,14 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Storage;
 
 /**
  * LenderApiService
  *
  * Dynamically executes outbound lender API calls using configuration stored
- * in crm_lender_apis. All behaviour is config-driven — no lender-specific
+ * in the lenders table. All behaviour is config-driven — no lender-specific
  * hardcoding lives here.
  *
  * Features:
@@ -38,8 +39,8 @@ class LenderApiService
     private const DEFAULT_TIMEOUT_SECONDS    = 60;
     private const DEFAULT_RETRY_ATTEMPTS     = 3;
 
-    // ── OAuth2 token cache (per process / job execution) ───────────────────────
-    private static array $tokenCache = [];
+    // ── OAuth2 token cache key prefix (shared across workers via Redis) ────
+    private const OAUTH2_CACHE_PREFIX = 'oauth2_token:';
 
     // ── Public entry point ─────────────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ class LenderApiService
      * Execute a configured lender API call.
      *
      * @param  string           $clientId
-     * @param  CrmLenderAPis    $config
+     * @param  Lender    $config
      * @param  array            $leadData     Flat EAV map: field_key => value
      * @param  int              $leadId
      * @param  int              $lenderId
@@ -70,12 +71,13 @@ class LenderApiService
      */
     public function dispatch(
         string        $clientId,
-        CrmLenderAPis $config,
+        Lender $config,
         array         $leadData,
         int           $leadId,
         int           $lenderId,
         int           $userId      = 0,
-        array         $documentIds = []
+        array         $documentIds = [],
+        int           $attempt     = 1
     ): array {
         // ── 1. Pre-flight validation ───────────────────────────────────────────
         $validationErrors = $this->validateRequiredFields($config, $leadData);
@@ -120,177 +122,182 @@ class LenderApiService
         $headers = $this->resolveHeaders($config);
         $payload = $this->buildPayload($config, $leadData);
 
+        // Inject config-level fields that some lenders require (not from lead data)
+        if (!empty($config->sales_rep_email)) {
+            $payload['salesRepEmailAddress'] = $config->sales_rep_email;
+        }
+
         $maxAttempts = max(1, (int) ($config->retry_attempts ?? self::DEFAULT_RETRY_ATTEMPTS));
         $timeoutSecs = max(1, (int) ($config->timeout_seconds ?? self::DEFAULT_TIMEOUT_SECONDS));
 
         $lastResult = null;
-        $attempt    = 0;
+        $startMs    = (int) round(microtime(true) * 1000);
 
-        // ── 5. Retry loop ──────────────────────────────────────────────────────
-        while ($attempt < $maxAttempts) {
-            $attempt++;
-            $startMs = (int) round(microtime(true) * 1000);
+        // ── 5. Single HTTP attempt (retry orchestrated by job dispatcher) ────
+        try {
+            Log::info("LenderApiService: attempt {$attempt}/{$maxAttempts} — {$method} {$url}", [
+                'lead_id'   => $leadId,
+                'lender_id' => $lenderId,
+            ]);
+        } catch (\Throwable) { /* log failure must never kill the job */ }
 
-            try {
-                Log::info("LenderApiService: attempt {$attempt}/{$maxAttempts} — {$method} {$url}", [
-                    'lead_id'   => $leadId,
-                    'lender_id' => $lenderId,
-                ]);
-            } catch (\Throwable) { /* log failure must never kill the job */ }
+        try {
+            $client = Http::withHeaders($headers)->timeout($timeoutSecs);
+            $client = $this->applyAuth($client, $config, $clientId);
 
-            try {
-                $client = Http::withHeaders($headers)->timeout($timeoutSecs);
-                $client = $this->applyAuth($client, $config, $clientId);
+            $response    = $client->{strtolower($method)}($url, $payload);
+            $duration    = (int) round(microtime(true) * 1000) - $startMs;
+            $code        = $response->status();
+            $body        = $response->body();
+            $isSuccess   = $response->successful();
+            $status      = $isSuccess ? 'success' : 'http_error';
+            $parsed      = $this->parseResponse($config, $body);
 
-                $response    = $client->{strtolower($method)}($url, $payload);
-                $duration    = (int) round(microtime(true) * 1000) - $startMs;
-                $code        = $response->status();
-                $body        = $response->body();
-                $isSuccess   = $response->successful();
-                $status      = $isSuccess ? 'success' : 'http_error';
-                $parsed      = $this->parseResponse($config, $body);
+            try { Log::info("LenderApiService: attempt {$attempt} → HTTP {$code} ({$duration}ms)", [
+                'lead_id'   => $leadId,
+                'lender_id' => $lenderId,
+                'success'   => $isSuccess,
+            ]); } catch (\Throwable) {}
 
-                try { Log::info("LenderApiService: attempt {$attempt} → HTTP {$code} ({$duration}ms)", [
-                    'lead_id'   => $leadId,
-                    'lender_id' => $lenderId,
-                    'success'   => $isSuccess,
-                ]); } catch (\Throwable) {}
-
-                $logId = $this->writeLog($clientId, [
-                    'crm_lender_api_id' => $config->id,
-                    'lead_id'           => $leadId,
-                    'lender_id'         => $lenderId,
-                    'user_id'           => $userId,
-                    'request_url'       => $url,
-                    'request_method'    => strtoupper($method),
-                    'request_headers'   => $this->safeHeaders($headers),
-                    'request_payload'   => json_encode($payload, JSON_UNESCAPED_UNICODE),
-                    'response_code'     => $code,
-                    'response_body'     => $body,
-                    'status'            => $status,
-                    'error_message'     => $isSuccess ? null : "HTTP {$code}",
-                    'duration_ms'       => $duration,
-                    'attempt'           => $attempt,
-                    'created_at'        => Carbon::now(),
-                ]);
-
-                if (!$isSuccess && $logId) {
-                    $this->enrichLog($clientId, $logId, $code, $body, $leadData);
-                }
-
-                $lastResult = [
-                    'success'       => $isSuccess,
-                    'response_code' => $code,
-                    'response_body' => $body,
-                    'parsed'        => $parsed,
-                    'error'         => $isSuccess ? null : "HTTP {$code}: " . substr($body, 0, 300),
-                    'log_id'        => $logId,
-                    'duration_ms'   => $duration,
-                    'attempts'      => $attempt,
-                ];
-
-                if ($isSuccess) {
-                    break; // Success — exit retry loop
-                }
-
-                // 4xx = client error; retrying won't help
-                if ($code >= 400 && $code < 500) {
-                    try { Log::warning("LenderApiService: 4xx error — not retrying", [
-                        'lead_id' => $leadId, 'code' => $code,
-                    ]); } catch (\Throwable) {}
-                    break;
-                }
-
-                // 5xx = server error; will retry with backoff
-                if ($attempt < $maxAttempts) {
-                    $backoff = min(2 ** ($attempt - 1), 16);
-                    try { Log::info("LenderApiService: 5xx — retrying in {$backoff}s (attempt {$attempt}/{$maxAttempts})"); } catch (\Throwable) {}
-                    sleep($backoff);
-                }
-
-            } catch (\Illuminate\Http\Client\ConnectionException $e) {
-                $duration = (int) round(microtime(true) * 1000) - $startMs;
-                Log::warning("LenderApiService: timeout on attempt {$attempt}", [
-                    'lead_id' => $leadId, 'url' => $url, 'error' => $e->getMessage(),
-                ]);
-                $logId = $this->writeLog($clientId, [
-                    'crm_lender_api_id' => $config->id,
-                    'lead_id'           => $leadId,
-                    'lender_id'         => $lenderId,
-                    'user_id'           => $userId,
-                    'request_url'       => $url,
-                    'request_method'    => strtoupper($method),
-                    'request_headers'   => $this->safeHeaders($headers),
-                    'request_payload'   => json_encode($payload, JSON_UNESCAPED_UNICODE),
-                    'response_code'     => null,
-                    'response_body'     => null,
-                    'status'            => 'timeout',
-                    'error_message'     => $e->getMessage(),
-                    'duration_ms'       => $duration,
-                    'attempt'           => $attempt,
-                    'created_at'        => Carbon::now(),
-                ]);
-                $lastResult = [
-                    'success'       => false,
-                    'response_code' => null,
-                    'response_body' => null,
-                    'parsed'        => [],
-                    'error'         => 'Connection timeout: ' . $e->getMessage(),
-                    'log_id'        => $logId,
-                    'duration_ms'   => $duration,
-                    'attempts'      => $attempt,
-                ];
-                break; // Never retry a timeout
-
-            } catch (\Throwable $e) {
-                $duration = (int) round(microtime(true) * 1000) - $startMs;
-                $logId = $this->writeLog($clientId, [
-                    'crm_lender_api_id' => $config->id,
-                    'lead_id'           => $leadId,
-                    'lender_id'         => $lenderId,
-                    'user_id'           => $userId,
-                    'request_url'       => $url,
-                    'request_method'    => strtoupper($method),
-                    'request_headers'   => $this->safeHeaders($headers),
-                    'request_payload'   => json_encode($payload, JSON_UNESCAPED_UNICODE),
-                    'response_code'     => null,
-                    'response_body'     => null,
-                    'status'            => 'error',
-                    'error_message'     => $e->getMessage(),
-                    'duration_ms'       => $duration,
-                    'attempt'           => $attempt,
-                    'created_at'        => Carbon::now(),
-                ]);
-                $lastResult = [
-                    'success'       => false,
-                    'response_code' => null,
-                    'response_body' => null,
-                    'parsed'        => [],
-                    'error'         => $e->getMessage(),
-                    'log_id'        => $logId,
-                    'duration_ms'   => $duration,
-                    'attempts'      => $attempt,
-                ];
-                break; // Unknown errors: don't retry
+            // ── Build enrichment data BEFORE insert (single-shot) ────────
+            $errorJson      = null;
+            $fixSuggestions  = null;
+            $isFixable       = false;
+            if (!$isSuccess) {
+                try {
+                    $parser       = new ErrorParserService();
+                    $suggester    = new FixSuggestionService();
+                    $parsedErrors = $parser->parse($code, $body);
+                    $suggestions  = $suggester->suggest($parsedErrors, $leadData);
+                    $isFixable    = !empty(array_filter($suggestions, fn ($e) => !in_array($e['fix_type'] ?? '', ['unknown'], true)));
+                    $errorJson    = json_encode($parsedErrors, JSON_UNESCAPED_UNICODE);
+                    $fixSuggestions = json_encode($suggestions, JSON_UNESCAPED_UNICODE);
+                } catch (\Throwable) {}
             }
+
+            $logId = $this->writeLog($clientId, [
+                'lender_id'         => $lenderId,
+                'lead_id'           => $leadId,
+                'user_id'           => $userId,
+                'request_url'       => $url,
+                'request_method'    => strtoupper($method),
+                'request_headers'   => $this->safeHeaders($headers),
+                'request_payload'   => json_encode($payload, JSON_UNESCAPED_UNICODE),
+                'response_code'     => $code,
+                'response_body'     => $body,
+                'status'            => $status,
+                'error_message'     => $isSuccess ? null : "HTTP {$code}",
+                'error_json'        => $errorJson,
+                'fix_suggestions'   => $fixSuggestions,
+                'is_fixable'        => $isFixable,
+                'duration_ms'       => $duration,
+                'attempt'           => $attempt,
+                'created_at'        => Carbon::now(),
+            ]);
+
+            $lastResult = [
+                'success'       => $isSuccess,
+                'response_code' => $code,
+                'response_body' => $body,
+                'parsed'        => $parsed,
+                'error'         => $isSuccess ? null : "HTTP {$code}: " . substr($body, 0, 300),
+                'log_id'        => $logId,
+                'duration_ms'   => $duration,
+                'attempts'      => $attempt,
+            ];
+
+            if (!$isSuccess && $code >= 400 && $code < 500) {
+                // 4xx = client error; retrying won't help
+                try { Log::warning("LenderApiService: 4xx error — not retrying", [
+                    'lead_id' => $leadId, 'code' => $code,
+                ]); } catch (\Throwable) {}
+            } elseif (!$isSuccess && $code >= 500 && $attempt < $maxAttempts) {
+                // 5xx = server error; signal caller to retry via delayed job dispatch
+                $backoff = min(2 ** ($attempt - 1), 16);
+                $lastResult['should_retry']        = true;
+                $lastResult['retry_attempt']       = $attempt + 1;
+                $lastResult['retry_delay_seconds'] = $backoff;
+                try { Log::info("LenderApiService: 5xx — signalling retry in {$backoff}s (attempt {$attempt}/{$maxAttempts})"); } catch (\Throwable) {}
+            }
+
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            $duration = (int) round(microtime(true) * 1000) - $startMs;
+            Log::warning("LenderApiService: timeout on attempt {$attempt}", [
+                'lead_id' => $leadId, 'url' => $url, 'error' => $e->getMessage(),
+            ]);
+            $logId = $this->writeLog($clientId, [
+                'lender_id'         => $lenderId,
+                'lead_id'           => $leadId,
+                'user_id'           => $userId,
+                'request_url'       => $url,
+                'request_method'    => strtoupper($method),
+                'request_headers'   => $this->safeHeaders($headers),
+                'request_payload'   => json_encode($payload, JSON_UNESCAPED_UNICODE),
+                'response_code'     => null,
+                'response_body'     => null,
+                'status'            => 'timeout',
+                'error_message'     => $e->getMessage(),
+                'duration_ms'       => $duration,
+                'attempt'           => $attempt,
+                'created_at'        => Carbon::now(),
+            ]);
+            $lastResult = [
+                'success'       => false,
+                'response_code' => null,
+                'response_body' => null,
+                'parsed'        => [],
+                'error'         => 'Connection timeout: ' . $e->getMessage(),
+                'log_id'        => $logId,
+                'duration_ms'   => $duration,
+                'attempts'      => $attempt,
+            ];
+
+        } catch (\Throwable $e) {
+            $duration = (int) round(microtime(true) * 1000) - $startMs;
+            $logId = $this->writeLog($clientId, [
+                'lender_id'         => $lenderId,
+                'lead_id'           => $leadId,
+                'user_id'           => $userId,
+                'request_url'       => $url,
+                'request_method'    => strtoupper($method),
+                'request_headers'   => $this->safeHeaders($headers),
+                'request_payload'   => json_encode($payload, JSON_UNESCAPED_UNICODE),
+                'response_code'     => null,
+                'response_body'     => null,
+                'status'            => 'error',
+                'error_message'     => $e->getMessage(),
+                'duration_ms'       => $duration,
+                'attempt'           => $attempt,
+                'created_at'        => Carbon::now(),
+            ]);
+            $lastResult = [
+                'success'       => false,
+                'response_code' => null,
+                'response_body' => null,
+                'parsed'        => [],
+                'error'         => $e->getMessage(),
+                'log_id'        => $logId,
+                'duration_ms'   => $duration,
+                'attempts'      => $attempt,
+            ];
         }
 
-        // Final fallback if somehow loop exited with no result
+        // Final fallback
         if ($lastResult === null) {
             $lastResult = [
                 'success'       => false,
                 'response_code' => null,
                 'response_body' => null,
                 'parsed'        => [],
-                'error'         => 'No response received after ' . $attempt . ' attempt(s)',
+                'error'         => 'No response received on attempt ' . $attempt,
                 'log_id'        => null,
                 'duration_ms'   => 0,
                 'attempts'      => $attempt,
             ];
         }
 
-        if (!$lastResult['success'] && $attempt >= $maxAttempts) {
-            try { Log::warning("LenderApiService: all {$attempt} attempts failed", ['lead_id' => $leadId, 'lender_id' => $lenderId, 'last_error' => $lastResult['error']]); } catch (\Throwable) {}
+        if (!$lastResult['success'] && $attempt >= $maxAttempts && empty($lastResult['should_retry'])) {
+            try { Log::warning("LenderApiService: all {$maxAttempts} attempts exhausted", ['lead_id' => $leadId, 'lender_id' => $lenderId, 'last_error' => $lastResult['error']]); } catch (\Throwable) {}
         }
 
         // ── 6. Post-success: persist ID + upload documents ─────────────────────
@@ -322,22 +329,18 @@ class LenderApiService
 
     /**
      * Resolve URL and HTTP method.
-     * Uses PUT/PATCH to resubmit_endpoint_path when an existing application ID is found.
-     * Falls back to appending the ID to the base endpoint when resubmit_endpoint_path is not configured.
+     * Uses PUT/PATCH to resubmit_endpoint_path when an existing application ID is found
+     * AND the lender has explicit resubmit config. Without explicit resubmit config,
+     * always uses the original POST endpoint (many lenders don't support PUT updates).
      */
-    private function resolveEndpoint(CrmLenderAPis $config, ?string $existingId): array
+    private function resolveEndpoint(Lender $config, ?string $existingId): array
     {
-        if ($existingId) {
-            if (!empty($config->resubmit_endpoint_path)) {
-                $path   = str_replace('{id}', $existingId, $config->resubmit_endpoint_path);
-                $url    = rtrim($config->base_url, '/') . '/' . ltrim($path, '/');
-                $method = strtoupper($config->resubmit_method ?: 'PUT');
-            } else {
-                // Fallback: append ID to original endpoint
-                $url    = rtrim($config->fullUrl(), '/') . '/' . $existingId;
-                $method = 'PUT';
-            }
+        if ($existingId && !empty($config->resubmit_endpoint_path)) {
+            $path   = str_replace('{id}', $existingId, $config->resubmit_endpoint_path);
+            $url    = rtrim($config->base_url, '/') . '/' . ltrim($path, '/');
+            $method = strtoupper($config->resubmit_method ?: 'PUT');
         } else {
+            // No resubmit config → always use original endpoint + method (safe default)
             $url    = $config->fullUrl();
             $method = strtoupper($config->request_method ?: 'POST');
         }
@@ -377,7 +380,6 @@ class LenderApiService
                 ->table('crm_lender_api_logs')
                 ->where('lead_id',           $leadId)
                 ->where('lender_id',         $lenderId)
-                ->where('crm_lender_api_id', $apiConfigId)
                 ->where('status',            'success')
                 ->where('created_at',        '>=', $since)
                 ->orderByDesc('id')
@@ -409,7 +411,7 @@ class LenderApiService
      * Validate that all required_fields in the config are present and non-empty in leadData.
      * Returns an array of missing field keys (empty = all good).
      */
-    private function validateRequiredFields(CrmLenderAPis $config, array $leadData): array
+    private function validateRequiredFields(Lender $config, array $leadData): array
     {
         $required = $config->required_fields;
         if (empty($required) || !is_array($required)) {
@@ -456,7 +458,7 @@ class LenderApiService
         string        $clientId,
         int           $leadId,
         int           $lenderId,
-        CrmLenderAPis $config,
+        Lender $config,
         array         $parsed,
         string        $rawBody
     ): ?string {
@@ -538,7 +540,7 @@ class LenderApiService
      */
     public function uploadDocuments(
         string        $clientId,
-        CrmLenderAPis $config,
+        Lender $config,
         array         $documentIds,
         string        $applicationId,
         int           $leadId,
@@ -588,9 +590,8 @@ class LenderApiService
                 ]);
                 $failed[] = ['id' => $doc->id, 'file' => $doc->file_name, 'reason' => $reason];
                 $this->writeLog($clientId, [
-                    'crm_lender_api_id' => $config->id,
-                    'lead_id'           => $leadId,
                     'lender_id'         => $lenderId,
+                    'lead_id'           => $leadId,
                     'user_id'           => $userId,
                     'request_url'       => $uploadUrl,
                     'request_method'    => 'UPLOAD',
@@ -607,80 +608,110 @@ class LenderApiService
                 continue;
             }
 
-            // ── Upload ────────────────────────────────────────────────────────
-            $startMs = (int) round(microtime(true) * 1000);
-            try {
-                $client = Http::withHeaders($headers)->timeout(self::UPLOAD_TIMEOUT_SECONDS);
-                $client = $this->applyAuth($client, $config, $clientId);
+            // ── Upload (with 1 retry for HTTP/timeout errors) ─────────────
+            $docUploaded = false;
+            $maxUploadAttempts = 2;
 
-                $response = $client
-                    ->attach($fieldName, file_get_contents($absPath), $doc->file_name)
-                    ->{$method}($uploadUrl, ['description' => $doc->document_type ?? '']);
+            for ($uploadAttempt = 1; $uploadAttempt <= $maxUploadAttempts; $uploadAttempt++) {
+                $startMs = (int) round(microtime(true) * 1000);
+                try {
+                    $client = Http::withHeaders($headers)->timeout(self::UPLOAD_TIMEOUT_SECONDS);
+                    $client = $this->applyAuth($client, $config, $clientId);
 
-                $duration = (int) round(microtime(true) * 1000) - $startMs;
-                $isOk     = $response->successful();
+                    $response = $client
+                        ->attach($fieldName, file_get_contents($absPath), $doc->file_name)
+                        ->{$method}($uploadUrl, ['description' => $doc->document_type ?? '']);
 
-                $this->writeLog($clientId, [
-                    'crm_lender_api_id' => $config->id,
-                    'lead_id'           => $leadId,
-                    'lender_id'         => $lenderId,
-                    'user_id'           => $userId,
-                    'request_url'       => $uploadUrl,
-                    'request_method'    => 'UPLOAD',
-                    'request_headers'   => $this->safeHeaders($headers),
-                    'request_payload'   => json_encode(['doc_id' => $doc->id, 'file' => $doc->file_name]),
-                    'response_code'     => $response->status(),
-                    'response_body'     => substr($response->body(), 0, 2000),
-                    'status'            => $isOk ? 'success' : 'http_error',
-                    'error_message'     => $isOk ? null : "HTTP {$response->status()}",
-                    'duration_ms'       => $duration,
-                    'attempt'           => 1,
-                    'created_at'        => Carbon::now(),
-                ]);
+                    $duration = (int) round(microtime(true) * 1000) - $startMs;
+                    $isOk     = $response->successful();
 
-                if ($isOk) {
-                    $uploaded[] = $doc->id;
-                    Log::info("LenderApiService: document uploaded", [
-                        'doc_id' => $doc->id, 'lead_id' => $leadId,
+                    $this->writeLog($clientId, [
+                        'lender_id'         => $lenderId,
+                        'lead_id'           => $leadId,
+                        'user_id'           => $userId,
+                        'request_url'       => $uploadUrl,
+                        'request_method'    => 'UPLOAD',
+                        'request_headers'   => $this->safeHeaders($headers),
+                        'request_payload'   => json_encode(['doc_id' => $doc->id, 'file' => $doc->file_name]),
+                        'response_code'     => $response->status(),
+                        'response_body'     => substr($response->body(), 0, 2000),
+                        'status'            => $isOk ? 'success' : 'http_error',
+                        'error_message'     => $isOk ? null : "HTTP {$response->status()}",
+                        'duration_ms'       => $duration,
+                        'attempt'           => $uploadAttempt,
+                        'created_at'        => Carbon::now(),
                     ]);
-                } else {
+
+                    if ($isOk) {
+                        $docUploaded = true;
+                        Log::info("LenderApiService: document uploaded", [
+                            'doc_id' => $doc->id, 'lead_id' => $leadId, 'attempt' => $uploadAttempt,
+                        ]);
+                        break;
+                    }
+
+                    // HTTP error — retry once
+                    if ($uploadAttempt < $maxUploadAttempts) {
+                        Log::info("LenderApiService: document upload HTTP error, retrying", [
+                            'doc_id' => $doc->id, 'code' => $response->status(), 'attempt' => $uploadAttempt,
+                        ]);
+                        usleep(2_000_000); // 2s before retry
+                        continue;
+                    }
+
                     $reason = "HTTP {$response->status()}: " . substr($response->body(), 0, 150);
-                    Log::warning("LenderApiService: document upload failed", [
+                    Log::warning("LenderApiService: document upload failed after {$uploadAttempt} attempts", [
                         'doc_id' => $doc->id, 'reason' => $reason,
                     ]);
                     $failed[] = ['id' => $doc->id, 'file' => $doc->file_name, 'reason' => $reason];
-                }
 
-            } catch (\Illuminate\Http\Client\ConnectionException $e) {
-                $duration = (int) round(microtime(true) * 1000) - $startMs;
-                $reason   = 'upload_timeout: ' . $e->getMessage();
-                Log::warning("LenderApiService: document upload timed out", [
-                    'doc_id' => $doc->id, 'lead_id' => $leadId,
-                ]);
-                $failed[] = ['id' => $doc->id, 'file' => $doc->file_name, 'reason' => $reason];
-                $this->writeLog($clientId, [
-                    'crm_lender_api_id' => $config->id,
-                    'lead_id'           => $leadId,
-                    'lender_id'         => $lenderId,
-                    'user_id'           => $userId,
-                    'request_url'       => $uploadUrl,
-                    'request_method'    => 'UPLOAD',
-                    'request_headers'   => $this->safeHeaders($headers),
-                    'request_payload'   => json_encode(['doc_id' => $doc->id]),
-                    'response_code'     => null,
-                    'response_body'     => null,
-                    'status'            => 'timeout',
-                    'error_message'     => $e->getMessage(),
-                    'duration_ms'       => $duration,
-                    'attempt'           => 1,
-                    'created_at'        => Carbon::now(),
-                ]);
-            } catch (\Throwable $e) {
-                $reason = $e->getMessage();
-                Log::warning("LenderApiService: document upload exception", [
-                    'doc_id' => $doc->id, 'error' => $reason,
-                ]);
-                $failed[] = ['id' => $doc->id, 'file' => $doc->file_name, 'reason' => $reason];
+                } catch (\Illuminate\Http\Client\ConnectionException $e) {
+                    $duration = (int) round(microtime(true) * 1000) - $startMs;
+                    $this->writeLog($clientId, [
+                        'lender_id'         => $lenderId,
+                        'lead_id'           => $leadId,
+                        'user_id'           => $userId,
+                        'request_url'       => $uploadUrl,
+                        'request_method'    => 'UPLOAD',
+                        'request_headers'   => $this->safeHeaders($headers),
+                        'request_payload'   => json_encode(['doc_id' => $doc->id]),
+                        'response_code'     => null,
+                        'response_body'     => null,
+                        'status'            => 'timeout',
+                        'error_message'     => $e->getMessage(),
+                        'duration_ms'       => $duration,
+                        'attempt'           => $uploadAttempt,
+                        'created_at'        => Carbon::now(),
+                    ]);
+
+                    // Retry once on timeout
+                    if ($uploadAttempt < $maxUploadAttempts) {
+                        Log::info("LenderApiService: document upload timed out, retrying", [
+                            'doc_id' => $doc->id, 'attempt' => $uploadAttempt,
+                        ]);
+                        usleep(2_000_000);
+                        continue;
+                    }
+
+                    $reason = 'upload_timeout: ' . $e->getMessage();
+                    Log::warning("LenderApiService: document upload timed out after {$uploadAttempt} attempts", [
+                        'doc_id' => $doc->id, 'lead_id' => $leadId,
+                    ]);
+                    $failed[] = ['id' => $doc->id, 'file' => $doc->file_name, 'reason' => $reason];
+
+                } catch (\Throwable $e) {
+                    // Unknown errors: no retry (deterministic failure)
+                    $reason = $e->getMessage();
+                    Log::warning("LenderApiService: document upload exception", [
+                        'doc_id' => $doc->id, 'error' => $reason,
+                    ]);
+                    $failed[] = ['id' => $doc->id, 'file' => $doc->file_name, 'reason' => $reason];
+                    break;
+                }
+            }
+
+            if ($docUploaded) {
+                $uploaded[] = $doc->id;
             }
         }
 
@@ -759,11 +790,11 @@ class LenderApiService
     /**
      * Apply the correct auth mechanism to the HTTP client.
      * Note: combined auth (e.g. Basic + API key) is handled by setting auth_type = 'basic'
-     * and adding the extra header to default_headers in crm_lender_apis config.
+     * and adding the extra header to default_headers in the lender config.
      */
     private function applyAuth(
         \Illuminate\Http\Client\PendingRequest $client,
-        CrmLenderAPis $config,
+        Lender $config,
         string $clientId
     ): \Illuminate\Http\Client\PendingRequest {
         $creds = $config->auth_credentials ?? [];
@@ -774,8 +805,8 @@ class LenderApiService
 
             case 'basic':
                 return $client->withBasicAuth(
-                    $creds['username'] ?? $config->username ?? '',
-                    $creds['password'] ?? $config->password ?? ''
+                    $creds['username'] ?? $config->api_username ?? '',
+                    $creds['password'] ?? $config->api_password ?? ''
                 );
 
             case 'api_key':
@@ -802,15 +833,24 @@ class LenderApiService
 
     /**
      * Fetch an OAuth2 token (client_credentials or password grant).
-     * Cached per API config within the current job execution.
+     * Cached in Redis (shared across all queue workers). Falls back to fresh
+     * fetch when Redis is unavailable.
      */
     private function fetchOAuth2Token(array $creds, string $clientId, int $apiId): ?string
     {
-        $cacheKey = "oauth2_{$clientId}_{$apiId}";
-        if (isset(self::$tokenCache[$cacheKey])) {
-            return self::$tokenCache[$cacheKey];
+        $redisKey = self::OAUTH2_CACHE_PREFIX . "{$clientId}:{$apiId}";
+
+        // ── Check Redis cache first ──────────────────────────────────────────
+        try {
+            $cached = Redis::get($redisKey);
+            if ($cached) {
+                return $cached;
+            }
+        } catch (\Throwable) {
+            // Redis unavailable — proceed to fetch fresh token
         }
 
+        // ── Fetch new token ──────────────────────────────────────────────────
         $grantType = $creds['grant_type'] ?? 'client_credentials';
         $params    = $grantType === 'password'
             ? [
@@ -830,14 +870,26 @@ class LenderApiService
         try {
             $response = Http::timeout(15)->asForm()->post($creds['token_url'] ?? '', $params);
             if ($response->successful()) {
-                $token = $response->json('access_token');
+                $token     = $response->json('access_token');
+                $expiresIn = (int) ($response->json('expires_in') ?? 3600);
+
                 if ($token) {
-                    self::$tokenCache[$cacheKey] = $token;
+                    // Cache in Redis with TTL = token expiry minus 60s safety buffer
+                    $ttl = max(60, $expiresIn - 60);
+                    try {
+                        Redis::setex($redisKey, $ttl, $token);
+                    } catch (\Throwable) {
+                        // Redis write failed — token still usable for this request
+                    }
                     return $token;
                 }
             }
         } catch (\Throwable $e) {
-            Log::warning("LenderApiService: OAuth2 token fetch failed", ['error' => $e->getMessage()]);
+            Log::warning("LenderApiService: OAuth2 token fetch failed", [
+                'error'     => $e->getMessage(),
+                'client_id' => $clientId,
+                'api_id'    => $apiId,
+            ]);
         }
 
         return null;
@@ -850,7 +902,7 @@ class LenderApiService
      * Supports dot-notation paths and array indices (e.g. "owners.0.firstName").
      * Normalises US state values to 2-letter abbreviations where path ends in .state.
      */
-    public function buildPayload(CrmLenderAPis $config, array $leadData): array
+    public function buildPayload(Lender $config, array $leadData): array
     {
         $mapping = $config->payload_mapping;
         if (empty($mapping) || !is_array($mapping)) {
@@ -935,7 +987,7 @@ class LenderApiService
     /**
      * Extract known fields from the API response using response_mapping.
      */
-    private function parseResponse(CrmLenderAPis $config, ?string $body): array
+    private function parseResponse(Lender $config, ?string $body): array
     {
         if (empty($body)) {
             return [];
@@ -957,7 +1009,7 @@ class LenderApiService
 
     // ── Header helpers ─────────────────────────────────────────────────────────
 
-    private function resolveHeaders(CrmLenderAPis $config): array
+    private function resolveHeaders(Lender $config): array
     {
         $defaults   = ['Content-Type' => 'application/json', 'Accept' => 'application/json'];
         $configured = $config->default_headers;

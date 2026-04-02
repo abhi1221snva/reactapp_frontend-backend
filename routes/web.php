@@ -1792,6 +1792,8 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   $router->post('crm/lead/{id}/submit-application',                       'LeadController@submitApplication');
   $router->get('crm/lead/{id}/lender-submissions/enhanced',               'LeadController@enhancedLenderSubmissions');
   $router->post('crm/lead/{id}/submissions/{subId}/response',             'LeadController@updateSubmissionResponse');
+  $router->get('crm/lead/{id}/submission-status',                          'LeadController@submissionStatus');
+  $router->post('crm/lead/{id}/fix-and-resubmit',                         'LeadController@fixAndResubmit');
 
   // PDF Application Generator
   $router->get('crm/lead/{id}/render-pdf',                                'LeadController@renderPdf');
@@ -2138,6 +2140,33 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant'], 'prefix' =>
 $router->post('gmail/webhook', 'GmailPubSubWebhookController@handle');
 $router->get('gmail/webhook/ping', 'GmailPubSubWebhookController@ping');
 
+// ─── Email Parser (PDF attachment scanning & AI extraction) ─────────────────
+$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant'], 'prefix' => 'email-parser'], function () use ($router) {
+    $router->post('scan',                       'EmailParserController@scan');
+    $router->get('status',                      'EmailParserController@status');
+    $router->get('attachments',                 'EmailParserController@attachments');
+    $router->get('attachments/{id}',            'EmailParserController@showAttachment');
+    $router->post('attachments/{id}/reclassify','EmailParserController@reclassifyAttachment');
+    $router->post('attachments/{id}/reparse',   'EmailParserController@reparseAttachment');
+    $router->get('attachments/{id}/download',   'EmailParserController@downloadAttachment');
+    $router->get('applications',                'EmailParserController@applications');
+    $router->get('applications/{id}',           'EmailParserController@showApplication');
+    $router->delete('applications/{id}',        'EmailParserController@deleteApplication');
+    $router->get('applications/{id}/pdf',       'EmailParserController@applicationPdf');
+    $router->get('available-applications',      'EmailParserController@availableApplications');
+    $router->post('create-lead',                'EmailParserController@createLead');
+    $router->get('audit-log',                   'EmailParserController@auditLog');
+});
+
+// ─── Lender Email Intelligence (scan Gmail for lender conversations) ─────────
+$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant'], 'prefix' => 'lender-email'], function () use ($router) {
+    $router->post('scan',                  'LenderEmailController@scan');
+    $router->get('conversations',          'LenderEmailController@conversations');
+    $router->get('conversations/{id}',     'LenderEmailController@showConversation');
+    $router->get('stats',                  'LenderEmailController@stats');
+    $router->get('lead/{leadId}',          'LenderEmailController@leadConversations');
+});
+
 // ─── Unified Integrations API (Profile page) ──────────────────────────────────
 // Google Calendar OAuth callback (no auth required - user info from state)
 $router->get('integrations/google-calendar/callback', 'GoogleCalendarOAuthController@callbackNoAuth');
@@ -2259,4 +2288,10 @@ $router->group(['middleware' => ['plivo.webhook']], function () use ($router) {
     $router->post('plivo/webhook/inbound-sms',    'PlivoWebhookController@inboundSms');
     $router->post('plivo/webhook/call-status',    'PlivoWebhookController@callStatus');
     $router->post('plivo/webhook/sms-status',     'PlivoWebhookController@smsStatus');
+});
+
+// SendGrid Webhooks — no middleware, throttled
+$router->group(['middleware' => ['throttle:120,1']], function () use ($router) {
+    $router->post('sendgrid/webhook/{clientId}/events', 'SendGridWebhookController@events');
+    $router->get('sendgrid/webhook/ping',               'SendGridWebhookController@ping');
 });

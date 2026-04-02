@@ -90,6 +90,7 @@ class Kernel extends ConsoleKernel
         AutoClockoutCommand::class,
         \App\Console\Commands\GenerateSwaggerDocs::class,
         ProvisionClientCommand::class,
+        \App\Console\Commands\EmailParserScanCommand::class,
     ];
 
     /**

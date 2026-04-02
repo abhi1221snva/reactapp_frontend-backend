@@ -2,13 +2,14 @@
 
 namespace App\Jobs;
 
-use App\Model\Client\CrmLenderAPis;
+use App\Model\Client\Lender;
 use App\Services\ActivityService;
 use App\Services\ApiErrorMapper;
 use App\Services\LenderApiService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Redis;
 
 /**
  * DispatchLenderApiJob
@@ -29,27 +30,62 @@ class DispatchLenderApiJob extends Job
     private int    $lenderId;
     private int    $userId;
     private array  $documentIds;
+    private int    $attempt;
 
     public function __construct(
         string $clientId,
         int    $leadId,
         int    $lenderId,
         int    $userId      = 0,
-        array  $documentIds = []
+        array  $documentIds = [],
+        int    $attempt     = 1
     ) {
         $this->clientId    = $clientId;
         $this->leadId      = $leadId;
         $this->lenderId    = $lenderId;
         $this->userId      = $userId;
         $this->documentIds = $documentIds;
+        $this->attempt     = $attempt;
     }
 
     public function handle(): void
     {
+        // ── Acquire Redis concurrency lock (prevents duplicate submissions) ───
+        $lockKey  = "lender_submit:{$this->clientId}:{$this->leadId}:{$this->lenderId}";
+        $acquired = false;
+        try {
+            $acquired = Redis::set($lockKey, json_encode([
+                'attempt'    => $this->attempt,
+                'started_at' => now()->toIso8601String(),
+            ]), 'EX', 300, 'NX');
+        } catch (\Throwable $e) {
+            // Redis unavailable — proceed without lock (graceful degradation)
+            Log::warning("DispatchLenderApiJob: Redis lock unavailable, proceeding without lock", [
+                'lead_id' => $this->leadId, 'lender_id' => $this->lenderId, 'error' => $e->getMessage(),
+            ]);
+            $acquired = true;
+        }
+
+        if (!$acquired) {
+            Log::info("DispatchLenderApiJob: skipped — concurrent lock active", [
+                'lead_id' => $this->leadId, 'lender_id' => $this->lenderId,
+            ]);
+            return;
+        }
+
+        try {
+            $this->executeDispatch($lockKey);
+        } finally {
+            try { Redis::del($lockKey); } catch (\Throwable) {}
+        }
+    }
+
+    private function executeDispatch(string $lockKey): void
+    {
         // ── Load API config ────────────────────────────────────────────────────
-        $config = CrmLenderAPis::on("mysql_{$this->clientId}")
-            ->where('crm_lender_id', $this->lenderId)
-            ->where('status', true)
+        $config = Lender::on("mysql_{$this->clientId}")
+            ->where('id', $this->lenderId)
+            ->where('api_status', '1')
             ->first();
 
         if (!$config) {
@@ -64,7 +100,7 @@ class DispatchLenderApiJob extends Job
             return;
         }
 
-        // ── Execute ────────────────────────────────────────────────────────────
+        // ── Execute (single attempt — retry handled below) ────────────────────
         $result = $svc->dispatch(
             clientId:    $this->clientId,
             config:      $config,
@@ -72,8 +108,30 @@ class DispatchLenderApiJob extends Job
             leadId:      $this->leadId,
             lenderId:    $this->lenderId,
             userId:      $this->userId,
-            documentIds: $this->documentIds
+            documentIds: $this->documentIds,
+            attempt:     $this->attempt
         );
+
+        // ── Handle retry if signalled by LenderApiService ─────────────────────
+        if (!empty($result['should_retry'])) {
+            $nextAttempt = $result['retry_attempt'] ?? ($this->attempt + 1);
+            $delaySecs   = $result['retry_delay_seconds'] ?? 5;
+
+            try { Redis::del($lockKey); } catch (\Throwable) {}
+
+            dispatch(new self(
+                $this->clientId, $this->leadId, $this->lenderId,
+                $this->userId, $this->documentIds, $nextAttempt
+            ))->onConnection('redis')->onQueue('default')->delay($delaySecs);
+
+            Log::info("DispatchLenderApiJob: retry scheduled", [
+                'lead_id'      => $this->leadId,
+                'lender_id'    => $this->lenderId,
+                'next_attempt' => $nextAttempt,
+                'delay_seconds' => $delaySecs,
+            ]);
+            return; // Don't persist "failed" status — retry is pending
+        }
 
         // ── Derive update values ───────────────────────────────────────────────
         $submissionStatus = $result['submission_status'] ?? ($result['success'] ? 'submitted' : 'failed');

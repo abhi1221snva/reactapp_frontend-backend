@@ -7,7 +7,6 @@ use App\Jobs\SendLeadByLenderApi;
 use App\Services\EmailService;
 use App\Services\LenderApiService;
 use App\Model\Client\CrmLenderSubmission;
-use App\Model\Client\CrmLenderAPis;
 use App\Model\Client\CrmSendLeadToLender;
 use App\Model\Client\Lender;
 use App\Model\Client\LenderStatus;
@@ -202,12 +201,9 @@ class LeadLenderService
 
         $apiQueued = false;
         if (!empty($lender->api_status) && $lender->api_status == '1') {
-            $hasApiCreds = DB::connection($conn)
-                ->table('crm_lender_apis')
-                ->where('crm_lender_id', $lenderId)
-                ->exists();
+            $hasApiConfig = !empty($lender->base_url) || !empty($lender->api_url) || !empty($lender->auth_type && $lender->auth_type !== 'none');
 
-            if ($hasApiCreds) {
+            if ($hasApiConfig) {
                 $jobData = [
                     'lead_id'     => $leadId,
                     'lender_id'   => [['lender_id' => $lenderId]],
@@ -269,15 +265,9 @@ class LeadLenderService
             $lenderName = $lender->lender_name ?? "Lender #{$lenderId}";
 
             // Check if API lender
-            $apiConfig = null;
-            if (!empty($lender->api_status) && $lender->api_status == '1') {
-                $apiConfig = CrmLenderAPis::on($conn)
-                    ->where('crm_lender_id', $lenderId)
-                    ->where('status', true)
-                    ->first();
-            }
+            $apiConfig = Lender::on($conn)->find($lenderId);
 
-            if (!$apiConfig) {
+            if (!$apiConfig || $apiConfig->api_status != '1') {
                 // Email-only lender — no validation needed
                 $emailIds[] = $lenderId;
                 $validIds[] = $lenderId;
@@ -555,11 +545,7 @@ class LeadLenderService
                 // ── Auto-route: API if lender has api_status=1 + active config, else email ─
                 $apiConfig = null;
                 if (!empty($lender->api_status) && $lender->api_status == '1') {
-                    $apiConfig = DB::connection($conn)
-                        ->table('crm_lender_apis')
-                        ->where('crm_lender_id', $lenderId)
-                        ->where('status', true)
-                        ->first();
+                    $apiConfig = $lender;
                 }
 
                 $actualType = $apiConfig ? 'api' : 'normal';
@@ -650,6 +636,11 @@ class LeadLenderService
                                 attachments: $attachments,
                                 cc:          array_map('trim', $emailTargets),
                             );
+
+                            // Mark email as sent for delivery tracking
+                            DB::connection($conn)->table('crm_lender_submissions')
+                                ->where('id', $subId)
+                                ->update(['email_status' => 'sent', 'email_status_at' => $now]);
                         } catch (\Throwable $mailEx) {
                             Log::warning("LenderApplicationMail failed for lender {$lenderId} → {$primaryTo}: " . $mailEx->getMessage());
                         }
@@ -674,6 +665,8 @@ class LeadLenderService
                     'response_status'   => ($existingSub->response_status ?? 'pending'),
                     'submitted_at'      => $now->toDateTimeString(),
                     'notes'             => ($existingSub->notes ?? null),
+                    'email_status'      => $actualType === 'normal' ? 'sent' : null,
+                    'email_status_at'   => $actualType === 'normal' ? $now->toDateTimeString() : null,
                 ];
             } catch (\Throwable $e) {
                 Log::error("submitApplication failed for lender {$lenderId}: " . $e->getMessage());

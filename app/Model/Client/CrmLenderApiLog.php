@@ -41,8 +41,8 @@ class CrmLenderApiLog extends Model
         'attempt'         => 'integer',
     ];
 
-    public function apiConfig()
+    public function lender()
     {
-        return $this->belongsTo(CrmLenderAPis::class, 'crm_lender_api_id');
+        return $this->belongsTo(Lender::class, 'lender_id');
     }
 }

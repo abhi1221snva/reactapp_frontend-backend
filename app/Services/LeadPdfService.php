@@ -209,6 +209,28 @@ class LeadPdfService
                 ->pluck('field_value', 'field_key')
                 ->toArray();
             $data = array_merge($data, $eavValues);
+
+            // Create aliases from label_name so templates using friendly keys
+            // (e.g. [[owner_2_first_name]]) resolve to option_* EAV values.
+            $schemaLabels = DB::connection($conn)->getSchemaBuilder()->hasTable('crm_labels');
+            if ($schemaLabels) {
+                $crmLabels = DB::connection($conn)
+                    ->table('crm_labels')
+                    ->select('field_key', 'label_name')
+                    ->get();
+
+                foreach ($crmLabels as $lbl) {
+                    // Normalize "Owner 2 First Name" → "owner_2_first_name"
+                    $alias = strtolower(trim($lbl->label_name));
+                    $alias = preg_replace('/[^a-z0-9]+/', '_', $alias);
+                    $alias = trim($alias, '_');
+
+                    // Only add alias if it differs from field_key and doesn't already exist
+                    if ($alias && $alias !== $lbl->field_key && !isset($data[$alias]) && isset($data[$lbl->field_key])) {
+                        $data[$alias] = $data[$lbl->field_key];
+                    }
+                }
+            }
         }
 
         // 2b. New EAV: crm_leads base record (system cols)

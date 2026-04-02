@@ -26,13 +26,18 @@ class CrmLenderSubmission extends Model
         'error_messages',
         'doc_upload_status',
         'doc_upload_notes',
+        'email_status',
+        'email_status_at',
     ];
 
     protected $casts = [
         'submitted_at'          => 'datetime',
         'response_received_at'  => 'datetime',
+        'email_status_at'       => 'datetime',
         'error_messages'        => 'array',
     ];
+
+    public const EMAIL_STATUSES = ['sent', 'delivered', 'opened', 'failed'];
 
     public const SUBMISSION_TYPES = ['normal', 'api'];
 

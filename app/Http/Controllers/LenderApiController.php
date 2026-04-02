@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\DispatchLenderApiJob;
-use App\Model\Client\CrmLenderAPis;
+use App\Model\Client\Lender;
 use App\Model\Client\CrmLenderApiLog;
 use App\Services\ErrorParserService;
 use App\Services\FixSuggestionService;
@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Validator;
 /**
  * LenderApiController
  *
- * REST CRUD for crm_lender_apis configurations and crm_lender_api_logs.
+ * REST CRUD for lender API configurations (stored on crm_lender) and crm_lender_api_logs.
  *
  * Routes (all under jwt.auth middleware):
  *   GET    /crm/lender-api-configs              → index
@@ -42,24 +42,23 @@ class LenderApiController extends Controller
             $hasLogTable = \Illuminate\Support\Facades\Schema::connection($conn)
                 ->hasTable('crm_lender_api_logs');
 
-            $selects = ['a.*', 'l.lender_name'];
+            $selects = ['a.*'];
             if ($hasLogTable) {
-                $selects[] = DB::raw('(SELECT COUNT(*) FROM crm_lender_api_logs WHERE crm_lender_api_id = a.id) as log_count');
-                $selects[] = DB::raw('(SELECT MAX(created_at) FROM crm_lender_api_logs WHERE crm_lender_api_id = a.id) as last_called_at');
-                $selects[] = DB::raw('(SELECT SUM(CASE WHEN status = "success" THEN 1 ELSE 0 END) FROM crm_lender_api_logs WHERE crm_lender_api_id = a.id) as success_count');
+                $selects[] = DB::raw('(SELECT COUNT(*) FROM crm_lender_api_logs WHERE lender_id = a.id) as log_count');
+                $selects[] = DB::raw('(SELECT MAX(created_at) FROM crm_lender_api_logs WHERE lender_id = a.id) as last_called_at');
+                $selects[] = DB::raw('(SELECT SUM(CASE WHEN status = "success" THEN 1 ELSE 0 END) FROM crm_lender_api_logs WHERE lender_id = a.id) as success_count');
             }
 
-            $query = DB::connection($conn)->table('crm_lender_apis as a')
-                ->leftJoin('crm_lender as l', 'l.id', '=', 'a.crm_lender_id')
+            $query = DB::connection($conn)->table('crm_lender as a')
                 ->select($selects)
                 ->orderBy('a.id', 'desc');
 
             if ($request->has('lender_id')) {
-                $query->where('a.crm_lender_id', $request->integer('lender_id'));
+                $query->where('a.id', $request->integer('lender_id'));
             }
 
             if ($request->has('status')) {
-                $query->where('a.status', $request->boolean('status'));
+                $query->where('a.api_status', $request->input('status'));
             }
 
             $configs = $query->get()->map(function ($row) {
@@ -80,8 +79,8 @@ class LenderApiController extends Controller
                         ? ucwords(str_replace('_', ' ', $r['type'])) . ' API'
                         : 'Legacy API #' . $r['id'];
                 }
-                if (empty($r['base_url']) && !empty($r['url'])) {
-                    $r['base_url'] = $r['url'];
+                if (empty($r['base_url']) && !empty($r['api_url'])) {
+                    $r['base_url'] = $r['api_url'];
                 }
                 if (empty($r['request_method'])) {
                     $r['request_method'] = 'POST';
@@ -89,18 +88,18 @@ class LenderApiController extends Controller
                 // Build auth_credentials from legacy flat columns if not set
                 if (empty($r['auth_credentials'])) {
                     $creds = [];
-                    if (!empty($r['username']))  $creds['username']  = $r['username'];
-                    if (!empty($r['password']))  $creds['password']  = $r['password'];
-                    if (!empty($r['api_key']))   $creds['key']       = $r['api_key'];
-                    if (!empty($r['auth_url']))  $creds['token_url'] = $r['auth_url'];
-                    if (!empty($r['client_id'])) $creds['client_id'] = $r['client_id'];
+                    if (!empty($r['api_username']))  $creds['username']  = $r['api_username'];
+                    if (!empty($r['api_password']))  $creds['password']  = $r['api_password'];
+                    if (!empty($r['api_key']))       $creds['key']       = $r['api_key'];
+                    if (!empty($r['auth_url']))      $creds['token_url'] = $r['auth_url'];
+                    if (!empty($r['api_client_id'])) $creds['client_id'] = $r['api_client_id'];
                     if (!empty($r['partner_api_key'])) $creds['partner_api_key'] = $r['partner_api_key'];
                     $r['auth_credentials'] = $creds ?: null;
                     // Infer auth_type
                     if (empty($r['auth_type']) || $r['auth_type'] === 'none') {
                         if (!empty($r['auth_url'])) {
                             $r['auth_type'] = 'oauth2';
-                        } elseif (!empty($r['username']) && !empty($r['password'])) {
+                        } elseif (!empty($r['api_username']) && !empty($r['api_password'])) {
                             $r['auth_type'] = 'basic';
                         } elseif (!empty($r['api_key'])) {
                             $r['auth_type'] = 'api_key';
@@ -129,7 +128,7 @@ class LenderApiController extends Controller
     {
         try {
             $clientId = $request->auth->parent_id;
-            $row      = DB::connection("mysql_{$clientId}")->table('crm_lender_apis')->where('id', $id)->first();
+            $row      = DB::connection("mysql_{$clientId}")->table('crm_lender')->where('id', $id)->first();
 
             if (!$row) {
                 return $this->failResponse('Configuration not found', [], null, 404);
@@ -155,7 +154,7 @@ class LenderApiController extends Controller
         $clientId = $request->auth->parent_id;
 
         $validator = Validator::make($request->all(), [
-            'crm_lender_id'   => 'required|integer',
+            'lender_id'       => 'required|integer',
             'api_name'        => 'required|string|max:255',
             'auth_type'       => 'required|in:bearer,basic,api_key,oauth2,none',
             'base_url'        => 'required|url',
@@ -167,7 +166,7 @@ class LenderApiController extends Controller
             'response_mapping'  => 'nullable|array',
             'retry_attempts'             => 'nullable|integer|min:1|max:10',
             'timeout_seconds'            => 'nullable|integer|min:5|max:300',
-            'notes'                      => 'nullable|string',
+            'api_notes'                  => 'nullable|string',
             'required_fields'            => 'nullable|array',
             'required_fields.*'          => 'string',
             'resubmit_method'            => 'nullable|in:PUT,PATCH',
@@ -183,40 +182,41 @@ class LenderApiController extends Controller
         }
 
         try {
-            $now = Carbon::now();
-            $id  = DB::connection("mysql_{$clientId}")->table('crm_lender_apis')->insertGetId([
-                'crm_lender_id'    => $request->integer('crm_lender_id'),
-                'api_name'         => $request->input('api_name'),
-                'auth_type'        => $request->input('auth_type', 'none'),
-                'auth_credentials' => json_encode($request->input('auth_credentials', [])),
-                'base_url'         => rtrim($request->input('base_url'), '/'),
-                'endpoint_path'    => ltrim($request->input('endpoint_path', ''), '/'),
-                'request_method'   => $request->input('request_method', 'POST'),
-                'default_headers'  => json_encode($request->input('default_headers', [])),
-                'payload_mapping'  => json_encode($request->input('payload_mapping', [])),
-                'response_mapping' => json_encode($request->input('response_mapping', [])),
-                'retry_attempts'             => $request->input('retry_attempts', 3),
-                'timeout_seconds'            => $request->input('timeout_seconds', 30),
-                'status'                     => true,
-                'notes'                      => $request->input('notes'),
-                'required_fields'            => json_encode($request->input('required_fields', [])),
-                'resubmit_method'            => $request->input('resubmit_method'),
-                'resubmit_endpoint_path'     => $request->input('resubmit_endpoint_path'),
-                'document_upload_enabled'    => $request->boolean('document_upload_enabled', false),
-                'document_upload_endpoint'   => $request->input('document_upload_endpoint'),
-                'document_upload_method'     => $request->input('document_upload_method', 'POST'),
-                'document_upload_field_name' => $request->input('document_upload_field_name', 'file'),
-                // Legacy compat: fill old columns from new structure
-                'url'              => rtrim($request->input('base_url'), '/') . '/' . ltrim($request->input('endpoint_path', ''), '/'),
-                'type'             => $request->input('type', ''),
-                'username'         => $request->input('auth_credentials.username', ''),
-                'password'         => $request->input('auth_credentials.password', ''),
-                'api_key'          => $request->input('auth_credentials.key', ''),
-                'created_at'       => $now,
-                'updated_at'       => $now,
-            ]);
+            $now      = Carbon::now();
+            $lenderId = $request->integer('lender_id');
 
-            $config = DB::connection("mysql_{$clientId}")->table('crm_lender_apis')->where('id', $id)->first();
+            DB::connection("mysql_{$clientId}")->table('crm_lender')
+                ->where('id', $lenderId)
+                ->update([
+                    'api_name'         => $request->input('api_name'),
+                    'auth_type'        => $request->input('auth_type', 'none'),
+                    'auth_credentials' => json_encode($request->input('auth_credentials', [])),
+                    'base_url'         => rtrim($request->input('base_url'), '/'),
+                    'endpoint_path'    => ltrim($request->input('endpoint_path', ''), '/'),
+                    'request_method'   => $request->input('request_method', 'POST'),
+                    'default_headers'  => json_encode($request->input('default_headers', [])),
+                    'payload_mapping'  => json_encode($request->input('payload_mapping', [])),
+                    'response_mapping' => json_encode($request->input('response_mapping', [])),
+                    'retry_attempts'             => $request->input('retry_attempts', 3),
+                    'timeout_seconds'            => $request->input('timeout_seconds', 30),
+                    'api_status'                 => '1',
+                    'api_notes'                  => $request->input('api_notes'),
+                    'required_fields'            => json_encode($request->input('required_fields', [])),
+                    'resubmit_method'            => $request->input('resubmit_method'),
+                    'resubmit_endpoint_path'     => $request->input('resubmit_endpoint_path'),
+                    'document_upload_enabled'    => $request->boolean('document_upload_enabled', false),
+                    'document_upload_endpoint'   => $request->input('document_upload_endpoint'),
+                    'document_upload_method'     => $request->input('document_upload_method', 'POST'),
+                    'document_upload_field_name' => $request->input('document_upload_field_name', 'file'),
+                    'api_url'          => rtrim($request->input('base_url'), '/') . '/' . ltrim($request->input('endpoint_path', ''), '/'),
+                    'lender_api_type'  => $request->input('lender_api_type', ''),
+                    'api_username'     => $request->input('auth_credentials.username', ''),
+                    'api_password'     => $request->input('auth_credentials.password', ''),
+                    'api_key'          => $request->input('auth_credentials.key', ''),
+                    'updated_at'       => $now,
+                ]);
+
+            $config = DB::connection("mysql_{$clientId}")->table('crm_lender')->where('id', $lenderId)->first();
             return $this->successResponse('Configuration created', (array) $config);
         } catch (\Throwable $e) {
             return $this->failResponse('Failed to create configuration', [$e->getMessage()], $e, 500);
@@ -241,8 +241,8 @@ class LenderApiController extends Controller
             'response_mapping' => 'nullable|array',
             'retry_attempts'             => 'nullable|integer|min:1|max:10',
             'timeout_seconds'            => 'nullable|integer|min:5|max:300',
-            'status'                     => 'sometimes|boolean',
-            'notes'                      => 'nullable|string',
+            'api_status'                 => 'sometimes|in:0,1',
+            'api_notes'                  => 'nullable|string',
             'required_fields'            => 'nullable|array',
             'required_fields.*'          => 'string',
             'resubmit_method'            => 'nullable|in:PUT,PATCH',
@@ -258,7 +258,7 @@ class LenderApiController extends Controller
         }
 
         try {
-            $existing = DB::connection("mysql_{$clientId}")->table('crm_lender_apis')->where('id', $id)->first();
+            $existing = DB::connection("mysql_{$clientId}")->table('crm_lender')->where('id', $id)->first();
             if (!$existing) {
                 return $this->failResponse('Configuration not found', [], null, 404);
             }
@@ -267,7 +267,7 @@ class LenderApiController extends Controller
 
             $scalars = [
                 'api_name', 'auth_type', 'base_url', 'endpoint_path', 'request_method',
-                'retry_attempts', 'timeout_seconds', 'status', 'notes', 'type',
+                'retry_attempts', 'timeout_seconds', 'api_status', 'api_notes', 'lender_api_type',
                 'resubmit_method', 'resubmit_endpoint_path',
                 'document_upload_enabled', 'document_upload_endpoint',
                 'document_upload_method', 'document_upload_field_name',
@@ -286,14 +286,14 @@ class LenderApiController extends Controller
 
             // Keep legacy columns in sync
             if (isset($update['base_url']) || isset($update['endpoint_path'])) {
-                $base = rtrim($update['base_url'] ?? $existing->base_url ?? $existing->url ?? '', '/');
+                $base = rtrim($update['base_url'] ?? $existing->base_url ?? $existing->api_url ?? '', '/');
                 $path = ltrim($update['endpoint_path'] ?? $existing->endpoint_path ?? '', '/');
-                $update['url'] = $path ? "{$base}/{$path}" : $base;
+                $update['api_url'] = $path ? "{$base}/{$path}" : $base;
             }
 
-            DB::connection("mysql_{$clientId}")->table('crm_lender_apis')->where('id', $id)->update($update);
+            DB::connection("mysql_{$clientId}")->table('crm_lender')->where('id', $id)->update($update);
 
-            $config = DB::connection("mysql_{$clientId}")->table('crm_lender_apis')->where('id', $id)->first();
+            $config = DB::connection("mysql_{$clientId}")->table('crm_lender')->where('id', $id)->first();
             return $this->successResponse('Configuration updated', (array) $config);
         } catch (\Throwable $e) {
             return $this->failResponse('Failed to update configuration', [$e->getMessage()], $e, 500);
@@ -306,8 +306,21 @@ class LenderApiController extends Controller
     {
         $clientId = $request->auth->parent_id;
         try {
-            $deleted = DB::connection("mysql_{$clientId}")->table('crm_lender_apis')->where('id', $id)->delete();
-            if (!$deleted) {
+            $updated = DB::connection("mysql_{$clientId}")->table('crm_lender')
+                ->where('id', $id)
+                ->update([
+                    'api_status' => '0',
+                    'api_name' => null,
+                    'auth_type' => 'none',
+                    'auth_credentials' => null,
+                    'base_url' => null,
+                    'endpoint_path' => null,
+                    'payload_mapping' => null,
+                    'response_mapping' => null,
+                    'required_fields' => null,
+                    'api_notes' => null,
+                ]);
+            if (!$updated) {
                 return $this->failResponse('Configuration not found', [], null, 404);
             }
             return $this->successResponse('Configuration deleted', []);
@@ -322,15 +335,15 @@ class LenderApiController extends Controller
     {
         $clientId = $request->auth->parent_id;
         try {
-            $row = DB::connection("mysql_{$clientId}")->table('crm_lender_apis')->where('id', $id)->first();
+            $row = DB::connection("mysql_{$clientId}")->table('crm_lender')->where('id', $id)->first();
             if (!$row) {
                 return $this->failResponse('Configuration not found', [], null, 404);
             }
-            $newStatus = !$row->status;
-            DB::connection("mysql_{$clientId}")->table('crm_lender_apis')
+            $newStatus = $row->api_status === '1' ? '0' : '1';
+            DB::connection("mysql_{$clientId}")->table('crm_lender')
                 ->where('id', $id)
-                ->update(['status' => $newStatus, 'updated_at' => Carbon::now()]);
-            return $this->successResponse('Status updated', ['status' => $newStatus]);
+                ->update(['api_status' => $newStatus, 'updated_at' => Carbon::now()]);
+            return $this->successResponse('Status updated', ['api_status' => $newStatus]);
         } catch (\Throwable $e) {
             return $this->failResponse('Failed to toggle', [$e->getMessage()], $e, 500);
         }
@@ -343,7 +356,7 @@ class LenderApiController extends Controller
         $clientId = $request->auth->parent_id;
 
         try {
-            $config = CrmLenderAPis::on("mysql_{$clientId}")->find($id);
+            $config = Lender::on("mysql_{$clientId}")->find($id);
             if (!$config) {
                 return $this->failResponse('Configuration not found', [], null, 404);
             }
@@ -404,7 +417,7 @@ class LenderApiController extends Controller
      *   lender_id, lead_id, crm_lender_api_id, status, date_from, date_to — exact/range filters
      *   lender      — LIKE match on lender_name
      *   api_name    — LIKE match on api_name
-     *   lender_type — exact match on cfg.type (ondeck, lendini, credibly, etc.)
+     *   lender_type — exact match on l.lender_api_type (ondeck, lendini, credibly, etc.)
      *   search      — LIKE across lead_id, request_url, request_payload, response_body, status, error_message
      *   page, per_page
      */
@@ -425,9 +438,8 @@ class LenderApiController extends Controller
 
             $query = DB::connection($conn)
                 ->table('crm_lender_api_logs as lg')
-                ->leftJoin('crm_lender as l',       'l.id',   '=', 'lg.lender_id')
-                ->leftJoin('crm_lender_apis as cfg', 'cfg.id', '=', 'lg.crm_lender_api_id')
-                ->select('lg.*', 'l.lender_name', 'cfg.api_name')
+                ->leftJoin('crm_lender as l', 'l.id', '=', 'lg.lender_id')
+                ->select('lg.*', 'l.lender_name', 'l.api_name')
                 ->orderBy('lg.id', 'desc')
                 ->when($request->filled('lender_id'), fn ($q) =>
                     $q->where('lg.lender_id', $request->integer('lender_id'))
@@ -451,10 +463,10 @@ class LenderApiController extends Controller
                     $q->where('l.lender_name', 'like', '%' . $request->input('lender') . '%')
                 )
                 ->when($request->filled('api_name'), fn ($q) =>
-                    $q->where('cfg.api_name', 'like', '%' . $request->input('api_name') . '%')
+                    $q->where('l.api_name', 'like', '%' . $request->input('api_name') . '%')
                 )
                 ->when($request->filled('lender_type'), fn ($q) =>
-                    $q->where('cfg.type', $request->input('lender_type'))
+                    $q->where('l.lender_api_type', $request->input('lender_type'))
                 )
                 ->when($request->filled('search'), function ($q) use ($request) {
                     $term = '%' . $request->input('search') . '%';
@@ -574,9 +586,9 @@ class LenderApiController extends Controller
             // the mapping to find the CRM key that feeds into $lenderField.
             if ($lenderField && $lenderId > 0) {
                 $apiConfig = DB::connection($conn)
-                    ->table('crm_lender_apis')
-                    ->where('crm_lender_id', $lenderId)
-                    ->where('status', true)
+                    ->table('crm_lender')
+                    ->where('id', $lenderId)
+                    ->where('api_status', '1')
                     ->first();
 
                 if ($apiConfig && !empty($apiConfig->payload_mapping)) {
@@ -637,9 +649,9 @@ class LenderApiController extends Controller
             // ── Optionally re-dispatch to lender ──────────────────────────────
             if ($resubmit && $lenderId > 0) {
                 $config = DB::connection($conn)
-                    ->table('crm_lender_apis')
-                    ->where('crm_lender_id', $lenderId)
-                    ->where('status', true)
+                    ->table('crm_lender')
+                    ->where('id', $lenderId)
+                    ->where('api_status', '1')
                     ->first();
 
                 if (!$config) {
@@ -694,9 +706,9 @@ class LenderApiController extends Controller
             }
 
             // Verify active API config exists
-            $config = CrmLenderAPis::on("mysql_{$clientId}")
-                ->where('crm_lender_id', $lenderId)
-                ->where('status', true)
+            $config = Lender::on("mysql_{$clientId}")
+                ->where('id', $lenderId)
+                ->where('api_status', '1')
                 ->first();
 
             if (!$config) {
@@ -748,7 +760,7 @@ class LenderApiController extends Controller
             return $this->successResponse('Lead submitted to lender API', [
                 'lead_id'   => $leadId,
                 'lender_id' => $lenderId,
-                'api_name'  => $config->api_name ?: $config->type,
+                'api_name'  => $config->api_name ?: $config->lender_api_type,
                 'queued_at' => Carbon::now()->toDateTimeString(),
             ]);
         } catch (\Throwable $e) {

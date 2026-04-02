@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Model\User;
 use App\Model\Client\Lender;
-use App\Model\Client\CrmLenderAPis;
+
 
 
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -331,22 +331,15 @@ class LenderController extends Controller
             $Lender->saveOrFail();
 
             if ($request->api_status == "1") {
-                $crmLenderApi = new CrmLenderAPIs();
-                $crmLenderApi->setConnection("mysql_$clientId");
-
-                $crmLenderApi->crm_lender_id = $Lender->id; // Associate with Lender
-                $crmLenderApi->username = trim($request->username);
-                $crmLenderApi->password = trim($request->password);
-                $crmLenderApi->api_key = trim($request->api_key);
-                $crmLenderApi->url = trim($request->url);
-                $crmLenderApi->type = trim($request->lender_api_type);
-                $crmLenderApi->sales_rep_email = trim($request->salesRepEmailAddress);
-                $crmLenderApi->partner_api_key = trim($request->partner_api_key);
-                $crmLenderApi->client_id = trim($request->client_id);
-                $crmLenderApi->auth_url = trim($request->auth_url);
-
-
-                $crmLenderApi->save();
+                $Lender->api_username = trim($request->username);
+                $Lender->api_password = trim($request->password);
+                $Lender->api_key = trim($request->api_key);
+                $Lender->api_url = trim($request->url);
+                $Lender->sales_rep_email = trim($request->salesRepEmailAddress);
+                $Lender->partner_api_key = trim($request->partner_api_key);
+                $Lender->api_client_id = trim($request->client_id);
+                $Lender->auth_url = trim($request->auth_url);
+                $Lender->save();
             }
 
 
@@ -542,23 +535,15 @@ class LenderController extends Controller
 
             Log::info('updated', ['user' => $user]);
             if ($request->api_status == "1") {
-                // Find or create a new CrmLenderAPI entry based on the crm_lender_id
-                $crmLenderApi = CrmLenderAPIs::on("mysql_$clientId")
-                    ->firstOrNew(['crm_lender_id' => $id]);
-                $crmLenderApi->setConnection("mysql_$clientId");
-                $crmLenderApi->username = trim($request->username);
-                $crmLenderApi->password = trim($request->password);
-                $crmLenderApi->api_key = trim($request->api_key);
-                $crmLenderApi->url = trim($request->url);
-                $crmLenderApi->type = trim($request->lender_api_type);
-                $crmLenderApi->sales_rep_email = trim($request->salesRepEmailAddress);
-                $crmLenderApi->partner_api_key = trim($request->partner_api_key);
-                $crmLenderApi->client_id = trim($request->client_id);
-                $crmLenderApi->auth_url = trim($request->auth_url);
-                $crmLenderApi->crm_lender_id = $id;
-
-
-                $crmLenderApi->saveOrFail();
+                $user->api_username = trim($request->username);
+                $user->api_password = trim($request->password);
+                $user->api_key = trim($request->api_key);
+                $user->api_url = trim($request->url);
+                $user->sales_rep_email = trim($request->salesRepEmailAddress);
+                $user->partner_api_key = trim($request->partner_api_key);
+                $user->api_client_id = trim($request->client_id);
+                $user->auth_url = trim($request->auth_url);
+                $user->save();
             }
 
             //$user_extension
@@ -671,7 +656,7 @@ class LenderController extends Controller
         try {
             $clientId = $request->auth->parent_id;
             $lender = [];
-            $lender = CrmLenderApis::on("mysql_$clientId")->where('crm_lender_id', $id)->first();
+            $lender = Lender::on("mysql_$clientId")->findOrFail($id);
             return $this->successResponse("View List of Lenders", $lender->toArray());
         } catch (\Throwable $exception) {
             return $this->failResponse("Failed to View Lenders ", [$exception->getMessage()], $exception, $exception->getCode());

@@ -6,7 +6,7 @@ use App\Mail\SystemNotificationMail;
 use App\Model\Client\ApiLog;
 use App\Model\Client\CrmLabel;
 use App\Model\Client\CrmLenderApiLabels;
-use App\Model\Client\CrmLenderAPis;
+use App\Model\Client\Lender;
 use App\Model\Client\CrmLeadLenderApi;
 use App\Model\Client\Documents;
 use App\Model\Client\EmailSetting;
@@ -125,8 +125,8 @@ class SendLeadByLenderApi extends Job
             }
 
             try {
-                $apiConfig = CrmLenderAPis::on("mysql_{$this->clientId}")
-                    ->where('crm_lender_id', $lenderId)
+                $apiConfig = Lender::on("mysql_{$this->clientId}")
+                    ->where('id', $lenderId)
                     ->first();
 
                 if (!$apiConfig) {
@@ -181,7 +181,7 @@ class SendLeadByLenderApi extends Job
     // ── Lender dispatcher ──────────────────────────────────────────────────────
 
     private function dispatchToLender(
-        CrmLenderAPis $config,
+        Lender $config,
         string        $lenderName,
         int           $lenderId,
         int           $leadId,
@@ -220,7 +220,7 @@ class SendLeadByLenderApi extends Job
     // ── OnDeck ─────────────────────────────────────────────────────────────────
 
     private function submitOnDeck(
-        CrmLenderAPis $config, string $lenderName, int $lenderId,
+        Lender $config, string $lenderName, int $lenderId,
         int $leadId, int $userId, array $flatLeadData, array $arrLabels
     ): array {
         $mapped = $this->mapForLender('ondeck_label', $arrLabels);
@@ -263,7 +263,7 @@ class SendLeadByLenderApi extends Job
             ],
         ];
 
-        $auth = base64_encode("{$config->username}:{$config->password}");
+        $auth = base64_encode("{$config->api_username}:{$config->api_password}");
         $headers = [
             'Content-Type' => 'application/json',
             'Apikey'        => $config->api_key,
@@ -271,10 +271,10 @@ class SendLeadByLenderApi extends Job
         ];
 
         if ($leadLenderRecord && $leadLenderRecord->businessID) {
-            $url    = rtrim($config->url, '/') . '/application/' . $leadLenderRecord->businessID;
+            $url    = rtrim($config->api_url, '/') . '/application/' . $leadLenderRecord->businessID;
             $method = 'PUT';
         } else {
-            $url    = rtrim($config->url, '/') . '/application';
+            $url    = rtrim($config->api_url, '/') . '/application';
             $method = 'POST';
         }
 
@@ -309,7 +309,7 @@ class SendLeadByLenderApi extends Job
 
         // ── Upload documents ──────────────────────────────────────────────────
         if ($businessId && $this->documents->isNotEmpty()) {
-            $docUrl = rtrim($config->url, '/') . '/application/' . $businessId . '/documents';
+            $docUrl = rtrim($config->api_url, '/') . '/application/' . $businessId . '/documents';
             foreach ($this->documents as $doc) {
                 $filePath = $this->getFilePath($doc->file_name);
                 if (!file_exists($filePath)) {
@@ -340,7 +340,7 @@ class SendLeadByLenderApi extends Job
     // ── Credibly ───────────────────────────────────────────────────────────────
 
     private function submitCredibly(
-        CrmLenderAPis $config, string $lenderName, int $lenderId,
+        Lender $config, string $lenderName, int $lenderId,
         int $leadId, int $userId, array $flatLeadData, array $arrLabels
     ): array {
         $mapped = $this->mapForLender('credibly_label', $arrLabels);
@@ -399,7 +399,7 @@ class SendLeadByLenderApi extends Job
             'files' => $filePaths,
         ];
 
-        $url    = rtrim($config->url, '/') . '/submission-api/submitApplication';
+        $url    = rtrim($config->api_url, '/') . '/submission-api/submitApplication';
         $result = $this->httpRequest('POST', $url, $data,
             ['Authorization' => 'Bearer ' . $config->api_key, 'Content-Type' => 'application/json']);
 
@@ -430,7 +430,7 @@ class SendLeadByLenderApi extends Job
     // ── BittyAdvance ───────────────────────────────────────────────────────────
 
     private function submitBittyAdvance(
-        CrmLenderAPis $config, string $lenderName, int $lenderId,
+        Lender $config, string $lenderName, int $lenderId,
         int $leadId, int $userId, array $flatLeadData, array $arrLabels
     ): array {
         $mapped = $this->mapForLender('bittyadvance_label', $arrLabels);
@@ -545,7 +545,7 @@ class SendLeadByLenderApi extends Job
     // ── Fox Partner ────────────────────────────────────────────────────────────
 
     private function submitFoxPartner(
-        CrmLenderAPis $config, string $lenderName, int $lenderId,
+        Lender $config, string $lenderName, int $lenderId,
         int $leadId, int $userId, array $flatLeadData, array $arrLabels
     ): array {
         $mapped = $this->mapForLender('fox_partner_label', $arrLabels);
@@ -583,7 +583,7 @@ class SendLeadByLenderApi extends Job
                     ],
                 ]],
             ],
-            ['documents' => $filePaths],
+            'documents' => $filePaths,
             'salesRepEmailAddress' => $config->sales_rep_email ?? '',
             'alertEmailAddresses'  => [],
         ];
@@ -591,14 +591,14 @@ class SendLeadByLenderApi extends Job
         // ── OAuth2 token ───────────────────────────────────────────────────────
         $tokenUrl = 'https://identity.funderone.io/connect/token';
         $token    = $this->fetchClientCredentialsToken($tokenUrl,
-            $config->username ?? '', $config->password ?? '');
+            $config->api_username ?? '', $config->api_password ?? '');
 
         if (!$token) {
             Log::error("FoxPartner: could not obtain OAuth2 token");
             return ['notification' => "Lender <b>$lenderName</b>: Authentication failed (Fox Partner)", 'success' => false];
         }
 
-        $url    = rtrim($config->url, '/') . '/submissions';
+        $url    = rtrim($config->api_url, '/') . '/submissions';
         $result = $this->httpRequest('POST', $url, $data,
             ['Authorization' => 'Bearer ' . $token, 'Content-Type' => 'application/json']);
 
@@ -629,7 +629,7 @@ class SendLeadByLenderApi extends Job
     // ── Lendini ────────────────────────────────────────────────────────────────
 
     private function submitLendini(
-        CrmLenderAPis $config, string $lenderName, int $lenderId,
+        Lender $config, string $lenderName, int $lenderId,
         int $leadId, int $userId, array $flatLeadData, array $arrLabels
     ): array {
         $mapped       = $this->mapForLender('lendini_label', $arrLabels);
@@ -670,7 +670,7 @@ class SendLeadByLenderApi extends Job
             'documents'             => $filePaths,
         ];
 
-        $url    = rtrim($config->url, '/') . '/postNewDeal';
+        $url    = rtrim($config->api_url, '/') . '/postNewDeal';
         $result = $this->httpRequest('POST', $url, $data, [
             'Content-Type' => 'application/json',
             'token-v'      => $config->api_key,
@@ -703,7 +703,7 @@ class SendLeadByLenderApi extends Job
     // ── Specialty ──────────────────────────────────────────────────────────────
 
     private function submitSpecialty(
-        CrmLenderAPis $config, string $lenderName, int $lenderId,
+        Lender $config, string $lenderName, int $lenderId,
         int $leadId, int $userId, array $flatLeadData, array $arrLabels
     ): array {
         $mapped   = $this->mapForLender('specialty_label', $arrLabels);
@@ -754,7 +754,7 @@ class SendLeadByLenderApi extends Job
             ],
         ];
 
-        $url    = rtrim($config->url, '/') . '/deal-submission';
+        $url    = rtrim($config->api_url, '/') . '/deal-submission';
         $result = $this->httpRequest('POST', $url, $data,
             ['x-api-key' => $config->api_key, 'Content-Type' => 'application/json']);
 
@@ -785,7 +785,7 @@ class SendLeadByLenderApi extends Job
     // ── Forward Financing ──────────────────────────────────────────────────────
 
     private function submitForwardFinancing(
-        CrmLenderAPis $config, string $lenderName, int $lenderId,
+        Lender $config, string $lenderName, int $lenderId,
         int $leadId, int $userId, array $flatLeadData, array $arrLabels
     ): array {
         $mapped = $this->mapForLender('forward_financing_label', $arrLabels);
@@ -824,7 +824,7 @@ class SendLeadByLenderApi extends Job
             ],
         ];
 
-        $url    = rtrim($config->url, '/') . '/lead';
+        $url    = rtrim($config->api_url, '/') . '/lead';
         $result = $this->httpRequest('POST', $url, $data,
             ['x-api-key' => $config->api_key, 'Content-Type' => 'application/json']);
 
@@ -847,7 +847,7 @@ class SendLeadByLenderApi extends Job
 
         // ── Upload attachments ────────────────────────────────────────────────
         if ($submissionId && $this->documents->isNotEmpty()) {
-            $attachUrl = rtrim($config->url, '/') . '/attachment';
+            $attachUrl = rtrim($config->api_url, '/') . '/attachment';
             foreach ($this->documents as $doc) {
                 $attachData = [
                     'attachment_url' => $this->getFilePath($doc->file_name),
@@ -876,7 +876,7 @@ class SendLeadByLenderApi extends Job
     // ── Can Capital ────────────────────────────────────────────────────────────
 
     private function submitCanCapital(
-        CrmLenderAPis $config, string $lenderName, int $lenderId,
+        Lender $config, string $lenderName, int $lenderId,
         int $leadId, int $userId, array $flatLeadData, array $arrLabels
     ): array {
         $mapped   = $this->mapForLender('cancapital_label', $arrLabels);
@@ -888,10 +888,10 @@ class SendLeadByLenderApi extends Job
         // ── OAuth2 (password grant) ────────────────────────────────────────────
         $token = $this->fetchPasswordGrantToken(
             $config->auth_url  ?? '',
-            $config->client_id ?? '',
+            $config->api_client_id ?? '',
             $config->api_key   ?? '',
-            $config->username  ?? '',
-            $config->password  ?? ''
+            $config->api_username  ?? '',
+            $config->api_password  ?? ''
         );
 
         if (!$token) {
@@ -936,7 +936,7 @@ class SendLeadByLenderApi extends Job
             ],
         ];
 
-        $url    = rtrim($config->url, '/') . '/createapplication';
+        $url    = rtrim($config->api_url, '/') . '/createapplication';
         $result = $this->httpRequest('POST', $url, $data, [
             'Authorization' => 'OAuth ' . $token,
             'Content-Type'  => 'text/plain',
@@ -962,7 +962,7 @@ class SendLeadByLenderApi extends Job
 
         // ── Upload documents ───────────────────────────────────────────────────
         if ($appName && $this->documents->isNotEmpty()) {
-            $uploadUrl = rtrim($config->url, '/') . '/uploaddocs';
+            $uploadUrl = rtrim($config->api_url, '/') . '/uploaddocs';
             foreach ($this->documents as $doc) {
                 $docType  = $this->matchDocumentType($doc->document_type, $docTypes, 'Other');
                 $filePath = $this->getFilePath($doc->file_name);
@@ -991,7 +991,7 @@ class SendLeadByLenderApi extends Job
 
             // Process application
             try {
-                $processUrl = rtrim($config->url, '/') . '/processapplication';
+                $processUrl = rtrim($config->api_url, '/') . '/processapplication';
                 Http::timeout(self::TIMEOUT_SECONDS)
                     ->withHeaders([
                         'Authorization' => 'OAuth ' . $token,
@@ -1020,7 +1020,7 @@ class SendLeadByLenderApi extends Job
     // ── Biz2Credit ─────────────────────────────────────────────────────────────
 
     private function submitBiz2Credit(
-        CrmLenderAPis $config, string $lenderName, int $lenderId,
+        Lender $config, string $lenderName, int $lenderId,
         int $leadId, int $userId, array $flatLeadData, array $arrLabels
     ): array {
         // NOTE: original payload was test/hardcoded data.
@@ -1420,18 +1420,18 @@ class SendLeadByLenderApi extends Job
 
     // ── Credential deduplication ───────────────────────────────────────────────
 
-    private function credentialKey(CrmLenderAPis $config): ?string
+    private function credentialKey(Lender $config): ?string
     {
         $type = strtolower($config->type ?? '');
         return match ($type) {
-            'ondeck'            => "{$config->username}:{$config->password}:{$config->api_key}",
+            'ondeck'            => "{$config->api_username}:{$config->api_password}:{$config->api_key}",
             'credibly',
             'bitty_advance',
             'specialty',
             'forward_financing' => $config->api_key,
             'fox_partner',
             'lendini',
-            'cancapital'        => "{$config->username}:{$config->password}",
+            'cancapital'        => "{$config->api_username}:{$config->api_password}",
             default             => null,   // no dedup for unknown types
         };
     }

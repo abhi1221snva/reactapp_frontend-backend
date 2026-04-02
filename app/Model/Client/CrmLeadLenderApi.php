@@ -25,7 +25,7 @@ class CrmLeadLenderApi extends Model
 
     public function lender()
     {
-        return $this->belongsTo(CrmLenderAPis::class, 'lender_id');
+        return $this->belongsTo(Lender::class, 'lender_id');
     }
 
     public function client()

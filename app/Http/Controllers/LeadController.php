@@ -2715,4 +2715,128 @@ class LeadController extends Controller
             return $this->failResponse("Failed to update response", [$e->getMessage()], $e, 500);
         }
     }
+
+    /**
+     * GET /crm/lead/{id}/submission-status
+     *
+     * Lightweight endpoint for frontend polling after dispatch.
+     * Returns per-lender submission status without heavy joins.
+     */
+    public function submissionStatus(Request $request, $id)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            $leadId   = (int) $id;
+
+            $rows = DB::connection("mysql_{$clientId}")
+                ->table('crm_lender_submissions')
+                ->where('lead_id', $leadId)
+                ->select([
+                    'id', 'lender_id', 'lender_name',
+                    'submission_status', 'submission_type',
+                    'api_error', 'error_messages',
+                    'doc_upload_status', 'doc_upload_notes',
+                    'response_status', 'response_note',
+                    'submitted_at', 'updated_at',
+                ])
+                ->orderBy('updated_at', 'desc')
+                ->get()
+                ->map(fn ($r) => (array) $r)
+                ->values()
+                ->toArray();
+
+            return $this->successResponse("Submission status", $rows);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to load submission status", [$e->getMessage()], $e, 500);
+        }
+    }
+
+    /**
+     * POST /crm/lead/{id}/fix-and-resubmit
+     *
+     * Atomically: update EAV field values + re-dispatch the lender API job.
+     * Single request replaces the fix → save → retry flow.
+     *
+     * Body:
+     *   lender_id:     int     (required)
+     *   field_updates: object  (required) { field_key: value, ... }
+     *   document_ids:  int[]   (optional)
+     */
+    public function fixAndResubmit(Request $request, $id)
+    {
+        $this->validate($request, [
+            'lender_id'     => 'required|integer',
+            'field_updates' => 'required|array|min:1',
+        ]);
+
+        try {
+            $clientId     = $request->auth->parent_id;
+            $leadId       = (int) $id;
+            $lenderId     = (int) $request->input('lender_id');
+            $fieldUpdates = $request->input('field_updates');
+            $documentIds  = $request->input('document_ids', []);
+            $userId       = (int) $request->auth->id;
+            $conn         = "mysql_{$clientId}";
+
+            // ── Verify lender exists with active API ─────────────────────────
+            $lender = DB::connection($conn)->table('crm_lender')
+                ->where('id', $lenderId)
+                ->where('api_status', '1')
+                ->first();
+
+            if (!$lender) {
+                return $this->failResponse("Lender not found or API not active", [], null, 404);
+            }
+
+            // ── Update EAV field values ──────────────────────────────────────
+            $updated = [];
+            foreach ($fieldUpdates as $key => $value) {
+                if (!is_string($key) || $key === '') continue;
+                $value = is_string($value) ? trim($value) : $value;
+
+                DB::connection($conn)->table('crm_lead_values')->updateOrInsert(
+                    ['lead_id' => $leadId, 'field_key' => $key],
+                    ['field_value' => (string) $value]
+                );
+                $updated[$key] = $value;
+            }
+
+            // ── Reset submission status to 'submitted' (re-queued) ───────────
+            DB::connection($conn)->table('crm_lender_submissions')
+                ->where('lead_id', $leadId)
+                ->where('lender_id', $lenderId)
+                ->update([
+                    'submission_status' => 'submitted',
+                    'api_error'         => null,
+                    'error_messages'    => null,
+                    'updated_at'        => now(),
+                ]);
+
+            // ── Activity log ─────────────────────────────────────────────────
+            $fieldList = implode(', ', array_keys($updated));
+            DB::connection($conn)->table('crm_lead_activity')->insert([
+                'lead_id'       => $leadId,
+                'user_id'       => $userId,
+                'activity_type' => 'lender_fix_resubmit',
+                'subject'       => "Fields fixed and resubmitted to: {$lender->lender_name}",
+                'body'          => "Updated fields: {$fieldList}",
+                'created_at'    => now(),
+                'updated_at'    => now(),
+            ]);
+
+            // ── Dispatch new API job ─────────────────────────────────────────
+            dispatch(new \App\Jobs\DispatchLenderApiJob(
+                $clientId, $leadId, $lenderId, $userId, $documentIds
+            ))->onConnection('redis')->onQueue('default');
+
+            return $this->successResponse("Fields updated and resubmission queued", [
+                'lender_id'      => $lenderId,
+                'lender_name'    => $lender->lender_name,
+                'fields_updated' => $updated,
+                'status'         => 'submitted',
+            ]);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Fix and resubmit failed", [$e->getMessage()], $e, 500);
+        }
+    }
 }
