@@ -2690,7 +2690,7 @@ class LeadController extends Controller
     public function updateSubmissionResponse(Request $request, $id, $subId)
     {
         $this->validate($request, [
-            'response_status' => 'required|string|in:pending,approved,declined,needs_documents,no_response',
+            'response_status' => 'required|string|in:pending,approved,declined,needs_documents,no_response,under_review',
             'submission_status' => 'sometimes|string|in:pending,submitted,viewed,approved,declined,no_response',
         ]);
 

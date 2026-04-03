@@ -54,6 +54,11 @@ class EmailLenderConversation extends Model
         'conversation_date',
         'activity_id',
         'note_id',
+        'ai_response_status',
+        'ai_merchant_name',
+        'ai_confidence',
+        'ai_raw_response',
+        'submission_id',
     ];
 
     protected $casts = [
@@ -68,6 +73,9 @@ class EmailLenderConversation extends Model
         'conversation_date'    => 'datetime',
         'activity_id'          => 'integer',
         'note_id'              => 'integer',
+        'ai_confidence'        => 'integer',
+        'ai_raw_response'      => 'array',
+        'submission_id'        => 'integer',
     ];
 
     public function lead()

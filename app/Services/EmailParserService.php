@@ -206,7 +206,7 @@ class EmailParserService
                 'anthropic-version' => '2023-06-01',
                 'content-type'      => 'application/json',
             ])->timeout(60)->post('https://api.anthropic.com/v1/messages', [
-                'model'      => 'claude-sonnet-4-20250514',
+                'model'      => config('services.anthropic.model'),
                 'max_tokens' => 300,
                 'messages'   => [
                     [
@@ -309,7 +309,7 @@ PROMPT;
                 'anthropic-version' => '2023-06-01',
                 'content-type'      => 'application/json',
             ])->timeout(120)->post('https://api.anthropic.com/v1/messages', [
-                'model'      => 'claude-sonnet-4-20250514',
+                'model'      => config('services.anthropic.model'),
                 'max_tokens' => 2000,
                 'messages'   => [
                     [
@@ -425,7 +425,7 @@ PROMPT;
                 'anthropic-version' => '2023-06-01',
                 'content-type'      => 'application/json',
             ])->timeout(120)->post('https://api.anthropic.com/v1/messages', [
-                'model'      => 'claude-sonnet-4-20250514',
+                'model'      => config('services.anthropic.model'),
                 'max_tokens' => 1000,
                 'messages'   => [
                     [
@@ -481,7 +481,7 @@ PROMPT;
                 'anthropic-version' => '2023-06-01',
                 'content-type'      => 'application/json',
             ])->timeout(60)->post('https://api.anthropic.com/v1/messages', [
-                'model'      => 'claude-sonnet-4-20250514',
+                'model'      => config('services.anthropic.model'),
                 'max_tokens' => 500,
                 'messages'   => [
                     [

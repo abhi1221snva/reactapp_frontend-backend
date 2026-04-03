@@ -78,6 +78,7 @@ class ProcessEmailParsedAttachmentJob extends Job
                             'attachment_id'    => $this->attachmentId,
                             'gmail_message_id' => $attachment->gmail_message_id,
                             'user_id'          => $this->userId,
+                            'extraction_model' => config('services.anthropic.model'),
                         ]);
                         $app = EmailParsedApplication::on($conn)->create($appData);
                         $attachment->linked_application_id = $app->id;

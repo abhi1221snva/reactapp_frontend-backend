@@ -234,6 +234,52 @@ class LeadSourceConfigController extends Controller
 
 
     /**
+     * @OA\Post(
+     *     path="/update-lead-source-config/{id}",
+     *     summary="Update an existing lead source configuration",
+     *     tags={"LeadSourceConfig"},
+     *     security={{"Bearer":{}}},
+     *     @OA\Parameter(
+     *         name="id",
+     *         in="path",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             @OA\Property(property="title", type="string"),
+     *             @OA\Property(property="description", type="string"),
+     *             @OA\Property(property="list_id", type="integer")
+     *         )
+     *     ),
+     *     @OA\Response(response=200, description="Updated successfully"),
+     *     @OA\Response(response=404, description="Not found"),
+     *     @OA\Response(response=500, description="Server error")
+     * )
+     */
+    public function update($id, Request $request)
+    {
+        try {
+            $config = LeadSourceConfig::on("mysql_" . $request->auth->parent_id)->findOrFail($id);
+
+            $fields = $request->only(['title', 'description', 'list_id']);
+            $config->fill($fields);
+            $config->save();
+
+            return $this->successResponse("Updated Successfully", $config->toArray());
+        } catch (ModelNotFoundException $exception) {
+            return $this->failResponse("Lead Source Config Not Found", [
+                "Invalid Lead Source Config id $id"
+            ], $exception, 404);
+        } catch (\Exception $exception) {
+            return $this->failResponse("Failed to update Lead Source Config", [
+                $exception->getMessage()
+            ], $exception, 500);
+        }
+    }
+
+    /**
      * @OA\Get(
      *     path="/header-by-listid/{id}",
      *     summary="Get list header by List ID",

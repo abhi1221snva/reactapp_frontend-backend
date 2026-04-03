@@ -1009,6 +1009,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   //api list url
   $router->post("lead-source-configs", "LeadSourceConfigController@index");
   $router->put('lead-source-config', 'LeadSourceConfigController@create');
+  $router->post('update-lead-source-config/{id}', 'LeadSourceConfigController@update');
   $router->get('header-by-listid/{id}', 'LeadSourceConfigController@headerByListId');
   $router->get('delete-lead-source-config/{id}', 'LeadSourceConfigController@delete');
   $router->post("lead-data", "LeadSourceConfigController@leadData");

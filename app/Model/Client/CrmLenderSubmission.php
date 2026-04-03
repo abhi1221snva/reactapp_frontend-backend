@@ -48,6 +48,6 @@ class CrmLenderSubmission extends Model
     public const DOC_UPLOAD_STATUSES = ['none', 'success', 'partial', 'failed'];
 
     public const RESPONSE_STATUSES = [
-        'pending', 'approved', 'declined', 'needs_documents', 'no_response',
+        'pending', 'approved', 'declined', 'needs_documents', 'no_response', 'under_review',
     ];
 }
