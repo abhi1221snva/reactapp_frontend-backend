@@ -1044,7 +1044,45 @@ public function assignLists(Request $request)
     ]);
 }
 
+/**
+ * Detach (remove) a single list from a campaign.
+ * Sets is_deleted=1 on the campaign_list pivot row.
+ */
+public function detachList(Request $request)
+{
+    $validator = Validator::make($request->all(), [
+        'campaign_id' => 'required|integer',
+        'list_id'     => 'required|integer',
+    ]);
 
+    if ($validator->fails()) {
+        return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+    }
 
+    $campaignId = $request->input('campaign_id');
+    $listId     = $request->input('list_id');
+
+    $deleted = DB::connection($this->tenantDb($request))
+        ->table('campaign_list')
+        ->where('campaign_id', $campaignId)
+        ->where('list_id', $listId)
+        ->update([
+            'is_deleted'  => 1,
+            'status'      => '0',
+            'updated_at'  => Carbon::now(),
+        ]);
+
+    if ($deleted) {
+        return response()->json([
+            'success' => true,
+            'message' => 'List removed from campaign.',
+        ]);
+    }
+
+    return response()->json([
+        'success' => false,
+        'message' => 'List not found in this campaign.',
+    ], 404);
+}
 
 }

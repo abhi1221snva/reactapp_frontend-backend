@@ -48,6 +48,9 @@ $router->group(['middleware' => ['throttle:60,1']], function () use ($router) {
     // Document delete + secure inline view (never exposes direct storage URL)
     $router->delete('public/merchant/{token}/document/{docId}', 'PublicApplicationController@deleteDocument');
     $router->get('public/document/{token}/view/{docId}',        'PublicApplicationController@viewDocument');
+
+    // Address autocomplete proxy (Nominatim / OpenStreetMap) — public forms
+    $router->get('public/geocode/search', 'GeocoderProxyController@search');
 });
 
 $router->get('/list-all-cache', 'RedisCacheController@listAllCache');
@@ -458,6 +461,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
 //campaign assign list
 
   $router->post('/campaign/assign-lists', 'CampaignController@assignLists');
+  $router->post('/campaign/detach-list', 'CampaignController@detachList');
 
   // ─── Lead Management (Deduplication + Assignment) ─────────────────────────
   $router->post('leads/check-duplicate',   'LeadManagementController@checkDuplicate');
