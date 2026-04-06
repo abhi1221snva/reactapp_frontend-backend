@@ -78,8 +78,9 @@ class WorkforceAnalyticsController extends Controller
     public function attendanceTrend()
     {
         $days     = (int) $this->request->input('days', 30);
-        $dateFrom = Carbon::today()->subDays($days - 1)->toDateString();
-        $dateTo   = Carbon::today()->toDateString();
+        $userTz   = $this->request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
+        $dateFrom = Carbon::now($userTz)->subDays($days - 1)->toDateString();
+        $dateTo   = Carbon::now($userTz)->toDateString();
 
         try {
             $rows = Attendance::whereBetween('date', [$dateFrom, $dateTo])
@@ -107,8 +108,9 @@ class WorkforceAnalyticsController extends Controller
     public function callVsAvailability()
     {
         $days     = (int) $this->request->input('days', 30);
-        $dateFrom = Carbon::today()->subDays($days - 1)->toDateString();
-        $dateTo   = Carbon::today()->toDateString();
+        $userTz   = $this->request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
+        $dateFrom = Carbon::now($userTz)->subDays($days - 1)->toDateString();
+        $dateTo   = Carbon::now($userTz)->toDateString();
 
         try {
             // Daily attendance (online agents)
@@ -163,7 +165,8 @@ class WorkforceAnalyticsController extends Controller
     public function breakDistribution()
     {
         $days     = (int) $this->request->input('days', 30);
-        $dateFrom = Carbon::today()->subDays($days - 1)->toDateString();
+        $userTz   = $this->request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
+        $dateFrom = Carbon::now($userTz)->subDays($days - 1)->toDateString();
 
         try {
             $rows = AttendanceBreak::where('break_start_at', '>=', $dateFrom)
@@ -190,8 +193,9 @@ class WorkforceAnalyticsController extends Controller
     public function utilizationTrend()
     {
         $days     = (int) $this->request->input('days', 30);
-        $dateFrom = Carbon::today()->subDays($days - 1)->toDateString();
-        $dateTo   = Carbon::today()->toDateString();
+        $userTz   = $this->request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
+        $dateFrom = Carbon::now($userTz)->subDays($days - 1)->toDateString();
+        $dateTo   = Carbon::now($userTz)->toDateString();
 
         try {
             // Daily attendance working hours
@@ -254,8 +258,9 @@ class WorkforceAnalyticsController extends Controller
     public function leaderboard()
     {
         $days     = (int) $this->request->input('days', 7);
-        $dateFrom = Carbon::today()->subDays($days - 1)->toDateString();
-        $dateTo   = Carbon::today()->toDateString();
+        $userTz   = $this->request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
+        $dateFrom = Carbon::now($userTz)->subDays($days - 1)->toDateString();
+        $dateTo   = Carbon::now($userTz)->toDateString();
         $parentId = $this->request->auth->parent_id ?: $this->request->auth->id;
 
         try {

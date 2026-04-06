@@ -46,8 +46,6 @@ class CallPredictiveDialAllClientController extends Controller
 
                         //same as job
 
-                        date_default_timezone_set('US/Eastern');
-                        //date_default_timezone_set("Asia/Calcutta"); 
                         $connection = 'mysql_' . $clientId;
                         $data = array();
 
@@ -74,9 +72,7 @@ class CallPredictiveDialAllClientController extends Controller
                                 {
                                     if($campaign->time_based_calling == 1)
                                     {
-                                        $time = date('H:i:s');
-                                        list($hrs,$mins,$secs) = explode(':',$time);
-                                        $currenttime = $hrs.":".$mins.":".$secs;
+                                        $currenttime = \Carbon\Carbon::now('America/New_York')->format('H:i:s');
 
                                         $start_time = $campaign->call_time_start;
                                         $end_time = $campaign->call_time_end;
@@ -100,7 +96,7 @@ class CallPredictiveDialAllClientController extends Controller
                                         $data['parent_'.$clientId]['campaign'][$extension_key]['campaign_title'] = $campaign->title;
                                     }
 
-                                    $last_time_cron_run = date('Y-m-d H:i:s');
+                                    $last_time_cron_run = \Carbon\Carbon::now('America/New_York')->format('Y-m-d H:i:s');
                                     $duration = $campaign->duration;
                                     $last_time_cron_run_db = $campaign->last_time_cron_run;
 

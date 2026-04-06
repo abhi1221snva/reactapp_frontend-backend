@@ -392,7 +392,7 @@ class Lists extends Model
 
 public function getList($request)
 {
-    $userTimezone = $request->auth->timezone ?? 'Asia/Kolkata';
+    $userTimezone = $request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
     Log::info('User timezone', [
         'timezone' => $request->auth->timezone ?? null
     ]);

@@ -462,12 +462,21 @@ class Asterisk extends Model
         }*/
     }
 
-    public function click2Call($number, $campaignId, $id, $user_id)
+    public function click2Call($number, $campaignId, $id, $user_id, $dialer_mode = 1)
     {
         $number = preg_replace('/[^0-9]/', '', $number);
         $area_code =  substr($number, 0, 3);
+
+        error_log("click2Call: ext={$this->extension} admin={$this->admin} number={$number} campaignId={$campaignId} leadId={$id} userId={$user_id} dialer_mode={$dialer_mode}");
+
+        // Debug: dump ALL extension_live rows for this admin
+        $allRows = DB::connection('mysql_'.$this->admin)->select("SELECT extension, status, campaign_id, lead_id FROM extension_live");
+        error_log("click2Call: extension_live rows for admin={$this->admin}: " . json_encode($allRows));
+
         $sql = "SELECT extension FROM extension_live WHERE extension = :extension and status = :status";
         $agentLoginStatus =DB::connection('mysql_'.$this->admin)->selectOne($sql, array('extension' => $this->extension, 'status' => 0));
+
+        error_log("click2Call: agentLoginStatus=" . json_encode($agentLoginStatus));
 
         //campaign
 
@@ -606,8 +615,18 @@ class Asterisk extends Model
 
                 $callerId = "<$number>";
                 $extenStr = $this->extension.'-'.$number."-".$campaignId."-".$id."-".$this->admin."-".$cli."-".$country_code."-".$type; //caller_id,parent_id,cli,country_code
+
+                // For WebRTC (dialer_mode=2): dial the SIP extension directly
+                // so the SIP INVITE reaches the browser WebPhone.
+                // For hardware phones: use the local channel via dialler-room-caller dialplan.
+                if ($dialer_mode == 2) {
+                    $channel = "SIP/" . $this->extension;
+                } else {
+                    $channel = "local/" . $this->extension . "-" . $number . "-" . $this->admin . "@dialler-room-caller";
+                }
+
                 $originateRequest = "Action: originate\r\n";
-                $originateRequest .= "Channel: local/" . $this->extension . "-" . $number . "-" .$this->admin . "@dialler-room-caller\r\n";//ext-number-parent_id
+                $originateRequest .= "Channel: $channel\r\n";
                 $originateRequest .= "Timeout: $this->waitTime\r\n";
                 $originateRequest .= "Callerid: $callerId\r\n";
                 $originateRequest .= "Exten: $extenStr\r\n";
@@ -615,12 +634,17 @@ class Asterisk extends Model
                 $originateRequest .= "Priority: 1\r\n";
                 $originateRequest .= "Async: yes\r\n";
                 $originateRequest .= "Action: Logoff\r\n\r\n";
+
+                error_log("click2Call: ORIGINATE Channel={$channel} Exten={$extenStr} cli={$cli} dialer_mode={$dialer_mode}");
+
                 // Send originate request
                 $param['action'] = 'dial';
                 $param['campaign_id'] = $campaignId;
                 $param['mobile'] = $number;
                 $response = $this->amiCommand($originateRequest, $param);
-                
+
+                error_log("click2Call: amiCommand response=" . var_export($response, true));
+
                 if($response == "true")
                 {
                     /*include_once ("Class/ListClass.php");
@@ -633,6 +657,7 @@ class Asterisk extends Model
             }
         }
         else{
+            error_log("click2Call: FAILED - extension {$this->extension} NOT in extension_live with status=0 for admin={$this->admin}");
             echo json_encode(array('status' => 'fail', 'msg' => "Error : Your are not logged in from extension : $this->extension"));
         }
     }

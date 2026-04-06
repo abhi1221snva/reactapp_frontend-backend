@@ -261,6 +261,39 @@ class ExcludeNumberController extends Controller
     }
 
 
+    public function downloadExcludeNumber()
+    {
+        try {
+            $db = DB::connection('mysql_' . $this->request->auth->parent_id);
+            $records = $db->select("SELECT number, first_name, last_name, company_name, campaign_id, updated_at FROM exclude_number ORDER BY updated_at DESC");
+
+            $callback = function () use ($records) {
+                $handle = fopen('php://output', 'w');
+                fputcsv($handle, ['Phone Number', 'First Name', 'Last Name', 'Company', 'Campaign ID', 'Last Updated']);
+                foreach ($records as $row) {
+                    $row = (array) $row;
+                    fputcsv($handle, [
+                        $row['number'] ?? '',
+                        $row['first_name'] ?? '',
+                        $row['last_name'] ?? '',
+                        $row['company_name'] ?? '',
+                        $row['campaign_id'] ?? '',
+                        $row['updated_at'] ?? '',
+                    ]);
+                }
+                fclose($handle);
+            };
+
+            $filename = 'exclude_list_' . date('Y-m-d_His') . '.csv';
+            return response()->stream($callback, 200, [
+                'Content-Type' => 'text/csv',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => 'Failed to export Exclude list.'], 500);
+        }
+    }
+
     public function uploadExcludeNumber()
     {
         $uploadDir = '/var/www/html/api/upload/';

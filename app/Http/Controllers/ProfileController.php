@@ -95,8 +95,6 @@ class ProfileController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        // $userId = 358;
-        // $user = User::find($userId);
 
         if (!$user) {
             return response()->json([
@@ -105,9 +103,36 @@ class ProfileController extends Controller
             ], 404);
         }
 
+        $data = $user->toArray();
+
+        // Enrich with SIP config so the WebPhone can refresh credentials
+        // without requiring a full re-login.
+        if ($user->asterisk_server_id) {
+            $asterisk = \DB::table('asterisk_server')
+                ->where('id', $user->asterisk_server_id)
+                ->select('host', 'domain')
+                ->first();
+            $data['server'] = $asterisk->host  ?? null;
+            $data['domain'] = $asterisk->domain ?? null;
+        }
+        $sipExt = $user->alt_extension ?: (string) $user->extension;
+        if ($sipExt) {
+            $extRow = \DB::table('user_extensions')
+                ->where('username', $sipExt)
+                ->select('secret')
+                ->first();
+            $data['secret'] = $extRow->secret ?? null;
+        }
+
+        // Include company name from permissions so the frontend header can display it
+        $permissions = $user->getPermissions();
+        if (isset($permissions[$user->parent_id]['companyName'])) {
+            $data['companyName'] = $permissions[$user->parent_id]['companyName'];
+        }
+
         return response()->json([
             'success' => true,
-            'data' => $user
+            'data' => $data
         ]);
     }
 

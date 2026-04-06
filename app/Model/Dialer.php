@@ -144,7 +144,7 @@ class Dialer extends Model
         if (empty($weekPlan)) return true; // No schedule = 24/7 allowed
         
         try {
-            if (empty($timezone)) $timezone = 'US/Eastern';
+            if (empty($timezone)) $timezone = 'America/New_York';
             $now = new DateTime("now", new DateTimeZone($timezone));
             $currentDay = strtolower($now->format('l')); // monday, tuesday...
             $currentTime = $now->format('H:i:s'); // 14:30:00
@@ -909,7 +909,10 @@ class Dialer extends Model
 
             $dataUser = User::where('id', $request->auth->id)->get()->first();
 
-            $dialer_mode = $dataUser->dialer_mode;
+            // Allow frontend to override dialer_mode (React WebPhone sends dialer_mode=2)
+            $dialer_mode = $request->has('dialer_mode')
+                ? intval($request->input('dialer_mode'))
+                : $dataUser->dialer_mode;
 
             if ($dialer_mode == 3) {
                 $extension = $dataUser->app_extension;
@@ -925,13 +928,19 @@ class Dialer extends Model
 
             /*close new code implement*/
 
+            error_log("extensionLogin: user_id={$request->auth->id} ext={$extension} alt_ext={$request->auth->alt_extension} hw_ext={$request->auth->extension} dialer_mode={$dialer_mode} campaign_id={$request->input('campaign_id')} parent_id={$request->auth->parent_id}");
+
             $getExtensionLive = $this->getExtensionLive($extension, $request->auth->parent_id);
+
+            error_log("extensionLogin: getExtensionLive result=" . json_encode($getExtensionLive));
+
             if (empty($getExtensionLive)) {
 
                 // ── WebRTC mode (dialer_mode=2): browser SIP stack is already registered
                 // to Asterisk via WSS. We do NOT need the AMI originate handshake —
                 // just INSERT the extension_live row directly and proceed.
                 if ($dialer_mode == 2) {
+                    error_log("extensionLogin: WebRTC mode - inserting ext={$extension} into extension_live for admin={$request->auth->parent_id}");
                     DB::connection('mysql_' . $request->auth->parent_id)->statement(
                         "INSERT INTO extension_live (extension, status, campaign_id, lead_id)
                          VALUES (?, ?, ?, NULL)
@@ -1101,7 +1110,10 @@ class Dialer extends Model
 
                 $dataUser = User::where('id', $request->auth->id)->get()->first();
 
-                $dialer_mode = $dataUser->dialer_mode;
+                // Allow frontend to override dialer_mode (React WebPhone sends dialer_mode=2)
+                $dialer_mode = $request->has('dialer_mode')
+                    ? intval($request->input('dialer_mode'))
+                    : $dataUser->dialer_mode;
 
                 if ($dialer_mode == 3) {
                     $extension = $dataUser->app_extension;
@@ -1113,12 +1125,12 @@ class Dialer extends Model
                     $extension =  $request->auth->extension;
                 }
 
-                //echo $extension;die;
+                error_log("callNumber: user_id={$request->auth->id} hw_ext={$request->auth->extension} alt_ext={$request->auth->alt_extension} dialer_mode={$dialer_mode} req_mode=" . $request->input('dialer_mode') . " FINAL_EXT={$extension} number=" . $request->input('number'));
 
                 /*close new code implement*/
 
                 $asterisk = $this->getAsterisk($request->auth->asterisk_server_id, $extension, $request->auth->parent_id);
-                $response = $asterisk->click2Call($request->input('number'), $request->input('campaign_id'), $request->input('lead_id'),$request->auth->id);
+                $response = $asterisk->click2Call($request->input('number'), $request->input('campaign_id'), $request->input('lead_id'),$request->auth->id, $dialer_mode);
                   if (is_array($response) && isset($response['success']) && $response['success'] === false) {
                     return [
                         'success' => false,
@@ -1162,7 +1174,10 @@ class Dialer extends Model
 
         $dataUser = User::where('id', $request->auth->id)->get()->first();
 
-        $dialer_mode = $dataUser->dialer_mode;
+        // Allow frontend to override dialer_mode (React WebPhone sends dialer_mode=2)
+        $dialer_mode = $request->has('dialer_mode')
+            ? intval($request->input('dialer_mode'))
+            : $dataUser->dialer_mode;
 
         if ($dialer_mode == 3) {
             $extension = $dataUser->app_extension;

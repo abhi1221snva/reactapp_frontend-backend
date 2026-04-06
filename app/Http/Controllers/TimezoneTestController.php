@@ -35,7 +35,7 @@ class TimezoneTestController extends Controller
             
             // 2. Lookup Timezone
             $tzRow = Timezone::where('areacode', $areaCode)->first();
-            $leadTimezone = $tzRow ? $tzRow->timezone : 'US/Eastern'; // Fallback to Admin Default if not found
+            $leadTimezone = $tzRow ? $tzRow->timezone : 'America/New_York'; // Fallback to Admin Default if not found
             $foundInDb = $tzRow ? true : false;
 
             // 3. Compare Times

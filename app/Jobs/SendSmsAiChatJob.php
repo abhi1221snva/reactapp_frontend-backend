@@ -40,10 +40,7 @@ class SendSmsAiChatJob extends Job
     public function handle()
     {
         $clientId = $this->clientId;
-        date_default_timezone_set('US/Eastern');
-        $last_time_cron_run = date('Y-m-d H:i:s');
-
-        //date_default_timezone_set("Asia/Calcutta"); 
+        $last_time_cron_run = \Carbon\Carbon::now('America/New_York')->format('Y-m-d H:i:s');
 
        // echo date('Y-m-d H:i:s');die;
         

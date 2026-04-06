@@ -63,13 +63,15 @@ class CrmAnalyticsController extends Controller
         $end    = $request->input('end_date');
 
         if (!$start || !$end) {
-            $end   = Carbon::now()->toDateString();
+            $userTz = $request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
+            $now   = Carbon::now($userTz);
+            $end   = $now->toDateString();
             $start = match ($period) {
-                'today'  => Carbon::now()->toDateString(),
-                'week'   => Carbon::now()->subDays(6)->toDateString(),
-                'month'  => Carbon::now()->subDays(29)->toDateString(),
-                'quarter'=> Carbon::now()->subDays(89)->toDateString(),
-                default  => Carbon::now()->subDays(29)->toDateString(),
+                'today'  => $now->toDateString(),
+                'week'   => $now->copy()->subDays(6)->toDateString(),
+                'month'  => $now->copy()->subDays(29)->toDateString(),
+                'quarter'=> $now->copy()->subDays(89)->toDateString(),
+                default  => $now->copy()->subDays(29)->toDateString(),
             };
         }
         return [$start, $end];

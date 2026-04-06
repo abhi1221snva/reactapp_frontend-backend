@@ -77,9 +77,9 @@ class DialerController extends Controller
      *         description="List of campaigns for the agent",
      *         @OA\JsonContent(
      *             @OA\Property(property="utc_time", type="string", example="2025-06-17 09:30:00"),
-     *             @OA\Property(property="timezone", type="string", example="Asia/Kolkata"),
-     *             @OA\Property(property="timezoneValue", type="string", example="+05:30"),
-     *             @OA\Property(property="time", type="string", example="10:00:00(+05:30)"),
+     *             @OA\Property(property="timezone", type="string", example="America/New_York"),
+     *             @OA\Property(property="timezoneValue", type="string", example="-04:00"),
+     *             @OA\Property(property="time", type="string", example="10:00:00(-04:00)"),
      *             @OA\Property(property="success", type="boolean", example=true),
      *             @OA\Property(property="message", type="string", example="List of campaign for extension."),
      *             @OA\Property(property="data", type="array",

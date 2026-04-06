@@ -20,7 +20,10 @@ class JwtMiddleware
     public function handle(Request $request, Closure $next, $guard = null)
     {
         $token = $request->bearerToken() ?? $request->get('token');
-        $id = $request->get('id', null);
+        // Use explicit user_id param for identity verification.
+        // DO NOT use generic 'id' — it collides with payload fields
+        // in dialer routes (call-number, hang-up, send-dtmf, etc.).
+        $id = $request->get('user_id', null);
 
         if (!$token) {
             return response()->json([

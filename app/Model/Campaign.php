@@ -152,7 +152,7 @@ public function campaignDetaillatest($request)
 public function campaignDetail($request)
 {
     try {
-        $userTimezone = $request->auth->timezone ?? 'Asia/Kolkata';
+        $userTimezone = $request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
 
         $campaigns = self::allowedCampaigns(
             $request->auth->parent_id,
@@ -325,7 +325,7 @@ if (
    public function campaignDetailn($request)
 {
     try {
-        $userTimezone = $request->auth->timezone ?? 'Asia/Kolkata';
+        $userTimezone = $request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
 
         $campaigns = self::allowedCampaigns($request->auth->parent_id, $request->auth->level, $request->auth->groups);
         if ($request->has('title') && !empty($request->input('title'))) {
@@ -2113,7 +2113,7 @@ if (!empty($campaign->call_schedule_id)) {
     $campaign->setAttribute('schedule_name', $schedule ?? null);
 }
 // ✅ Convert timestamps to user timezone (API response only)
-$userTimezone = $request->auth->timezone ?? 'Asia/Kolkata';
+$userTimezone = $request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
 
 if (!empty($campaign->created_at)) {
     $campaign->created_at = convertToUserTimezone($campaign->created_at, $userTimezone);

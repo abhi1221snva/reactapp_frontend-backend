@@ -81,8 +81,7 @@ class OutboundUpdateCron extends Command
             foreach($clientIds as $clientId)
             {
 
-                date_default_timezone_set('America/New_York');
-                $last_time_cron_run = date('Y-m-d H:i:s');
+                $last_time_cron_run = \Carbon\Carbon::now('America/New_York')->format('Y-m-d H:i:s');
 
                 // Find the billing admin for this client
                 $adminUser = User::where('parent_id', $clientId)->where('role', 1)->first();
@@ -339,8 +338,7 @@ class OutboundUpdateCron extends Command
             
             foreach ($clientIds as $clientId) {
                 $this->customLog("Processing Client", ['clientId' => $clientId]);
-                date_default_timezone_set('America/New_York');
-                $last_time_cron_run = date('Y-m-d H:i:s');
+                $last_time_cron_run = \Carbon\Carbon::now('America/New_York')->format('Y-m-d H:i:s');
                 $db = $clientId;
 
                 // Find the billing admin for this client (Admin, Super Admin, or System Admin)
@@ -464,7 +462,7 @@ class OutboundUpdateCron extends Command
                         $weekPlan = !empty($details->week_plan) ? json_decode($details->week_plan, true) : null;
                         
                         // Fallback Admin Timezone
-                        $adminTimezone = $adminUser->timezone ?? 'US/Eastern';
+                        $adminTimezone = $adminUser->timezone ?? 'America/New_York';
 
                         $this->customLog("Starting lead processing loop", [
                             'campaign_id' => $campaign_id,

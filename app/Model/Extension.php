@@ -1020,7 +1020,7 @@ public function extensionDetailList(Request $request, int $extension_id = null)
             $isDeleteAction = false;
 
             if ($request->has('extension_id') && !empty($request->input('extension_id'))) {
-                $data = array('id' => $request->input('extension_id'), 'role' => 2);
+                $data = array('id' => $request->input('extension_id'));
 
                 if ($request->has('first_name') && !empty($request->input('first_name'))) {
                     array_push($updateString, 'first_name = :first_name');
@@ -1034,7 +1034,7 @@ public function extensionDetailList(Request $request, int $extension_id = null)
                     array_push($updateString, 'email = :email');
                     $data['email'] = $request->input('email');
                 }
-                if ($request->has('mobile') && !empty($request->input('mobile'))) {
+                if ($request->has('mobile')) {
                     array_push($updateString, 'mobile = :mobile');
                     $data['mobile'] = $request->input('mobile');
                 }
@@ -1042,15 +1042,23 @@ public function extensionDetailList(Request $request, int $extension_id = null)
                     array_push($updateString, 'password = :password');
                     $data['password'] = Hash::make($request->input('password'));
                 }
-                if ($request->has('follow_me') && !empty($request->input('follow_me'))) {
+                if ($request->has('country_code')) {
+                    array_push($updateString, 'country_code = :country_code');
+                    $data['country_code'] = $request->input('country_code');
+                }
+                if ($request->has('extension_type') && !empty($request->input('extension_type'))) {
+                    array_push($updateString, 'extension_type = :extension_type');
+                    $data['extension_type'] = $request->input('extension_type');
+                }
+                if ($request->has('follow_me') && is_numeric($request->input('follow_me'))) {
                     array_push($updateString, 'follow_me = :follow_me');
                     $data['follow_me'] = $request->input('follow_me');
                 }
-                if ($request->has('call_forward') && !empty($request->input('call_forward'))) {
+                if ($request->has('call_forward') && is_numeric($request->input('call_forward'))) {
                     array_push($updateString, 'call_forward = :call_forward');
                     $data['call_forward'] = $request->input('call_forward');
                 }
-                if ($request->has('voicemail') && !empty($request->input('voicemail'))) {
+                if ($request->has('voicemail') && is_numeric($request->input('voicemail'))) {
                     array_push($updateString, 'voicemail = :voicemail');
                     $data['voicemail'] = $request->input('voicemail');
                 }
@@ -1058,9 +1066,41 @@ public function extensionDetailList(Request $request, int $extension_id = null)
                     array_push($updateString, 'vm_pin = :vm_pin');
                     $data['vm_pin'] = $request->input('vm_pin');
                 }
-                if ($request->has('voicemail_send_to_email') && !empty($request->input('voicemail_send_to_email'))) {
+                if ($request->has('voicemail_send_to_email') && is_numeric($request->input('voicemail_send_to_email'))) {
                     array_push($updateString, 'voicemail_send_to_email = :voicemail_send_to_email');
                     $data['voicemail_send_to_email'] = $request->input('voicemail_send_to_email');
+                }
+                if ($request->has('twinning') && is_numeric($request->input('twinning'))) {
+                    array_push($updateString, 'twinning = :twinning');
+                    $data['twinning'] = $request->input('twinning');
+                }
+                if ($request->has('cli_setting')) {
+                    array_push($updateString, 'cli_setting = :cli_setting');
+                    $data['cli_setting'] = $request->input('cli_setting');
+                }
+                if ($request->has('cli')) {
+                    array_push($updateString, 'cli = :cli');
+                    $data['cli'] = $request->input('cli');
+                }
+                if ($request->has('receive_sms_on_email') && is_numeric($request->input('receive_sms_on_email'))) {
+                    array_push($updateString, 'receive_sms_on_email = :receive_sms_on_email');
+                    $data['receive_sms_on_email'] = $request->input('receive_sms_on_email');
+                }
+                if ($request->has('receive_sms_on_mobile') && is_numeric($request->input('receive_sms_on_mobile'))) {
+                    array_push($updateString, 'receive_sms_on_mobile = :receive_sms_on_mobile');
+                    $data['receive_sms_on_mobile'] = $request->input('receive_sms_on_mobile');
+                }
+                if ($request->has('ip_filtering') && is_numeric($request->input('ip_filtering'))) {
+                    array_push($updateString, 'ip_filtering = :ip_filtering');
+                    $data['ip_filtering'] = $request->input('ip_filtering');
+                }
+                if ($request->has('enable_2fa') && is_numeric($request->input('enable_2fa'))) {
+                    array_push($updateString, 'enable_2fa = :enable_2fa');
+                    $data['enable_2fa'] = $request->input('enable_2fa');
+                }
+                if ($request->has('app_status') && is_numeric($request->input('app_status'))) {
+                    array_push($updateString, 'app_status = :app_status');
+                    $data['app_status'] = $request->input('app_status');
                 }
                 if ($request->has('user_level') && is_numeric($request->input('user_level'))) {
                     array_push($updateString, 'user_level = :user_level');
@@ -1088,7 +1128,7 @@ public function extensionDetailList(Request $request, int $extension_id = null)
 }
 
                 if (!empty($updateString)) {
-                    $query = "UPDATE " . $this->table . " set " . implode(" , ", $updateString) . " WHERE id = :id AND role = :role";
+                    $query = "UPDATE " . $this->table . " set " . implode(" , ", $updateString) . " WHERE id = :id";
                     DB::connection('master')->update($query, $data);
 
                     //fetch extension
@@ -1101,7 +1141,7 @@ public function extensionDetailList(Request $request, int $extension_id = null)
 
                     $this->configUpdate($request->input('id'));
 
-                    if (intval($data['is_deleted']) === 1) {
+                    if ($isDeleteAction) {
                         //remove extension group map:
                         $query = "UPDATE extension_group_map set is_deleted =:is_deleted WHERE extension = :extension";
                         DB::connection('mysql_' . $request->auth->parent_id)->update($query, ["is_deleted" => 1, "extension" => $extension]);
@@ -1140,6 +1180,24 @@ public function extensionDetailList(Request $request, int $extension_id = null)
                             "user" => $data
                         ];
                         dispatch(new ExtensionNotificationJob($request->auth->parent_id, $notificationData))->onConnection("database");
+                    }
+
+                    // Update group mappings if group_id provided
+                    if (!$isDeleteAction && $request->has('group_id') && is_array($request->input('group_id')) && count($request->input('group_id')) > 0) {
+                        if (strlen($extension) == 4) {
+                            $extension = $request->auth->parent_id . $extension;
+                        }
+
+                        $query = "UPDATE extension_group_map set is_deleted =:is_deleted WHERE extension = :extension";
+                        DB::connection('mysql_' . $request->auth->parent_id)->update($query, array('is_deleted' => 1, 'extension' => $extension));
+
+                        $query = "UPDATE extension_group_map set is_deleted =:is_deleted WHERE extension= :alt_extension";
+                        DB::connection('mysql_' . $request->auth->parent_id)->update($query, array('is_deleted' => 1, 'alt_extension' => $server['alt_extension']));
+
+                        foreach ($request->input('group_id') as $value) {
+                            $sql = "INSERT INTO extension_group_map (extension, group_id) VALUES (:extension, :group_id), (:alt_extension, :same_group_id) ON DUPLICATE KEY UPDATE is_deleted = :is_deleted";
+                            DB::connection('mysql_' . $request->auth->parent_id)->insert($sql, array('is_deleted' => 0, 'extension' => $extension, 'group_id' => $value, 'same_group_id' => $value, 'alt_extension' => $server['alt_extension']));
+                        }
                     }
 
                    return array(
@@ -1968,6 +2026,7 @@ public function checkExtension($request)
         $data['ip_filtering'] = $request->input('ip_filtering');
         $data['enable_2fa'] = $request->input('enable_2fa');
         $data['voip_configuration_id'] = $request->input('voip_configuration_id');
+        $data['status'] = $request->input('status', 1);
         $data['app_status'] = $request->input('app_status');
         $data['app_extension'] = $request->auth->parent_id . $intGeneratedAppExtension;
         $data['allow_google_authenticator'] = $request->allow_google_authenticator;

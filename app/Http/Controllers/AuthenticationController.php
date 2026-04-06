@@ -670,7 +670,7 @@ public function createUser(Request $request)
         $user->mobile           = $request->phone_number;
         $user->password         = Hash::make($request->password);
         $user->easify_user_uuid = $easifyUserToken;
-        $user->timezone = $request->timezone ?? 'Asia/Kolkata';
+        $user->timezone = $request->timezone ?? APP_DEFAULT_USER_TIMEZONE;
         $user->is_deleted = 0;
         $user->status = 1; // if you have status column
 

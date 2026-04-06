@@ -13,6 +13,11 @@ use App\Model\Client\EmailTemplete;
 use App\Model\Client\Label;
 use Carbon\Carbon;
 
+// Default timezone for all user-facing conversions when no user timezone is set.
+if (!defined('APP_DEFAULT_USER_TIMEZONE')) {
+    define('APP_DEFAULT_USER_TIMEZONE', 'America/New_York');
+}
+
 if (!function_exists('getRedisClient')) {
     function getRedisClient(): PredisClient
     {
@@ -37,13 +42,32 @@ if (!function_exists('convertToUserTimezone')) {
             return null;
         }
 
-        $timezone = $timezone ?? 'Asia/Kolkata';
+        $timezone = $timezone ?? APP_DEFAULT_USER_TIMEZONE;
 
         return Carbon::parse($datetime)
             ->timezone($timezone)
             ->format($format);
     }
 }
+
+if (!function_exists('convertUserDateRangeToUtc')) {
+    /**
+     * Convert a date range from user's timezone to UTC for DB queries.
+     */
+    function convertUserDateRangeToUtc(
+        string $startDate,
+        string $endDate,
+        ?string $timezone = null,
+        string $format = 'Y-m-d H:i:s'
+    ): array {
+        $tz = $timezone ?? APP_DEFAULT_USER_TIMEZONE;
+        return [
+            'start' => Carbon::parse($startDate, $tz)->setTimezone('UTC')->format($format),
+            'end'   => Carbon::parse($endDate, $tz)->setTimezone('UTC')->format($format),
+        ];
+    }
+}
+
 if (!function_exists('hhmmss')) {
     function hhmmss($seconds)
     {

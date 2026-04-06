@@ -283,6 +283,37 @@ class DncController extends Controller
 
 
 
+    public function downloadDnc()
+    {
+        try {
+            $db = DB::connection('mysql_' . $this->request->auth->parent_id);
+            $records = $db->select("SELECT number, extension, comment, updated_at FROM dnc ORDER BY updated_at DESC");
+
+            $callback = function () use ($records) {
+                $handle = fopen('php://output', 'w');
+                fputcsv($handle, ['Phone Number', 'Extension', 'Comment', 'Last Updated']);
+                foreach ($records as $row) {
+                    $row = (array) $row;
+                    fputcsv($handle, [
+                        $row['number'] ?? '',
+                        $row['extension'] ?? '',
+                        $row['comment'] ?? '',
+                        $row['updated_at'] ?? '',
+                    ]);
+                }
+                fclose($handle);
+            };
+
+            $filename = 'dnc_list_' . date('Y-m-d_His') . '.csv';
+            return response()->stream($callback, 200, [
+                'Content-Type' => 'text/csv',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => 'Failed to export DNC list.'], 500);
+        }
+    }
+
     public function uploadDnc()
     {
         $uploadDir = '/var/www/html/api/upload/';

@@ -144,15 +144,13 @@ class Callback extends Model
     public function getCallBack($request)
 {
     try {
-        date_default_timezone_set($request->auth->timezone);
+        $tz = $request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
 
-        // ✅ Convert timezone safely
-       $my_datetime = $request->start_date ?? date('Y-m-d H:i:s');
-$my_datetime1 = $request->end_date ?? date('Y-m-d H:i:s');
+        $my_datetime = $request->start_date ?? \Carbon\Carbon::now('UTC')->format('Y-m-d H:i:s');
+        $my_datetime1 = $request->end_date ?? \Carbon\Carbon::now('UTC')->format('Y-m-d H:i:s');
 
-
-        $request['start_date'] = date('Y-m-d H:i:s', strtotime("$my_datetime UTC"));
-        $request['end_date'] = date('Y-m-d H:i:s', strtotime("$my_datetime1 UTC"));
+        $request['start_date'] = \Carbon\Carbon::parse($my_datetime, 'UTC')->setTimezone($tz)->format('Y-m-d H:i:s');
+        $request['end_date']   = \Carbon\Carbon::parse($my_datetime1, 'UTC')->setTimezone($tz)->format('Y-m-d H:i:s');
 
         $client_id = $request->auth->parent_id;
         $search = [];

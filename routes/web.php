@@ -421,6 +421,12 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   // Alias used by AgentSummary frontend page
   $router->post('agent-report',                 'AdvancedReportController@agentProductivity');
   $router->post('transfer-report', 'ReportController@getTransferReport');
+
+  // --- Call Recording Report (unified recording-focused report) ---
+  $router->post('reports/call-recordings',        'CallRecordingReportController@index');
+  $router->post('reports/call-recordings/stats',  'CallRecordingReportController@stats');
+  $router->get('reports/call-recordings/{id}',    'CallRecordingReportController@show');
+  $router->post('reports/call-recordings/export', 'CallRecordingReportController@export');
   $router->get('get-timezone-list', 'ReportController@getTimeZoneList');
 
   #call matrix ananlyzer
@@ -588,6 +594,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   $router->post('delete-dnc', 'DncController@deleteDnc');
   $router->post('add-dnc', 'DncController@addDnc');
   $router->post('upload-dnc', 'DncController@uploadDnc');
+  $router->get('download-dnc', 'DncController@downloadDnc');
   $router->get('/dnc/fetch_data', 'DncController@fetch_data');
 
 
@@ -599,6 +606,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   $router->post('add-exclude-number', 'ExcludeNumberController@addExcludeNumber');
 
   $router->post('upload-exclude-number', 'ExcludeNumberController@uploadExcludeNumber');
+  $router->get('download-exclude-number', 'ExcludeNumberController@downloadExcludeNumber');
 
   //Label
   $router->post('label', 'LabelController@getLabel');  //done

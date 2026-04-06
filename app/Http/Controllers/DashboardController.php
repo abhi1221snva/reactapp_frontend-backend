@@ -697,22 +697,17 @@ function getLeadCount(Request $request) {
     public function getCallBack($request)
     {
         try {
-        $timezone = $request->auth->timezone 
-            ?? env('APP_TIMEZONE') 
-            ?? 'UTC';
+        $timezone = $request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
 
         if (empty($timezone) || !in_array($timezone, timezone_identifiers_list())) {
-            $timezone = env('APP_TIMEZONE') ?? 'Asia/Kolkata';
+            $timezone = APP_DEFAULT_USER_TIMEZONE;
         }
 
-        date_default_timezone_set($timezone);
+        $my_datetime=$request->start_date;
+        $my_datetime1=$request->end_date;
 
-        //date_default_timezone_set($request->auth->timezone); // your user's timezone
-        $my_datetime=$request->start_date;//'2023-04-03 07:57:37';
-        $my_datetime1=$request->end_date;//'2023-04-03 07:57:37';
-
-        $request['start_date'] = date('Y-m-d H:i:s',strtotime("$my_datetime UTC"));
-        $request['end_date'] = date('Y-m-d H:i:s',strtotime("$my_datetime1 UTC"));
+        $request['start_date'] = \Carbon\Carbon::parse($my_datetime, 'UTC')->setTimezone($timezone)->format('Y-m-d H:i:s');
+        $request['end_date']   = \Carbon\Carbon::parse($my_datetime1, 'UTC')->setTimezone($timezone)->format('Y-m-d H:i:s');
         
         $id = $request->input('id');
         if (!empty($id) && is_numeric($id)) {

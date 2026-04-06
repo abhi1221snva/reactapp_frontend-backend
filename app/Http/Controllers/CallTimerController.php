@@ -146,7 +146,7 @@ public function index(Request $request)
         $limit = $totalRows;
     }
    // ✅ User timezone (default fallback)
-    $userTimezone = $request->auth->timezone ?? 'Asia/Kolkata';
+    $userTimezone = $request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
 
     // ✅ Convert created_at & updated_at for response
 $timers = $timers->map(function ($timer) use ($userTimezone) {

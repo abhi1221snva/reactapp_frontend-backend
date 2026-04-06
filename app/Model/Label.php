@@ -52,7 +52,7 @@ class Label extends Model
         $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
         $data = (array)$record;
         // ✅ User timezone
-       $userTimezone = $request->auth->timezone ?? 'Asia/Kolkata';
+       $userTimezone = $request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
 
         foreach ($data as &$row) {
             if (!empty($row->created_at)) {

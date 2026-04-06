@@ -44,7 +44,8 @@ class AttendanceReportController extends Controller
         ]);
 
         try {
-            $date = $this->request->input('date', Carbon::today()->toDateString());
+            $userTz = $this->request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
+            $date = $this->request->input('date', Carbon::now($userTz)->toDateString());
             $parentId = $this->request->auth->parent_id ?: $this->request->auth->id;
 
             $query = Attendance::where('date', $date)
@@ -142,9 +143,10 @@ class AttendanceReportController extends Controller
         ]);
 
         try {
+            $userTz = $this->request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
             $weekStart = $this->request->has('week_start')
                 ? Carbon::parse($this->request->week_start)->startOfWeek()
-                : Carbon::now()->startOfWeek();
+                : Carbon::now($userTz)->startOfWeek();
             $weekEnd = $weekStart->copy()->endOfWeek();
             $parentId = $this->request->auth->parent_id ?: $this->request->auth->id;
 
@@ -250,8 +252,9 @@ class AttendanceReportController extends Controller
         ]);
 
         try {
-            $month = $this->request->input('month', Carbon::now()->month);
-            $year = $this->request->input('year', Carbon::now()->year);
+            $userTz = $this->request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
+            $month = $this->request->input('month', Carbon::now($userTz)->month);
+            $year = $this->request->input('year', Carbon::now($userTz)->year);
             $parentId = $this->request->auth->parent_id ?: $this->request->auth->id;
 
             $monthStart = Carbon::createFromDate($year, $month, 1)->startOfMonth();
@@ -463,8 +466,9 @@ class AttendanceReportController extends Controller
         ]);
 
         try {
-            $dateFrom = $this->request->input('date_from', Carbon::now()->subDays(7)->toDateString());
-            $dateTo = $this->request->input('date_to', Carbon::today()->toDateString());
+            $userTz = $this->request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
+            $dateFrom = $this->request->input('date_from', Carbon::now($userTz)->subDays(7)->toDateString());
+            $dateTo = $this->request->input('date_to', Carbon::now($userTz)->toDateString());
             $alertType = $this->request->input('alert_type', 'all');
             $minLateMinutes = $this->request->input('min_late_minutes', 0);
             $parentId = $this->request->auth->parent_id ?: $this->request->auth->id;

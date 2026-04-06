@@ -49,8 +49,7 @@ class PredictiveDialCallDropJob extends Job
     public function handle()
     {
         $clientId = $this->clientId;
-        date_default_timezone_set('US/Eastern');
-        $date = date('Y-m-d');
+        $date = \Carbon\Carbon::now('America/New_York')->format('Y-m-d');
         $connection = 'mysql_' . $clientId;
         $data = array();
         Log::info("PredictiveDialCallDropJob.handle", ["clientId" => $clientId ]);

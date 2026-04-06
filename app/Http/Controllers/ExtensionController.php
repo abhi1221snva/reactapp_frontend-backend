@@ -496,7 +496,7 @@ class ExtensionController extends Controller
      *             @OA\Property(property="enable_2fa", type="boolean", example=1),
      *             @OA\Property(property="voip_configuration_id", type="integer", example=10),
      *             @OA\Property(property="app_status", type="boolean", example=true),
-     *             @OA\Property(property="timezone", type="string", example="Asia/Kolkata"),
+     *             @OA\Property(property="timezone", type="string", example="America/New_York"),
      *             @OA\Property(
      *                 property="group_id",
      *                 type="array",
@@ -834,7 +834,7 @@ class ExtensionController extends Controller
      *             @OA\Property(property="voicemail_send_to_email", type="boolean", example=true),
      *             @OA\Property(property="twinning", type="boolean", example="0"),
      *             @OA\Property(property="asterisk_server_id", type="integer", example=1),
-     *             @OA\Property(property="timezone", type="string", example="Asia/Kolkata"),
+     *             @OA\Property(property="timezone", type="string", example="America/New_York"),
      *             @OA\Property(property="cli_setting", type="string", example="0"),
      *             @OA\Property(property="cli", type="string", example="CLI123"),
      *             @OA\Property(property="cnam", type="string", example="John Doe"),

@@ -765,8 +765,9 @@ class ReportController extends Controller
             'startTime' => 'nullable|date_format:Y-m-d H:i:s',
             'endTime' => 'nullable|date_format:Y-m-d H:i:s'
         ]);
-        $startTime = $request->startTime ?? \Carbon\Carbon::today()->startOfDay()->format('Y-m-d H:i:s');
-        $endTime   = $request->endTime   ?? \Carbon\Carbon::today()->endOfDay()->format('Y-m-d H:i:s');
+        $userTz    = $request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
+        $startTime = $request->startTime ?? \Carbon\Carbon::now($userTz)->startOfDay()->setTimezone('UTC')->format('Y-m-d H:i:s');
+        $endTime   = $request->endTime   ?? \Carbon\Carbon::now($userTz)->endOfDay()->setTimezone('UTC')->format('Y-m-d H:i:s');
         $reportService = new ReportService($request->auth->parent_id);
         return $this->successResponse("Disposition summary", $reportService->dispositionSummary($this->request, $startTime, $endTime));
     }
@@ -1694,8 +1695,9 @@ public function getCdrDashboardSummary(Request $request)
 
     $reportService = new ReportService($request->auth->parent_id);
 
-    $startTime = $request->startTime ?? \Carbon\Carbon::today()->startOfDay()->format('Y-m-d H:i:s');
-    $endTime   = $request->endTime   ?? \Carbon\Carbon::today()->endOfDay()->format('Y-m-d H:i:s');
+    $userTz    = $request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
+    $startTime = $request->startTime ?? \Carbon\Carbon::now($userTz)->startOfDay()->setTimezone('UTC')->format('Y-m-d H:i:s');
+    $endTime   = $request->endTime   ?? \Carbon\Carbon::now($userTz)->endOfDay()->setTimezone('UTC')->format('Y-m-d H:i:s');
     $userId    = $request->userId    ?? [];
 
     $data = [];

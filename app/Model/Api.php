@@ -100,7 +100,7 @@ class Api extends Model
          // ✅ User timezone (default fallback)
          $search = $request->input('search');
 
-        $userTimezone = $request->auth->timezone ?? 'Asia/Kolkata';
+        $userTimezone = $request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
         if ($request->has('api_id') && is_numeric($request->input('api_id'))) {
             $sql = "SELECT a.*, c.title as campaign FROM " . $this->table . " as a LEFT JOIN campaign as c ON c.id = a.campaign_id WHERE a.is_deleted = :is_deleted AND a.id = :id";
             $record =  DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql, array('id' => $request->input('api_id'), 'is_deleted' => 0));

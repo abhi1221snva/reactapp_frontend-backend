@@ -227,16 +227,13 @@ class InboundCallPopUpController extends Controller
         $extension = $request->extension;
         $alt_extension = $request->alt_extension;
 
-        date_default_timezone_set('US/Eastern');
-        //date_default_timezone_set("Asia/Calcutta");
-
         $InboundCallPopup = InboundCallPopup::where('status', 1)->where('extension', $extension)->orderBy('id','DESC')->first();
         if(empty($InboundCallPopup))
         {
             $InboundCallPopup = InboundCallPopup::where('status', 1)->where('extension', $alt_extension)->orderBy('id','DESC')->first();
         }
 
-        $created_at =  date('Y-m-d H:i:s');
+        $created_at = \Carbon\Carbon::now('UTC')->format('Y-m-d H:i:s');
         if(!empty($InboundCallPopup->created_at))
         {
         $call_created_at = date('Y-m-d H:i:s', strtotime($InboundCallPopup->created_at));

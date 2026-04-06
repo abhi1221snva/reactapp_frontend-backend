@@ -71,7 +71,7 @@ class CustomFieldLabelController extends Controller
     
         $custom_field_labels = $query->get()->toArray();
       // ✅ User timezone
-        $userTimezone = $request->auth->timezone ?? 'Asia/Kolkata';
+        $userTimezone = $request->auth->timezone ?? APP_DEFAULT_USER_TIMEZONE;
 
         // ✅ Convert timestamps
         foreach ($custom_field_labels as &$row) {
