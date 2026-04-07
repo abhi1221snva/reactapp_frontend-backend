@@ -203,23 +203,19 @@ class LeadSourceController extends Controller
         }
     }
 
-    // public function delete(Request $request, $id)
-    // {
-    //     $clientId = $request->auth->parent_id;
-    //     try
-    //     {
-    //         $lead_status = LeadStatus::on("mysql_$clientId")->find($id)->delete();
-    //         return $this->successResponse("Lead Status Name Deleted Successfully", [$lead_status]);
-    //     }
-    //     catch (ModelNotFoundException $exception)
-    //     {
-    //         throw new NotFoundHttpException("No Lead Status Name with id $id");
-    //     }
-    //     catch (\Throwable $exception)
-    //     {
-    //         return $this->failResponse("Failed to fetch Lead Status Name info", [], $exception);
-    //     }
-    // } 
+    public function delete(Request $request, $id)
+    {
+        $clientId = $request->auth->parent_id;
+        try {
+            $source = LeadSource::on("mysql_$clientId")->findOrFail($id);
+            $source->delete();
+            return $this->successResponse("Lead Source Deleted Successfully", []);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return $this->failResponse("Lead Source Not Found", ["Invalid Lead Source id $id"], $e, 404);
+        } catch (\Throwable $exception) {
+            return $this->failResponse("Failed to delete Lead Source", [$exception->getMessage()], $exception, 500);
+        }
+    }
 
     /**
      * @OA\Post(

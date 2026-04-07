@@ -300,14 +300,22 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
         $data = $this->toArray();
         unset($data["password"]);
         $data['permissions'] = $this->getPermissions();
-        $role = RolesService::getById($data['role']);
-        $data['role'] = $role["name"];
-        $data['level'] = $role["level"];
-        $data['user_extension'] = UserExtension::where('name', $data['extension'])->get()->first();
+
+        // Use permissions-based role/level (consistent with JwtMiddleware),
+        // fall back to users.role if no client-scoped permission exists.
         if (isset($data['permissions'][$this->parent_id])) {
-            $data['logo'] = $data['permissions'][$this->parent_id]["companyLogo"];
-            $data['company_name'] = $data['permissions'][$this->parent_id]["companyName"];
+            $clientPerm = $data['permissions'][$this->parent_id];
+            $data['role']  = $clientPerm["roleName"];
+            $data['level'] = $clientPerm["roleLevel"];
+            $data['logo']  = $clientPerm["companyLogo"];
+            $data['company_name'] = $clientPerm["companyName"];
+        } else {
+            $role = RolesService::getById($data['role']);
+            $data['role']  = $role["name"];
+            $data['level'] = $role["level"];
         }
+
+        $data['user_extension'] = UserExtension::where('name', $data['extension'])->get()->first();
         return $data;
     }
 

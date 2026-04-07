@@ -287,9 +287,13 @@ class GroupController extends Controller
                 ->delete();
 
             $extensions = $request->extensions;
+            $tenantParentId = $request->auth->base_parent_id ?? $request->auth->parent_id;
             if (!empty($extensions) && is_array($extensions)) {
                 foreach ($extensions as $value) {
-                    $user = User::where('extension', $value)->first();
+                    $user = User::where('extension', $value)
+                        ->where('parent_id', $tenantParentId)
+                        ->where('is_deleted', 0)
+                        ->first();
                     if (!$user) continue;
 
                     $exts = array_unique(array_filter([
@@ -427,9 +431,13 @@ public function patchNew(Request $request)
 if ($request->has('extensions')) {
 
     $finalExtensions = [];
+    $tenantParentId = $request->auth->base_parent_id ?? $request->auth->parent_id;
 
     foreach ($request->extensions as $value) {
-        $user = User::where('extension', $value)->first();
+        $user = User::where('extension', $value)
+            ->where('parent_id', $tenantParentId)
+            ->where('is_deleted', 0)
+            ->first();
         if (!$user) continue;
 
         $exts = array_unique(array_filter([
@@ -722,9 +730,13 @@ if ($request->has('extensions')) {
         $extensionGroup->saveOrFail();
 
         if (!empty($request->extensions)) {
+            $tenantParentId = $request->auth->base_parent_id ?? $request->auth->parent_id;
             foreach ($request->extensions as $extensionId) {
 
-                $user = User::where('extension', $extensionId)->first();
+                $user = User::where('extension', $extensionId)
+                    ->where('parent_id', $tenantParentId)
+                    ->where('is_deleted', 0)
+                    ->first();
                 if (!$user) continue;
 
                 $extensions = array_unique(array_filter([

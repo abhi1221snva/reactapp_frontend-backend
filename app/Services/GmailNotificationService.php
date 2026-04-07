@@ -291,7 +291,9 @@ class GmailNotificationService
             $message->saveOrFail();
 
             // Get bot info for broadcast
-            $bot = User::find($botUserId);
+            $bot = User::where('id', $botUserId)
+                ->where('parent_id', $parentId)
+                ->first();
             $botName = $bot ? trim("{$bot->first_name} {$bot->last_name}") : 'Gmail Bot';
 
             $messageData = [

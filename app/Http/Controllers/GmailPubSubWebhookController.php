@@ -79,8 +79,10 @@ class GmailPubSubWebhookController extends Controller
                 return response()->json(['status' => 'ignored', 'reason' => 'no_user']);
             }
 
-            // Get the user and parent_id
-            $user = \App\Model\User::find($token->user_id);
+            // Get the user and parent_id — verify not deleted
+            $user = \App\Model\User::where('id', $token->user_id)
+                ->where('is_deleted', 0)
+                ->first();
             if (!$user) {
                 Log::warning('Gmail PubSub: User not found', ['user_id' => $token->user_id]);
                 return response()->json(['status' => 'ignored', 'reason' => 'user_not_found']);

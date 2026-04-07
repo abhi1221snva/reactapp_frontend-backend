@@ -1979,7 +1979,19 @@ public function assignableRolesNew(Request $request)
      */
     public function viewVoiceMailDrop(Request $request)
     {
-        $VoiceMailDrop = VoiceMailDrop::on("mysql_" . $request->auth->parent_id)->where('user_id', $request->auth->id)->get()->all();
+        $query = VoiceMailDrop::on("mysql_" . $request->auth->parent_id)->where('user_id', $request->auth->id);
+
+        // Apply search filter
+        $search = $request->input('search', '');
+        if (!empty($search)) {
+            $query->where(function ($q) use ($search) {
+                $q->where('ivr_desc', 'LIKE', "%{$search}%")
+                  ->orWhere('language', 'LIKE', "%{$search}%")
+                  ->orWhere('voice_name', 'LIKE', "%{$search}%");
+            });
+        }
+
+        $VoiceMailDrop = $query->get()->all();
         if ($request->has('start') && $request->has('limit')) {
             $total_row = count($VoiceMailDrop);
 

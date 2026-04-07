@@ -96,7 +96,7 @@ class ProfileController extends Controller
     {
         $user = $request->user();
 
-        if (!$user) {
+        if (!$user || (int) $user->parent_id !== (int) $request->auth->parent_id) {
             return response()->json([
                 'success' => false,
                 'errors' => ['User not found']

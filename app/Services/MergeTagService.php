@@ -46,7 +46,9 @@ class MergeTagService
         // Optionally resolve [agent_field] single-bracket tags from the assigned agent's User record
         if ($agentId) {
             try {
-                $agent = \App\Model\User::find($agentId);
+                $agent = \App\Model\User::where('id', $agentId)
+                    ->where('parent_id', $clientId)
+                    ->first();
                 if ($agent) {
                     foreach ($agent->toArray() as $k => $v) {
                         $text = str_replace("[{$k}]", (string) ($v ?? ''), $text);

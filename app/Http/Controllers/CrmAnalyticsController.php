@@ -252,7 +252,7 @@ class CrmAnalyticsController extends Controller
 
                 // Attach user names
                 $userIds   = array_keys($agents);
-                $users     = \App\Model\User::whereIn('id', $userIds)->get(['id', 'first_name', 'last_name'])->keyBy('id');
+                $users     = \App\Model\User::whereIn('id', $userIds)->where('parent_id', $clientId)->get(['id', 'first_name', 'last_name'])->keyBy('id');
                 $result    = [];
                 foreach ($agents as $uid => $agentData) {
                     $agentData['user_name'] = isset($users[$uid])

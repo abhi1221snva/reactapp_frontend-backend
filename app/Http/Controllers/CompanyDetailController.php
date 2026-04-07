@@ -246,6 +246,7 @@ class CompanyDetailController extends Controller
             $clientId = $request->auth->parent_id;
 
             $user = DB::table('users')->where('id', $userId)
+                ->where('parent_id', $request->auth->parent_id)
                 ->select('id', 'first_name', 'last_name', 'email', 'affiliate_code')
                 ->first();
 
@@ -272,7 +273,7 @@ class CompanyDetailController extends Controller
         try {
             $userId   = $request->auth->id;
             $clientId = $request->auth->parent_id;
-            $user     = DB::table('users')->where('id', $userId)->first();
+            $user     = DB::table('users')->where('id', $userId)->where('parent_id', $request->auth->parent_id)->first();
 
             if ($request->filled('custom_code')) {
                 $code  = strtolower(trim($request->input('custom_code')));
@@ -284,7 +285,7 @@ class CompanyDetailController extends Controller
                 $code = $this->svc->generateAffiliateCode($user);
             }
 
-            DB::table('users')->where('id', $userId)->update(['affiliate_code' => $code, 'updated_at' => now()]);
+            DB::table('users')->where('id', $userId)->where('parent_id', $request->auth->parent_id)->update(['affiliate_code' => $code, 'updated_at' => now()]);
             $affiliateUrl = $this->svc->buildAffiliateUrl($clientId, $code);
 
             return $this->successResponse('Affiliate code generated.', [

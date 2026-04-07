@@ -181,7 +181,9 @@ class AgentController extends Controller
                 $q->where('users.first_name', 'LIKE', "%{$search}%")
                   ->orWhere('users.last_name',  'LIKE', "%{$search}%")
                   ->orWhere('users.email',       'LIKE', "%{$search}%")
-                  ->orWhere('users.extension',   'LIKE', "%{$search}%");
+                  ->orWhere('users.extension',   'LIKE', "%{$search}%")
+                  ->orWhere('users.mobile',      'LIKE', "%{$search}%")
+                  ->orWhere('roles.name',        'LIKE', "%{$search}%");
             });
         }
 

@@ -47,11 +47,17 @@ class GoogleController extends Controller
             $googleId = $tokenInfo['sub'];   // Google's unique user ID
             $email    = $tokenInfo['email'];
 
-            // Try to find user by google_id first, then fall back to email
-            $user = User::where('google_id', $googleId)->first();
+            // Try to find user by google_id first, then fall back to email.
+            // IMPORTANT: Only match active (non-deleted) users to prevent
+            // cross-tenant impersonation via shared email addresses.
+            $user = User::where('google_id', $googleId)
+                ->where('is_deleted', 0)
+                ->first();
 
             if (!$user) {
-                $user = User::where('email', $email)->first();
+                $user = User::where('email', $email)
+                    ->where('is_deleted', 0)
+                    ->first();
 
                 if (!$user) {
                     Log::warning('Google login: no matching user', ['email' => $email]);

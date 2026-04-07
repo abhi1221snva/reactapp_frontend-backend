@@ -365,6 +365,7 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
                 }
                 $response = $data;
             } else {
+                $clientPerm = $data["permissions"][$data["parent_id"]] ?? [];
                 $response = [
                     "id" => $data["id"],
                     "parent_id" => $data["parent_id"],
@@ -372,8 +373,10 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
                     "last_name" => $data["last_name"],
                     "mobile" => $data["mobile"],
                     "email" => $data["email"],
-                    "companyName" => $data["permissions"][$data["parent_id"]]["companyName"],
-                    "companyLogo" => $data["permissions"][$data["parent_id"]]["companyLogo"],
+                    "role" => $clientPerm["roleName"] ?? $data["role"],
+                    "level" => $clientPerm["roleLevel"] ?? $data["level"],
+                    "companyName" => $clientPerm["companyName"] ?? "",
+                    "companyLogo" => $clientPerm["companyLogo"] ?? "",
                     "profile_pic" => $data["profile_pic"],
                     "extension" => $data["extension"],
                     "alt_extension" => $data["alt_extension"],
@@ -561,6 +564,7 @@ if ($device === 'mobile_app') {
         $data["domain"] = $server->domain ?? null;
 
         // ---------- RESPONSE (same as authentication) ----------
+        $clientPerm = $data["permissions"][$data["parent_id"]] ?? [];
         $response = [
             "id" => $data["id"],
             "parent_id" => $data["parent_id"],
@@ -568,8 +572,10 @@ if ($device === 'mobile_app') {
             "last_name" => $data["last_name"],
             "mobile" => $data["mobile"],
             "email" => $data["email"],
-            "companyName" => $data["permissions"][$data["parent_id"]]["companyName"],
-            "companyLogo" => $data["permissions"][$data["parent_id"]]["companyLogo"],
+            "role" => $clientPerm["roleName"] ?? $data["role"],
+            "level" => $clientPerm["roleLevel"] ?? $data["level"],
+            "companyName" => $clientPerm["companyName"] ?? "",
+            "companyLogo" => $clientPerm["companyLogo"] ?? "",
             "profile_pic" => $data["profile_pic"],
             "extension" => $data["extension"],
             "alt_extension" => $data["alt_extension"],

@@ -85,7 +85,9 @@ class PackageService
         #get all users for client from permissions table
         $clientPermissions = Permission::where("client_id", $client->id)->get()->all();
         foreach ($clientPermissions as $permission) {
-            $user = User::find($permission->user_id);
+            $user = User::where('id', $permission->user_id)
+                ->where('parent_id', $client->id)
+                ->first();
             if (empty($user)) {
                 $permission->delete();
                 echo "Deleted the permission for user id {$permission->user_id}\n";

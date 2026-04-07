@@ -491,7 +491,11 @@ class SmsTemplete  extends Model
         $new_array_custom = array();
         $lead_record = DB::connection('mysql_'.$clientId)->table('list_data')->where("id",$addResponse['lead_id'])->first();
 
-        $user_detail = DB::connection('master')->table('users')->where("id", '358')->first();
+        // Resolve the agent who owns the lead, scoped to the tenant
+        $user_detail = DB::connection('master')->table('users')
+            ->where('parent_id', $clientId)
+            ->where('is_deleted', 0)
+            ->first();
 
         if(!empty($lead_record->list_id)) 
         {

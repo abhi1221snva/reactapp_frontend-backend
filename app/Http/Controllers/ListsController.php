@@ -1112,7 +1112,8 @@ public function updateListMapping()
              $intListId = $request->route('id');
              $excel = $request->input('excel');
              $search = $request->input('search');
-     
+             $searchBy = $request->input('search_by');
+
              $arrList = Lists::on("mysql_" . $request->auth->parent_id)->find($intListId)?->toArray();
      
              if (empty($arrList)) {
@@ -1159,11 +1160,27 @@ public function updateListMapping()
      
              // Apply search if exists
              if (!empty($search)) {
-                 $listDataQuery->where(function($q) use ($search, $optionColumns) {
-                     foreach ($optionColumns as $column) {
-                         $q->orWhere($column, 'LIKE', "%$search%");
+                 if (!empty($searchBy)) {
+                     // search_by is a label title — resolve to the DB column name
+                     $targetCol = array_search($searchBy, $columnToLabelMap);
+                     if ($targetCol !== false) {
+                         $listDataQuery->where($targetCol, 'LIKE', "%$search%");
+                     } else {
+                         // Fallback: search all mapped columns
+                         $listDataQuery->where(function($q) use ($search, $optionColumns) {
+                             foreach ($optionColumns as $column) {
+                                 $q->orWhere($column, 'LIKE', "%$search%");
+                             }
+                         });
                      }
-                 });
+                 } else {
+                     // Search across all mapped columns
+                     $listDataQuery->where(function($q) use ($search, $optionColumns) {
+                         foreach ($optionColumns as $column) {
+                             $q->orWhere($column, 'LIKE', "%$search%");
+                         }
+                     });
+                 }
              }
      
              $totalRecords = (clone $listDataQuery)->count();

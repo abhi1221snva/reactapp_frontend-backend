@@ -242,7 +242,10 @@ public function extensionDetail(Request $request, int $extension_id = null)
     // ================= SINGLE EXTENSION =================
     if ($extension_id) {
 
-        $user = User::findOrFail($extension_id);
+        $user = User::where('id', $extension_id)
+            ->where('parent_id', $baseParentId)
+            ->where('is_deleted', 0)
+            ->firstOrFail();
         $response = $user->toArray();
         $extension = $response['extension'];
 

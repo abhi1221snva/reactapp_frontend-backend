@@ -668,6 +668,15 @@ class LeadController extends Controller
 
         $clientId = $request->auth->parent_id;
 
+        // ── Lead source is required ────────────────────────────────────────
+        if (empty($request->input('lead_source_id'))) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed.',
+                'errors'  => ['lead_source_id' => ['Lead Source is required.']],
+            ], 422);
+        }
+
         // ── Dynamic EAV field validation ─────────────────────────────────────
         $input     = $request->all();
         try {
@@ -2127,6 +2136,7 @@ class LeadController extends Controller
             if ($createdById) {
                 $agent = DB::table('users')
                     ->where('id', (int) $createdById)
+                    ->where('parent_id', $request->auth->parent_id)
                     ->select('first_name','last_name','mobile','email','company_name','logo')
                     ->first();
 
@@ -2544,10 +2554,12 @@ class LeadController extends Controller
             $user = DB::connection("mysql_{$clientId}")
                 ->table('users')
                 ->where('id', $userId)
+                ->where('parent_id', $request->auth->parent_id)
                 ->first(['first_name', 'last_name', 'email']);
             if (!$user) {
                 $user = DB::table('users')
                     ->where('id', $userId)
+                    ->where('parent_id', $request->auth->parent_id)
                     ->first(['first_name', 'last_name', 'email']);
             }
             $submitterName = $user

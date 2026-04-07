@@ -196,7 +196,7 @@ $router->group(['middleware' => ['throttle:10,1']], function () use ($router) {
 
 
 #Routes with super admin rights should be added here
-$router->group(['middleware' => ['jwt.auth', 'auth.superadmin', 'audit.log']], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'auth.superadmin', 'audit.log', 'route.access']], function () use ($router) {
 
   // ── Admin Client Management ─────────────────────────────────────────────
   $router->get('admin/clients',                   'AdminClientController@index');
@@ -249,7 +249,7 @@ $router->group(['middleware' => ['jwt.auth', 'auth.superadmin', 'audit.log']], f
 
 
 #Routes with admin rights should be added here
-$router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.access']], function () use ($router) {
 
   Route::get('/api/emails', 'EmailController@index');
   Route::get('/api/emails/{id}', 'EmailController@show');
@@ -321,7 +321,7 @@ $router->POST('merchants', 'Merchant\AuthController@get');
 // Team Chat Widget Public Routes (No Auth Required)
 $router->get('team-chat/widget/validate', 'TeamChatWidgetController@validateToken');
 
-$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.access']], function () use ($router) {
   // $router->post('auth/google/callback', 'UserMailController@googlecallback');
   //profile
   $router->get('profile', 'ProfileController@index');
@@ -378,6 +378,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
 
   //Menu
   $router->post('user-menu', 'UserController@userMenus');
+  $router->get('user/menu', 'MenuController@getUserMenu');
 
   //Reporting
   $router->post('report', 'ReportController@getReport');
@@ -1490,6 +1491,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant']], function (
   $router->get('lead-source', 'LeadSourceController@list');
   $router->put('add-lead-source', 'LeadSourceController@create');
   $router->post('update-lead-sources/{id}', 'LeadSourceController@update');
+  $router->get('delete-lead-source/{id}', 'LeadSourceController@delete');
   $router->put('add-log-for-lead-source/add', 'LeadSourceController@addLogForLeadSource');
 
 
@@ -1958,7 +1960,7 @@ $router->post('forgot-password-resend', 'UserController@forgotPasswordMobileRese
 
 
 // ─── Agent Management (JWT required, admin-level 7+) ──────────────────────────
-$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant'], 'prefix' => 'agents'], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.access'], 'prefix' => 'agents'], function () use ($router) {
     $router->get('/',                    'AgentController@index');           // GET  /agents
     $router->get('/roles',               'AgentController@roles');           // GET  /agents/roles
     $router->post('/',                   'AgentController@store');           // POST /agents
@@ -1970,7 +1972,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant'], 'prefix' =>
 });
 
 // ─── Onboarding Wizard (JWT required) ─────────────────────────────────────────
-$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant'], 'prefix' => 'onboarding'], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.access'], 'prefix' => 'onboarding'], function () use ($router) {
     $router->get('/',        'OnboardingController@getProgress');  // GET  /onboarding
     $router->post('/complete', 'OnboardingController@completeStep'); // POST /onboarding/complete
     $router->post('/reset',    'OnboardingController@reset');        // POST /onboarding/reset (admin)
@@ -2117,7 +2119,7 @@ $router->get('ai-coach-api', 'AiCoachController@index');
 $router->get('gmail/callback', 'GmailOAuthController@callbackNoAuth');
 
 // Gmail routes (auth required)
-$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant'], 'prefix' => 'gmail'], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.access'], 'prefix' => 'gmail'], function () use ($router) {
     // OAuth
     $router->get('connect', 'GmailOAuthController@connect');
     $router->post('disconnect', 'GmailOAuthController@disconnect');
@@ -2154,7 +2156,7 @@ $router->post('gmail/webhook', 'GmailPubSubWebhookController@handle');
 $router->get('gmail/webhook/ping', 'GmailPubSubWebhookController@ping');
 
 // ─── Email Parser (PDF attachment scanning & AI extraction) ─────────────────
-$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant'], 'prefix' => 'email-parser'], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.access'], 'prefix' => 'email-parser'], function () use ($router) {
     $router->post('scan',                       'EmailParserController@scan');
     $router->get('status',                      'EmailParserController@status');
     $router->get('attachments',                 'EmailParserController@attachments');
@@ -2172,7 +2174,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant'], 'prefix' =>
 });
 
 // ─── Lender Email Intelligence (scan Gmail for lender conversations) ─────────
-$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant'], 'prefix' => 'lender-email'], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.access'], 'prefix' => 'lender-email'], function () use ($router) {
     $router->post('scan',                  'LenderEmailController@scan');
     $router->get('conversations',          'LenderEmailController@conversations');
     $router->get('conversations/{id}',     'LenderEmailController@showConversation');
@@ -2185,14 +2187,14 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant'], 'prefix' =>
 $router->get('integrations/google-calendar/callback', 'GoogleCalendarOAuthController@callbackNoAuth');
 
 // JWT-protected integration endpoints
-$router->group(['middleware' => ['jwt.auth', 'tenant']], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'tenant', 'route.access']], function () use ($router) {
     $router->get('integrations',           'IntegrationController@index');
     $router->post('connect-integration',   'IntegrationController@connect');
     $router->post('disconnect-integration','IntegrationController@disconnect');
 });
 
 // ─── Google Calendar Events API ───────────────────────────────────────────────
-$router->group(['middleware' => ['jwt.auth', 'tenant'], 'prefix' => 'calendar'], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'tenant', 'route.access'], 'prefix' => 'calendar'], function () use ($router) {
     $router->get('status',              'GoogleCalendarEventsController@status');
     $router->get('events',              'GoogleCalendarEventsController@list');
     $router->post('events',             'GoogleCalendarEventsController@create');
@@ -2202,7 +2204,7 @@ $router->group(['middleware' => ['jwt.auth', 'tenant'], 'prefix' => 'calendar'],
 
 // ─── Twilio Telecom Infrastructure ────────────────────────────────────────────
 // JWT-protected management endpoints (Admin level enforced in controllers)
-$router->group(['middleware' => ['jwt.auth', 'tenant']], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'tenant', 'route.access']], function () use ($router) {
 
     // Account management
     $router->post('twilio/connect',              'TwilioAccountController@connect');
@@ -2256,7 +2258,7 @@ $router->group(['middleware' => ['twilio.webhook']], function () use ($router) {
 
 // ─── Plivo Telecom Infrastructure ─────────────────────────────────────────────
 // JWT-protected management endpoints (Admin level enforced in controllers)
-$router->group(['middleware' => ['jwt.auth', 'tenant']], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'tenant', 'route.access']], function () use ($router) {
 
     // Account management
     $router->post('plivo/connect',                'PlivoAccountController@connect');

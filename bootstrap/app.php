@@ -16,7 +16,7 @@ if (in_array($origin, $allowedOrigins, true)) {
     header('Access-Control-Allow-Origin: https://dial.linkswitchcommunications.com');
 }
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, x-client, parent-id, X-Easify-App-Key, X-Easify-User-Token');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, x-client, parent-id, X-Easify-App-Key, X-Easify-User-Token, Cache-Control, Pragma');
 header('Access-Control-Allow-Credentials: true');
 header('Access-Control-Expose-Headers: Content-Disposition');
 header('Vary: Origin');
@@ -158,6 +158,7 @@ $app->routeMiddleware([
     'plivo.webhook'   => App\Http\Middleware\PlivoWebhookMiddleware::class,
     'tenant'          => App\Http\Middleware\TenantIsolationMiddleware::class,
     'auth.sysadmin'   => App\Http\Middleware\SystemAdminAuth::class,
+    'route.access'    => App\Http\Middleware\CheckRouteAccess::class,
 ]);
 
 if (!class_exists('Redis')) {

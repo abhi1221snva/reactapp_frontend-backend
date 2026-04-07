@@ -1234,7 +1234,9 @@ $cdr_outbound_manually = $outbound_manually[0]->totalOutBoundCallsByManually;
         $result_arr['logo'] = env('PORTAL_NAME').'logo/' . $client->logo;
         $result_arr['company_name'] = $client->company_name;
         
-        $user = User::where("email", "=", $objUser->email)->first();
+        $user = User::where("email", "=", $objUser->email)
+            ->where('parent_id', $this->clientId)
+            ->first();
         $groups = ExtensionGroupService::getExtensionGroups($user->parent_id, $user->extension);
 
         if ($user->user_level >= 5) {
@@ -1676,7 +1678,9 @@ $cdr_outbound_manually = $outbound_manually[0]->totalOutBoundCallsByManually;
 
         $result_arr['logo'] = env('PORTAL_NAME').'logo/' . $client->logo;
         $result_arr['company_name'] = $client->company_name;
-        $user = User::where("email", "=", $objUser->email)->first();
+        $user = User::where("email", "=", $objUser->email)
+            ->where('parent_id', $this->clientId)
+            ->first();
         $groups = ExtensionGroupService::getExtensionGroups($user->parent_id, $user->extension);
 
         if ($user->user_level >= 7) {
@@ -2339,7 +2343,10 @@ public function stateWiseSummary($request, string $startTime, string $endTime)
 
             if(!empty($times["userId"]))
             {
-                $user = User::where("id", "=", $times["userId"])->first();
+                $user = User::where("id", "=", $times["userId"])
+                    ->where('parent_id', $this->clientId)
+                    ->first();
+                if (!$user) return [];
                 $extension = $user->extension;
                 $alt_extension = $user->alt_extension;
                 // Using parameterized query to prevent SQL injection
@@ -2384,7 +2391,9 @@ public function stateWiseSummary($request, string $startTime, string $endTime)
             $bindings = [];
 
             if (!empty($times["userId"])) {
-                $user = User::find($times["userId"]);
+                $user = User::where('id', $times["userId"])
+                    ->where('parent_id', $this->clientId)
+                    ->first();
 
                 if (!$user) {
                     Log::warning("User not found", ['userId' => $times["userId"]]);

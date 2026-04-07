@@ -309,6 +309,7 @@ class ExtensionController extends Controller
         $start    = (int) $request->input('start', 0);
         $limit    = (int) $request->input('limit', 25);
         $status   = $request->input('status', '');
+        $userLevel = (int) ($request->auth->level ?? 1);
 
         // Base query: client users + admin-level users merged
         $query = User::join('roles', 'users.role', '=', 'roles.id')
@@ -317,13 +318,20 @@ class ExtensionController extends Controller
             ->orderBy('users.id', 'DESC')
             ->select('users.*', 'roles.name as role_name', 'roles.level');
 
+        // Agents and associates can only see their own row
+        if ($userLevel < 5) {
+            $query->where('users.id', $request->auth->id);
+        }
+
         // Apply search
         if (!empty($search)) {
             $query->where(function ($q) use ($search) {
                 $q->where('users.first_name', 'LIKE', "%{$search}%")
                   ->orWhere('users.last_name', 'LIKE', "%{$search}%")
                   ->orWhere('users.email', 'LIKE', "%{$search}%")
-                  ->orWhere('users.extension', 'LIKE', "%{$search}%");
+                  ->orWhere('users.extension', 'LIKE', "%{$search}%")
+                  ->orWhere('users.mobile', 'LIKE', "%{$search}%")
+                  ->orWhere('roles.name', 'LIKE', "%{$search}%");
             });
         }
 
@@ -459,6 +467,20 @@ class ExtensionController extends Controller
             'group_id' => 'array',
             'extension_id' => 'required|numeric'
         ]);
+
+        // Agents/associates can only edit their own record
+        $userLevel = (int) ($this->request->auth->level ?? 1);
+        if ($userLevel < 5) {
+            $targetId = (int) $this->request->input('extension_id');
+            if ($targetId !== (int) $this->request->auth->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You can only edit your own profile.',
+                    'data' => [],
+                ], 403);
+            }
+        }
+
         $response = $this->model->editExtension($this->request);
         return response()->json($response);
     }

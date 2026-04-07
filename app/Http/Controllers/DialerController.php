@@ -1655,7 +1655,7 @@ class DialerController extends Controller
         if (Cache::has("user.webphone.{$intUserId}.{$intParentId}")) {
             return Cache::get("user.webphone.{$intUserId}.{$intParentId}");
         } else {
-            $response = DB::select("SELECT webphone FROM users where id= :id", [$intUserId]);
+            $response = DB::select("SELECT webphone FROM users where id= :id AND parent_id = :parent_id", [$intUserId, $intParentId]);
             return $response[0]->webphone;
         }
     }

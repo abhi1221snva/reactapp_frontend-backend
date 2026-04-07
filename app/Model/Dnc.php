@@ -37,7 +37,8 @@ class Dnc extends Model
             $query = "SELECT * FROM dnc";
 
             if (!empty($searchTerm)) {
-                $query .= " WHERE (number LIKE CONCAT(?, '%') OR extension LIKE CONCAT(?, '%'))";
+                $query .= " WHERE (number LIKE CONCAT(?, '%') OR extension LIKE CONCAT(?, '%') OR comment LIKE CONCAT('%', ?, '%'))";
+                $parameters[] = $searchTerm;
                 $parameters[] = $searchTerm;
                 $parameters[] = $searchTerm;
             }

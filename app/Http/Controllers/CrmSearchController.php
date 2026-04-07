@@ -49,7 +49,8 @@ class CrmSearchController extends Controller
             $conn = DB::connection("mysql_$clientId");
 
             // ── Base conditions on crm_leads ──────────────────────────────
-            $query = $conn->table('crm_leads as cl');
+            $query = $conn->table('crm_leads as cl')
+                ->where('cl.is_deleted', 0);
 
             if ($userLevel <= 1) {
                 $query->where('cl.assigned_to', $userId);
@@ -152,6 +153,7 @@ class CrmSearchController extends Controller
                 if (!empty($userIds)) {
                     $users = DB::table('users')
                         ->whereIn('id', $userIds)
+                        ->where('parent_id', $request->auth->parent_id)
                         ->select('id', 'first_name', 'last_name')
                         ->get()->keyBy('id');
 

@@ -13,12 +13,14 @@ class CallService
     private $extensionNo;
     private $phoneNo;
     private $cdrId;
+    private $parentId;
 
-    public function __construct($intExtensionNo, $intPhoneNo, $intCdrId)
+    public function __construct($intExtensionNo, $intPhoneNo, $intCdrId, $intParentId = null)
     {
         $this->extensionNo = $intExtensionNo;
         $this->phoneNo = $intPhoneNo;
         $this->cdrId = $intCdrId;
+        $this->parentId = $intParentId;
     }
 
     public function chargeForCall($intTotalCallDuration, $strToken)
@@ -35,13 +37,21 @@ class CallService
         }
 
         $intTotalCharge = $billableCharge = $currencyCode = $clientPackageId = NULL;
-        //fetch user
-        $user = User::where(['extension' => $this->extensionNo, 'is_deleted' => 0])->first();
-        
+        //fetch user — scoped by parent_id (tenant) to prevent cross-tenant collisions
+        $userQuery = User::where(['extension' => $this->extensionNo, 'is_deleted' => 0]);
+        if ($this->parentId) {
+            $userQuery->where('parent_id', $this->parentId);
+        }
+        $user = $userQuery->first();
+
         //for alt extension if extension not found
         if(empty($user))
         {
-           $user = User::where(['alt_extension' => $this->extensionNo, 'is_deleted' => 0])->first();  
+            $altQuery = User::where(['alt_extension' => $this->extensionNo, 'is_deleted' => 0]);
+            if ($this->parentId) {
+                $altQuery->where('parent_id', $this->parentId);
+            }
+            $user = $altQuery->first();
         }
 
         //end alt_extension

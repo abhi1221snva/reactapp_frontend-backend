@@ -219,8 +219,9 @@ public function ringGroupDetail($request)
 
         // Filter by search term if passed
         if ($request->filled('search')) {
-            $searchConditions[] = 'title LIKE :search';
-            $data['search'] = '%' . $request->input('search') . '%';
+            $searchConditions[] = '(title LIKE :search1 OR description LIKE :search2)';
+            $data['search1'] = '%' . $request->input('search') . '%';
+            $data['search2'] = '%' . $request->input('search') . '%';
         }
 
         $tableName = "`" . $this->table . "`";
