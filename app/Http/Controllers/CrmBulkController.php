@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\LeadVisibilityService;
 use Illuminate\Http\Request;
 use App\Model\Client\Lead;
 use App\Model\Client\CrmLeadStatusHistory;
@@ -75,12 +76,14 @@ class CrmBulkController extends Controller
         ]);
 
         try {
-            $clientId   = $request->auth->parent_id;
+            $clientId   = (int) $request->auth->parent_id;
             $leadIds    = $request->input('lead_ids');
             $assignedTo = $request->input('assigned_to');
             $reason     = $request->input('reason', 'Bulk assignment');
             $processed  = 0;
             $failed     = [];
+
+            $leadIds = $this->filterAccessibleLeadIds($request, $clientId, $leadIds);
 
             foreach ($leadIds as $leadId) {
                 try {
@@ -133,12 +136,14 @@ class CrmBulkController extends Controller
         ]);
 
         try {
-            $clientId  = $request->auth->parent_id;
+            $clientId  = (int) $request->auth->parent_id;
             $leadIds   = $request->input('lead_ids');
             $newStatus = $request->input('lead_status');
             $reason    = $request->input('reason', 'Bulk status change');
             $processed = 0;
             $failed    = [];
+
+            $leadIds = $this->filterAccessibleLeadIds($request, $clientId, $leadIds);
 
             foreach ($leadIds as $leadId) {
                 try {
@@ -187,10 +192,12 @@ class CrmBulkController extends Controller
         ]);
 
         try {
-            $clientId  = $request->auth->parent_id;
+            $clientId  = (int) $request->auth->parent_id;
             $leadIds   = $request->input('lead_ids');
             $processed = 0;
             $failed    = [];
+
+            $leadIds = $this->filterAccessibleLeadIds($request, $clientId, $leadIds);
 
             foreach ($leadIds as $leadId) {
                 try {
@@ -232,8 +239,11 @@ class CrmBulkController extends Controller
         ]);
 
         try {
-            $clientId = $request->auth->parent_id;
+            $clientId = (int) $request->auth->parent_id;
             $leadIds  = $request->input('lead_ids');
+
+            $leadIds = $this->filterAccessibleLeadIds($request, $clientId, $leadIds);
+
             $columns  = $request->input('columns', ['id', 'first_name', 'last_name', 'phone_number', 'email', 'lead_status', 'assigned_to', 'created_at']);
 
             // Whitelist columns to prevent injection
@@ -264,6 +274,30 @@ class CrmBulkController extends Controller
         } catch (\Throwable $e) {
             return $this->failResponse("Bulk export failed", [$e->getMessage()], $e, 500);
         }
+    }
+
+    /**
+     * Pre-filter an array of lead IDs to only those the user can access.
+     */
+    private function filterAccessibleLeadIds(Request $request, int $clientId, array $leadIds): array
+    {
+        $service = new LeadVisibilityService();
+        if ($service->hasFullAccess($request->auth, $clientId)) {
+            return $leadIds;
+        }
+
+        $scope = $service->buildVisibilityScope($request->auth, $clientId);
+        if ($scope === null) {
+            return $leadIds;
+        }
+
+        $conn = "mysql_{$clientId}";
+        $query = DB::connection($conn)->table('crm_lead_data')
+            ->whereIn('id', $leadIds)
+            ->where('is_deleted', 0)
+            ->whereRaw($scope['condition'], $scope['bindings']);
+
+        return $query->pluck('id')->map(fn($id) => (int) $id)->toArray();
     }
 
     private function logStatusHistory($clientId, $leadId, $userId, array $data)

@@ -61,6 +61,7 @@ class CrmDocumentController extends Controller
      */
     public function index(Request $request, int $id)
     {
+        if ($err = $this->assertLeadAccessById($request, $id)) return $err;
         $clientId = $request->auth->parent_id;
         try {
             $docs = DB::connection("mysql_$clientId")
@@ -110,6 +111,7 @@ class CrmDocumentController extends Controller
      */
     public function store(Request $request, int $id)
     {
+        if ($err = $this->assertLeadAccessById($request, $id)) return $err;
         $clientId = $request->auth->parent_id;
 
         $this->validate($request, [
@@ -209,6 +211,7 @@ class CrmDocumentController extends Controller
      */
     public function view(Request $request, int $id, int $did)
     {
+        if ($err = $this->assertLeadAccessById($request, $id)) return $err;
         $clientId = $request->auth->parent_id;
         try {
             $doc = DB::connection("mysql_$clientId")
@@ -247,6 +250,7 @@ class CrmDocumentController extends Controller
      */
     public function download(Request $request, int $id, int $did)
     {
+        if ($err = $this->assertLeadAccessById($request, $id)) return $err;
         $clientId = $request->auth->parent_id;
         try {
             $doc = DB::connection("mysql_$clientId")
@@ -325,6 +329,7 @@ class CrmDocumentController extends Controller
      */
     public function destroy(Request $request, int $id, int $did)
     {
+        if ($err = $this->assertLeadAccessById($request, $id)) return $err;
         $clientId = $request->auth->parent_id;
         try {
             $doc = DB::connection("mysql_$clientId")

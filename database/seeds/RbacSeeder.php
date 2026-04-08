@@ -69,6 +69,8 @@ class RbacSeeder extends Seeder
             ['key' => 'dnc',              'name' => 'DNC List',             'engine' => 'dialer', 'url_patterns' => json_encode(['dnc','edit-dnc','add-dnc','delete-dnc','upload-dnc','download-dnc'])],
             ['key' => 'exclude_list',     'name' => 'Exclude From List',    'engine' => 'dialer', 'url_patterns' => json_encode(['exclude-number'])],
             ['key' => 'fax',              'name' => 'Fax Settings',         'engine' => 'dialer', 'url_patterns' => json_encode(['fax','send-fax','delete-fax','receive-fax-list'])],
+            ['key' => 'email_templates',  'name' => 'Email Templates',      'engine' => 'dialer', 'url_patterns' => json_encode(['email-template','email-templates','status-update-email-template'])],
+            ['key' => 'sms_templates',   'name' => 'SMS Templates',        'engine' => 'dialer', 'url_patterns' => json_encode(['sms-templete','add-sms-templete','edit-sms-templete','delete-sms-templete','sms-template','update-sms-templete-status'])],
             ['key' => 'billing',          'name' => 'Billing',              'engine' => 'dialer', 'url_patterns' => json_encode(['billing','wallet/','cart','checkout','stripe/','orders','call-billing','billing-charge','active-client-plans','history-client-plans'])],
 
             // ─── CRM ───
@@ -130,7 +132,7 @@ class RbacSeeder extends Seeder
             'recycle_rules', 'custom_fields', 'lead_sources',
             'dids', 'ivr', 'call_times', 'call_timers', 'holidays',
             'ai', 'ringless', 'smsai',
-            'dnc', 'exclude_list', 'fax', 'billing',
+            'dnc', 'exclude_list', 'fax', 'billing', 'email_templates', 'sms_templates',
             'crm.automations', 'crm.performance', 'crm.integrations',
         ]);
 
@@ -196,14 +198,14 @@ class RbacSeeder extends Seeder
         $items[] = $this->item('dialer', 'LEAD MANAGEMENT', '/settings/custom-field-labels', 'Custom Field Labels', 'Settings2', 'custom_fields', 7, ++$order);
         // Lead Sources moved to CRM engine (MERCHANT MANAGEMENT section)
 
-        // REPORTS
+        // REPORTS (only CDR Report + Live Calls active)
         $items[] = $this->item('dialer', 'REPORTS', '/reports',                      'CDR Report',           'BarChart3',  'reports', 5, ++$order);
-        $items[] = $this->item('dialer', 'REPORTS', '/reports/daily',                'Daily Report',         'Calendar',   'reports', 5, ++$order);
-        $items[] = $this->item('dialer', 'REPORTS', '/reports/agent-summary',        'Agent Summary',        'Users',      'reports', 5, ++$order);
-        $items[] = $this->item('dialer', 'REPORTS', '/reports/disposition',          'Disposition Report',   'ListChecks', 'reports', 5, ++$order);
-        $items[] = $this->item('dialer', 'REPORTS', '/reports/campaign-performance', 'Campaign Performance', 'PieChart',   'reports', 5, ++$order);
+        // $items[] = $this->item('dialer', 'REPORTS', '/reports/daily',                'Daily Report',         'Calendar',   'reports', 5, ++$order);
+        // $items[] = $this->item('dialer', 'REPORTS', '/reports/agent-summary',        'Agent Summary',        'Users',      'reports', 5, ++$order);
+        // $items[] = $this->item('dialer', 'REPORTS', '/reports/disposition',          'Disposition Report',   'ListChecks', 'reports', 5, ++$order);
+        // $items[] = $this->item('dialer', 'REPORTS', '/reports/campaign-performance', 'Campaign Performance', 'PieChart',   'reports', 5, ++$order);
         $items[] = $this->item('dialer', 'REPORTS', '/reports/live',                 'Live Calls',           'Radio',      'reports', 5, ++$order);
-        $items[] = $this->item('dialer', 'REPORTS', '/reports/recordings',           'Recording Report',     'Mic',        'reports', 5, ++$order);
+        // $items[] = $this->item('dialer', 'REPORTS', '/reports/recordings',           'Recording Report',     'Mic',        'reports', 5, ++$order);
 
         // VOICE
         $items[] = $this->item('dialer', 'VOICE', '/dids',              'DID Management',  'Hash',         'dids',        7, ++$order);
@@ -240,6 +242,8 @@ class RbacSeeder extends Seeder
         // SETTINGS
         $items[] = $this->item('dialer', 'SETTINGS', '/settings/dnc',     'DNC List',          'ShieldCheck', 'dnc',          7, ++$order);
         $items[] = $this->item('dialer', 'SETTINGS', '/settings/exclude', 'Exclude From List', 'MinusCircle', 'exclude_list', 7, ++$order);
+        $items[] = $this->item('dialer', 'SETTINGS', '/settings/email-templates', 'Email Templates', 'Mail', 'email_templates', 7, ++$order);
+        $items[] = $this->item('dialer', 'SETTINGS', '/settings/sms-templates', 'SMS Templates', 'MessageSquare', 'sms_templates', 7, ++$order);
         $items[] = $this->item('dialer', 'SETTINGS', '/settings/fax',     'Fax Settings',      'FileText',    'fax',          7, ++$order);
         $items[] = $this->item('dialer', 'SETTINGS', '/billing',          'Billing',           'CreditCard',  'billing',      7, ++$order);
 

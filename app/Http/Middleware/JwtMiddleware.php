@@ -20,10 +20,12 @@ class JwtMiddleware
     public function handle(Request $request, Closure $next, $guard = null)
     {
         $token = $request->bearerToken() ?? $request->get('token');
-        // Use explicit user_id param for identity verification.
-        // DO NOT use generic 'id' — it collides with payload fields
-        // in dialer routes (call-number, hang-up, send-dtmf, etc.).
-        $id = $request->get('user_id', null);
+        // Optional identity verification via query-string only.
+        // Using query() instead of get() so POST/PUT body fields named
+        // 'user_id' (used by 13+ controllers for business operations like
+        // assigning leads, shifts, packages, permissions, etc.) do NOT
+        // collide with this auth check.
+        $id = $request->query('user_id', null);
 
         if (!$token) {
             return response()->json([

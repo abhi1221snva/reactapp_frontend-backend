@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\TenantAware;
+use App\Services\LeadVisibilityService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Laravel\Lumen\Routing\Controller as BaseController;
@@ -91,6 +94,60 @@ class Controller extends BaseController
 
         Log::info("[getPortalBaseUrl] client={$clientId} domain={$domain}");
         return rtrim($domain, '/');
+    }
+
+    /**
+     * Assert that the authenticated user can access the given lead.
+     *
+     * Returns null when access is allowed, or a 403 JsonResponse to return immediately.
+     *
+     * Usage in controllers:
+     *   if ($err = $this->assertLeadAccess($request, $lead)) return $err;
+     */
+    protected function assertLeadAccess(Request $request, object $lead): ?JsonResponse
+    {
+        $service  = new LeadVisibilityService();
+        $clientId = $this->tenantId($request);
+
+        if (!$service->canAccessLead($request->auth, $clientId, $lead)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have access to this lead.',
+            ], 403);
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve a lead by ID (from crm_leads or crm_lead_data) and assert access.
+     *
+     * Convenience method for sub-resource controllers that receive a lead_id
+     * parameter but don't load the full lead model.
+     *
+     * Usage:
+     *   if ($err = $this->assertLeadAccessById($request, (int) $id)) return $err;
+     */
+    protected function assertLeadAccessById(Request $request, int $leadId): ?JsonResponse
+    {
+        $clientId = $this->tenantId($request);
+        $conn     = "mysql_{$clientId}";
+
+        $lead = DB::connection($conn)->table('crm_leads')
+            ->where('id', $leadId)->where('is_deleted', 0)
+            ->first(['id', 'assigned_to', 'created_by']);
+
+        if (!$lead) {
+            $lead = DB::connection($conn)->table('crm_lead_data')
+                ->where('id', $leadId)->where('is_deleted', 0)
+                ->first(['id', 'assigned_to', 'created_by']);
+        }
+
+        if (!$lead) {
+            return response()->json(['success' => false, 'message' => 'Lead not found.'], 404);
+        }
+
+        return $this->assertLeadAccess($request, $lead);
     }
 
     protected function failResponse(string $message, array $errors = [], \Throwable $exception = null, $httpStatus=500)

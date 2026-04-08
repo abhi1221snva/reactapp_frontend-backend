@@ -18,6 +18,7 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use App\Model\Master\UserExtension;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -147,6 +148,89 @@ class ExtensionController extends Controller
             return response()->json($response);
         } catch (ModelNotFoundException $exception) {
             return $this->failResponse("Extension with id $id not found", [], $exception, 404);
+        }
+    }
+
+    /**
+     * User detail drill-down with SIP extension mappings.
+     * Restricted to System Administrator (level >= 11).
+     */
+    public function showDetails(Request $request, int $id)
+    {
+        try {
+            // RBAC: System Administrator only
+            $minLevel = 11;
+            if (($request->auth->level ?? 0) < $minLevel) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Insufficient permissions',
+                ], 403);
+            }
+
+            // Fetch user via existing helper (handles parent_id scoping)
+            $response = $this->model->extensionDetail($this->request, $id);
+            $user = $response['data'];
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not found',
+                ], 404);
+            }
+
+            unset($user['password']);
+
+            // Fetch SIP extension records from user_extensions table
+            $sipExtensions = [];
+            $extColumns = ['extension', 'alt_extension', 'app_extension'];
+            $safeFields = [
+                'id', 'name', 'username', 'secret', 'fullname', 'context', 'host',
+                'type', 'nat', 'qualify', 'encryption', 'transport',
+                'dtlsenable', 'webrtc', 'icesupport',
+            ];
+
+            foreach ($extColumns as $col) {
+                $extName = $user[$col] ?? null;
+                if (!empty($extName)) {
+                    $record = UserExtension::where('name', $extName)->first();
+                    if ($record) {
+                        $data = collect($record->toArray())->only($safeFields)->toArray();
+                        $sipExtensions[$col] = $data;
+                    }
+                }
+            }
+
+            // Fetch extension group names from client DB
+            $groups = [];
+            try {
+                $connection = 'mysql_' . ($request->auth->parent_id ?? $request->auth->base_parent_id);
+                $groupMaps = DB::connection($connection)->select(
+                    "SELECT egm.group_id, eg.title
+                     FROM extension_group_map egm
+                     LEFT JOIN extension_group eg ON eg.id = egm.group_id
+                     WHERE egm.extension = :ext AND egm.is_deleted = 0",
+                    ['ext' => $user['extension'] ?? '']
+                );
+                foreach ($groupMaps as $g) {
+                    $groups[] = ['id' => $g->group_id, 'name' => $g->title ?? 'Group ' . $g->group_id];
+                }
+            } catch (\Exception $e) {
+                Log::warning('Failed to fetch extension groups', ['error' => $e->getMessage()]);
+            }
+
+            $user['sip_extensions'] = $sipExtensions;
+            $user['extension_groups'] = $groups;
+
+            return response()->json([
+                'success' => true,
+                'data'    => $user,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('showDetails error', ['id' => $id, 'error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load user details',
+            ], 500);
         }
     }
 

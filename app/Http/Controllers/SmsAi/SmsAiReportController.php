@@ -13,8 +13,7 @@ use App\Model\Client\Lists;
 
 use App\Model\Master\DomainList;
 use App\Model\Client\SmsAiReport;
-
-
+use App\Services\LeadVisibilityService;
 
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
@@ -403,8 +402,9 @@ class SmsAiReportController extends Controller
             $length = (int) $length;
         }
 
-        if ($level > 1) {
-            // Query sms_ai for level > 1
+        $visibilityService = new LeadVisibilityService();
+        if ($visibilityService->hasFullAccess($request->auth, (int) $clientId)) {
+            // Full access — query sms_ai
             $whereClause = !empty($searchString) ? " WHERE " . implode(" AND ", $searchString) : '';
 
             $sql = "SELECT * FROM sms_ai
@@ -438,9 +438,10 @@ class SmsAiReportController extends Controller
                 $countParams
             );
         } else {
-            // Query crm_lead_data for level <= 1
-            if ($userId) {
-                $searchString[] = "assigned_to = ?";
+            // Restricted access — query crm_lead_data with visibility scope
+            $scope = $visibilityService->buildVisibilityScope($request->auth, (int) $clientId);
+            if ($scope !== null) {
+                $searchString[] = $scope['condition'];
             }
 
             $whereClause = !empty($searchString) ? " WHERE " . implode(" AND ", $searchString) : '';
@@ -448,8 +449,8 @@ class SmsAiReportController extends Controller
             $sql = "SELECT * FROM crm_lead_data $whereClause ORDER BY created_at DESC";
 
             $countParams = [];
-            if ($userId) {
-                $countParams[] = $userId;
+            if ($scope !== null) {
+                $countParams = array_merge($countParams, $scope['bindings']);
             }
             if (!empty($dateFilter)) {
                 $countParams = array_merge($countParams, $dateFilter);

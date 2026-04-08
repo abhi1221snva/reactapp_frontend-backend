@@ -8,12 +8,14 @@ class CrmOfferController extends Controller
 {
     public function index(Request $request, $id)
     {
+        if ($err = $this->assertLeadAccessById($request, (int) $id)) return $err;
         $conn = "mysql_{$request->auth->parent_id}";
         $offers = CrmOffer::on($conn)->where('lead_id', (int)$id)->orderByDesc('created_at')->get();
         return $this->successResponse('Offers retrieved.', $offers->toArray());
     }
     public function store(Request $request, $id)
     {
+        if ($err = $this->assertLeadAccessById($request, (int) $id)) return $err;
         $this->validate($request, [
             'offered_amount' => 'required|numeric|min:0',
             'factor_rate'    => 'required|numeric|min:1',
@@ -49,6 +51,7 @@ class CrmOfferController extends Controller
     }
     public function update(Request $request, $id, $oid)
     {
+        if ($err = $this->assertLeadAccessById($request, (int) $id)) return $err;
         $conn = "mysql_{$request->auth->parent_id}";
         $offer = CrmOffer::on($conn)->where('lead_id', (int)$id)->findOrFail((int)$oid);
         $data = $request->only(['lender_id','lender_name','offered_amount','factor_rate','term_days','daily_payment','total_payback','stips_required','offer_expires_at','status','decline_reason','notes']);
@@ -57,6 +60,7 @@ class CrmOfferController extends Controller
     }
     public function destroy(Request $request, $id, $oid)
     {
+        if ($err = $this->assertLeadAccessById($request, (int) $id)) return $err;
         $conn = "mysql_{$request->auth->parent_id}";
         $offer = CrmOffer::on($conn)->where('lead_id', (int)$id)->findOrFail((int)$oid);
         $offer->delete();
@@ -64,6 +68,7 @@ class CrmOfferController extends Controller
     }
     public function accept(Request $request, $id, $oid)
     {
+        if ($err = $this->assertLeadAccessById($request, (int) $id)) return $err;
         $conn = "mysql_{$request->auth->parent_id}";
         $offer = CrmOffer::on($conn)->where('lead_id', (int)$id)->findOrFail((int)$oid);
         $offer->update(['status' => 'accepted']);

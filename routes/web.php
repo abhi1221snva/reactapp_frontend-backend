@@ -532,6 +532,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->post('edit-campaign-disposition', 'DispositionController@editCampaignDisposition');
 
   //Extension
+  $router->get('/extension/{id}/details', 'ExtensionController@showDetails');
   $router->get('/extension/{id}', 'ExtensionController@show');
   $router->get('/extension', 'ExtensionController@list');
   $router->post('extension', 'ExtensionController@getExtension');
@@ -1866,6 +1867,20 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->post('crm/sms/conversations/{id}/assign',       'CrmSmsInboxController@assignAgent');
   $router->post('crm/sms/new-conversation',                'CrmSmsInboxController@startConversation');
   $router->get('crm/pdf/placeholders',                                    'LeadController@pdfPlaceholders');
+
+  // ── Lead Visibility Settings ──────────────────────────────────────────────
+  $router->get('crm/visibility-settings',            'CrmVisibilitySettingsController@show');
+  $router->put('crm/visibility-settings',            'CrmVisibilitySettingsController@update');
+
+  // ── Lead Assignees (multi-user assignment) ────────────────────────────────
+  $router->get('crm/lead/{id}/assignees',            'LeadAssigneeController@index');
+  $router->post('crm/lead/{id}/assignees',           'LeadAssigneeController@store');
+  $router->delete('crm/lead/{id}/assignees/{uid}',   'LeadAssigneeController@destroy');
+
+  // ── User Hierarchy (manager → agent) ──────────────────────────────────────
+  $router->get('admin/user-hierarchy',               'UserHierarchyController@index');
+  $router->post('admin/user-hierarchy',              'UserHierarchyController@store');
+  $router->delete('admin/user-hierarchy/{id}',       'UserHierarchyController@destroy');
 
   // ── Agent Performance & Commissions ────────────────────────────────────────
   // Performance

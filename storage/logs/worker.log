@@ -12679,3 +12679,295 @@ Stack trace:
   2026-04-02 17:47:11 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
   2026-04-02 17:47:13 App\Jobs\ProcessEmailParsedAttachmentJob ....... 6s DONE
   2026-04-02 17:47:16 App\Jobs\ProcessEmailParsedAttachmentJob ....... 4s DONE
+  2026-04-07 13:49:00 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-04-07 13:49:06 App\Jobs\DispatchLenderApiJob .................. 6s FAIL
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-04-07.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-04-07.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-04-07.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-04-07.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: LenderApiService: failed to persist application ID
+Context: {"error":"The stream or file \"\/var\/log\/cafmotel\/test-backend.cli-2026-04-07.log\" could not be opened in append mode: Failed to open stream: Permission denied\nThe exception occurred while attempting to log: LenderApiService: application ID persisted\nContext: {\"lead_id\":9404,\"lender_id\":49,\"id\":\"00QNt00000bWjWAMA0\"}"}
+Context: {"exception":{}}
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-04-07.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-04-07.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-04-07.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-04-07.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-04-07.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: LenderApiService: failed to persist application ID
+Context: {"error":"The stream or file \"\/var\/log\/cafmotel\/test-backend.cli-2026-04-07.log\" could not be opened in append mode: Failed to open stream: Permission denied\nThe exception occurred while attempting to log: LenderApiService: application ID persisted\nContext: {\"lead_id\":9404,\"lender_id\":49,\"id\":\"00QNt00000bWjWAMA0\"}"}
+Context: {"exception":{}}
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(137): Laravel\Lumen\Application->handleException()
+#11 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(55): Laravel\Lumen\Application->handleShutdown()
+#12 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#13 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+  2026-04-07 13:49:18 App\Jobs\DispatchLenderApiJob .................. RUNNING
+  2026-04-07 13:49:18 App\Jobs\DispatchLenderApiJob ............. 46.07ms DONE
+  2026-04-07 14:13:48 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:13:50 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:13:55 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:13:55 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:13:58 App\Jobs\ProcessEmailParsedAttachmentJob ....... 3s DONE
+  2026-04-07 14:14:01 App\Jobs\ProcessEmailParsedAttachmentJob ....... 5s DONE
+  2026-04-07 14:14:03 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:14:06 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:14:06 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:14:10 App\Jobs\ProcessEmailParsedAttachmentJob ....... 4s DONE
+  2026-04-07 14:14:11 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:14:14 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:14:15 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:14:19 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:14:19 App\Jobs\ProcessEmailParsedAttachmentJob ....... 4s DONE
+  2026-04-07 14:14:22 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:14:24 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:14:27 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:14:30 App\Jobs\ProcessEmailParsedAttachmentJob ....... 6s DONE
+  2026-04-07 14:14:31 App\Jobs\ProcessEmailParsedAttachmentJob ....... 4s DONE
+  2026-04-07 14:14:35 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:14:36 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:14:44 App\Jobs\ProcessEmailParsedAttachmentJob ....... 8s DONE
+  2026-04-07 14:14:44 App\Jobs\ProcessEmailParsedAttachmentJob ....... 8s DONE
+  2026-04-07 14:14:49 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:14:49 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:14:57 App\Jobs\ProcessEmailParsedAttachmentJob ....... 7s DONE
+  2026-04-07 14:15:02 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:15:04 App\Jobs\ProcessEmailParsedAttachmentJob ...... 15s DONE
+  2026-04-07 14:15:08 App\Jobs\ProcessEmailParsedAttachmentJob ....... 6s DONE
+  2026-04-07 14:15:09 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:15:12 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:15:13 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:15:16 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:15:17 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:15:20 App\Jobs\ProcessEmailParsedAttachmentJob ....... 3s DONE
+  2026-04-07 14:15:21 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:15:24 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:15:25 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:15:27 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:15:29 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:15:32 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:15:32 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:15:37 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:15:37 App\Jobs\ProcessEmailParsedAttachmentJob ....... 4s DONE
+  2026-04-07 14:15:40 App\Jobs\ProcessEmailParsedAttachmentJob ....... 3s DONE
+  2026-04-07 14:15:42 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:15:44 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:15:45 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:15:49 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:15:52 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:15:57 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:16:00 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:16:05 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:16:05 App\Jobs\ProcessEmailParsedAttachmentJob ...... 19s DONE
+  2026-04-07 14:16:09 App\Jobs\ProcessEmailParsedAttachmentJob ....... 4s DONE
+  2026-04-07 14:16:10 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:16:12 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:16:14 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:16:18 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:16:18 App\Jobs\ProcessEmailParsedAttachmentJob ....... 3s DONE
+  2026-04-07 14:16:23 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:16:24 App\Jobs\ProcessEmailParsedAttachmentJob ....... 6s DONE
+  2026-04-07 14:16:28 App\Jobs\ProcessEmailParsedAttachmentJob ....... 5s DONE
+  2026-04-07 14:16:29 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:16:34 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:16:34 App\Jobs\ProcessEmailParsedAttachmentJob ....... 5s DONE
+  2026-04-07 14:16:39 App\Jobs\ProcessEmailParsedAttachmentJob ....... 5s DONE
+  2026-04-07 14:16:39 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:16:44 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:16:45 App\Jobs\ProcessEmailParsedAttachmentJob ....... 5s DONE
+  2026-04-07 14:16:48 App\Jobs\ProcessEmailParsedAttachmentJob ....... 4s DONE
+  2026-04-07 14:16:50 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:16:53 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:16:57 App\Jobs\ProcessEmailParsedAttachmentJob ....... 7s DONE
+  2026-04-07 14:17:01 App\Jobs\ProcessEmailParsedAttachmentJob ....... 8s DONE
+  2026-04-07 14:57:43 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:57:46 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:57:47 App\Jobs\ProcessEmailParsedAttachmentJob ....... 3s DONE
+  2026-04-07 14:57:49 App\Jobs\ProcessEmailParsedAttachmentJob ....... 3s DONE
+  2026-04-07 14:57:52 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:57:54 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:57:55 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:57:59 App\Jobs\ProcessEmailParsedAttachmentJob ....... 5s DONE
+  2026-04-07 14:58:00 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:58:03 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:58:04 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:58:08 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:58:10 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:58:11 App\Jobs\ProcessEmailParsedAttachmentJob ....... 6s DONE
+  2026-04-07 14:58:15 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:58:16 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:58:18 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:58:18 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:58:23 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:58:23 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:58:26 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:58:26 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:58:31 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:58:31 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:58:33 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:58:33 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:58:38 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:58:38 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:58:44 App\Jobs\ProcessEmailParsedAttachmentJob ....... 5s DONE
+  2026-04-07 14:58:45 App\Jobs\ProcessEmailParsedAttachmentJob ....... 6s DONE
+  2026-04-07 14:58:49 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:58:50 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:58:55 App\Jobs\ProcessEmailParsedAttachmentJob ....... 5s DONE
+  2026-04-07 14:58:55 App\Jobs\ProcessEmailParsedAttachmentJob ....... 6s DONE
+  2026-04-07 14:59:00 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:59:00 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:59:07 App\Jobs\ProcessEmailParsedAttachmentJob ....... 6s DONE
+  2026-04-07 14:59:07 App\Jobs\ProcessEmailParsedAttachmentJob ....... 6s DONE
+  2026-04-07 14:59:12 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:59:12 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:59:15 App\Jobs\ProcessEmailParsedAttachmentJob ....... 3s DONE
+  2026-04-07 14:59:18 App\Jobs\ProcessEmailParsedAttachmentJob ....... 6s DONE
+  2026-04-07 14:59:20 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:59:23 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:59:23 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:59:25 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:59:28 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:59:31 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:59:31 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:59:33 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:59:36 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:59:38 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:59:38 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:59:41 App\Jobs\ProcessEmailParsedAttachmentJob ....... 3s DONE
+  2026-04-07 14:59:43 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:59:46 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:59:47 App\Jobs\ProcessEmailParsedAttachmentJob ....... 3s DONE
+  2026-04-07 14:59:49 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 14:59:52 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:59:54 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 14:59:56 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 15:00:00 App\Jobs\ProcessEmailParsedAttachmentJob ....... 8s DONE
+  2026-04-07 15:00:01 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 15:00:04 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 15:00:05 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 15:00:09 App\Jobs\ProcessEmailParsedAttachmentJob ....... 3s DONE
+  2026-04-07 15:00:09 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 15:00:11 App\Jobs\ProcessEmailParsedAttachmentJob ....... 2s DONE
+  2026-04-07 15:00:14 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 15:00:16 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 15:00:17 App\Jobs\ProcessEmailParsedAttachmentJob . 133.62ms FAIL
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-04-07.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-04-07.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-04-07.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-04-07.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: [ProcessEmailParsedAttachment] Failed
+Context: {"attachment_id":384,"error":"The stream or file \"\/var\/log\/cafmotel\/test-backend.cli-2026-04-07.log\" could not be opened in append mode: Failed to open stream: Permission denied\nThe exception occurred while attempting to log: [EmailParser] Download attachment exception\nContext: {\"user_id\":1674,\"error\":\"The stream or file \\\"\\\/var\\\/log\\\/cafmotel\\\/test-backend.cli-2026-04-07.log\\\" could not be opened in append mode: Failed to open stream: Permission denied\\nThe exception occurred while attempting to log: [EmailParser] Failed to download attachment\\nContext: {\\\"user_id\\\":1674,\\\"message_id\\\":\\\"19586bfc69cb0521\\\",\\\"status\\\":500}\"}"}
+Context: {"exception":{}}
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+PHP Fatal error:  Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-04-07.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: Uncaught UnexpectedValueException: The stream or file "/var/log/cafmotel/test-backend.cli-2026-04-07.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-04-07.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-04-07.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: The stream or file "/var/log/cafmotel/test-backend.cli-2026-04-07.log" could not be opened in append mode: Failed to open stream: Permission denied
+The exception occurred while attempting to log: [ProcessEmailParsedAttachment] Failed
+Context: {"attachment_id":384,"error":"The stream or file \"\/var\/log\/cafmotel\/test-backend.cli-2026-04-07.log\" could not be opened in append mode: Failed to open stream: Permission denied\nThe exception occurred while attempting to log: [EmailParser] Download attachment exception\nContext: {\"user_id\":1674,\"error\":\"The stream or file \\\"\\\/var\\\/log\\\/cafmotel\\\/test-backend.cli-2026-04-07.log\\\" could not be opened in append mode: Failed to open stream: Permission denied\\nThe exception occurred while attempting to log: [EmailParser] Failed to download attachment\\nContext: {\\\"user_id\\\":1674,\\\"message_id\\\":\\\"19586bfc69cb0521\\\",\\\"status\\\":500}\"}"}
+Context: {"exception":{}}
+Context: {"exception":{}}
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(51): Laravel\Lumen\Application->handleException()
+#11 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#12 {main}
+  thrown
+Context: {"exception":{}} in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php:156
+Stack trace:
+#0 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/RotatingFileHandler.php(110): Monolog\Handler\StreamHandler->write()
+#1 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/AbstractProcessingHandler.php(44): Monolog\Handler\RotatingFileHandler->write()
+#2 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(391): Monolog\Handler\AbstractProcessingHandler->handle()
+#3 /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Logger.php(646): Monolog\Logger->addRecord()
+#4 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(184): Monolog\Logger->error()
+#5 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/Logger.php(97): Illuminate\Log\Logger->writeLog()
+#6 /var/www/html/branch/dialer_backend_v2/vendor/illuminate/log/LogManager.php(681): Illuminate\Log\Logger->error()
+#7 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Exceptions/Handler.php(61): Illuminate\Log\LogManager->error()
+#8 /var/www/html/branch/dialer_backend_v2/app/Exceptions/Handler.php(42): Laravel\Lumen\Exceptions\Handler->report()
+#9 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(200): App\Exceptions\Handler->report()
+#10 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(137): Laravel\Lumen\Application->handleException()
+#11 /var/www/html/branch/dialer_backend_v2/vendor/laravel/lumen-framework/src/Concerns/RegistersExceptionHandlers.php(55): Laravel\Lumen\Application->handleShutdown()
+#12 [internal function]: Laravel\Lumen\Application->Laravel\Lumen\Concerns\{closure}()
+#13 {main}
+  thrown in /var/www/html/branch/dialer_backend_v2/vendor/monolog/monolog/src/Monolog/Handler/StreamHandler.php on line 156
+  2026-04-07 15:00:18 App\Jobs\ProcessEmailParsedAttachmentJob ....... 4s DONE
+  2026-04-07 15:00:23 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 15:00:23 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 15:00:28 App\Jobs\ProcessEmailParsedAttachmentJob ....... 4s DONE
+  2026-04-07 15:00:30 App\Jobs\ProcessEmailParsedAttachmentJob ....... 6s DONE
+  2026-04-07 15:00:33 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 15:00:41 App\Jobs\ProcessEmailParsedAttachmentJob ....... 7s DONE
+  2026-04-07 15:00:53 App\Jobs\ProcessEmailParsedAttachmentJob ....... RUNNING
+  2026-04-07 15:00:53 App\Jobs\ProcessEmailParsedAttachmentJob ... 1.64ms DONE

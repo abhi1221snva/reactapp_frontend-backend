@@ -525,6 +525,39 @@ $query_string = "
             ";
             $summary = (array) DB::connection('mysql_' . $parent_id)->selectOne($summarySql, $summaryParams);
 
+            // Chart aggregation queries (GROUP BY — runs over full dataset, no LIMIT)
+            $conn = DB::connection('mysql_' . $parent_id);
+            $cdrUnion = "((SELECT disposition_id, type, route, campaign_id, extension, duration, user_id FROM cdr $filter) UNION ALL (SELECT disposition_id, type, route, campaign_id, extension, duration, user_id FROM cdr_archive $filter1)) AS c";
+
+            $chartDisposition = $conn->select(
+                "SELECT COALESCE(d.title, 'Not Set') AS name, COUNT(*) AS count FROM $cdrUnion LEFT JOIN disposition d ON d.id = c.disposition_id GROUP BY c.disposition_id ORDER BY count DESC LIMIT 20",
+                $summaryParams
+            );
+            $chartType = $conn->select(
+                "SELECT COALESCE(c.type, 'other') AS name, COUNT(*) AS count FROM $cdrUnion GROUP BY c.type ORDER BY count DESC",
+                $summaryParams
+            );
+            $chartRoute = $conn->select(
+                "SELECT COALESCE(c.route, 'OUT') AS name, COUNT(*) AS count FROM $cdrUnion GROUP BY c.route",
+                $summaryParams
+            );
+            $chartCampaign = $conn->select(
+                "SELECT COALESCE(camp.title, CONCAT('#', c.campaign_id)) AS name, COUNT(*) AS total, SUM(CASE WHEN c.duration > 0 THEN 1 ELSE 0 END) AS answered FROM $cdrUnion LEFT JOIN campaign camp ON camp.id = c.campaign_id GROUP BY c.campaign_id ORDER BY total DESC LIMIT 10",
+                $summaryParams
+            );
+            $chartAgent = $conn->select(
+                "SELECT COALESCE(TRIM(CONCAT(COALESCE(agent.first_name,''), ' ', COALESCE(agent.last_name,''))), CONCAT('Ext ', c.extension)) AS name, c.extension, COUNT(*) AS total, SUM(CASE WHEN c.duration > 0 THEN 1 ELSE 0 END) AS answered FROM $cdrUnion LEFT JOIN master.users agent ON agent.id = c.user_id GROUP BY c.extension ORDER BY total DESC LIMIT 10",
+                $summaryParams
+            );
+
+            $charts = [
+                'disposition' => array_map('get_object_vars', $chartDisposition),
+                'type'        => array_map('get_object_vars', $chartType),
+                'route'       => array_map('get_object_vars', $chartRoute),
+                'campaign'    => array_map('get_object_vars', $chartCampaign),
+                'agent'       => array_map('get_object_vars', $chartAgent),
+            ];
+
             if (!empty($record)) {
                 $data = (array) $record;
 
@@ -533,6 +566,7 @@ $query_string = "
                     'message' => 'Call Data Report.',
                     'record_count' => $recordCount['count'],
                     'summary' => $summary,
+                    'charts'  => $charts,
                     'data' => $data
                 );
             } else {
@@ -541,6 +575,7 @@ $query_string = "
                     'message' => 'No Call Data Report found.',
                     'record_count' => 0,
                     'summary' => ['total_calls' => 0, 'total_duration' => 0, 'total_charge' => '0.0000', 'answered_calls' => 0],
+                    'charts'  => ['disposition' => [], 'type' => [], 'route' => [], 'campaign' => [], 'agent' => []],
                     'data' => array()
                 );
             }

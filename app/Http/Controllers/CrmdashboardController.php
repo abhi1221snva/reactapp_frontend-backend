@@ -6,6 +6,7 @@ use App\Model\Client\Lead;
 use App\Model\Client\CrmLabel;
 use App\Model\Client\Dids;
 use App\Model\Master\Client;
+use App\Services\LeadVisibilityService;
 use Illuminate\Http\Request;
 use App\Model\Role;
 use App\Model\User;
@@ -23,20 +24,12 @@ class CrmdashboardController extends Controller
         {
             $clientId = $request->auth->parent_id;
             $leadstatus = [];
-            $level = $request->auth->user_level;
-            if($level > 1)
-            {
-                $leadstatus = Lead::on("mysql_$clientId")->groupBy('lead_status')->select('lead_status', DB::raw('count(*) as total_lead_status'))->get()->all();
-                $totalDids  =  0;
-                $totalSMS  =  0;
-            }
-            else
-            {
-                $leadstatus = Lead::on("mysql_$clientId")->where('assigned_to',$request->auth->id)->groupBy('lead_status')->select('lead_status', DB::raw('count(*) as total_lead_status'))->get()->all();
-                $totalLeads = Lead::on("mysql_$clientId")->count();
-                $totalDids  =  0;
-                $totalSMS  =  0;
-            }
+
+            $query = Lead::on("mysql_$clientId");
+            (new LeadVisibilityService())->applyVisibilityScope($query, $request->auth, (int) $clientId);
+            $leadstatus = $query->groupBy('lead_status')->select('lead_status', DB::raw('count(*) as total_lead_status'))->get()->all();
+            $totalDids  = 0;
+            $totalSMS   = 0;
 
             foreach($leadstatus as $key=> $leads)
             {
@@ -77,10 +70,9 @@ class CrmdashboardController extends Controller
     public function getMcaDashboardMetrics(Request $request)
     {
         try {
-            $clientId = $request->auth->parent_id;
-            $connection = "mysql_$clientId";
-            $level = $request->auth->user_level;
-            $userId = $request->auth->id;
+            $clientId = (int) $request->auth->parent_id;
+            $connection = "mysql_{$clientId}";
+            $auth = $request->auth;
 
             // Determine date range
             $period = $request->input('period', 'month');
@@ -89,28 +81,28 @@ class CrmdashboardController extends Controller
             $metrics = [];
 
             // 1. Pipeline Summary
-            $metrics['pipeline'] = $this->getMcaPipelineSummary($connection, $level, $userId);
+            $metrics['pipeline'] = $this->getMcaPipelineSummary($connection, $auth, $clientId);
 
             // 2. Funding Metrics
-            $metrics['funding'] = $this->getFundingMetrics($connection, $dates['start'], $dates['end'], $level, $userId);
+            $metrics['funding'] = $this->getFundingMetrics($connection, $dates['start'], $dates['end'], $auth, $clientId);
 
             // 3. Conversion Metrics
-            $metrics['conversions'] = $this->getConversionMetrics($connection, $dates['start'], $dates['end'], $level, $userId);
+            $metrics['conversions'] = $this->getConversionMetrics($connection, $dates['start'], $dates['end'], $auth, $clientId);
 
             // 4. Agent/User Performance
             $metrics['agentPerformance'] = $this->getAgentPerformance($connection, $clientId, $dates['start'], $dates['end']);
 
             // 5. Document Status
-            $metrics['documentStatus'] = $this->getDocumentStatus($connection, $level, $userId);
+            $metrics['documentStatus'] = $this->getDocumentStatus($connection, $auth, $clientId);
 
             // 6. Recent Activity
-            $metrics['recentDeals'] = $this->getRecentDeals($connection, $level, $userId, 10);
+            $metrics['recentDeals'] = $this->getRecentDeals($connection, $auth, $clientId, 10);
 
             // 7. Renewal Pipeline
-            $metrics['renewals'] = $this->getRenewalMetrics($connection, $level, $userId);
+            $metrics['renewals'] = $this->getRenewalMetrics($connection, $auth, $clientId);
 
             // 8. Period comparison
-            $metrics['comparison'] = $this->getPeriodComparison($connection, $dates['start'], $dates['end'], $level, $userId);
+            $metrics['comparison'] = $this->getPeriodComparison($connection, $dates['start'], $dates['end'], $auth, $clientId);
 
             $metrics['dateRange'] = $dates;
 
@@ -125,7 +117,7 @@ class CrmdashboardController extends Controller
     /**
      * Get MCA Pipeline Summary by Stage - uses actual lead statuses from database
      */
-    private function getMcaPipelineSummary($connection, $level, $userId)
+    private function getMcaPipelineSummary($connection, $auth, $clientId)
     {
         // Get all active lead statuses from database
         $statuses = DB::connection($connection)->table('crm_lead_status')
@@ -139,9 +131,7 @@ class CrmdashboardController extends Controller
             ->whereNull('deleted_at')
             ->groupBy('lead_status');
 
-        if ($level <= 1) {
-            $query->where('assigned_to', $userId);
-        }
+        (new LeadVisibilityService())->applyVisibilityScope($query, $auth, $clientId);
 
         $results = $query->get()->keyBy('lead_status');
 
@@ -180,7 +170,7 @@ class CrmdashboardController extends Controller
     /**
      * Get Funding Metrics
      */
-    private function getFundingMetrics($connection, $startDate, $endDate, $level, $userId)
+    private function getFundingMetrics($connection, $startDate, $endDate, $auth, $clientId)
     {
         $query = DB::connection($connection)->table('crm_lead_data')
             ->whereNotNull('funded_amount')
@@ -188,9 +178,7 @@ class CrmdashboardController extends Controller
             ->whereBetween('funding_date', [$startDate, $endDate])
             ->whereNull('deleted_at');
 
-        if ($level <= 1) {
-            $query->where('assigned_to', $userId);
-        }
+        (new LeadVisibilityService())->applyVisibilityScope($query, $auth, $clientId);
 
         $funded = $query->selectRaw('
             COUNT(*) as total_deals,
@@ -226,7 +214,7 @@ class CrmdashboardController extends Controller
     /**
      * Get Conversion Metrics - counts by status from database
      */
-    private function getConversionMetrics($connection, $startDate, $endDate, $level, $userId)
+    private function getConversionMetrics($connection, $startDate, $endDate, $auth, $clientId)
     {
         // Get all lead counts grouped by status
         $query = DB::connection($connection)->table('crm_lead_data')
@@ -235,9 +223,7 @@ class CrmdashboardController extends Controller
             ->whereNull('deleted_at')
             ->groupBy('lead_status');
 
-        if ($level <= 1) {
-            $query->where('assigned_to', $userId);
-        }
+        (new LeadVisibilityService())->applyVisibilityScope($query, $auth, $clientId);
 
         $statusCounts = $query->get()->keyBy('lead_status');
 
@@ -337,15 +323,13 @@ class CrmdashboardController extends Controller
     /**
      * Get Document Status Summary
      */
-    private function getDocumentStatus($connection, $level, $userId)
+    private function getDocumentStatus($connection, $auth, $clientId)
     {
         $query = DB::connection($connection)->table('crm_lead_data')
             ->whereIn('lead_status', ['docs-requested', 'docs-received', 'needs-more-docs'])
             ->whereNull('deleted_at');
 
-        if ($level <= 1) {
-            $query->where('assigned_to', $userId);
-        }
+        (new LeadVisibilityService())->applyVisibilityScope($query, $auth, $clientId);
 
         $docs = $query->selectRaw('
             SUM(CASE WHEN has_bank_statements = 1 THEN 1 ELSE 0 END) as has_bank_statements,
@@ -367,7 +351,7 @@ class CrmdashboardController extends Controller
     /**
      * Get Recent Deals
      */
-    private function getRecentDeals($connection, $level, $userId, $limit = 10)
+    private function getRecentDeals($connection, $auth, $clientId, $limit = 10)
     {
         $query = DB::connection($connection)->table('crm_lead_data')
             ->select(
@@ -379,9 +363,7 @@ class CrmdashboardController extends Controller
             ->orderByDesc('updated_at')
             ->limit($limit);
 
-        if ($level <= 1) {
-            $query->where('assigned_to', $userId);
-        }
+        (new LeadVisibilityService())->applyVisibilityScope($query, $auth, $clientId);
 
         return $query->get()->map(function($deal) {
             return [
@@ -400,14 +382,12 @@ class CrmdashboardController extends Controller
     /**
      * Get Renewal Metrics
      */
-    private function getRenewalMetrics($connection, $level, $userId)
+    private function getRenewalMetrics($connection, $auth, $clientId)
     {
         $query = DB::connection($connection)->table('crm_lead_data')
             ->whereNull('deleted_at');
 
-        if ($level <= 1) {
-            $query->where('assigned_to', $userId);
-        }
+        (new LeadVisibilityService())->applyVisibilityScope($query, $auth, $clientId);
 
         $renewals = $query->selectRaw('
             SUM(CASE WHEN lead_status = "renewal-eligible" THEN 1 ELSE 0 END) as eligible,
@@ -427,7 +407,7 @@ class CrmdashboardController extends Controller
     /**
      * Get Period Comparison (vs previous period)
      */
-    private function getPeriodComparison($connection, $startDate, $endDate, $level, $userId)
+    private function getPeriodComparison($connection, $startDate, $endDate, $auth, $clientId)
     {
         $start = Carbon::parse($startDate);
         $end = Carbon::parse($endDate);
@@ -436,14 +416,12 @@ class CrmdashboardController extends Controller
         $prevStart = $start->copy()->subDays($diffDays)->format('Y-m-d H:i:s');
         $prevEnd = $start->copy()->subSecond()->format('Y-m-d H:i:s');
 
-        $getMetrics = function($start, $end) use ($connection, $level, $userId) {
+        $getMetrics = function($start, $end) use ($connection, $auth, $clientId) {
             $query = DB::connection($connection)->table('crm_lead_data')
                 ->whereBetween('created_at', [$start, $end])
                 ->whereNull('deleted_at');
 
-            if ($level <= 1) {
-                $query->where('assigned_to', $userId);
-            }
+            (new LeadVisibilityService())->applyVisibilityScope($query, $auth, $clientId);
 
             return $query->selectRaw('
                 COUNT(*) as leads,

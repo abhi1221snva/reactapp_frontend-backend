@@ -6,6 +6,7 @@ use App\Console\Commands\ArchiveCdr;
 use App\Console\Commands\CreateDatabaseConfig;
 use App\Console\Commands\MigrateAllCommand;
 use App\Console\Commands\MigrateLeadDataToEav;
+use App\Console\Commands\MigrateLeadVisibility;
 use App\Console\Commands\MigrateNotificationsToActivity;
 use App\Console\Commands\ResetUserPackageFreeCounter;
 use App\Console\Commands\RollbackClientMigrationCommand;
@@ -52,6 +53,7 @@ class Kernel extends ConsoleKernel
     protected $commands = [
         MigrateAllCommand::class,
         MigrateLeadDataToEav::class,
+        MigrateLeadVisibility::class,
         MigrateNotificationsToActivity::class,
         RollbackClientMigrationCommand::class,
         CreateDatabaseConfig::class,

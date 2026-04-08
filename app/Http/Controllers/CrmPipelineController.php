@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\LeadVisibilityService;
 use Illuminate\Http\Request;
 use App\Model\Client\CrmPipelineView;
 use Illuminate\Support\Facades\DB;
@@ -116,10 +117,8 @@ class CrmPipelineController extends Controller
                     ->where('lead_status', $stage->lead_title_url)
                     ->where('is_deleted', 0);
 
-                // Agent-level restriction
-                if ($userLevel <= 1) {
-                    $baseQuery->where('assigned_to', $userId);
-                }
+                // Role-based visibility scope
+                (new LeadVisibilityService())->applyVisibilityScope($baseQuery, $request->auth, (int) $clientId);
 
                 if (!empty($filterAssigned)) {
                     $baseQuery->whereIn('assigned_to', $filterAssigned);
@@ -322,16 +321,13 @@ class CrmPipelineController extends Controller
             $lead = $db->table('crm_lead_data')
                 ->where('id', $id)
                 ->where('is_deleted', 0)
-                ->first(['id', 'lead_status', 'assigned_to']);
+                ->first(['id', 'lead_status', 'assigned_to', 'created_by']);
 
             if (!$lead) {
                 return $this->failResponse("Lead not found", [], null, 404);
             }
 
-            // Agents can only move their own leads
-            if ($userLevel <= 1 && $lead->assigned_to != $userId) {
-                return $this->failResponse("Unauthorized to move this lead", [], null, 403);
-            }
+            if ($err = $this->assertLeadAccess($request, $lead)) return $err;
 
             // Verify the target status exists and is active
             $newStatus = $db->table('crm_lead_status')

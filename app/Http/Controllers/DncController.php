@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Model\Dnc;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class DncController extends Controller

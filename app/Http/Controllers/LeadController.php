@@ -12,6 +12,7 @@ use App\Model\Client\ExtensionGroupMap;
 use App\Model\Client\CrmSendLeadToLender;
 use App\Model\Client\LenderStatus;
 use App\Model\Client\Documents;
+use App\Services\LeadVisibilityService;
 
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
@@ -106,10 +107,11 @@ class LeadController extends Controller
             $conditions = $filter['conditions'];
             $bindings   = $filter['bindings'];
 
-            // Restrict level-1 users to their own leads
-            if ($level <= 1 && $request->auth->id) {
-                $conditions[] = 'assigned_to = ?';
-                $bindings[]   = $request->auth->id;
+            // Apply role-based visibility scope
+            $scope = (new LeadVisibilityService())->buildVisibilityScope($request->auth, (int) $clientId);
+            if ($scope !== null) {
+                $conditions[] = $scope['condition'];
+                array_push($bindings, ...$scope['bindings']);
             }
 
             $eavLeadIds = $this->queryService->buildEavFilter($request, $conn);
@@ -322,9 +324,10 @@ class LeadController extends Controller
             $conditions = $filter['conditions'];
             $bindings   = $filter['bindings'];
 
-            if ($level <= 1) {
-                $conditions[] = 'assigned_to = ?';
-                $bindings[]   = $request->auth->id;
+            $scope = (new LeadVisibilityService())->buildVisibilityScope($request->auth, (int) $clientId);
+            if ($scope !== null) {
+                $conditions[] = $scope['condition'];
+                array_push($bindings, ...$scope['bindings']);
             }
 
             $eavLeadIds = $this->queryService->buildEavFilter($request, "mysql_{$clientId}");
@@ -354,15 +357,15 @@ class LeadController extends Controller
 
         try {
             $clientId = $request->auth->parent_id;
-            $level    = $request->auth->user_level;
 
             $filter     = $this->queryService->buildFilters($request, $clientId);
             $conditions = $filter['conditions'];
             $bindings   = $filter['bindings'];
 
-            if ($level <= 1) {
-                $conditions[] = 'assigned_to = ?';
-                $bindings[]   = $request->auth->id;
+            $scope = (new LeadVisibilityService())->buildVisibilityScope($request->auth, (int) $clientId);
+            if ($scope !== null) {
+                $conditions[] = $scope['condition'];
+                array_push($bindings, ...$scope['bindings']);
             }
 
             $eavLeadIds = $this->queryService->buildEavFilter($request, "mysql_{$clientId}");
@@ -832,6 +835,7 @@ class LeadController extends Controller
 
         try {
             $objLead = CrmLeadRecord::on("mysql_$clientId")->findOrFail($id);
+            if ($err = $this->assertLeadAccess($request, $objLead)) return $err;
 
             // Extract system column changes
             $arrFormatLeadInfo = $this->formatLeadInfo($input, $clientId);
@@ -1051,6 +1055,12 @@ class LeadController extends Controller
         $clientId = $request->auth->parent_id;
 
         try {
+            $lead = CrmLeadRecord::on("mysql_$clientId")->where('id', $id)->where('is_deleted', 0)->first();
+            if (!$lead) {
+                return $this->failResponse("Lead not found", [], null, 404);
+            }
+            if ($err = $this->assertLeadAccess($request, $lead)) return $err;
+
             $sqlNotifications = "DELETE FROM crm_notifications WHERE lead_id = :lead_id";
             DB::connection("mysql_$clientId")->delete($sqlNotifications, ['lead_id' => $id]);
             // Soft-delete documents (keep files on disk, just hide from UI)
@@ -1139,7 +1149,9 @@ class LeadController extends Controller
         $id = (int) $id;
         $clientId = $request->auth->parent_id;
         try {
-            $arrLead = CrmLeadRecord::on("mysql_$clientId")->findOrFail($id)->toArray();
+            $lead = CrmLeadRecord::on("mysql_$clientId")->findOrFail($id);
+            if ($err = $this->assertLeadAccess($request, $lead)) return $err;
+            $arrLead = $lead->toArray();
             // Merge EAV dynamic field values from crm_lead_values
             $eavMap = $this->eavService->load($clientId, [$id]);
             if (isset($eavMap[$id])) {
@@ -1337,6 +1349,7 @@ class LeadController extends Controller
 
         try {
             $objLead = Lead::on("mysql_$clientId")->findOrFail($id);
+            if ($err = $this->assertLeadAccess($request, $objLead)) return $err;
 
             $arrFormatLeadInfo = $this->formatLeadInfo($request->all(), $clientId);
             foreach ($arrFormatLeadInfo as $strLeadLabel => $strLeadValue) {
@@ -2301,6 +2314,12 @@ class LeadController extends Controller
         try {
             $clientId = $request->auth->parent_id;
             $leadId   = (int) $id;
+
+            $lead = CrmLeadRecord::on("mysql_$clientId")->find($leadId);
+            if (!$lead) {
+                return $this->failResponse("Lead not found", [], null, 404);
+            }
+            if ($err = $this->assertLeadAccess($request, $lead)) return $err;
 
             $result = app(\App\Services\LeadPdfService::class)->renderPdfHtml($clientId, $leadId);
 

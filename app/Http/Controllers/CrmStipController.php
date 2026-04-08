@@ -8,6 +8,7 @@ class CrmStipController extends Controller
 {
     public function index(Request $request, $id)
     {
+        if ($err = $this->assertLeadAccessById($request, (int) $id)) return $err;
         $conn = "mysql_{$request->auth->parent_id}";
         $q = CrmStip::on($conn)->where('lead_id', (int)$id);
         if ($request->query('lender_id')) $q->where('lender_id', (int)$request->query('lender_id'));
@@ -15,6 +16,7 @@ class CrmStipController extends Controller
     }
     public function store(Request $request, $id)
     {
+        if ($err = $this->assertLeadAccessById($request, (int) $id)) return $err;
         $this->validate($request, ['stip_name' => 'required|string', 'stip_type' => 'required|string']);
         $conn = "mysql_{$request->auth->parent_id}";
         $data = $request->only(['lender_id','stip_name','stip_type','notes']);
@@ -27,6 +29,7 @@ class CrmStipController extends Controller
     }
     public function bulkCreate(Request $request, $id)
     {
+        if ($err = $this->assertLeadAccessById($request, (int) $id)) return $err;
         $this->validate($request, ['stip_names' => 'required|array', 'stip_type' => 'required|string']);
         $conn = "mysql_{$request->auth->parent_id}";
         $created = [];
@@ -45,6 +48,7 @@ class CrmStipController extends Controller
     }
     public function update(Request $request, $id, $sid)
     {
+        if ($err = $this->assertLeadAccessById($request, (int) $id)) return $err;
         $conn = "mysql_{$request->auth->parent_id}";
         $stip = CrmStip::on($conn)->where('lead_id', (int)$id)->findOrFail((int)$sid);
         $status = $request->input('status');
@@ -59,6 +63,7 @@ class CrmStipController extends Controller
     }
     public function destroy(Request $request, $id, $sid)
     {
+        if ($err = $this->assertLeadAccessById($request, (int) $id)) return $err;
         $conn = "mysql_{$request->auth->parent_id}";
         $stip = CrmStip::on($conn)->where('lead_id', (int)$id)->findOrFail((int)$sid);
         $stip->delete();

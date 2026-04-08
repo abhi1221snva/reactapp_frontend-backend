@@ -242,13 +242,19 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
                         $plivo_user = env('PLIVO_USER');
                         $plivo_pass = env('PLIVO_PASS');
 
-                        $plivoClient = new RestClient($plivo_user, $plivo_pass);
-                        $result = $plivoClient->messages->create([
-                            "src"  => $data_array['from'],
-                            "dst"  => $data_array['to'],
-                            "text" => $data_array['text'],
-                            "url"  => ""
-                        ]);
+                        try {
+                            $plivoClient = new RestClient($plivo_user, $plivo_pass);
+                            $result = $plivoClient->messages->create(
+                                $data_array['from'],
+                                [$data_array['to']],
+                                $data_array['text']
+                            );
+                        } catch (\Throwable $smsEx) {
+                            Log::warning('Plivo OTP SMS failed', [
+                                'to' => $data_array['to'],
+                                'error' => $smsEx->getMessage(),
+                            ]);
+                        }
                     } elseif ($client->sms_plateform == 'didforsale') {
                         $data_array['from'] = env('SMS_NUMBER');
                         $api      = config('sms.sms_api.value');
@@ -278,30 +284,37 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
                     ]);
 
                     // --- Dispatch email OTP as well ---
-                    $smtpSetting = new SmtpSetting;
-                    $smtpSetting->mail_driver    = "SMTP";
-                    $smtpSetting->mail_host      = env("PORTAL_MAIL_HOST");
-                    $smtpSetting->mail_port      = env("PORTAL_MAIL_PORT");
-                    $smtpSetting->mail_username  = env("PORTAL_MAIL_USERNAME");
-                    $smtpSetting->mail_password  = env("PORTAL_MAIL_PASSWORD");
-                    $smtpSetting->from_name      = env("PORTAL_MAIL_SENDER_NAME");
-                    $smtpSetting->from_email     = env("PORTAL_MAIL_SENDER_EMAIL");
-                    $smtpSetting->mail_encryption = env("PORTAL_MAIL_ENCRYPTION");
+                    try {
+                        $smtpSetting = new SmtpSetting;
+                        $smtpSetting->mail_driver    = "SMTP";
+                        $smtpSetting->mail_host      = env("PORTAL_MAIL_HOST");
+                        $smtpSetting->mail_port      = env("PORTAL_MAIL_PORT");
+                        $smtpSetting->mail_username  = env("PORTAL_MAIL_USERNAME");
+                        $smtpSetting->mail_password  = env("PORTAL_MAIL_PASSWORD");
+                        $smtpSetting->from_name      = env("PORTAL_MAIL_SENDER_NAME");
+                        $smtpSetting->from_email     = env("PORTAL_MAIL_SENDER_EMAIL");
+                        $smtpSetting->mail_encryption = env("PORTAL_MAIL_ENCRYPTION");
 
-                    $from = [
-                        "address" => empty($smtpSetting->from_email) ? env('DEFAULT_EMAIL') : $smtpSetting->from_email,
-                        "name"    => empty($smtpSetting->from_name)  ? env('DEFAULT_NAME')  : $smtpSetting->from_name,
-                    ];
+                        $from = [
+                            "address" => empty($smtpSetting->from_email) ? env('DEFAULT_EMAIL') : $smtpSetting->from_email,
+                            "name"    => empty($smtpSetting->from_name)  ? env('DEFAULT_NAME')  : $smtpSetting->from_name,
+                        ];
 
-                    $data["action"] = 'Verification Code - ' . date('Y-m-d H:i:s');
-                    $data['otp']    = $otp_value;
-                    $mailable       = new SystemNotificationMail($from, "emails.verificationCode", $data["action"], $data);
+                        $data["action"] = 'Verification Code - ' . date('Y-m-d H:i:s');
+                        $data['otp']    = $otp_value;
+                        $mailable       = new SystemNotificationMail($from, "emails.verificationCode", $data["action"], $data);
 
-                    $mailService = new MailService($data['parent_id'], $mailable, $smtpSetting);
-                    $emails      = $mailService->sendEmail($data['email']);
+                        $mailService = new MailService($data['parent_id'], $mailable, $smtpSetting);
+                        $emails      = $mailService->sendEmail($data['email']);
 
-                    Log::debug("SendOtpEmailVerification.sendEmailOtp.responseEmail", [$emails, $otp_value]);
-                    Log::info("email otp", ["result" => $emails]);
+                        Log::debug("SendOtpEmailVerification.sendEmailOtp.responseEmail", [$emails, $otp_value]);
+                        Log::info("email otp", ["result" => $emails]);
+                    } catch (\Throwable $mailEx) {
+                        Log::warning('OTP email failed', [
+                            'to' => $data['email'],
+                            'error' => $mailEx->getMessage(),
+                        ]);
+                    }
 
                     // Expose OTP record id (integer) in the response — backward-compatible
                     $data["otpId"] = (string) $otpRecord->id;

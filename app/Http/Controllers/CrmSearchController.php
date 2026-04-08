@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\LeadVisibilityService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -52,9 +53,7 @@ class CrmSearchController extends Controller
             $query = $conn->table('crm_leads as cl')
                 ->where('cl.is_deleted', 0);
 
-            if ($userLevel <= 1) {
-                $query->where('cl.assigned_to', $userId);
-            }
+            (new LeadVisibilityService())->applyVisibilityScope($query, $request->auth, (int) $clientId, 'cl');
 
             // System column filters
             if (!empty($filters['lead_status'])) {

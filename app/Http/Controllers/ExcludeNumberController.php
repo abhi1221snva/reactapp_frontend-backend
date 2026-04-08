@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 use App\Model\ExcludeNumber;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 class ExcludeNumberController extends Controller
 {
     /**
