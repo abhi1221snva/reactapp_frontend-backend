@@ -1912,6 +1912,22 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->put('crm/agent-bonuses',                                      'AgentPerformanceController@createBonus');
   $router->post('crm/agent-bonuses/{id}',                                'AgentPerformanceController@updateBonus');
   $router->delete('crm/agent-bonuses/{id}',                              'AgentPerformanceController@deleteBonus');
+
+  // ── Bank Statement Analysis (Easify / Balji) ────────────────────────────
+  $router->get('crm/bank-statements',                                           'CrmBankStatementController@index');
+  $router->get('crm/bank-statements/logs',                                      'CrmBankStatementController@logs');
+  $router->get('crm/balji/api-explorer',                                        'CrmBankStatementController@apiExplorer');
+  $router->post('crm/bank-statements/upload',                                   'CrmBankStatementController@uploadStandalone');
+  $router->get('crm/lead/{id}/bank-statements',                                 'CrmBankStatementController@leadSessions');
+  $router->post('crm/lead/{id}/bank-statements/upload',                         'CrmBankStatementController@upload');
+  $router->post('crm/lead/{id}/bank-statements/analyze-document',              'CrmBankStatementController@analyzeDocument');
+  $router->get('crm/lead/{id}/bank-statements/by-documents',                   'CrmBankStatementController@byDocuments');
+  $router->get('crm/lead/{id}/bank-statements/{sessionId}/summary',             'CrmBankStatementController@summary');
+  $router->get('crm/lead/{id}/bank-statements/{sessionId}/transactions',        'CrmBankStatementController@transactions');
+  $router->get('crm/lead/{id}/bank-statements/{sessionId}/mca-analysis',        'CrmBankStatementController@mcaAnalysis');
+  $router->get('crm/lead/{id}/bank-statements/{sessionId}/monthly',             'CrmBankStatementController@monthly');
+  $router->post('crm/lead/{id}/bank-statements/{sessionId}/refresh',            'CrmBankStatementController@refresh');
+  $router->delete('crm/lead/{id}/bank-statements/{sessionId}',                  'CrmBankStatementController@destroy');
 });
 
 
@@ -2257,6 +2273,11 @@ $router->group(['middleware' => ['jwt.auth', 'tenant', 'route.access']], functio
     $router->delete('twilio/trunks/{sid}',       'TwilioTrunkController@delete');
     $router->post('twilio/trunks/{sid}/url',     'TwilioTrunkController@updateOriginationUrl');
     $router->post('twilio/trunks/sync',            'TwilioTrunkController@sync');
+});
+
+// Easify Bank Statement Webhook — no JWT, throttled
+$router->group(['middleware' => ['throttle:120,1']], function () use ($router) {
+    $router->post('easify/webhook/bank-statement/{clientId}', 'EasifyWebhookController@bankStatementComplete');
 });
 
 // Twilio Webhooks — signature validated, no JWT

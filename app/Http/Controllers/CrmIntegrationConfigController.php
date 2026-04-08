@@ -104,6 +104,11 @@ class CrmIntegrationConfigController extends Controller
             $config->is_enabled = (bool) $request->input('is_enabled');
         }
 
+        // Auto-enable on first configuration (new record)
+        if (!$config->exists) {
+            $config->is_enabled = true;
+        }
+
         $config->configured_by = $request->auth->id ?? null;
         $config->save();
 

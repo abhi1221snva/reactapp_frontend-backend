@@ -18,6 +18,7 @@ class IntegrationConfig extends Model
         'ucc_filings',
         'tracer',
         'pacer',
+        'easify_bank_analysis',
     ];
 
     protected $fillable = [
