@@ -352,9 +352,246 @@ class CrmBankStatementController extends Controller
             ->where('session_id', $sessionId)
             ->firstOrFail();
 
+        // Delete remote session on Easify first
+        try {
+            $service = EasifyBankStatementService::forClient($this->tenantId($request));
+            $service->deleteSession($sessionId);
+        } catch (\Throwable $e) {
+            Log::warning('[BankStatement] Remote delete failed, proceeding with local delete', [
+                'session_id' => $sessionId,
+                'error'      => $e->getMessage(),
+            ]);
+        }
+
         $row->delete();
 
         return $this->successResponse('Session deleted.');
+    }
+
+    // ── CSV / PDF Download ──────────────────────────────────────────────────
+
+    /**
+     * GET /crm/lead/{id}/bank-statements/{sessionId}/download-csv
+     * Proxy CSV download from Easify.
+     */
+    public function downloadCsv(Request $request, $id, $sessionId)
+    {
+        if ($err = $this->assertLeadAccessById($request, (int) $id)) return $err;
+
+        // Verify session belongs to this lead
+        $conn = $this->tenantDb($request);
+        CrmBankStatementSession::on($conn)
+            ->where('lead_id', (int) $id)
+            ->where('session_id', $sessionId)
+            ->firstOrFail();
+
+        try {
+            $service  = EasifyBankStatementService::forClient($this->tenantId($request));
+            $response = $service->downloadCsv($sessionId);
+
+            $fileName = "bank-statement-{$sessionId}.csv";
+
+            return response($response->body(), 200, [
+                'Content-Type'        => 'text/csv',
+                'Content-Disposition' => "attachment; filename=\"{$fileName}\"",
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * GET /crm/lead/{id}/bank-statements/{sessionId}/pdf
+     * Proxy original PDF from Easify (inline or download).
+     */
+    public function viewPdf(Request $request, $id, $sessionId)
+    {
+        if ($err = $this->assertLeadAccessById($request, (int) $id)) return $err;
+
+        $conn = $this->tenantDb($request);
+        $row  = CrmBankStatementSession::on($conn)
+            ->where('lead_id', (int) $id)
+            ->where('session_id', $sessionId)
+            ->firstOrFail();
+
+        $download = (bool) $request->input('download', 0);
+
+        try {
+            $service  = EasifyBankStatementService::forClient($this->tenantId($request));
+            $response = $service->downloadPdf($sessionId, $download);
+
+            $fileName    = $row->file_name ?: "bank-statement-{$sessionId}.pdf";
+            $disposition = $download ? 'attachment' : 'inline';
+
+            return response($response->body(), 200, [
+                'Content-Type'        => 'application/pdf',
+                'Content-Disposition' => "{$disposition}; filename=\"{$fileName}\"",
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    // ── Transaction Toggles ──────────────────────────────────────────────────
+
+    /**
+     * POST /crm/bank-statements/transactions/{transactionId}/toggle-type
+     * Toggle a transaction between credit ↔ debit.
+     */
+    public function toggleTransactionType(Request $request, $transactionId): JsonResponse
+    {
+        try {
+            $service = EasifyBankStatementService::forClient($this->tenantId($request));
+            $data    = $service->toggleTransactionType((int) $transactionId);
+            return $this->successResponse('Transaction type toggled.', $data);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * POST /crm/bank-statements/transactions/{transactionId}/toggle-revenue
+     * Toggle revenue classification (true_revenue ↔ adjustment).
+     */
+    public function toggleRevenueClassification(Request $request, $transactionId): JsonResponse
+    {
+        $this->validate($request, [
+            'current_classification' => 'required|in:true_revenue,adjustment',
+        ]);
+
+        try {
+            $service = EasifyBankStatementService::forClient($this->tenantId($request));
+            $data    = $service->toggleRevenueClassification(
+                (int) $transactionId,
+                $request->input('current_classification')
+            );
+            return $this->successResponse('Revenue classification toggled.', $data);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * POST /crm/bank-statements/transactions/{transactionId}/toggle-mca
+     * Toggle MCA status on a transaction.
+     */
+    public function toggleMcaStatus(Request $request, $transactionId): JsonResponse
+    {
+        $this->validate($request, [
+            'is_mca'      => 'required|boolean',
+            'lender_id'   => 'required_if:is_mca,true|nullable|string',
+            'lender_name' => 'required_if:is_mca,true|nullable|string',
+        ]);
+
+        try {
+            $service = EasifyBankStatementService::forClient($this->tenantId($request));
+            $data    = $service->toggleMcaStatus(
+                (int) $transactionId,
+                (bool) $request->input('is_mca'),
+                $request->input('lender_id'),
+                $request->input('lender_name')
+            );
+            return $this->successResponse('MCA status toggled.', $data);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    // ── Reference Data ───────────────────────────────────────────────────────
+
+    /**
+     * GET /crm/bank-statements/mca-lenders
+     * Get list of known MCA lenders from Easify.
+     */
+    public function mcaLenders(Request $request): JsonResponse
+    {
+        try {
+            $service = EasifyBankStatementService::forClient($this->tenantId($request));
+            $data    = $service->getMcaLenders();
+            return $this->successResponse('MCA lenders retrieved.', $data['lenders'] ?? $data);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * GET /crm/bank-statements/stats
+     * Get overall bank statement statistics from Easify.
+     */
+    public function stats(Request $request): JsonResponse
+    {
+        try {
+            $service = EasifyBankStatementService::forClient($this->tenantId($request));
+            $data    = $service->getStats();
+            return $this->successResponse('Stats retrieved.', $data['data'] ?? $data);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    // ── Learned Patterns ─────────────────────────────────────────────────────
+
+    /**
+     * GET /crm/bank-statements/learned-patterns
+     * Get learned MCA patterns (paginated).
+     */
+    public function learnedPatterns(Request $request): JsonResponse
+    {
+        // Manager+ only
+        if (($request->auth->level ?? 0) < 5) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $page    = max(1, (int) $request->input('page', 1));
+        $perPage = min((int) ($request->input('per_page', 50)), 100);
+
+        try {
+            $service = EasifyBankStatementService::forClient($this->tenantId($request));
+            $data    = $service->getLearnedPatterns($page, $perPage);
+            return $this->successResponse('Learned patterns retrieved.', $data);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * DELETE /crm/bank-statements/learned-patterns
+     * Clear all learned patterns.
+     */
+    public function clearLearnedPatterns(Request $request): JsonResponse
+    {
+        // Manager+ only
+        if (($request->auth->level ?? 0) < 5) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        try {
+            $service = EasifyBankStatementService::forClient($this->tenantId($request));
+            $data    = $service->clearLearnedPatterns();
+            return $this->successResponse('All learned patterns cleared.', $data);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * DELETE /crm/bank-statements/learned-patterns/{patternId}
+     * Delete a single learned pattern.
+     */
+    public function deleteLearnedPattern(Request $request, $patternId): JsonResponse
+    {
+        // Manager+ only
+        if (($request->auth->level ?? 0) < 5) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        try {
+            $service = EasifyBankStatementService::forClient($this->tenantId($request));
+            $data    = $service->deleteLearnedPattern((int) $patternId);
+            return $this->successResponse('Pattern deleted.', $data);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
     }
 
     // ── API Explorer (direct Easify proxy) ─────────────────────────────────

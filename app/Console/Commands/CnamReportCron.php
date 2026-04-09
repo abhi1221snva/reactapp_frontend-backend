@@ -73,7 +73,7 @@ class CnamReportCron extends Command
             foreach($did as $did_call)
             {
                 $cli = $did_call['cli'];
-                $content = "Channel: SIP/Airespring1/#135196219859805718\nCallerId: $cli\nContext: callfile-detect\nExtension: s\nPriority: 1\n";
+                $content = "Channel: PJSIP/Airespring1/#135196219859805718\nCallerId: $cli\nContext: callfile-detect\nExtension: s\nPriority: 1\n";
                 $file_name = $cli;
                 $file = fopen($file_name.".call", 'w');
                 

@@ -285,30 +285,12 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
 
                     // --- Dispatch email OTP as well ---
                     try {
-                        $smtpSetting = new SmtpSetting;
-                        $smtpSetting->mail_driver    = "SMTP";
-                        $smtpSetting->mail_host      = env("PORTAL_MAIL_HOST");
-                        $smtpSetting->mail_port      = env("PORTAL_MAIL_PORT");
-                        $smtpSetting->mail_username  = env("PORTAL_MAIL_USERNAME");
-                        $smtpSetting->mail_password  = env("PORTAL_MAIL_PASSWORD");
-                        $smtpSetting->from_name      = env("PORTAL_MAIL_SENDER_NAME");
-                        $smtpSetting->from_email     = env("PORTAL_MAIL_SENDER_EMAIL");
-                        $smtpSetting->mail_encryption = env("PORTAL_MAIL_ENCRYPTION");
+                        \App\Services\SystemMailerService::send('login-otp', $data['email'], [
+                            'userName' => trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? '')) ?: $data['email'],
+                            'otpCode'  => (string) $otp_value,
+                        ]);
 
-                        $from = [
-                            "address" => empty($smtpSetting->from_email) ? env('DEFAULT_EMAIL') : $smtpSetting->from_email,
-                            "name"    => empty($smtpSetting->from_name)  ? env('DEFAULT_NAME')  : $smtpSetting->from_name,
-                        ];
-
-                        $data["action"] = 'Verification Code - ' . date('Y-m-d H:i:s');
-                        $data['otp']    = $otp_value;
-                        $mailable       = new SystemNotificationMail($from, "emails.verificationCode", $data["action"], $data);
-
-                        $mailService = new MailService($data['parent_id'], $mailable, $smtpSetting);
-                        $emails      = $mailService->sendEmail($data['email']);
-
-                        Log::debug("SendOtpEmailVerification.sendEmailOtp.responseEmail", [$emails, $otp_value]);
-                        Log::info("email otp", ["result" => $emails]);
+                        Log::info("email otp sent via SystemMailerService", ["to" => $data['email']]);
                     } catch (\Throwable $mailEx) {
                         Log::warning('OTP email failed', [
                             'to' => $data['email'],

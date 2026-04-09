@@ -131,7 +131,7 @@ class Asterisk extends Model
         $callerId = "5500"."$extension"."$campaignId";
         $extenStr = "5500-".$extension."-".$campaignId;
         $originateRequest = "Action: originate\r\n";
-        $originateRequest .= "Channel: SIP/$extension\r\n";
+        $originateRequest .= "Channel: PJSIP/$extension\r\n";
         $originateRequest .= "Timeout: $this->waitTime\r\n";
         $originateRequest .= "Callerid: $callerId\r\n";
         $originateRequest .= "Exten: $extenStr\r\n";
@@ -168,7 +168,7 @@ class Asterisk extends Model
             $callerId = "5500"."$this->extension"."$campaignId";
             $extenStr = "5500-".$this->extension."-".$campaignId;
             $originateRequest = "Action: originate\r\n";
-            $originateRequest .= "Channel: SIP/$this->extension\r\n";
+            $originateRequest .= "Channel: PJSIP/$this->extension\r\n";
             $originateRequest .= "Timeout: $this->waitTime\r\n";
             $originateRequest .= "Callerid: $callerId\r\n";
             $originateRequest .= "Exten: $extenStr\r\n";
@@ -620,7 +620,7 @@ class Asterisk extends Model
                 // so the SIP INVITE reaches the browser WebPhone.
                 // For hardware phones: use the local channel via dialler-room-caller dialplan.
                 if ($dialer_mode == 2) {
-                    $channel = "SIP/" . $this->extension;
+                    $channel = "PJSIP/" . $this->extension;
                 } else {
                     $channel = "local/" . $this->extension . "-" . $number . "-" . $this->admin . "@dialler-room-caller";
                 }
@@ -1073,7 +1073,7 @@ class Asterisk extends Model
                 $extension = $this->extension;
             }
             $request = "Action: Command\r\n";
-            $request .= "Command: originate SIP/".$adminNumber." extension ".$extension."@".$type."\r\n\r\n";
+            $request .= "Command: originate PJSIP/".$adminNumber." extension ".$extension."@".$type."\r\n\r\n";
             $request .= "Timeout: $this->waitTime\r\n";
             $request .= "Priority: 1\r\n";
             $request .= "Async: yes\r\n";
@@ -1109,7 +1109,7 @@ class Asterisk extends Model
             $callerId = $this->getCallerId($campaignId, $mobile);
             $extenStr = $mobile."-".$campaignId."-".$leadId;
             $originateRequest = "Action: originate\r\n";
-            $originateRequest .= "Channel: SIP/airespring/#13517131$mobile\r\n";
+            $originateRequest .= "Channel: PJSIP/airespring/#13517131$mobile\r\n";
             $originateRequest .= "Timeout: $this->waitTime\r\n";
             $originateRequest .= "Callerid: $callerId\r\n";
             $originateRequest .= "Exten: $extenStr\r\n";
@@ -1243,7 +1243,7 @@ class Asterisk extends Model
 
                 //$originateRequest .= "Channel: SIP/pilivo/1$mobile\r\n"; //airespring/#13517131  // for v g  Channel: SIP/Airespring1/1$mobile\r\n
 
-                $originateRequest .= "Channel: SIP/pilivo/+1$mobile\r\n"; 
+                $originateRequest .= "Channel: PJSIP/pilivo/+1$mobile\r\n";
 
 
 
@@ -1494,7 +1494,7 @@ class Asterisk extends Model
                 //$originateRequest .= "Channel: SIP/telnyx/$mobile\r\n"; 
                 //$originateRequest .= "Channel: SIP/telnyx/$tech_prefix$mobile\r\n"; 
                  //$originateRequest .= "Channel: SIP/telnyx/$mobile\r\n"; 
-                $originateRequest .= "Channel: SIP/pilivo/+1$mobile\r\n"; 
+                $originateRequest .= "Channel: PJSIP/pilivo/+1$mobile\r\n";
 
 
                 $originateRequest .= "Timeout: $this->waitTime\r\n";
@@ -2414,14 +2414,14 @@ class Asterisk extends Model
         {
             if($lineDetailArray['type']=='manual'){
                 $request = "Action: Command\r\n";
-                $request .= "Command: originate SIP/".$ext." extension ".$lineDetailArray['extension']."@monitor-deskphone-portal\r\n\r\n";
+                $request .= "Command: originate PJSIP/".$ext." extension ".$lineDetailArray['extension']."@monitor-deskphone-portal\r\n\r\n";
                 $request .= "Timeout: $this->waitTime\r\n";
                 $request .= "Priority: 1\r\n";
                 $request .= "Async: yes\r\n";
                 $request .= "Action: Logoff\r\n\r\n";
             }else if($lineDetailArray['type']=='dialer'){
                     $request = "Action: Command\r\n";
-                    $request .= "Command: originate SIP/".$ext." extension ".$lineDetailArray['extension']."@monitor-extension-portal\r\n\r\n";
+                    $request .= "Command: originate PJSIP/".$ext." extension ".$lineDetailArray['extension']."@monitor-extension-portal\r\n\r\n";
                     $request .= "Timeout: $this->waitTime\r\n";
                     $request .= "Priority: 1\r\n";
                     $request .= "Async: yes\r\n";
@@ -2446,14 +2446,14 @@ class Asterisk extends Model
         {
             if($lineDetailArray['type']=='manual'){
                 $request = "Action: Command\r\n";
-                $request .= "Command: originate SIP/".$ext." extension ".$lineDetailArray['extension']."@barge-deskphone-portal\r\n\r\n";
+                $request .= "Command: originate PJSIP/".$ext." extension ".$lineDetailArray['extension']."@barge-deskphone-portal\r\n\r\n";
                 $request .= "Timeout: $this->waitTime\r\n";
                 $request .= "Priority: 1\r\n";
                 $request .= "Async: yes\r\n";
                 $request .= "Action: Logoff\r\n\r\n";
             }else if($lineDetailArray['type']=='dialer'){
                 $request = "Action: Command\r\n";
-                $request .= "Command: originate SIP/".$ext." extension ".$lineDetailArray['extension']."@barge-extension-portal\r\n\r\n";
+                $request .= "Command: originate PJSIP/".$ext." extension ".$lineDetailArray['extension']."@barge-extension-portal\r\n\r\n";
                 $request .= "Timeout: $this->waitTime\r\n";
                 $request .= "Priority: 1\r\n";
                 $request .= "Async: yes\r\n";
@@ -2513,7 +2513,7 @@ class Asterisk extends Model
                 $callerId = "<$number>";
                 $extenStr = $data['user_extension'].'-'.$data['forward_extension']."-".$data['campaign_id']."-".$data['lead_id']."-".$cli."-".$data['number']."-".$data['parent_id']; 
                 $originateRequest = "Action: originate\r\n";
-                $originateRequest .= "Channel: SIP/".$data['forward_extension']."\r\n";
+                $originateRequest .= "Channel: PJSIP/".$data['forward_extension']."\r\n";
                 $originateRequest .= "Timeout: $this->waitTime\r\n";
                 $originateRequest .= "Callerid: $callerId\r\n";
                 $originateRequest .= "Exten: $extenStr\r\n";
@@ -2583,7 +2583,7 @@ class Asterisk extends Model
                 $callerId = "<$number>";
                 $extenStr = $data['user_extension'].'-'.$data['forward_extension']."-".$data['campaign_id']."-".$data['lead_id']."-".$cli."-".$data['number']."-".$data['parent_id']; 
                 $originateRequest = "Action: originate\r\n";
-                $originateRequest .= "Channel: SIP/".$data['forward_extension']."\r\n";
+                $originateRequest .= "Channel: PJSIP/".$data['forward_extension']."\r\n";
                 $originateRequest .= "Timeout: $this->waitTime\r\n";
                 $originateRequest .= "Callerid: $callerId\r\n";
                 $originateRequest .= "Exten: $extenStr\r\n";
@@ -2642,7 +2642,7 @@ class Asterisk extends Model
                 $callerId = "<$number>";
                 $extenStr = $data['user_extension'].'-'.$data['forward_extension']."-".$data['campaign_id']."-".$data['lead_id']."-".$cli."-".$data['number']."-".$data['parent_id']; 
                 $originateRequest = "Action: originate\r\n";
-                $originateRequest .= "Channel: SIP/".$data['forward_extension']."\r\n";
+                $originateRequest .= "Channel: PJSIP/".$data['forward_extension']."\r\n";
                 $originateRequest .= "Timeout: $this->waitTime\r\n";
                 $originateRequest .= "Callerid: $callerId\r\n";
                 $originateRequest .= "Exten: $extenStr\r\n";
@@ -2716,7 +2716,7 @@ class Asterisk extends Model
                 $callerId = "<$number>";
                 $extenStr = $data['user_extension'].'-'.$data['did_number']."-".$data['campaign_id']."-".$data['lead_id']."-".$cli."-".$data['number']."-".$data['parent_id']; 
                 $originateRequest = "Action: originate\r\n";
-                $originateRequest .= "Channel: SIP/pilivo/".$data['did_number']."\r\n";
+                $originateRequest .= "Channel: PJSIP/pilivo/".$data['did_number']."\r\n";
                 $originateRequest .= "Timeout: $this->waitTime\r\n";
                 $originateRequest .= "Callerid: $callerId\r\n";
                 $originateRequest .= "Exten: $extenStr\r\n";

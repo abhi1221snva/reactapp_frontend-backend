@@ -53,6 +53,15 @@ $router->group(['middleware' => ['throttle:60,1']], function () use ($router) {
     $router->get('public/geocode/search', 'GeocoderProxyController@search');
 });
 
+// ─── Public: Drip Campaign Webhooks & Tracking ─────────────────────────────────
+$router->group(['middleware' => ['throttle:120,1']], function () use ($router) {
+    $router->post('webhook/drip/sendgrid',        'DripV2Controller@sendgridWebhook');
+    $router->get('drip/unsubscribe/{token}',       'DripV2Controller@unsubscribeLanding');
+    $router->post('drip/unsubscribe/{token}',      'DripV2Controller@processUnsubscribe');
+    $router->get('drip/track/open/{token}',        'DripV2Controller@trackOpen');
+    $router->get('drip/track/click/{token}',       'DripV2Controller@trackClick');
+});
+
 $router->get('/list-all-cache', 'RedisCacheController@listAllCache');
 $router->get('/cache-detail', 'RedisCacheController@getCacheDetail');
 $router->get('/cache-detail/{key}', 'RedisCacheController@getCacheDetail');
@@ -192,6 +201,9 @@ $router->group(['middleware' => ['throttle:10,1']], function () use ($router) {
 
     // Google OAuth registration — verifies token, skips email OTP
     $router->post('register/google', 'RegistrationController@googleRegister');
+
+    // Slow-path provisioning status polling
+    $router->get('register/status/{id}', 'RegistrationController@registrationStatus');
 });
 
 
@@ -206,6 +218,16 @@ $router->group(['middleware' => ['jwt.auth', 'auth.superadmin', 'audit.log', 'ro
   $router->post('admin/clients/{id}/activate',    'AdminClientController@activate');
   $router->post('admin/clients/{id}/deactivate',  'AdminClientController@deactivate');
   $router->post('admin/clients/{id}/switch',      'AdminClientController@switchTo');
+
+  // ── System Email Templates ────────────────────────────────────────────
+  $router->get('admin/email-templates',              'AdminEmailTemplateController@index');
+  $router->post('admin/email-templates',             'AdminEmailTemplateController@store');
+  $router->get('admin/email-templates/{id}',         'AdminEmailTemplateController@show');
+  $router->put('admin/email-templates/{id}',         'AdminEmailTemplateController@update');
+  $router->delete('admin/email-templates/{id}',      'AdminEmailTemplateController@destroy');
+  $router->post('admin/email-templates/{id}/preview','AdminEmailTemplateController@preview');
+  $router->post('admin/email-templates/{id}/test-send','AdminEmailTemplateController@testSend');
+  $router->post('admin/email-templates/seed',        'AdminEmailTemplateController@seed');
 
   #create client
   $router->put('client', 'ClientController@create');
@@ -1868,6 +1890,30 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->post('crm/sms/new-conversation',                'CrmSmsInboxController@startConversation');
   $router->get('crm/pdf/placeholders',                                    'LeadController@pdfPlaceholders');
 
+  // ── Drip Campaigns V2 ──────────────────────────────────────────────────────
+  // Campaigns
+  $router->get('crm/drip/campaigns',                     'DripV2Controller@index');
+  $router->post('crm/drip/campaigns',                    'DripV2Controller@store');
+  $router->get('crm/drip/campaigns/{id}',                'DripV2Controller@show');
+  $router->put('crm/drip/campaigns/{id}',                'DripV2Controller@update');
+  $router->delete('crm/drip/campaigns/{id}',             'DripV2Controller@destroy');
+  $router->post('crm/drip/campaigns/{id}/duplicate',     'DripV2Controller@duplicate');
+  $router->post('crm/drip/campaigns/{id}/activate',      'DripV2Controller@activate');
+  $router->post('crm/drip/campaigns/{id}/pause',         'DripV2Controller@pause');
+  $router->post('crm/drip/campaigns/{id}/archive',       'DripV2Controller@archive');
+  // Enrollments
+  $router->get('crm/drip/campaigns/{id}/enrollments',    'DripV2Controller@enrollments');
+  $router->post('crm/drip/campaigns/{id}/enroll',        'DripV2Controller@enroll');
+  $router->post('crm/drip/enrollments/{id}/unenroll',    'DripV2Controller@unenroll');
+  $router->get('crm/drip/lead/{leadId}/enrollments',     'DripV2Controller@leadEnrollments');
+  // Analytics
+  $router->get('crm/drip/campaigns/{id}/analytics',      'DripV2Controller@analytics');
+  $router->get('crm/drip/campaigns/{id}/step-analytics', 'DripV2Controller@stepAnalytics');
+  // Utility
+  $router->post('crm/drip/preview',                      'DripV2Controller@preview');
+  $router->get('crm/drip/merge-tags',                    'DripV2Controller@mergeTags');
+  $router->get('crm/drip/sender-options',                'DripV2Controller@senderOptions');
+
   // ── Lead Visibility Settings ──────────────────────────────────────────────
   $router->get('crm/visibility-settings',            'CrmVisibilitySettingsController@show');
   $router->put('crm/visibility-settings',            'CrmVisibilitySettingsController@update');
@@ -1916,8 +1962,16 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   // ── Bank Statement Analysis (Easify / Balji) ────────────────────────────
   $router->get('crm/bank-statements',                                           'CrmBankStatementController@index');
   $router->get('crm/bank-statements/logs',                                      'CrmBankStatementController@logs');
+  $router->get('crm/bank-statements/stats',                                     'CrmBankStatementController@stats');
+  $router->get('crm/bank-statements/mca-lenders',                               'CrmBankStatementController@mcaLenders');
+  $router->get('crm/bank-statements/learned-patterns',                          'CrmBankStatementController@learnedPatterns');
+  $router->delete('crm/bank-statements/learned-patterns',                       'CrmBankStatementController@clearLearnedPatterns');
+  $router->delete('crm/bank-statements/learned-patterns/{patternId}',           'CrmBankStatementController@deleteLearnedPattern');
   $router->get('crm/balji/api-explorer',                                        'CrmBankStatementController@apiExplorer');
   $router->post('crm/bank-statements/upload',                                   'CrmBankStatementController@uploadStandalone');
+  $router->post('crm/bank-statements/transactions/{transactionId}/toggle-type',    'CrmBankStatementController@toggleTransactionType');
+  $router->post('crm/bank-statements/transactions/{transactionId}/toggle-revenue', 'CrmBankStatementController@toggleRevenueClassification');
+  $router->post('crm/bank-statements/transactions/{transactionId}/toggle-mca',     'CrmBankStatementController@toggleMcaStatus');
   $router->get('crm/lead/{id}/bank-statements',                                 'CrmBankStatementController@leadSessions');
   $router->post('crm/lead/{id}/bank-statements/upload',                         'CrmBankStatementController@upload');
   $router->post('crm/lead/{id}/bank-statements/analyze-document',              'CrmBankStatementController@analyzeDocument');
@@ -1926,6 +1980,8 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->get('crm/lead/{id}/bank-statements/{sessionId}/transactions',        'CrmBankStatementController@transactions');
   $router->get('crm/lead/{id}/bank-statements/{sessionId}/mca-analysis',        'CrmBankStatementController@mcaAnalysis');
   $router->get('crm/lead/{id}/bank-statements/{sessionId}/monthly',             'CrmBankStatementController@monthly');
+  $router->get('crm/lead/{id}/bank-statements/{sessionId}/download-csv',        'CrmBankStatementController@downloadCsv');
+  $router->get('crm/lead/{id}/bank-statements/{sessionId}/pdf',                 'CrmBankStatementController@viewPdf');
   $router->post('crm/lead/{id}/bank-statements/{sessionId}/refresh',            'CrmBankStatementController@refresh');
   $router->delete('crm/lead/{id}/bank-statements/{sessionId}',                  'CrmBankStatementController@destroy');
 });
@@ -2346,3 +2402,4 @@ $router->group(['middleware' => ['throttle:120,1']], function () use ($router) {
     $router->post('sendgrid/webhook/{clientId}/events', 'SendGridWebhookController@events');
     $router->get('sendgrid/webhook/ping',               'SendGridWebhookController@ping');
 });
+

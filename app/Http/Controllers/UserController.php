@@ -40,6 +40,7 @@ use Illuminate\Support\Facades\Mail;
 use App\Model\Client\SmtpSetting;
 use App\Model\Client\SystemNotification;
 use App\Services\MailService;
+use App\Services\SystemMailerService;
 use App\Mail\SystemNotificationMail;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
@@ -2198,8 +2199,17 @@ public function assignableRolesNew(Request $request)
         ]);
         // Log::debug('token',['token'=>$token]);
 
+        // Resolve the frontend base URL from the request origin (supports multiple domains)
+        $origin = $request->header('Origin')
+            ?: $request->header('Referer')
+            ?: env('PORTAL_NAME', '');
+        $frontendBase = rtrim(parse_url($origin, PHP_URL_SCHEME) . '://' . parse_url($origin, PHP_URL_HOST), '/');
+        if (empty(parse_url($origin, PHP_URL_HOST))) {
+            $frontendBase = rtrim(env('PORTAL_NAME', ''), '/');
+        }
+
         // Send reset password email with the token
-        $this->sendResetEmail($email, $token, $firstName, $lastName, $client_id);
+        $this->sendResetEmail($email, $token, $firstName, $lastName, $client_id, $frontendBase);
 
         return response()->json(['message' => 'Password reset link has been sent to your mail.Please check your inbox for further instructions.']);
     }
@@ -2222,37 +2232,16 @@ public function assignableRolesNew(Request $request)
             $message->to($email)->subject('Reset Your Password');
         });
     }
-    protected function sendResetEmail($email, $token, $firstName, $lastName, $clientId)
+    protected function sendResetEmail($email, $token, $firstName, $lastName, $clientId, $frontendBase = '')
     {
-        $client = Client::where('id', $clientId)->first();
+        $base = $frontendBase ?: rtrim(env('PORTAL_NAME', ''), '/');
+        $resetLink = $base . '/reset-password?token=' . $token . '&email=' . urlencode($email);
 
-        if (!$client || empty($client->sendgrid_key)) {
-            throw new \Exception('SendGrid key not found for client.');
-        }
-        Log::info('client get', ['client' => $client->sendgrid_key]);
-
-        // Temporarily override the mail config to use the client's SendGrid key
-        Config::set('mail.mailers.sendgrid', [
-            'transport' => env("MAIL_DRIVER"),
-            'host' => env("MAIL_HOST"),
-            'port' => env("MAIL_PORT"),
-            'encryption' => env("MAIL_ENCRYPTION"),
-            'username' => env("MAIL_USERNAME"),
-            'password' => $client->sendgrid_key,
-        ]);
-
-        $resetLink = env('PORTAL_NAME') . '/reset-password?token=' . $token . '&email=' . urlencode($email);
-
-        $data = [
-            'resetLink' => $resetLink,
-            'subject' => 'Reset Your Password',
+        SystemMailerService::send('forgot-password', $email, [
             'firstName' => $firstName,
-            'lastName' => $lastName,
-        ];
-
-        Mail::mailer('sendgrid')->send('emails.forgot-password', $data, function ($message) use ($email) {
-            $message->to($email)->subject('Reset Your Password');
-        });
+            'lastName'  => $lastName,
+            'resetLink' => $resetLink,
+        ]);
     }
     // protected function sendResetEmail($email, $token, $firstName, $lastName,$client_id)
     // {

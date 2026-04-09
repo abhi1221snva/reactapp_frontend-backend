@@ -67,7 +67,7 @@ public function ringGroupDetailold($request)
         // Extension processing
         foreach ($ringGroupsData as $key_ext => $ext) {
             $array_extension = [];
-            $exten = str_replace('SIP/', '', $ext->extensions ?? '');
+            $exten = str_replace(['PJSIP/', 'SIP/'], '', $ext->extensions ?? '');
             $replace = str_replace('-', '&', $exten);
             $extension = array_filter(array_unique(explode('&', $replace)));
 
@@ -167,7 +167,7 @@ public function ringGroupDetailold($request)
 //         // Process extensions
 //         foreach ($ringGroupsData as $key_ext => $ext) {
 //             $array_extension = [];
-//             $exten = str_replace('SIP/', '', $ext->extensions ?? '');
+//             $exten = str_replace(['PJSIP/', 'SIP/'], '', $ext->extensions ?? '');
 //             $replace = str_replace('-', '&', $exten);
 //             $extension = array_filter(array_unique(explode('&', $replace)));
 
@@ -264,9 +264,9 @@ public function ringGroupDetail($request)
             $array_extension = [];
             $extension_ids = [];
 
-            // ✅ Normalize extension string (handle SIP/, &, -, etc.)
+            // ✅ Normalize extension string (handle PJSIP/, SIP/, &, -, etc.)
             $extenRaw = trim($ext->extensions ?? '');
-            $extenRaw = str_replace('SIP/', '', $extenRaw);
+            $extenRaw = str_replace(['PJSIP/', 'SIP/'], '', $extenRaw);
             $extenRaw = str_replace(['-', ',', ' '], '&', $extenRaw);
             $extensionList = array_filter(array_unique(explode('&', $extenRaw)));
 
@@ -362,7 +362,7 @@ public function ringGroupDetail($request)
     //                 {
     //                     $tech_prefix = $client->tech_prefix;
     //                     $user_data['mobile'] = User::where('extension',$value)->get()->first();
-    //                     $ext_phone[] = 'SIP/telnyx/'.$tech_prefix.$user_data['mobile']->mobile;
+    //                     $ext_phone[] = 'PJSIP/telnyx/'.$tech_prefix.$user_data['mobile']->mobile;
     //                 }
     //                 else
     //                 {
@@ -541,7 +541,7 @@ public function ringGroupDetail($request)
                     ];
                 }
 
-                $ext[] = 'SIP/' . $value . '&SIP/' . $altExtension;
+                $ext[] = 'PJSIP/' . $value . '&PJSIP/' . $altExtension;
 
                 // Fetch client for tech prefix
                 $client = Client::find($request->auth->parent_id);
@@ -549,7 +549,7 @@ public function ringGroupDetail($request)
 
                 // Add phone format
                 if (!empty($user->mobile)) {
-                    $ext_phone[] = 'SIP/telnyx/' . $tech_prefix . $user->mobile;
+                    $ext_phone[] = 'PJSIP/telnyx/' . $tech_prefix . $user->mobile;
                 } else {
                     return [
                         'success' => 'false',
@@ -652,8 +652,8 @@ public function ringGroupDetail($request)
                 {
                     $user_data['alt_extension'] = User::where('extension',$value)->get()->first();
                     ++$count;
-                    $ext[] = 'SIP/'.$value.'&'.'SIP/'.$user_data['alt_extension']->alt_extension;
-                    //$ext[] = 'SIP/'.$user_data['alt_extension']->alt_extension;
+                    $ext[] = 'PJSIP/'.$value.'&'.'PJSIP/'.$user_data['alt_extension']->alt_extension;
+                    //$ext[] = 'PJSIP/'.$user_data['alt_extension']->alt_extension;
                
 
                     //phone number
@@ -665,11 +665,11 @@ public function ringGroupDetail($request)
                     if(!empty($client))
                     {
                         $tech_prefix = $client->tech_prefix;
-                        $ext_phone[] = 'SIP/telnyx/'.$tech_prefix.$user_data['mobile']->mobile;
+                        $ext_phone[] = 'PJSIP/telnyx/'.$tech_prefix.$user_data['mobile']->mobile;
                     }
                     else
                     {
-                        $ext_phone[] = 'SIP/telnyx/'.$user_data['mobile']->mobile;
+                        $ext_phone[] = 'PJSIP/telnyx/'.$user_data['mobile']->mobile;
                     }
 
 

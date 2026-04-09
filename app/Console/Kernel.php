@@ -160,6 +160,11 @@ class Kernel extends ConsoleKernel
         //$schedule->command('reminders:send')->everyMinute();
         $schedule->command('app:missed-call-notification')->everyMinute();
         $schedule->command('workforce:auto-clockout')->everyFifteenMinutes();
+
+        // Replenish reserved client pool every 30 minutes
+        $schedule->call(function () {
+            dispatch(new \App\Jobs\ReplenishPoolJob())->onConnection('database')->onQueue('clients');
+        })->everyThirtyMinutes();
     }
 
 }

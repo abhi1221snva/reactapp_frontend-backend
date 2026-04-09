@@ -56,7 +56,8 @@ class InboundCallPopUpController extends Controller
                 //echo "<pre>";print_r($user);die;
 
                 $extension = str_replace("&","",$location_extension);
-                $extension_list = array_values(array_filter(explode('SIP/',$extension)));
+                $extension = str_replace('SIP/', 'PJSIP/', $extension);
+                $extension_list = array_values(array_filter(explode('PJSIP/',$extension)));
                 //echo "<pre>";print_r($extension_list);die;
 
                 $inbound_number = $this->request->inbound_number;

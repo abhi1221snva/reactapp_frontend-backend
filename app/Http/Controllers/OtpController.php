@@ -94,38 +94,12 @@ class OtpController extends Controller
         $resetLink = env('WEBSITE_LINK') . 'verify.php/' . $uuid . '/' . $otp_code . '?expires=' . $expiresAt->timestamp;
 
 
-        $smtpSetting = new SmtpSetting;
-        $smtpSetting->mail_driver = "SMTP";
-        $smtpSetting->mail_host = env("PORTAL_MAIL_HOST");
-        $smtpSetting->mail_port = env("PORTAL_MAIL_PORT");
-        $smtpSetting->mail_username = env("PORTAL_MAIL_USERNAME");
-        $smtpSetting->mail_password = env("PORTAL_MAIL_PASSWORD");
-        $smtpSetting->from_name = env("PORTAL_MAIL_SENDER_NAME");
-        $smtpSetting->from_email = env("PORTAL_MAIL_SENDER_EMAIL");
-        $smtpSetting->mail_encryption = env("PORTAL_MAIL_ENCRYPTION");
-        $from = [
-            "address" => empty($smtpSetting->from_email) ? env('DEFAULT_EMAIL') : $smtpSetting->from_email,
-            "name" => empty($smtpSetting->from_name) ? env('DEFAULT_NAME') : $smtpSetting->from_name,
-        ];
+        $name = trim($request->get("first_name") . ' ' . $request->get("last_name"));
 
-        $view = "emails.verification-email";
-
-        $data['resetLink'] = $resetLink;
-        $data['firstName'] = $request->get("first_name");
-        $data['lastName'] =  $request->get("last_name");
-        $data['resetLink'] = $resetLink;
-
-        /*   'firstName'=>$request->get("first_name"),
-            'lastName'=>$request->get("last_name")*/
-
-        //];
-
-
-        #create initiate mailable class
-        $mailable = new SystemNotificationMail($from, $view, "Verification Link", $data);
-
-        $mailService = new MailService(0, $mailable, $smtpSetting);
-        $mailService->sendEmail($email);
+        \App\Services\SystemMailerService::send('email-verification', $email, [
+            'name'    => $name ?: 'there',
+            'otpCode' => (string) $otp_code,
+        ], $name);
 
         //$subscription->last_sent = Carbon::now();
         //$subscription->save();

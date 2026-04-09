@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\ClientService;
 use App\Services\PublicApplicationService;
 use App\Services\TenantStorageService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -147,6 +149,17 @@ class CompanyDetailController extends Controller
             } else {
                 $data['created_at'] = now();
                 DB::connection($conn)->table('crm_system_setting')->insert($data);
+            }
+
+            // Sync company_name to master clients table so login/profile always reflect the latest value
+            if ($request->has('company_name')) {
+                DB::connection('master')->table('clients')
+                    ->where('id', $clientId)
+                    ->update(['company_name' => $request->input('company_name')]);
+
+                // Clear caches so the new name is picked up immediately
+                ClientService::clearCache();
+                Cache::forget("user.permissions.{$request->auth->id}");
             }
 
             return $this->successResponse('Company settings updated.');

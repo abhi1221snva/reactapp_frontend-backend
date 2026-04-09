@@ -3,6 +3,8 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use OpenApi\Analysers\DocBlockAnnotationFactory;
+use OpenApi\Analysers\TokenAnalyser;
 use OpenApi\Generator;
 
 /**
@@ -32,10 +34,13 @@ class GenerateSwaggerDocs extends Command
         $this->info("Scanning: {$scanPath}");
 
         try {
-            // Use NullLogger to suppress "Skipping unknown ..." warnings
-            // that occur when swagger-php encounters un-annotated model classes.
+            // Use TokenAnalyser instead of the default ReflectionAnalyser to avoid
+            // "Cannot declare class" errors caused by ReflectionAnalyser include()-ing
+            // files that the autoloader has already loaded.
+            $analyser = new TokenAnalyser([new DocBlockAnnotationFactory()]);
             $openapi = Generator::scan([$scanPath], [
-                'logger' => new \Psr\Log\NullLogger(),
+                'analyser' => $analyser,
+                'logger'   => new \Psr\Log\NullLogger(),
             ]);
         } catch (\Throwable $e) {
             $this->error('OpenAPI scan failed: ' . $e->getMessage());

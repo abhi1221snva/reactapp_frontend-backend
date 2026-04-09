@@ -308,7 +308,9 @@ class Dialer extends Model
 
                 $dataUser = User::where('id', $request->auth->id)->get()->first();
 
-                $dialer_mode = $dataUser->dialer_mode;
+                $dialer_mode = $request->has('dialer_mode')
+            ? intval($request->input('dialer_mode'))
+            : $dataUser->dialer_mode;
 
                 if ($dialer_mode == 3) {
                     $extension = $dataUser->app_extension;
@@ -456,7 +458,9 @@ class Dialer extends Model
                 }
                 $dataUser = User::where('id', $request->auth->id)->get()->first();
 
-                $dialer_mode = $dataUser->dialer_mode;
+                $dialer_mode = $request->has('dialer_mode')
+            ? intval($request->input('dialer_mode'))
+            : $dataUser->dialer_mode;
 
                 if ($dialer_mode == 3) {
                     $extension = $dataUser->app_extension;
@@ -975,15 +979,10 @@ class Dialer extends Model
                             $extension,
                             $request->auth->asterisk_server_id,
                             $request->auth->parent_id,
-                            $request->auth->id
+                            $request->auth->id,
+                            $dialer_mode
                         );
                        if ($response["status"] === false) {
-                        return response()->json([
-                            'success' => false,
-                            'message' => $response["message"]
-                        ], 402);
-                    }
-                    if ($response["status"] === false) {
                         return response()->json([
                             'success' => false,
                             'message' => $response["message"]
@@ -1007,13 +1006,9 @@ class Dialer extends Model
                     $getExtensionLive = $this->getExtensionLive($extension, $request->auth->parent_id);
                 }
             } else {
-                if ($getExtensionLive['lead_id']) {
-                    return array(
-                        'success' => true,
-                        'message' => 'You are already in call. Lead Id: ' . $getExtensionLive['lead_id']
-                    );
-                }
-
+                // Status 0 (idle) or 3 (wrap-up) means not actively on a call,
+                // even if a stale lead_id remains from a previous session.
+                // Allow re-login to a new campaign in these states.
                 if ($getExtensionLive['status'] == 0 || $getExtensionLive['status'] == 3) {
                     $sql = "UPDATE extension_live SET status = :status, lead_id = null, campaign_id = :campaign_id WHERE extension = :extension";
                     DB::connection('mysql_' . $request->auth->parent_id)->update($sql, array('extension' => $extension, 'status' => '0', 'campaign_id' => $request->input('campaign_id')));
@@ -1025,10 +1020,10 @@ class Dialer extends Model
                         $extension,
                         $request->auth->asterisk_server_id,
                         $request->auth->parent_id,
-                        $request->auth->id
+                        $request->auth->id,
+                        $dialer_mode
                     );
-                 if ($response["status"] === false) {
-
+                    if ($response["status"] === false) {
                         return response()->json([
                             'success' => false,
                             'message' => $response["message"]
@@ -1037,6 +1032,11 @@ class Dialer extends Model
                     return array(
                         'success' => $response["status"],
                         'message' => 'You are logged in successfully. ' . $response["message"]
+                    );
+                } else if ($getExtensionLive['lead_id']) {
+                    return array(
+                        'success' => true,
+                        'message' => 'You are already in call. Lead Id: ' . $getExtensionLive['lead_id']
                     );
                 } else {
                     return array(
@@ -1128,6 +1128,40 @@ class Dialer extends Model
                 error_log("callNumber: user_id={$request->auth->id} hw_ext={$request->auth->extension} alt_ext={$request->auth->alt_extension} dialer_mode={$dialer_mode} req_mode=" . $request->input('dialer_mode') . " FINAL_EXT={$extension} number=" . $request->input('number'));
 
                 /*close new code implement*/
+
+                // WebRTC (dialer_mode=2): browser SIP stack places the call directly.
+                // Just update extension_live with the lead and return success —
+                // no AMI originate needed, the frontend dials via SIP.js/SIPml.
+                if ($dialer_mode == 2) {
+                    $number = preg_replace('/[^0-9]/', '', $request->input('number'));
+                    $connection = 'mysql_' . $request->auth->parent_id;
+
+                    // Update extension_live with lead_id
+                    DB::connection($connection)->update(
+                        "UPDATE extension_live SET lead_id = :lead_id, campaign_id = :campaign_id WHERE extension = :extension",
+                        [
+                            'lead_id' => $request->input('lead_id'),
+                            'campaign_id' => $request->input('campaign_id'),
+                            'extension' => $extension,
+                        ]
+                    );
+
+                    // Add to lead_report
+                    $this->addToLeadReport(
+                        $connection,
+                        $request->input('campaign_id'),
+                        $request->input('id'), // list_id passed as 'id'
+                        $request->input('lead_id'),
+                        0
+                    );
+
+                    return [
+                        'success' => 'true',
+                        'message' => 'Number called',
+                        'number' => $number,
+                        'dial_mode' => 'webrtc',
+                    ];
+                }
 
                 $asterisk = $this->getAsterisk($request->auth->asterisk_server_id, $extension, $request->auth->parent_id);
                 $response = $asterisk->click2Call($request->input('number'), $request->input('campaign_id'), $request->input('lead_id'),$request->auth->id, $dialer_mode);
@@ -1227,7 +1261,7 @@ class Dialer extends Model
      * Fetches lead information
      * @return boolean
      */
-    function addLeadToExtensionLive(int $campaignId, int $hopperMode, int $extension, int $asteriskServerId, int $clientId ,int $user_id)
+    function addLeadToExtensionLive(int $campaignId, int $hopperMode, int $extension, int $asteriskServerId, int $clientId ,int $user_id, int $dialer_mode = 1)
     {
 
         $response = [
@@ -1317,8 +1351,15 @@ class Dialer extends Model
                             'campaign_id' => $campaignId
                         ]
                     );
+                    // For WebRTC (dialer_mode=2): skip AMI originate, just assign
+                    // the lead and let the browser SIP stack place the call.
+                    if ($dialer_mode == 2) {
+                        $this->addToLeadReport('mysql_' . $db, $campaignId, $lead['list_id'], $lead['lead_id'], 0);
+                        return array('status' => true, 'message' => "Lead assigned — dial via WebPhone", 'number' => $number, 'lead_id' => $lead['lead_id']);
+                    }
+
                     $asterisk = $this->getAsterisk($asteriskServerId, $extension, $clientId);
-                    $response = $asterisk->click2Call($number, $campaignId, $lead['lead_id'],$user_id);
+                    $response = $asterisk->click2Call($number, $campaignId, $lead['lead_id'],$user_id, $dialer_mode);
                     if (is_array($response) && isset($response['success']) && $response['success'] === false) {
                         return [
                         'status' => false,
@@ -1686,7 +1727,9 @@ public function getLead(int $parentId, int $extension)
 
         $dataUser = User::where('id', $request->auth->id)->get()->first();
 
-        $dialer_mode = $dataUser->dialer_mode;
+        $dialer_mode = $request->has('dialer_mode')
+            ? intval($request->input('dialer_mode'))
+            : $dataUser->dialer_mode;
 
         if ($dialer_mode == 3) {
             $extension = $dataUser->app_extension;
@@ -1941,7 +1984,9 @@ public function getLead(int $parentId, int $extension)
 
         $dataUser = User::where('id', $request->auth->id)->get()->first();
 
-        $dialer_mode = $dataUser->dialer_mode;
+        $dialer_mode = $request->has('dialer_mode')
+            ? intval($request->input('dialer_mode'))
+            : $dataUser->dialer_mode;
 
         if ($dialer_mode == 3) {
             $extension = $dataUser->app_extension;
@@ -2261,7 +2306,9 @@ public function getLead(int $parentId, int $extension)
 
             $dataUser = User::where('id', $request->auth->id)->get()->first();
 
-            $dialer_mode = $dataUser->dialer_mode;
+            $dialer_mode = $request->has('dialer_mode')
+            ? intval($request->input('dialer_mode'))
+            : $dataUser->dialer_mode;
 
             if ($dialer_mode == 3) {
                 $extension = $dataUser->app_extension;
@@ -2316,7 +2363,9 @@ public function getLead(int $parentId, int $extension)
 
             $dataUser = User::where('id', $request->auth->id)->get()->first();
 
-            $dialer_mode = $dataUser->dialer_mode;
+            $dialer_mode = $request->has('dialer_mode')
+            ? intval($request->input('dialer_mode'))
+            : $dataUser->dialer_mode;
 
             if ($dialer_mode == 3) {
                 $extension = $dataUser->app_extension;
@@ -2638,7 +2687,9 @@ public function getLead(int $parentId, int $extension)
 
         $dataUser = User::where('id', $request->auth->id)->get()->first();
 
-        $dialer_mode = $dataUser->dialer_mode;
+        $dialer_mode = $request->has('dialer_mode')
+            ? intval($request->input('dialer_mode'))
+            : $dataUser->dialer_mode;
 
         if ($dialer_mode == 3) {
             $extension = $dataUser->app_extension;
@@ -2922,7 +2973,9 @@ public function getLead(int $parentId, int $extension)
     {
         $dataUser = DB::selectOne("SELECT * FROM users WHERE (extension = :extension OR alt_extension = :alt_extension OR app_extension = :app_extension)", ['extension' => $request->forward_extension, 'alt_extension' => $request->forward_extension, 'app_extension' => $request->forward_extension]);
 
-        $dialer_mode = $dataUser->dialer_mode;
+        $dialer_mode = $request->has('dialer_mode')
+            ? intval($request->input('dialer_mode'))
+            : $dataUser->dialer_mode;
 
         if ($dialer_mode == 3) {
             $forward_extension = $dataUser->app_extension;

@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use OpenApi\Analysers\DocBlockAnnotationFactory;
+use OpenApi\Analysers\TokenAnalyser;
 use OpenApi\Generator;
 
 /**
@@ -85,8 +87,10 @@ class SwaggerController extends Controller
 
     private function generateAndServe(string $specPath): JsonResponse
     {
+        $analyser = new TokenAnalyser([new DocBlockAnnotationFactory()]);
         $openapi = Generator::scan([base_path('app')], [
-            'logger' => new \Psr\Log\NullLogger(),
+            'analyser' => $analyser,
+            'logger'   => new \Psr\Log\NullLogger(),
         ]);
 
         if (!$openapi) {

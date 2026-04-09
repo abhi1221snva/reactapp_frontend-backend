@@ -2,11 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\ProvisionClientJob;
+use App\Jobs\ReplenishPoolJob;
 use App\Model\Master\EmailOtp;
 use App\Model\Master\PhoneOtp;
 use App\Model\Master\ProspectInitialData;
 use App\Model\Master\RegistrationLog;
+use App\Model\Master\RegistrationProgress;
+use App\Services\ReservedPoolService;
 use App\Services\SmsGatewayService;
+use App\Services\TrialPackageService;
 use App\Services\WelcomeEmailService;
 use App\Services\MailService;
 use App\Mail\SystemNotificationMail;
@@ -581,155 +586,151 @@ class RegistrationController extends Controller
     }
 
     // ----------------------------------------------------------------
-    // FINAL — Complete Registration
+    // FINAL — Complete Registration (Smart Router: Fast → Slow)
     // ----------------------------------------------------------------
 
     /**
-     * Create user record + assign client DB using the reserved-client pattern.
+     * Smart registration router:
+     *   1. Try FAST PATH — claim a pre-provisioned reserved slot (~500ms)
+     *   2. Fall back to SLOW PATH — dispatch ProvisionClientJob (~15-30s)
+     *
+     * Fast path: instant response with user_id + client_id
+     * Slow path: returns progress_id for frontend polling via GET /register/status/{id}
      */
     private function completeRegistration($prospect, string $e164Phone): \Illuminate\Http\JsonResponse
     {
         try {
-            $now = Carbon::now();
+            // ── FAST PATH — Try reserved pool first ──────────────────────
+            $poolService = new ReservedPoolService();
+            $claimed     = $poolService->claimSlot($prospect, $e164Phone);
 
-            // ── 1. Assign a reserved client ──────────────────────────────
-            $reservedClient = DB::table('clients')
-                ->where('reserved', 1)
-                ->orderBy('id', 'asc')
-                ->first();
+            if ($claimed) {
+                $clientId = $claimed['client_id'];
+                $userId   = $claimed['user_id'];
 
-            if (!$reservedClient) {
-                Log::error('RegistrationController::completeRegistration — no reserved client available');
-                return response()->json([
-                    'status'  => false,
-                    'message' => 'No available server slot. Please contact support.',
-                ], 503);
-            }
+                RegistrationLog::log(
+                    RegistrationLog::STEP_USER_CREATED,
+                    $prospect->email, $e164Phone,
+                    ['registration_id' => $prospect->id],
+                    ['user_id' => $userId, 'client_id' => $clientId, 'path' => 'fast'],
+                    RegistrationLog::STATUS_SUCCESS,
+                    $prospect->id
+                );
 
-            $reservedUser = DB::table('users')
-                ->where('base_parent_id', $reservedClient->id)
-                ->where('reserved', 1)
-                ->orderBy('id', 'asc')
-                ->first();
+                RegistrationLog::log(
+                    RegistrationLog::STEP_CLIENT_DB_CREATED,
+                    $prospect->email, $e164Phone,
+                    ['client_id' => $clientId],
+                    ['db_name' => 'client_' . $clientId, 'path' => 'fast'],
+                    RegistrationLog::STATUS_SUCCESS,
+                    $prospect->id
+                );
 
-            if (!$reservedUser) {
-                Log::error('RegistrationController::completeRegistration — no reserved user for client', [
-                    'client_id' => $reservedClient->id,
-                ]);
-                return response()->json([
-                    'status'  => false,
-                    'message' => 'No available user slot. Please contact support.',
-                ], 503);
-            }
-
-// ── 2+3+4. Atomic DB writes: client + user update (DB::transaction) ─────
-            // Both updates are wrapped in a transaction to guarantee atomicity.
-            // If either update fails, both are rolled back and the reserved slot
-            // remains available rather than being left in an inconsistent state.
-            DB::transaction(function () use ($prospect, $e164Phone, $now, $reservedClient, $reservedUser) {
-                // ── Parse name ──────────────────────────────────────────────────
-                $nameParts = explode(' ', trim($prospect->name ?? ''), 2);
-                $firstName = $nameParts[0] ?? '';
-                $lastName  = $nameParts[1] ?? '';
-
-                // Strip country code prefix from E.164 for mobile storage
-                $mobileOnly = ltrim($e164Phone, '+');
-                if (strlen($mobileOnly) > 10) {
-                    $mobileOnly = substr($mobileOnly, -10);
+                // Assign trial package (non-blocking — don't fail registration if this fails)
+                try {
+                    $trialSvc = new TrialPackageService();
+                    $trialSvc->assignTrial($clientId, $userId);
+                } catch (\Throwable $e) {
+                    Log::error('RegistrationController: trial assignment failed (fast path)', [
+                        'client_id' => $clientId,
+                        'error'     => $e->getMessage(),
+                    ]);
                 }
 
-                // ── Update client record ──────────────────────────────────────
-                DB::table('clients')->where('id', $reservedClient->id)->update([
-                    'company_name' => $prospect->company_name,
-                    'reserved'     => 0,
-                    'updated_at'   => $now,
-                ]);
+                // Send welcome email (non-blocking)
+                try {
+                    $welcomeService = new WelcomeEmailService();
+                    $welcomeService->sendWelcome(
+                        email:    $prospect->email,
+                        name:     $prospect->name ?? 'User',
+                        loginUrl: env('PORTAL_NAME', '#'),
+                        password: null
+                    );
+                } catch (\Throwable $e) {
+                    Log::error('RegistrationController: welcome email failed (fast path)', [
+                        'email' => $prospect->email,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
 
-                // ── Update user record ────────────────────────────────────────
-                DB::table('users')->where('id', $reservedUser->id)->update([
-                    'first_name'          => $firstName,
-                    'last_name'           => $lastName,
-                    'email'               => $prospect->email,
-                    'mobile'              => $mobileOnly,
-                    'company_name'        => $prospect->company_name,
-                    'password'            => $prospect->password,   // already bcrypt-hashed
-                    'reserved'            => 0,
-                    'phone_verified_at'   => $now,
-                    'email_verified_at'   => $now,
-                    'updated_at'          => $now,
-                ]);
+                // Clear cache
+                try {
+                    Artisan::call('cache:clear');
+                } catch (\Throwable $e) {
+                    // Non-fatal
+                }
 
-                // ── Insert permissions row so getPermissions() resolves client ──
-                DB::table('permissions')->upsert([
-                    'user_id'    => $reservedUser->id,
-                    'client_id'  => $reservedClient->id,
-                    'role'       => 6,
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ], ['user_id', 'client_id'], ['role', 'updated_at']);
-            });
+                RegistrationLog::log(
+                    RegistrationLog::STEP_COMPLETED,
+                    $prospect->email, $e164Phone,
+                    ['registration_id' => $prospect->id],
+                    ['user_id' => $userId, 'client_id' => $clientId, 'path' => 'fast'],
+                    RegistrationLog::STATUS_SUCCESS,
+                    $prospect->id
+                );
+
+                // Async: replenish the pool if it's getting low
+                if ($poolService->needsReplenish()) {
+                    dispatch(new ReplenishPoolJob())->onConnection('database')->onQueue('clients');
+                }
+
+                return response()->json([
+                    'status'  => true,
+                    'message' => 'Registration complete! You can now log in.',
+                    'data'    => [
+                        'path'      => 'fast',
+                        'user_id'   => $userId,
+                        'client_id' => $clientId,
+                        'ready'     => true,
+                    ],
+                ]);
+            }
+
+            // ── SLOW PATH — No reserved slot, provision from scratch ─────
+            Log::info('RegistrationController: no reserved slot — using slow path', [
+                'registration_id' => $prospect->id,
+            ]);
+
+            // Create progress tracker
+            $progress = RegistrationProgress::create([
+                'registration_id' => $prospect->id,
+                'email'           => $prospect->email,
+                'phone'           => $e164Phone,
+                'path'            => 'slow',
+                'stage'           => RegistrationProgress::STAGE_QUEUED,
+                'progress_pct'    => 5,
+            ]);
+
+            // Dispatch the provisioning job
+            dispatch(new ProvisionClientJob(
+                progressId:     $progress->id,
+                registrationId: $prospect->id,
+                name:           $prospect->name ?? 'User',
+                email:          $prospect->email,
+                companyName:    $prospect->company_name,
+                hashedPassword: $prospect->password,
+                e164Phone:      $e164Phone
+            ))->onConnection('database')->onQueue('clients');
 
             RegistrationLog::log(
                 RegistrationLog::STEP_USER_CREATED,
-                $prospect->email,
-                $e164Phone,
+                $prospect->email, $e164Phone,
                 ['registration_id' => $prospect->id],
-                ['user_id' => $reservedUser->id, 'client_id' => $reservedClient->id],
-                RegistrationLog::STATUS_SUCCESS,
-                $prospect->id
-            );
-
-            RegistrationLog::log(
-                RegistrationLog::STEP_CLIENT_DB_CREATED,
-                $prospect->email,
-                $e164Phone,
-                ['client_id' => $reservedClient->id],
-                ['db_name' => 'client_' . $reservedClient->id],
-                RegistrationLog::STATUS_SUCCESS,
-                $prospect->id
-            );
-
-            // ── 5. Send welcome email ─────────────────────────────────────
-            try {
-                $welcomeService = new WelcomeEmailService();
-                $welcomeService->sendWelcome(
-                    email:    $prospect->email,
-                    name:     $prospect->name ?? 'User',
-                    loginUrl: env('PORTAL_NAME', '#'),
-                    password: null
-                );
-            } catch (\Throwable $e) {
-                Log::error('RegistrationController: welcome email failed', [
-                    'email' => $prospect->email,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-
-            // ── 6. Clear Lumen config/cache ───────────────────────────────
-            try {
-                Artisan::call('cache:clear');
-            } catch (\Throwable $e) {
-                Log::warning('RegistrationController: cache:clear failed', ['error' => $e->getMessage()]);
-            }
-
-            RegistrationLog::log(
-                RegistrationLog::STEP_COMPLETED,
-                $prospect->email,
-                $e164Phone,
-                ['registration_id' => $prospect->id],
-                ['user_id' => $reservedUser->id, 'client_id' => $reservedClient->id],
+                ['path' => 'slow', 'progress_id' => $progress->id],
                 RegistrationLog::STATUS_SUCCESS,
                 $prospect->id
             );
 
             return response()->json([
                 'status'  => true,
-                'message' => 'Registration complete! Please check your email for login details.',
+                'message' => 'Your account is being set up. This usually takes about 30 seconds.',
                 'data'    => [
-                    'user_id'   => $reservedUser->id,
-                    'client_id' => $reservedClient->id,
+                    'path'        => 'slow',
+                    'progress_id' => $progress->id,
+                    'ready'       => false,
                 ],
             ]);
+
         } catch (\Throwable $e) {
             Log::error('RegistrationController::completeRegistration error', [
                 'error' => $e->getMessage(),
@@ -751,6 +752,64 @@ class RegistrationController extends Controller
                 'message' => 'Registration failed. Please contact support.',
             ], 500);
         }
+    }
+
+    // ----------------------------------------------------------------
+    // POLLING — Registration Status (for slow path)
+    // ----------------------------------------------------------------
+
+    /**
+     * GET /register/status/{id}
+     *
+     * Returns the current provisioning progress for a slow-path registration.
+     * Frontend polls this every 2-3 seconds until stage = completed or failed.
+     */
+    public function registrationStatus(Request $request, $id)
+    {
+        $progress = RegistrationProgress::find($id);
+
+        if (!$progress) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Progress record not found.',
+            ], 404);
+        }
+
+        $data = [
+            'stage'        => $progress->stage,
+            'progress_pct' => $progress->progress_pct,
+            'path'         => $progress->path,
+            'ready'        => $progress->stage === RegistrationProgress::STAGE_COMPLETED,
+            'failed'       => $progress->stage === RegistrationProgress::STAGE_FAILED,
+        ];
+
+        if ($progress->stage === RegistrationProgress::STAGE_COMPLETED) {
+            $data['client_id'] = $progress->client_id;
+            $data['user_id']   = $progress->user_id;
+        }
+
+        if ($progress->stage === RegistrationProgress::STAGE_FAILED) {
+            $data['error_message'] = 'Account setup encountered an issue. Please contact support or try again.';
+            $data['retry_count']   = $progress->retry_count;
+        }
+
+        // Human-readable stage label for the frontend
+        $stageLabels = [
+            'queued'            => 'Waiting in queue...',
+            'creating_record'   => 'Creating your account...',
+            'creating_database' => 'Setting up your workspace...',
+            'seeding_data'      => 'Configuring your CRM...',
+            'assigning_trial'   => 'Activating your trial...',
+            'sending_welcome'   => 'Almost done...',
+            'completed'         => 'All set!',
+            'failed'            => 'Setup encountered an issue.',
+        ];
+        $data['stage_label'] = $stageLabels[$progress->stage] ?? $progress->stage;
+
+        return response()->json([
+            'status' => true,
+            'data'   => $data,
+        ]);
     }
 
     // ----------------------------------------------------------------

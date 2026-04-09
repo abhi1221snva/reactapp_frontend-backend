@@ -277,7 +277,7 @@ class CliReportController extends Controller
         $CnamCliReport->saveOrFail();
 
         // ✅ Step 2: Create call file content
-        $content = "Channel: SIP/Airespring1/#135196219859805718\n";
+        $content = "Channel: PJSIP/Airespring1/#135196219859805718\n";
         $content .= "CallerId: $cli\n";
         $content .= "Context: callfile-detect\n";
         $content .= "Extension: s\n";
@@ -381,7 +381,7 @@ class CliReportController extends Controller
             return $this->failResponse('Invalid DID or phone number format.');
         }
 
-        $content = "Channel: SIP/voxox1/1$phone_number\nCallerId: $cli\nContext: callfile-detect-play-message\nExtension: s\nPriority: 1\n";
+        $content = "Channel: PJSIP/voxox1/1$phone_number\nCallerId: $cli\nContext: callfile-detect-play-message\nExtension: s\nPriority: 1\n";
         $file_name = $cli;
 
         $rootPath = base_path('public') . '/';

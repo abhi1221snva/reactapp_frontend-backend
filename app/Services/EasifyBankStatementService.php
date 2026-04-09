@@ -158,6 +158,51 @@ class EasifyBankStatementService
         return $response->json() ?? [];
     }
 
+    /**
+     * Raw HTTP request returning the full Response object (for binary/file downloads).
+     * Retries once on 401.
+     */
+    private function rawRequest(string $method, string $url, array $options = []): \Illuminate\Http\Client\Response
+    {
+        $fullUrl = self::BASE_URL . $url;
+        $start   = microtime(true);
+
+        Log::info('[Balji] Raw API Request', [
+            'client_id' => $this->clientId,
+            'method'    => strtoupper($method),
+            'url'       => $fullUrl,
+        ]);
+
+        $response = $this->http()->{$method}($fullUrl, $options);
+
+        if ($response->status() === 401) {
+            Cache::forget("easify_auth:{$this->clientId}");
+            $response = $this->http()->{$method}($fullUrl, $options);
+        }
+
+        $duration = round((microtime(true) - $start) * 1000);
+
+        if (!$response->successful()) {
+            Log::warning('[Balji] Raw API error', [
+                'client_id' => $this->clientId,
+                'url'       => $fullUrl,
+                'status'    => $response->status(),
+                'duration'  => $duration . 'ms',
+            ]);
+            throw new \RuntimeException('Balji API error: ' . ($response->json('message') ?? $response->status()));
+        }
+
+        Log::info('[Balji] Raw API Response', [
+            'client_id' => $this->clientId,
+            'url'       => $fullUrl,
+            'status'    => $response->status(),
+            'duration'  => $duration . 'ms',
+            'size'      => strlen($response->body()),
+        ]);
+
+        return $response;
+    }
+
     // ── Core API Methods ─────────────────────────────────────────────────────
 
     /**
@@ -361,6 +406,115 @@ class EasifyBankStatementService
     public function getMonthly(string $sessionId): array
     {
         return $this->request('get', "/bank-statement/sessions/{$sessionId}/monthly");
+    }
+
+    // ── Session File Endpoints ─────────────────────────────────────────────
+
+    /**
+     * Delete a session on Easify (remote cleanup).
+     */
+    public function deleteSession(string $sessionId): array
+    {
+        return $this->request('delete', "/bank-statement/sessions/{$sessionId}");
+    }
+
+    /**
+     * Download transactions as CSV. Returns raw Response with text/csv body.
+     */
+    public function downloadCsv(string $sessionId): \Illuminate\Http\Client\Response
+    {
+        return $this->rawRequest('get', "/bank-statement/sessions/{$sessionId}/download");
+    }
+
+    /**
+     * View/download the original uploaded PDF.
+     *
+     * @param bool $download true = attachment, false = inline
+     */
+    public function downloadPdf(string $sessionId, bool $download = false): \Illuminate\Http\Client\Response
+    {
+        $query = $download ? '?download=1' : '?download=0';
+        return $this->rawRequest('get', "/bank-statement/sessions/{$sessionId}/pdf{$query}");
+    }
+
+    // ── Transaction Toggle Endpoints ─────────────────────────────────────────
+
+    /**
+     * Toggle a transaction between credit ↔ debit.
+     */
+    public function toggleTransactionType(int $transactionId): array
+    {
+        return $this->request('post', "/bank-statement/transactions/{$transactionId}/toggle-type");
+    }
+
+    /**
+     * Toggle revenue classification (true_revenue ↔ adjustment).
+     */
+    public function toggleRevenueClassification(int $transactionId, string $currentClassification): array
+    {
+        return $this->request('post', "/bank-statement/transactions/{$transactionId}/toggle-revenue", [
+            'current_classification' => $currentClassification,
+        ]);
+    }
+
+    /**
+     * Toggle MCA status on a transaction.
+     */
+    public function toggleMcaStatus(int $transactionId, bool $isMca, ?string $lenderId = null, ?string $lenderName = null): array
+    {
+        $payload = ['is_mca' => $isMca];
+        if ($isMca) {
+            $payload['lender_id']   = $lenderId;
+            $payload['lender_name'] = $lenderName;
+        }
+        return $this->request('post', "/bank-statement/transactions/{$transactionId}/toggle-mca", $payload);
+    }
+
+    // ── Reference Data Endpoints ─────────────────────────────────────────────
+
+    /**
+     * Get the list of known MCA lenders.
+     */
+    public function getMcaLenders(): array
+    {
+        return $this->request('get', '/bank-statement/mca-lenders');
+    }
+
+    /**
+     * Get overall account statistics.
+     */
+    public function getStats(): array
+    {
+        return $this->request('get', '/bank-statement/stats');
+    }
+
+    // ── Learned Patterns Endpoints ───────────────────────────────────────────
+
+    /**
+     * Get learned MCA patterns (paginated).
+     */
+    public function getLearnedPatterns(int $page = 1, int $perPage = 50): array
+    {
+        return $this->request('get', '/bank-statement/learned-patterns?' . http_build_query([
+            'page'     => $page,
+            'per_page' => $perPage,
+        ]));
+    }
+
+    /**
+     * Clear all learned patterns.
+     */
+    public function clearLearnedPatterns(): array
+    {
+        return $this->request('delete', '/bank-statement/learned-patterns');
+    }
+
+    /**
+     * Delete a single learned pattern.
+     */
+    public function deleteLearnedPattern(int $patternId): array
+    {
+        return $this->request('delete', "/bank-statement/learned-patterns/{$patternId}");
     }
 
     // ── Sync from Balji into local DB ───────────────────────────────────────

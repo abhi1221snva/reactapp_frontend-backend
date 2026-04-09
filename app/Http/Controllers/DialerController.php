@@ -682,7 +682,10 @@ class DialerController extends Controller
 
         $dataUser = User::where('id', $this->request->auth->id)->get()->first();
 
-        $dialer_mode = $dataUser->dialer_mode;
+        // Allow frontend to override dialer_mode (React WebPhone sends dialer_mode=2)
+        $dialer_mode = $this->request->has('dialer_mode')
+            ? intval($this->request->input('dialer_mode'))
+            : $dataUser->dialer_mode;
 
         if ($dialer_mode == 3) {
             $intExtensionToBeUsed = $dataUser->app_extension;
@@ -693,8 +696,6 @@ class DialerController extends Controller
             if ($dialer_mode == 1) {
             $intExtensionToBeUsed =  $this->request->auth->extension;
         }
-
-        //echo $extension;die;
 
         /*close new code implement*/
 
@@ -1142,7 +1143,10 @@ class DialerController extends Controller
 
         $dataUser = User::where('id', $this->request->auth->id)->get()->first();
 
-        $dialer_mode = $dataUser->dialer_mode;
+        // Allow frontend to override dialer_mode (React WebPhone sends dialer_mode=2)
+        $dialer_mode = $this->request->has('dialer_mode')
+            ? intval($this->request->input('dialer_mode'))
+            : $dataUser->dialer_mode;
 
         if ($dialer_mode == 3) {
             $intExtensionToBeUsed = $dataUser->app_extension;
@@ -1987,7 +1991,7 @@ class DialerController extends Controller
                 $originateRequest = "Action: originate\r\n";
                 //  $originateRequest .= "Channel: SIP/telnyx/#13519621$mobile\r\n"; //airespring/#13517131  // for v g  Channel: SIP/Airespring1/1$mobile\r\n
 
-                $originateRequest .= "Channel: SIP/telnyx/$tech_prefix$mobile\r\n";
+                $originateRequest .= "Channel: PJSIP/telnyx/$tech_prefix$mobile\r\n";
 
                 $originateRequest .= "Timeout: $this->waitTime\r\n";
                 $originateRequest .= "Callerid: $callerId\r\n";
