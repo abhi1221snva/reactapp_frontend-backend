@@ -114,19 +114,59 @@ class CrmDocumentController extends Controller
         if ($err = $this->assertLeadAccessById($request, $id)) return $err;
         $clientId = $request->auth->parent_id;
 
-        $this->validate($request, [
-            'files'         => 'required|array|min:1|max:10',
-            'files.*'       => 'required|file|mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png|max:20480',
-            'document_type' => 'required|string|max:100',
-        ]);
+        // Support both:
+        //  - document_type (string)  — legacy single-type batch
+        //  - document_type[] (array) — new per-file types matching files[] order
+        //  - sub_type / sub_type[] — optional per-file sub category (e.g. "January" for Bank Statement)
+        $rawType    = $request->input('document_type');
+        $rawSubType = $request->input('sub_type');
+        $rules = [
+            'files'   => 'required|array|min:1|max:10',
+            'files.*' => 'required|file|mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png|max:20480',
+        ];
+        if (is_array($rawType)) {
+            $rules['document_type']   = 'required|array';
+            $rules['document_type.*'] = 'required|string|max:100';
+        } else {
+            $rules['document_type'] = 'required|string|max:100';
+        }
+        if (is_array($rawSubType)) {
+            $rules['sub_type']   = 'nullable|array';
+            $rules['sub_type.*'] = 'nullable|string|max:100';
+        } else {
+            $rules['sub_type'] = 'nullable|string|max:100';
+        }
+        $this->validate($request, $rules);
 
-        $docType   = $request->input('document_type', 'Other');
-        $files     = $request->file('files');
+        $files = $request->file('files');
+        $types = is_array($rawType)
+            ? array_values($rawType)
+            : array_fill(0, count($files), $rawType);
+
+        // Normalize sub_type to a per-file array; tolerate empty/missing.
+        if (is_array($rawSubType)) {
+            $subTypes = array_values($rawSubType);
+        } elseif (!is_null($rawSubType) && $rawSubType !== '') {
+            $subTypes = array_fill(0, count($files), $rawSubType);
+        } else {
+            $subTypes = array_fill(0, count($files), null);
+        }
+        // Pad sub_types array if shorter than files (defensive)
+        while (count($subTypes) < count($files)) {
+            $subTypes[] = null;
+        }
+
+        if (count($types) !== count($files)) {
+            return $this->failResponse("document_type count must match files count", [], null, 422);
+        }
+
         $uploaded  = [];
         $failed    = [];
         $now       = Carbon::now();
 
-        foreach ($files as $file) {
+        foreach ($files as $i => $file) {
+            $docType = $types[$i] ?? 'Other';
+            $subType = isset($subTypes[$i]) && $subTypes[$i] !== '' ? $subTypes[$i] : null;
             try {
                 $origName  = $file->getClientOriginalName();
                 $safeName  = time() . '_' . mt_rand(100, 999) . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', $origName);
@@ -140,6 +180,7 @@ class CrmDocumentController extends Controller
                     ->insertGetId([
                         'lead_id'       => $id,
                         'document_type' => $docType,
+                        'sub_type'      => $subType,
                         'file_name'     => substr($origName, 0, 50),
                         'file_path'     => $publicPath,
                         'uploaded_by'   => $request->auth->id,
@@ -152,6 +193,7 @@ class CrmDocumentController extends Controller
                     'id'            => $docId,
                     'lead_id'       => $id,
                     'document_type' => $docType,
+                    'sub_type'      => $subType,
                     'file_path'     => $publicPath,
                     'file_name'     => $origName,
                     'file_size'     => $file->getSize(),
@@ -170,19 +212,20 @@ class CrmDocumentController extends Controller
         // Single activity log entry for the batch
         if (!empty($uploaded)) {
             try {
-                $names = implode(', ', array_column($uploaded, 'file_name'));
+                $uniqueTypes = array_values(array_unique(array_column($uploaded, 'document_type')));
+                $typesLabel  = implode(', ', $uniqueTypes);
                 $activity = new CrmLeadActivity();
                 $activity->setConnection("mysql_$clientId");
                 $activity->lead_id       = $id;
                 $activity->user_id       = $request->auth->id;
                 $activity->activity_type = 'document_uploaded';
                 $activity->subject       = count($uploaded) === 1
-                    ? "Document uploaded: {$docType} ({$uploaded[0]['file_name']})"
-                    : count($uploaded) . " documents uploaded: {$docType}";
+                    ? "Document uploaded: {$uploaded[0]['document_type']} ({$uploaded[0]['file_name']})"
+                    : count($uploaded) . " documents uploaded: {$typesLabel}";
                 $activity->meta          = [
-                    'document_type' => $docType,
-                    'files'         => array_column($uploaded, 'file_name'),
-                    'count'         => count($uploaded),
+                    'document_types' => $uniqueTypes,
+                    'files'          => array_column($uploaded, 'file_name'),
+                    'count'          => count($uploaded),
                 ];
                 $activity->source_type   = 'api';
                 $activity->save();
@@ -321,6 +364,99 @@ class CrmDocumentController extends Controller
         }
 
         return Storage::disk('public')->path($relative);
+    }
+
+    /**
+     * PATCH /crm/lead/{id}/documents/{did}
+     * Update document metadata (tag, document_type).
+     */
+    public function update(Request $request, int $id, int $did)
+    {
+        if ($err = $this->assertLeadAccessById($request, $id)) return $err;
+        $clientId = $request->auth->parent_id;
+
+        $this->validate($request, [
+            'tag'           => 'nullable|string|max:50',
+            'document_type' => 'nullable|string|max:100',
+        ]);
+
+        try {
+            $doc = DB::connection("mysql_$clientId")
+                ->table('crm_documents')
+                ->where('id', $did)
+                ->where('lead_id', $id)
+                ->whereNull('deleted_at')
+                ->first();
+
+            if (!$doc) {
+                return $this->failResponse("Document not found", [], null, 404);
+            }
+
+            $update = ['updated_at' => Carbon::now()];
+            if ($request->has('tag'))              $update['tag']           = $request->input('tag');
+            if ($request->filled('document_type')) $update['document_type'] = $request->input('document_type');
+
+            DB::connection("mysql_$clientId")
+                ->table('crm_documents')
+                ->where('id', $did)
+                ->update($update);
+
+            $fresh = DB::connection("mysql_$clientId")
+                ->table('crm_documents')
+                ->where('id', $did)
+                ->first();
+
+            return $this->successResponse("Document updated", (array) $fresh);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to update document", [$e->getMessage()], $e, 500);
+        }
+    }
+
+    /**
+     * POST /crm/lead/{id}/documents/bulk
+     * Bulk actions on multiple documents. Supports:
+     *   action=delete       — soft-delete all
+     *   action=tag  + tag=x — update tag on all
+     */
+    public function bulkAction(Request $request, int $id)
+    {
+        if ($err = $this->assertLeadAccessById($request, $id)) return $err;
+        $clientId = $request->auth->parent_id;
+
+        $this->validate($request, [
+            'action'    => 'required|in:delete,tag',
+            'doc_ids'   => 'required|array|min:1',
+            'doc_ids.*' => 'integer',
+            'tag'       => 'nullable|string|max:50',
+        ]);
+
+        $action  = $request->input('action');
+        $docIds  = $request->input('doc_ids');
+
+        try {
+            $query = DB::connection("mysql_$clientId")
+                ->table('crm_documents')
+                ->whereIn('id', $docIds)
+                ->where('lead_id', $id)
+                ->whereNull('deleted_at');
+
+            if ($action === 'delete') {
+                $affected = $query->update(['deleted_at' => Carbon::now()]);
+                return $this->successResponse("Deleted {$affected} document(s)", ['count' => $affected]);
+            }
+
+            if ($action === 'tag') {
+                $affected = $query->update([
+                    'tag'        => $request->input('tag'),
+                    'updated_at' => Carbon::now(),
+                ]);
+                return $this->successResponse("Tagged {$affected} document(s)", ['count' => $affected]);
+            }
+
+            return $this->failResponse("Unknown action", [], null, 422);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Bulk action failed", [$e->getMessage()], $e, 500);
+        }
     }
 
     /**

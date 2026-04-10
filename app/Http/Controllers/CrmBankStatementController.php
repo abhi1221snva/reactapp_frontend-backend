@@ -225,6 +225,341 @@ class CrmBankStatementController extends Controller
     }
 
     /**
+     * GET /crm/lead/{id}/bank-statements/combined-analysis        (legacy alias)
+     * GET /crm/lead/{id}/bank-statements-analysis                 (preferred)
+     *
+     * Returns a consolidated report for the Compliance tab:
+     *   {
+     *     combined:   { revenue, deposits, debits, adjustments, avg_balance,
+     *                   ledger_balance, total_transactions, nsf, statement_count },
+     *     statements: [ { session_id, document_id, file_name, status, analyzed_at,
+     *                     created_at, summary: {...}, raw: {...} }, ... ]
+     *   }
+     *
+     * IMPORTANT: Only sessions linked to an uploaded Document (document_id IS NOT NULL)
+     * are considered. This ensures the Compliance tab shows exactly the same set of
+     * statements as the Documents tab — no orphan/standalone sessions.
+     *
+     * Aggregation rules:
+     *   revenue, deposits, debits, adjustments, total_transactions, nsf → SUM
+     *   avg_balance                                                      → AVG across statements
+     *   ledger_balance                                                   → latest statement's value
+     */
+    public function combinedAnalysis(Request $request, $id): JsonResponse
+    {
+        if ($err = $this->assertLeadAccessById($request, (int) $id)) return $err;
+
+        $conn = $this->tenantDb($request);
+
+        // Fetch only completed, document-linked sessions — sorted DESC so [0] = latest.
+        // Match exactly what the Documents tab shows (whereNotNull('document_id')).
+        $sessions = CrmBankStatementSession::on($conn)
+            ->where('lead_id', (int) $id)
+            ->whereNotNull('document_id')
+            ->where('status', 'completed')
+            ->orderByDesc('created_at')
+            ->get([
+                'id', 'session_id', 'document_id', 'file_name', 'status',
+                'summary_data', 'mca_analysis', 'monthly_data',
+                'fraud_score', 'total_revenue', 'total_deposits',
+                'nsf_count', 'analyzed_at', 'created_at',
+            ]);
+
+        $count = $sessions->count();
+
+        $emptyCombined = [
+            'revenue'            => 0,
+            'deposits'           => 0,
+            'debits'             => 0,
+            'adjustments'        => 0,
+            'avg_balance'        => 0,
+            'ledger_balance'     => 0,
+            'total_transactions' => 0,
+            'nsf'                => 0,
+            'statement_count'    => 0,
+        ];
+
+        if ($count === 0) {
+            return $this->successResponse('No completed bank statement analyses found.', [
+                'combined'     => $emptyCombined,
+                'combined_raw' => [
+                    'summary_data' => null,
+                    'mca_analysis' => null,
+                    'monthly_data' => null,
+                ],
+                'statements'   => [],
+            ]);
+        }
+
+        // Accumulators — single pass, O(n), no nested loops.
+        $revenue      = 0.0;
+        $deposits     = 0.0;
+        $debits       = 0.0;
+        $adjustments  = 0.0;
+        $totalTx      = 0;
+        $nsf          = 0;
+        $avgBalSum    = 0.0;
+        $avgBalCount  = 0;
+        $ledgerLatest = 0.0;
+        $ledgerSet    = false;
+
+        // Aggregators for combined_raw (merged monthly, MCA lenders, categories).
+        $monthsByKey       = [];   // month_key => merged row
+        $lendersByName     = [];   // lender name => merged lender row
+        $mcaCountSum       = 0;
+        $mcaPaymentsSum    = 0.0;
+        $mcaAmountSum      = 0.0;
+        $mcaCapacityLatest = null; // take first (most recent) capacity block found
+        $categoriesByName  = [];   // category name => merged row
+
+        $statements = [];
+
+        foreach ($sessions as $s) {
+            $summary = $s->summary_data ?? [];
+            if (is_string($summary)) {
+                $decoded = json_decode($summary, true);
+                $summary = is_array($decoded) ? $decoded : [];
+            }
+
+            $mca = $s->mca_analysis ?? [];
+            if (is_string($mca)) {
+                $decoded = json_decode($mca, true);
+                $mca = is_array($decoded) ? $decoded : [];
+            }
+
+            $monthlyRaw = $s->monthly_data ?? [];
+            if (is_string($monthlyRaw)) {
+                $decoded = json_decode($monthlyRaw, true);
+                $monthlyRaw = is_array($decoded) ? $decoded : [];
+            }
+
+            $sRevenue   = (float) ($summary['true_revenue']       ?? $s->total_revenue   ?? 0);
+            $sDeposits  = (float) ($summary['total_credits']      ?? $s->total_deposits  ?? 0);
+            $sDebits    = (float) ($summary['total_debits']       ?? 0);
+            $sAdjust    = (float) ($summary['adjustments']        ?? 0);
+            $sTx        = (int)   ($summary['total_transactions'] ?? 0);
+
+            $nsfBlock = $summary['nsf'] ?? null;
+            $sNsf = is_array($nsfBlock)
+                ? (int) ($nsfBlock['nsf_fee_count'] ?? 0)
+                : (int) ($summary['nsf_count'] ?? $s->nsf_count ?? 0);
+
+            $sAvgBalRaw = $summary['average_daily_balance'] ?? null;
+            $sAvgBal    = $sAvgBalRaw !== null ? (float) $sAvgBalRaw : null;
+
+            $sLedgerRaw = $summary['average_ledger_balance'] ?? $summary['ending_balance'] ?? null;
+            $sLedgerBal = $sLedgerRaw !== null ? (float) $sLedgerRaw : null;
+
+            // Per-statement aggregation
+            $revenue     += $sRevenue;
+            $deposits    += $sDeposits;
+            $debits      += $sDebits;
+            $adjustments += $sAdjust;
+            $totalTx     += $sTx;
+            $nsf         += $sNsf;
+
+            if ($sAvgBal !== null) {
+                $avgBalSum   += $sAvgBal;
+                $avgBalCount += 1;
+            }
+            if (!$ledgerSet && $sLedgerBal !== null) {
+                $ledgerLatest = $sLedgerBal;
+                $ledgerSet    = true;
+            }
+
+            // ── Merge monthly_data.months by month_key ──────────────────────
+            $months = isset($monthlyRaw['months']) && is_array($monthlyRaw['months'])
+                ? $monthlyRaw['months']
+                : (array_is_list($monthlyRaw) ? $monthlyRaw : []);
+            foreach ($months as $m) {
+                if (!is_array($m)) continue;
+                $key = (string) ($m['month_key'] ?? $m['month_name'] ?? '');
+                if ($key === '') continue;
+                $mNsf = is_array($m['nsf'] ?? null)
+                    ? (float) ($m['nsf']['nsf_fee_count'] ?? 0)
+                    : (float) ($m['nsf_count'] ?? 0);
+                if (!isset($monthsByKey[$key])) {
+                    $monthsByKey[$key] = [
+                        'month_key'         => $key,
+                        'month_name'        => (string) ($m['month_name'] ?? $key),
+                        'deposits'          => 0.0,
+                        'adjustments'       => 0.0,
+                        'true_revenue'      => 0.0,
+                        'avg_daily_balance' => 0.0,
+                        '_avg_count'        => 0,
+                        'nsf_count'         => 0.0,
+                        'deposit_count'     => 0.0,
+                        'negative_days'     => 0.0,
+                        'debits'            => 0.0,
+                    ];
+                }
+                $monthsByKey[$key]['deposits']      += (float) ($m['deposits'] ?? 0);
+                $monthsByKey[$key]['adjustments']   += (float) ($m['adjustments'] ?? 0);
+                $monthsByKey[$key]['true_revenue']  += (float) ($m['true_revenue'] ?? 0);
+                $mAvg = $m['avg_daily_balance'] ?? $m['average_daily_balance'] ?? null;
+                if ($mAvg !== null) {
+                    $monthsByKey[$key]['avg_daily_balance'] += (float) $mAvg;
+                    $monthsByKey[$key]['_avg_count']        += 1;
+                }
+                $monthsByKey[$key]['nsf_count']     += $mNsf;
+                $monthsByKey[$key]['deposit_count'] += (float) ($m['deposit_count'] ?? $m['credit_count'] ?? 0);
+                $monthsByKey[$key]['negative_days'] += (float) ($m['negative_days'] ?? 0);
+                $monthsByKey[$key]['debits']        += (float) ($m['debits'] ?? $m['total_debits'] ?? 0);
+            }
+
+            if ($mcaCapacityLatest === null && isset($monthlyRaw['mca_capacity']) && is_array($monthlyRaw['mca_capacity'])) {
+                $mcaCapacityLatest = $monthlyRaw['mca_capacity'];
+            }
+
+            // ── Merge MCA lenders by name ────────────────────────────────────
+            $mcaCountSum    += (int)   ($mca['total_mca_count'] ?? 0);
+            $mcaPaymentsSum += (float) ($mca['total_mca_payments'] ?? 0);
+            $mcaAmountSum   += (float) ($mca['total_mca_amount'] ?? 0);
+            $sLenders = is_array($mca['lenders'] ?? null) ? $mca['lenders'] : [];
+            foreach ($sLenders as $l) {
+                if (!is_array($l)) continue;
+                $lName = (string) ($l['name'] ?? $l['lender'] ?? 'Unknown');
+                if (!isset($lendersByName[$lName])) {
+                    $lendersByName[$lName] = [
+                        'name'              => $lName,
+                        'estimated_payment' => 0.0,
+                        'total_amount'      => 0.0,
+                        'frequency'         => (string) ($l['frequency'] ?? 'Daily'),
+                    ];
+                }
+                $lendersByName[$lName]['estimated_payment'] += (float) ($l['estimated_payment'] ?? 0);
+                $lendersByName[$lName]['total_amount']      += (float) ($l['total_amount'] ?? 0);
+            }
+
+            // ── Merge categories by name ─────────────────────────────────────
+            $sCats = $summary['categories'] ?? $summary['category_breakdown'] ?? $summary['transaction_categories'] ?? null;
+            if (is_array($sCats)) {
+                // Normalize: either associative (name=>obj) or list (obj with 'name')
+                $isList = array_is_list($sCats);
+                foreach ($sCats as $k => $v) {
+                    if ($isList) {
+                        if (!is_array($v)) continue;
+                        $cName = (string) ($v['name'] ?? $v['category'] ?? 'Other');
+                        $cCount = (float) ($v['count'] ?? $v['total'] ?? 0);
+                        $cAmount = (float) ($v['amount'] ?? $v['total_amount'] ?? 0);
+                        $cType  = (string) ($v['type'] ?? 'all');
+                    } else {
+                        $cName = (string) $k;
+                        if (is_array($v)) {
+                            $cCount = (float) ($v['count'] ?? $v['total'] ?? 0);
+                            $cAmount = (float) ($v['amount'] ?? $v['total_amount'] ?? 0);
+                            $cType  = (string) ($v['type'] ?? 'all');
+                        } else {
+                            $cCount = (float) $v;
+                            $cAmount = 0.0;
+                            $cType  = 'all';
+                        }
+                    }
+                    if (!isset($categoriesByName[$cName])) {
+                        $categoriesByName[$cName] = [
+                            'name'   => $cName,
+                            'count'  => 0.0,
+                            'amount' => 0.0,
+                            'type'   => $cType,
+                        ];
+                    }
+                    $categoriesByName[$cName]['count']  += $cCount;
+                    $categoriesByName[$cName]['amount'] += $cAmount;
+                }
+            }
+
+            // Per-statement payload for the Individual Statements view.
+            // Include raw blobs so the frontend can render the full detail view
+            // identical to the Documents tab without a second API call.
+            $statements[] = [
+                'session_id'  => $s->session_id,
+                'document_id' => $s->document_id,
+                'file_name'   => $s->file_name,
+                'status'      => $s->status,
+                'fraud_score' => $s->fraud_score !== null ? (float) $s->fraud_score : null,
+                'analyzed_at' => $s->analyzed_at,
+                'created_at'  => $s->created_at,
+                'summary'     => [
+                    'revenue'            => round($sRevenue, 2),
+                    'deposits'           => round($sDeposits, 2),
+                    'debits'             => round($sDebits, 2),
+                    'adjustments'        => round($sAdjust, 2),
+                    'avg_balance'        => $sAvgBal !== null ? round($sAvgBal, 2) : 0,
+                    'ledger_balance'     => $sLedgerBal !== null ? round($sLedgerBal, 2) : 0,
+                    'total_transactions' => $sTx,
+                    'nsf'                => $sNsf,
+                ],
+                // Raw payload used by BankStatementAnalysisView for the full detail
+                // render (monthly breakdown, MCA detection, etc.).
+                'raw' => [
+                    'summary_data' => $s->summary_data,
+                    'mca_analysis' => $s->mca_analysis,
+                    'monthly_data' => $s->monthly_data,
+                ],
+            ];
+        }
+
+        $avgBalance = $avgBalCount > 0 ? $avgBalSum / $avgBalCount : 0.0;
+
+        // Finalize monthly rows (compute avg of avg_daily_balance per month).
+        $mergedMonths = [];
+        foreach ($monthsByKey as $row) {
+            $rowAvgCount = (int) $row['_avg_count'];
+            $row['avg_daily_balance'] = $rowAvgCount > 0 ? $row['avg_daily_balance'] / $rowAvgCount : 0.0;
+            unset($row['_avg_count']);
+            $mergedMonths[] = $row;
+        }
+        // Sort months chronologically by key (YYYY-MM format) when possible.
+        usort($mergedMonths, fn($a, $b) => strcmp((string) $a['month_key'], (string) $b['month_key']));
+
+        $mergedLenders = array_values($lendersByName);
+        // Sort categories by count DESC for the pie chart.
+        $mergedCategories = array_values($categoriesByName);
+        usort($mergedCategories, fn($a, $b) => ($b['count'] ?? 0) <=> ($a['count'] ?? 0));
+
+        $combinedRaw = [
+            'summary_data' => [
+                'true_revenue'           => round($revenue, 2),
+                'total_credits'          => round($deposits, 2),
+                'total_debits'           => round($debits, 2),
+                'adjustments'            => round($adjustments, 2),
+                'total_transactions'     => $totalTx,
+                'nsf_count'              => $nsf,
+                'nsf'                    => ['nsf_fee_count' => $nsf],
+                'average_daily_balance'  => round($avgBalance, 2),
+                'average_ledger_balance' => round($ledgerLatest, 2),
+                'categories'             => $mergedCategories,
+            ],
+            'mca_analysis' => [
+                'total_mca_count'    => $mcaCountSum,
+                'total_mca_payments' => round($mcaPaymentsSum, 2),
+                'total_mca_amount'   => round($mcaAmountSum, 2),
+                'lenders'            => $mergedLenders,
+            ],
+            'monthly_data' => [
+                'months'       => $mergedMonths,
+                'mca_capacity' => $mcaCapacityLatest,
+            ],
+        ];
+
+        return $this->successResponse('Bank statements analysis retrieved.', [
+            'combined' => [
+                'revenue'            => round($revenue, 2),
+                'deposits'           => round($deposits, 2),
+                'debits'             => round($debits, 2),
+                'adjustments'        => round($adjustments, 2),
+                'avg_balance'        => round($avgBalance, 2),
+                'ledger_balance'     => round($ledgerLatest, 2),
+                'total_transactions' => $totalTx,
+                'nsf'                => $nsf,
+                'statement_count'    => $count,
+            ],
+            'combined_raw' => $combinedRaw,
+            'statements'   => $statements,
+        ]);
+    }
+
+    /**
      * Resolve a stored file_path (public URL) to an absolute filesystem path.
      */
     private function resolveStoragePath(string $fileUrl): ?string

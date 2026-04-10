@@ -15,6 +15,7 @@
 $router->group(['middleware' => ['throttle:60,1']], function () use ($router) {
     $router->get('public/apply/{code}',                  'PublicApplicationController@getApplyForm');
     $router->post('public/apply/{code}',                 'PublicApplicationController@submitApplication');
+    $router->get('public/apply/{code}/document-types',   'PublicApplicationController@getAffiliateDocumentTypes');
     $router->get('public/apply/{token}/pdf',             'PublicApplicationController@renderApplicationPdf');
     $router->get('public/apply/{token}/download',        'PublicApplicationController@downloadApplicationPdf');
     $router->get('public/merchant/{token}',              'PublicApplicationController@getMerchantPortal');
@@ -1817,6 +1818,8 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   // Documents
   $router->get('crm/lead/{id}/documents',                   'CrmDocumentController@index');
   $router->post('crm/lead/{id}/documents',                  'CrmDocumentController@store');
+  $router->post('crm/lead/{id}/documents/bulk',             'CrmDocumentController@bulkAction');
+  $router->patch('crm/lead/{id}/documents/{did}',           'CrmDocumentController@update');
   $router->delete('crm/lead/{id}/documents/{did}',          'CrmDocumentController@destroy');
   $router->get('crm/lead/{id}/documents/{did}/view',        'CrmDocumentController@view');
   $router->get('crm/lead/{id}/documents/{did}/download',    'CrmDocumentController@download');
@@ -1976,6 +1979,8 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->post('crm/lead/{id}/bank-statements/upload',                         'CrmBankStatementController@upload');
   $router->post('crm/lead/{id}/bank-statements/analyze-document',              'CrmBankStatementController@analyzeDocument');
   $router->get('crm/lead/{id}/bank-statements/by-documents',                   'CrmBankStatementController@byDocuments');
+  $router->get('crm/lead/{id}/bank-statements/combined-analysis',              'CrmBankStatementController@combinedAnalysis');
+  $router->get('crm/lead/{id}/bank-statements-analysis',                       'CrmBankStatementController@combinedAnalysis');
   $router->get('crm/lead/{id}/bank-statements/{sessionId}/summary',             'CrmBankStatementController@summary');
   $router->get('crm/lead/{id}/bank-statements/{sessionId}/transactions',        'CrmBankStatementController@transactions');
   $router->get('crm/lead/{id}/bank-statements/{sessionId}/mca-analysis',        'CrmBankStatementController@mcaAnalysis');

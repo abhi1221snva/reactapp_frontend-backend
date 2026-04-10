@@ -457,6 +457,30 @@ class PublicApplicationController extends Controller
     }
 
     /**
+     * GET /public/apply/{code}/document-types
+     * Returns active document types for the affiliate's tenant (resolved by affiliate code).
+     * Uses the same crm_documents_types table as the CRM document type manager.
+     */
+    public function getAffiliateDocumentTypes(Request $request, string $code)
+    {
+        try {
+            [, $clientId] = $this->svc->resolveAffiliate($code);
+
+            $types = \Illuminate\Support\Facades\DB::connection("mysql_{$clientId}")
+                ->table('crm_documents_types')
+                ->where('status', 1)
+                ->orderBy('id')
+                ->get(['id', 'title', 'type_title_url', 'values']);
+
+            return response()->json(['success' => true, 'data' => $types]);
+        } catch (\RuntimeException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], $e->getCode() ?: 400);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => 'Failed to load document types.'], 500);
+        }
+    }
+
+    /**
      * DELETE /public/merchant/{token}/document/{docId}
      * Delete a document from the merchant portal (removes file + DB row).
      */
@@ -568,12 +592,29 @@ class PublicApplicationController extends Controller
         // 'system' context → no additional WHERE clause
 
         $labels = $query
-            ->get(['field_key', 'field_type', 'required', 'required_in', 'label_name', 'options', 'validation_rules'])
+            ->get(['field_key', 'field_type', 'required', 'required_in', 'label_name', 'options', 'validation_rules', 'section'])
             ->toArray();
+
+        // ── Skip Owner 2 fields when the applicant indicated no second owner ──
+        // Frontend sends `has_owner_2` = '1' | '0'. When '0' / missing, any
+        // field belonging to the "second_owner" section must be ignored so
+        // required-validation does not flag unsubmitted Owner 2 fields.
+        $hasOwner2Flag = $request->input('has_owner_2');
+        $hasOwner2     = in_array((string) $hasOwner2Flag, ['1', 'true', 'yes', 'on'], true);
+        if (!$hasOwner2) {
+            $labels = array_values(array_filter($labels, function ($l) {
+                $sec = strtolower(trim((string) ($l->section ?? '')));
+                if ($sec === 'second_owner') return false;
+                // Also catch field_keys that are explicitly owner_2_* even if
+                // they somehow live in a different section.
+                if (str_starts_with((string) $l->field_key, 'owner_2_')) return false;
+                return true;
+            }));
+        }
 
         $fieldSvc = new FieldValidationService();
         $leadSvc  = new LeadValidationService();
-        $input    = $request->except(['_token', '_method', 'signature_image', 'owner_2_signature_image']);
+        $input    = $request->except(['_token', '_method', 'signature_image', 'owner_2_signature_image', 'has_owner_2']);
         $errors   = [];
 
         // ── Fields with stored validation_rules → LeadValidationService ──────
