@@ -552,7 +552,7 @@ class AdminRvmCutoverController extends Controller
      * client_id. The (user_id, created_at) index is the fallback here;
      * the LIKE scan is bounded by limit + ordering to keep cost low.
      */
-    public function history(int $clientId)
+    public function history(Request $request, int $clientId)
     {
         if (!Client::where('id', $clientId)->exists()) {
             return response()->json([
@@ -609,6 +609,42 @@ class AdminRvmCutoverController extends Controller
                 'ip'          => (string) $row->ip,
             ];
         });
+
+        // ── CSV export branch ─────────────────────────────────────────
+        // ?format=csv returns a text/csv file download instead of the
+        // JSON shape. The column set is intentionally flat — no nested
+        // payload object — so it pastes cleanly into a spreadsheet.
+        if (strtolower((string) $request->query('format')) === 'csv') {
+            $filename = sprintf(
+                'rvm-cutover-history-client-%d-%s.csv',
+                $clientId,
+                date('Ymd-His')
+            );
+
+            $callback = function () use ($history) {
+                $out = fopen('php://output', 'w');
+                fputcsv($out, ['when', 'actor', 'email', 'action', 'method', 'path', 'ip', 'payload']);
+                foreach ($history as $row) {
+                    fputcsv($out, [
+                        (string) ($row['created_at'] ?? ''),
+                        (string) ($row['actor_name']  ?? ''),
+                        (string) ($row['actor_email'] ?? ''),
+                        (string) $row['action_type'],
+                        (string) $row['method'],
+                        (string) $row['path'],
+                        (string) $row['ip'],
+                        $row['payload'] ? json_encode($row['payload']) : '',
+                    ]);
+                }
+                fclose($out);
+            };
+
+            return response()->stream($callback, 200, [
+                'Content-Type'        => 'text/csv; charset=UTF-8',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+                'Cache-Control'       => 'no-store',
+            ]);
+        }
 
         return response()->json([
             'success' => true,
