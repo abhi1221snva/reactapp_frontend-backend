@@ -108,6 +108,7 @@ $app->middleware([
 */
 
 $app->register(App\Providers\AppServiceProvider::class);
+$app->register(App\Providers\RvmServiceProvider::class);
 // $app->register(App\Providers\AuthServiceProvider::class);
 // $app->register(App\Providers\EventServiceProvider::class);
 
@@ -159,6 +160,7 @@ $app->routeMiddleware([
     'tenant'          => App\Http\Middleware\TenantIsolationMiddleware::class,
     'auth.sysadmin'   => App\Http\Middleware\SystemAdminAuth::class,
     'route.access'    => App\Http\Middleware\CheckRouteAccess::class,
+    'rvm.apikey'      => App\Http\Middleware\RvmApiKeyAuthMiddleware::class,
 ]);
 
 if (!class_exists('Redis')) {

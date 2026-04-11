@@ -135,6 +135,53 @@ return [
             'retry_after' => 120,
             'block_for' => 5,
         ],
+
+        // ── RVM v2 Redis queues ────────────────────────────────────────────
+        // Separate connections (all hitting the same Redis) give us per-queue
+        // retry_after tuning + distinct Horizon workers. See
+        // docs/rvm-v2-architecture.md §4 for the topology.
+        'rvm.instant' => [
+            'driver' => 'redis',
+            'connection' => 'default',
+            'queue' => 'rvm.instant',
+            'retry_after' => 90,
+            'block_for' => 2,
+        ],
+        'rvm.normal' => [
+            'driver' => 'redis',
+            'connection' => 'default',
+            'queue' => 'rvm.normal',
+            'retry_after' => 120,
+            'block_for' => 5,
+        ],
+        'rvm.bulk' => [
+            'driver' => 'redis',
+            'connection' => 'default',
+            'queue' => 'rvm.bulk',
+            'retry_after' => 180,
+            'block_for' => 5,
+        ],
+        'rvm.retry' => [
+            'driver' => 'redis',
+            'connection' => 'default',
+            'queue' => 'rvm.retry',
+            'retry_after' => 300,
+            'block_for' => 5,
+        ],
+        'rvm.webhooks' => [
+            'driver' => 'redis',
+            'connection' => 'default',
+            'queue' => 'rvm.webhooks',
+            'retry_after' => 60,
+            'block_for' => 5,
+        ],
+        'rvm.dlq' => [
+            'driver' => 'redis',
+            'connection' => 'default',
+            'queue' => 'rvm.dlq',
+            'retry_after' => 600,
+            'block_for' => 0,
+        ],
         'dc_schedule_job' => [
             'driver' => 'database',
             'connection' => 'master',

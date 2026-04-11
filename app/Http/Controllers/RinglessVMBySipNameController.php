@@ -37,37 +37,31 @@ class RinglessVMBySipNameController extends Controller
         $startTime =  '09:00:00';
         $endTime   =  '18:00:00';
 
-        $client_data = file_get_contents("php://input");
-        //echo "<pre>";print_r($client_data);die;
+        // Authentication is handled by the RvmLegacyAuthMiddleware on the
+        // route. Inline validation below continues to enforce the legacy
+        // request shape required by the rest of this method.
 
+        $this->validate($request, [
+            'phone'         => ['required', 'regex:/^\+?[1-9]\d{9,14}$/'],
+            'cli'           => ['required', 'regex:/^\+?[1-9]\d{9,14}$/'],
+            'voicemail_url' => 'required|url',
+            'api_key'       => 'required|string',
+            'userID'        => 'required|max:10',
+        ]);
 
-        $this->validate($request, ['phone' => 'required|min:10','cli' => 'required|min:10','voicemail_url' => 'required','api_key' => 'required','userID' =>'required|max:10']);
-
-        $api_key  = explode('-',$request->api_key);
-        $client = Client::all();
-
-        foreach($client as $key)
-        {
-            if($key->api_key)
-            {
-                $clientKey[$key->company_name] = $key->api_key;
+        // Build the lookup table legacy code downstream still reads from
+        // (it uses array_search() against clients.api_key). Hardcoded
+        // "Easify => bc6c" has been removed as part of the P0 audit fix.
+        $clientKey = [];
+        foreach (Client::whereNotNull('api_key')->get(['company_name', 'api_key']) as $c) {
+            if (!empty($c->api_key)) {
+                $clientKey[$c->company_name] = $c->api_key;
             }
         }
+        $apiKey = $clientKey;
 
-        $otherKey = array('Easify' => 'bc6c');
-        $apiKey = array_merge($clientKey,$otherKey);
-        //echo "<pre>";print_r($apiKey);die;
-
-
-        if(!in_array($request->api_key,$apiKey)) {
-            return array(
-                'success' => 'false',
-                'message' => 'Invalid API Key',
-            );
-        } 
-        else {
-            $apiToken = $api_key[0];
-        }
+        $apiTokenParts = explode('-', $request->api_key);
+        $apiToken = $apiTokenParts[0] ?? $request->api_key;
 
         $requestData = array();
 
@@ -176,9 +170,6 @@ class RinglessVMBySipNameController extends Controller
         $requestData['voicemail_file_name'] = $voicemail_file_name;
         $requestData['user_id'] = $request->userID;
         $requestData['voicemail_id'] = $request->voicemail_id;
-        
-
-        //echo "<pre>";print_r($requestData);die;
 
         $number = preg_replace('/[^0-9]/', '', $requestData['phone']);
         $last10Digit = substr($number, -10);
@@ -186,7 +177,6 @@ class RinglessVMBySipNameController extends Controller
 
         $numberAreacode = substr(trim($last10Digit), 0, 3);
         $timeZone = $this->getTimezone($numberAreacode);
-        //echo "<pre>";print_r($timeZone);die;
 
         if (empty($timeZone)) 
         {
@@ -220,7 +210,6 @@ class RinglessVMBySipNameController extends Controller
 
             
             $sip_gateway = SipGateways::where('sip_trunk_name',$request['sip_trunk_name'])->get()->first();
-            //echo "<pre>";print_r($sip_gateway);die;
 
             if($sip_gateway)
             {
@@ -266,9 +255,6 @@ class RinglessVMBySipNameController extends Controller
 
 
 
-                //echo "<pre>";print_r($attributes);die;
-
-
                 $sipGateway = SipGateways::create($attributes);
                 $addUserExtension = UserExtension::create($dt);
 
@@ -295,7 +281,6 @@ class RinglessVMBySipNameController extends Controller
         if(isset($request['callback_number']))
         {
             $callback_number = RvmCallbackConfiguration::where('phone',$request['phone'])->where('cli',$request['cli'])->where('callback_number',$request['callback_number'])->where('sip_gateway_id',$requestData['sip_gateway_id'])->get()->first();
-            //echo "<pre>";print_r($callback_number);die;
 
             if($callback_number)
             {
@@ -311,11 +296,6 @@ class RinglessVMBySipNameController extends Controller
                 $rvm_callback['callback_number'] = $requestData['callback_number'];
                 $rvm_callback['sip_gateway_id'] = $requestData['sip_gateway_id'];
 
-
-
-                
-
-                //echo "<pre>";print_r($rvm_callback);die;
 
 
                 $callback_number = RvmCallbackConfiguration::create($rvm_callback);
@@ -334,44 +314,27 @@ class RinglessVMBySipNameController extends Controller
 
 
 
-       // echo "<pre>";print_r($requestData);die;
-        
-
         $rvmCdrLog = new RvmCdrLog();
         $rvmCdrLog->cli = $requestData['cli'];
         $rvmCdrLog->phone = $requestData['phone'];
         $rvmCdrLog->api_token = $requestData['api_key'];
-        $rvmCdrLog->api_client_name =$key = array_search ($requestData['api_key'], $apiKey);
+        $rvmCdrLog->api_client_name = array_search($requestData['api_key'], $apiKey);
         $rvmCdrLog->rvm_domain_id = $requestData['rvm_domain_id'];
         $rvmCdrLog->api_type = 'live';
         $rvmCdrLog->json_data = json_encode($requestData);
         $rvmCdrLog->sip_gateway_id = $sip_gateway_id;
         $rvmCdrLog->voicemail_id = $requestData['voicemail_id'];
         $rvmCdrLog->user_id = $requestData['user_id'];
-        //echo "<pre>";print_r($rvmCdrLog);die;
         $rvmCdrLog->save();
-        $rvmCdrLog_id =  $rvmCdrLog->id;
+        $rvmCdrLog_id = $rvmCdrLog->id;
         $requestData['rvm_cdr_log_id'] = $rvmCdrLog_id;
 
-        //echo "<pre>";print_r(json_encode($requestData));die;
-
-        //echo "<pre>";print_r($requestData);
-
-
-        $rvm_queue_list = rvmCdrLog::where('id',$rvmCdrLog->id)->get()->first();
+        $rvm_queue_list = RvmCdrLog::where('id', $rvmCdrLog->id)->get()->first();
 
         $rvm_data = json_decode($rvm_queue_list->json_data);
-            $rvm_data->id = $rvmCdrLog->id;
+        $rvm_data->id = $rvmCdrLog->id;
         $rvm_data->status_code = 'rvm_schedule_job';
         $rvm_data->timezone_queue_trigger = 0; // check as per queue timezone
-        
-            
-
-
-       // echo "<pre>";print_r($rvm_data);die;
-
-
-
 
 
 
@@ -412,73 +375,63 @@ class RinglessVMBySipNameController extends Controller
 
         $rvm_data->status_code = 'rvm_failed_schedule_job';
 
-       // echo "<pre>";print_r($rvm_data);die;
-
-
-
-        if($rvm_cdr_log->tries > 2 )
-        {
-            return array('success' => 'true',"code" => 401,'message' => 'Already tried more than 10 times rvm_Cdr_id is ({$rvm_cdr->id})');
+        if ($rvm_cdr_log->tries > 2) {
+            return [
+                'success' => 'true',
+                'code'    => 401,
+                'message' => "Already tried more than 10 times rvm_cdr_id is ({$rvm_cdr_log_id})",
+            ];
         }
 
-             //echo "<pre>";print_r($rvm_data);die;
+        $number = preg_replace('/[^0-9]/', '', $rvm_data->phone);
+        $last10Digit = substr($number, -10);
+        $return = ["dialable" => 0, "areacodeTimeZone" => 0, "dialingTime" => 0];
+        $numberAreacode = substr(trim($last10Digit), 0, 3);
+        $timeZone = $this->getTimezone($numberAreacode);
 
+        if (empty($timeZone)) {
+            $return["dialable"] = 1;
+            $return["dialingTime"] = 1;
+        } elseif (!empty($timeZone['timezone'])) {
+            $return["areacodeTimeZone"] = 1;
+            $time = new DateTime();
+            $time->setTimeZone(new DateTimeZone(timezone_name_from_abbr($timeZone['timezone'])));
+            $currentTime = $time->format('H:i:s');
 
-            $number = preg_replace('/[^0-9]/', '', $rvm_data->phone);
-            $last10Digit = substr($number, -10);
-            $return = ["dialable" => 0,"areacodeTimeZone" => 0,"dialingTime" => 0];
-            $numberAreacode = substr(trim($last10Digit), 0, 3);
-            $timeZone = $this->getTimezone($numberAreacode);
-            //echo "<pre>";print_r($timeZone);die;
-
-            if (empty($timeZone)) 
-            {
-                $return["dialable"] = 1;
+            if (strtotime($startTime) < strtotime($currentTime)
+                && strtotime($endTime) > strtotime($currentTime)
+            ) {
                 $return["dialingTime"] = 1;
+                $return["dialable"] = 1;
             }
-            else 
-            {
-                if (!empty($timeZone['timezone']))
-                {
-                    $return["areacodeTimeZone"] = 1;
-                    $time = new DateTime();
-                    $time->setTimeZone(new DateTimeZone(timezone_name_from_abbr($timeZone['timezone'])));
-                    $currentTime = $time->format('H:i:s');
+        }
 
-                    if (strtotime($startTime) < strtotime($currentTime) && strtotime($endTime) > strtotime($currentTime)) 
-                    {
-                        $return["dialingTime"] = 1;
-                        $return["dialable"] = 1;
-                    }
-                }
-            }
+        if ($return["dialable"] != 1) {
+            return [
+                'success' => 'true',
+                'code'    => 401,
+                'message' => 'Request has been accepted and is queued up as per the time zone conditions.',
+                'data'    => $requestData,
+            ];
+        }
 
+        $rvm_queue_list = RvmQueueList::where('rvm_cdr_log_id', $rvm_cdr_log_id)->get()->first();
+        if ($rvm_queue_list) {
+            $rvm_queue_list->delete();
+        }
 
-           
+        // Legacy code used sleep(5); we push the delay to the queue driver
+        // so the worker isn't blocked holding a request handle.
+        dispatch((new SendRvmJob($rvm_data))
+            ->delay(Carbon::now()->addSeconds(10))
+            ->onConnection("rvm_failed_schedule_job"));
 
-           // echo "<pre>";print_r($return);die;
-
-
-            if($return["dialable"] == 1)
-            {
-                 $rvm_queue_list = RvmQueueList::where('rvm_cdr_log_id',$rvm_cdr_log_id)->get()->first();
-                    if($rvm_queue_list)
-                    {
-                        $rvm_queue_list->delete();
-                    }
-
-                    sleep(5);
-                dispatch((new SendRvmJob($rvm_data))->delay(Carbon::now()->addSeconds(5))->onConnection("rvm_failed_schedule_job"));
-                echo "done";die;    
-                 return array('success' => 'true',"code" => 200,'message' => 'rvm_failed_schedule_job Request has been accepted and is queued up.','data' => $rvm_data);
-             
-
-
-            }
-            else
-            {
-                return array('success' => 'true',"code" => 401,'message' => 'Request has been accepted and is queued up as per the time zone conditions.','data' => $requestData);
-            }
+        return [
+            'success' => 'true',
+            'code'    => 200,
+            'message' => 'rvm_failed_schedule_job Request has been accepted and is queued up.',
+            'data'    => $rvm_data,
+        ];
     }
 
     public function rvmStatus(Request $request)
@@ -488,7 +441,6 @@ class RinglessVMBySipNameController extends Controller
         $voicemailId = $request->voicemail_id;
 
         $rvm_cdr_log = RvmCdrLog::where('user_id',$userId)->where('voicemail_id',$voicemailId)->get()->first();
-        //echo "<pre>";print_r($rvm_cdr_log);die;
 
         if($rvm_cdr_log)
         {
@@ -511,25 +463,27 @@ class RinglessVMBySipNameController extends Controller
 
     public function rvmCallbackCdr(Request $request)
     {
-
-
-      // $this->validate($request, ['phone' => 'required|min:10','cli' => 'required|min:10','voicemail_url' => 'required','api_key' => 'required','userID' =>'required|max:10']);
-
-        $validatedData = $this->validate($request,[
-            'caller_number' => 'required|string',
+        // Authenticity is enforced by the RvmCallbackHmacMiddleware on the
+        // route; this method only validates shape + persists the event.
+        $validatedData = $this->validate($request, [
+            'rvm_cdr_log_id'  => 'required|integer',
+            'caller_number'   => 'required|string',
             'incoming_number' => 'required|string',
             'callback_number' => 'required|string',
-            'duration' => 'required|integer',
-            'start_time' => 'required|date',
-            'end_time' => 'required|date',
-            'call_recording' => 'required|string',
+            'duration'        => 'required|integer',
+            'start_time'      => 'required|date',
+            'end_time'        => 'required|date',
+            'call_recording'  => 'required|string',
         ]);
 
         $log = RvmCallbackLog::create($validatedData);
 
-        return array('success' => 'true',"code" => 201,'message' => 'RVM callback data','data' => $log);
-
-
+        return [
+            'success' => 'true',
+            'code'    => 201,
+            'message' => 'RVM callback data',
+            'data'    => $log,
+        ];
     }
     
  

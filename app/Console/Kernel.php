@@ -23,6 +23,9 @@ use App\Console\Commands\MarketingCampaignRunProcess;
 use App\Console\Commands\CheckFaxStatusCommand;
 use App\Console\Commands\SmsAiChatCron;
 use App\Console\Commands\RvmSendCron;
+use App\Console\Commands\RvmBackfillLegacy;
+use App\Console\Commands\RvmCheckLiveReady;
+use App\Console\Commands\RvmShadowReport;
 
 use App\Console\Commands\RinglessVoicemailCron;
 use App\Console\Commands\RvmDropBySipNameCron;
@@ -72,6 +75,9 @@ class Kernel extends ConsoleKernel
         PredictiveDialCallDropCron::class,
         SmsAiChatCron::class,
         RvmSendCron::class,
+        RvmShadowReport::class,
+        RvmBackfillLegacy::class,
+        RvmCheckLiveReady::class,
         RinglessVoicemailCron::class,
         RvmDropBySipNameCron::class,
         UnsentYesterdayRvmDropBySipNameCron::class,

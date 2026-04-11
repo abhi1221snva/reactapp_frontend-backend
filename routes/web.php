@@ -220,6 +220,18 @@ $router->group(['middleware' => ['jwt.auth', 'auth.superadmin', 'audit.log', 'ro
   $router->post('admin/clients/{id}/deactivate',  'AdminClientController@deactivate');
   $router->post('admin/clients/{id}/switch',      'AdminClientController@switchTo');
 
+  // ── RVM v2 Cutover Dashboard ──────────────────────────────────────────
+  // Operator tooling for the shadow → dry_run → live migration. Read
+  // surfaces rvm_shadow_log aggregates; write surfaces flip tenants
+  // between modes in the rvm_tenant_flags table.
+  $router->get ('admin/rvm/dashboard',                            'AdminRvmCutoverController@dashboard');
+  $router->get ('admin/rvm/cutover',                              'AdminRvmCutoverController@index');
+  $router->post('admin/rvm/cutover/rollback-all',                 'AdminRvmCutoverController@rollbackAll');
+  $router->get ('admin/rvm/cutover/{clientId}',                   'AdminRvmCutoverController@show');
+  $router->get ('admin/rvm/cutover/{clientId}/history',           'AdminRvmCutoverController@history');
+  $router->post('admin/rvm/cutover/{clientId}',                   'AdminRvmCutoverController@setMode');
+  $router->post('admin/rvm/cutover/{clientId}/check-readiness',   'AdminRvmCutoverController@checkReadiness');
+
   // ── System Email Templates ────────────────────────────────────────────
   $router->get('admin/email-templates',              'AdminEmailTemplateController@index');
   $router->post('admin/email-templates',             'AdminEmailTemplateController@store');
@@ -2406,5 +2418,95 @@ $router->group(['middleware' => ['plivo.webhook']], function () use ($router) {
 $router->group(['middleware' => ['throttle:120,1']], function () use ($router) {
     $router->post('sendgrid/webhook/{clientId}/events', 'SendGridWebhookController@events');
     $router->get('sendgrid/webhook/ping',               'SendGridWebhookController@ping');
+});
+
+/*
+|--------------------------------------------------------------------------
+| RVM v2 — unified API
+|--------------------------------------------------------------------------
+|
+| The SAME controllers power both the internal React portal (JWT auth)
+| and external third-party integrations (X-Api-Key auth). Middleware is
+| the ONLY difference. Business logic lives in RvmDropService.
+|
+| These routes are feature-flag gated: config('rvm.use_new_pipeline')
+| must be true before any traffic should hit them in production. The
+| legacy /ringless-voicemail-drop* and /ringless/* routes remain the
+| authoritative path until migration per-tenant is complete.
+|
+*/
+
+// Portal (JWT) — React app calls these directly.
+$router->group([
+    'prefix'     => 'v1/rvm',
+    'middleware' => ['jwt.auth', 'audit.log', 'tenant'],
+    'namespace'  => 'Rvm',
+], function () use ($router) {
+    // Drops
+    $router->post('drops',             'DropController@store');
+    $router->get('drops',              'DropController@index');
+    $router->get('drops/{id}',         'DropController@show');
+    $router->post('drops/{id}/cancel', 'DropController@cancel');
+
+    // Webhook endpoints (CRUD + test + delivery log)
+    $router->post('webhook-endpoints',                         'WebhookEndpointController@store');
+    $router->get('webhook-endpoints',                          'WebhookEndpointController@index');
+    $router->get('webhook-endpoints/{id}',                     'WebhookEndpointController@show');
+    $router->patch('webhook-endpoints/{id}',                   'WebhookEndpointController@update');
+    $router->delete('webhook-endpoints/{id}',                  'WebhookEndpointController@destroy');
+    $router->post('webhook-endpoints/{id}/test',               'WebhookEndpointController@test');
+    $router->get('webhook-endpoints/{id}/deliveries',          'WebhookEndpointController@deliveries');
+    $router->post('webhook-deliveries/{deliveryId}/replay',    'WebhookEndpointController@replay');
+});
+
+// External API (X-Api-Key) — third-party integrators hit the SAME controllers.
+// Throttled at the edge; RvmRateLimiter does the heavy lifting inside the service.
+$router->group([
+    'prefix'     => 'v1/rvm',
+    'middleware' => ['rvm.apikey', 'throttle:600,1'],
+    'namespace'  => 'Rvm',
+], function () use ($router) {
+    // Drops
+    $router->post('drops',             'DropController@store');
+    $router->get('drops',              'DropController@index');
+    $router->get('drops/{id}',         'DropController@show');
+    $router->post('drops/{id}/cancel', 'DropController@cancel');
+
+    // Webhook endpoints
+    $router->post('webhook-endpoints',                         'WebhookEndpointController@store');
+    $router->get('webhook-endpoints',                          'WebhookEndpointController@index');
+    $router->get('webhook-endpoints/{id}',                     'WebhookEndpointController@show');
+    $router->patch('webhook-endpoints/{id}',                   'WebhookEndpointController@update');
+    $router->delete('webhook-endpoints/{id}',                  'WebhookEndpointController@destroy');
+    $router->post('webhook-endpoints/{id}/test',               'WebhookEndpointController@test');
+    $router->get('webhook-endpoints/{id}/deliveries',          'WebhookEndpointController@deliveries');
+    $router->post('webhook-deliveries/{deliveryId}/replay',    'WebhookEndpointController@replay');
+});
+
+// RVM provider callbacks (Phase 5a.4)
+//
+// These endpoints are called by Twilio, Plivo and Slybroadcast — third
+// parties that cannot present a JWT or an API key. Authentication is
+// provided by an HMAC-SHA256 signature embedded in each URL's ?sig=
+// query param; CallbackController::verifySignature() rejects anything
+// that doesn't recompute to the same signature. The signed URLs are
+// constructed by the driver's buildSignedUrl() helper at dispatch time.
+$router->group([
+    'prefix'    => 'rvm',
+    'namespace' => 'Rvm',
+], function () use ($router) {
+    // Twilio
+    $router->post('twilio/twiml/{dropId}',        'CallbackController@twilioTwiml');
+    $router->get ('twilio/twiml/{dropId}',        'CallbackController@twilioTwiml');
+    $router->post('twilio/status/{dropId}',       'CallbackController@twilioStatus');
+
+    // Plivo
+    $router->post('plivo/answer/{dropId}',        'CallbackController@plivoAnswer');
+    $router->get ('plivo/answer/{dropId}',        'CallbackController@plivoAnswer');
+    $router->post('plivo/status/{dropId}',        'CallbackController@plivoStatus');
+
+    // Slybroadcast
+    $router->get ('slybroadcast/audio/{dropId}',  'CallbackController@slybroadcastAudio');
+    $router->post('slybroadcast/status/{dropId}', 'CallbackController@slybroadcastStatus');
 });
 
