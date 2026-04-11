@@ -82,4 +82,11 @@ return [
         'backoff_seconds' => [30, 120, 600, 3600, 21600, 86400],
         'auto_disable_after_consecutive_failures' => 10,
     ],
+
+    // ── Operator alerting ──────────────────────────────────────────────────
+    // Slack incoming-webhook URL. When set, every tenant mode change
+    // involving `live` (to or from) and every fleet rollback-all
+    // operation posts a message here. Leave empty to disable.
+    'slack_webhook_url' => env('SLACK_RVM_WEBHOOK_URL', ''),
+    'slack_timeout_seconds' => (int) env('SLACK_RVM_TIMEOUT', 3),
 ];

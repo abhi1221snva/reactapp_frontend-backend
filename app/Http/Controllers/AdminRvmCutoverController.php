@@ -7,6 +7,7 @@ use App\Model\Master\Client;
 use App\Model\Master\Rvm\ShadowLog;
 use App\Model\Master\Rvm\TenantFlag;
 use App\Services\Rvm\RvmFeatureFlagService;
+use App\Services\Rvm\RvmSlackNotifier;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -36,8 +37,10 @@ use Throwable;
  */
 class AdminRvmCutoverController extends Controller
 {
-    public function __construct(private RvmFeatureFlagService $flags)
-    {
+    public function __construct(
+        private RvmFeatureFlagService $flags,
+        private RvmSlackNotifier $slack,
+    ) {
     }
 
     /**
@@ -228,7 +231,8 @@ class AdminRvmCutoverController extends Controller
             ], 422);
         }
 
-        if (!Client::where('id', $clientId)->exists()) {
+        $client = Client::where('id', $clientId)->first(['id', 'company_name']);
+        if (!$client) {
             return response()->json([
                 'success' => false,
                 'message' => "Client {$clientId} not found",
@@ -236,6 +240,10 @@ class AdminRvmCutoverController extends Controller
         }
 
         $adminUserId = $request->auth->id ?? null;
+
+        // Capture the previous mode BEFORE setTenantMode() overwrites it,
+        // so Slack alerts can show the "old → new" transition.
+        $previousMode = optional(TenantFlag::where('client_id', $clientId)->first())->pipeline_mode;
 
         try {
             $flag = $this->flags->setTenantMode(
@@ -258,12 +266,27 @@ class AdminRvmCutoverController extends Controller
 
         Log::info('RVM cutover: tenant mode changed', [
             'client_id'      => $clientId,
+            'old_mode'       => $previousMode,
             'new_mode'       => $flag->pipeline_mode,
             'live_provider'  => $flag->live_provider,
             'live_daily_cap' => $flag->live_daily_cap,
             'admin_user_id'  => $adminUserId,
             'notes'          => $flag->notes,
         ]);
+
+        // Slack alerting — internal no-op unless the transition touches
+        // `live` AND a webhook URL is configured. Never throws.
+        $this->slack->notifyModeChange(
+            clientId:     $clientId,
+            companyName:  (string) $client->company_name,
+            oldMode:      $previousMode,
+            newMode:      (string) $flag->pipeline_mode,
+            liveProvider: $flag->live_provider,
+            liveDailyCap: $flag->live_daily_cap,
+            notes:        $flag->notes,
+            actorName:    trim(($request->auth->first_name ?? '') . ' ' . ($request->auth->last_name ?? '')) ?: null,
+            actorEmail:   $request->auth->email ?? null,
+        );
 
         return response()->json([
             'success' => true,
@@ -705,6 +728,15 @@ class AdminRvmCutoverController extends Controller
                 'tenant_count'   => count($affected),
                 'affected'       => $affected,
             ]);
+
+            // Slack alert — fires even when 0 tenants were affected so
+            // operators can see the break-glass was pulled. Internal
+            // no-op if no webhook URL is configured.
+            $this->slack->notifyRollbackAll(
+                affectedCount: count($affected),
+                actorName:     trim(($request->auth->first_name ?? '') . ' ' . ($request->auth->last_name ?? '')) ?: null,
+                actorEmail:    $request->auth->email ?? null,
+            );
         } catch (Throwable $e) {
             Log::error('RVM cutover rollback failed', [
                 'error' => $e->getMessage(),
