@@ -680,6 +680,124 @@ class AdminRvmCutoverController extends Controller
     }
 
     /**
+     * POST /admin/rvm/cutover/bulk
+     *
+     * Bulk pipeline-mode flip across many tenants in a single click —
+     * used during wave promotions when operators want to move a whole
+     * batch from shadow to dry_run (or back to legacy) without
+     * clicking 30 rows one by one.
+     *
+     * Deliberately REFUSES pipeline_mode=live. Promotion to live
+     * requires the per-tenant readiness check (T1-T9) plus the live
+     * provider / cap selection, neither of which make sense as a
+     * fleet-wide gesture. The UI must keep that path single-tenant.
+     *
+     * Runs setTenantMode() per client inside the same try/catch so
+     * one bad tenant id doesn't abort the whole batch. Returns a
+     * summary of succeeded / failed rows the frontend can render as
+     * per-row toasts or a result table.
+     *
+     * Expected body:
+     *   {
+     *     "client_ids": [12, 34, 56],
+     *     "pipeline_mode": "shadow" | "dry_run" | "legacy",
+     *     "notes": "wave 3 promotion"   // optional
+     *   }
+     */
+    public function bulkSetMode(Request $request)
+    {
+        $this->validate($request, [
+            'client_ids'           => 'required|array|min:1|max:200',
+            'client_ids.*'         => 'required|integer|min:1',
+            'pipeline_mode'        => 'required|string|in:legacy,shadow,dry_run',
+            'notes'                => 'nullable|string|max:1000',
+        ]);
+
+        $mode        = (string) $request->input('pipeline_mode');
+        $notes       = $request->input('notes');
+        $clientIds   = array_values(array_unique(array_map('intval', (array) $request->input('client_ids'))));
+        $adminUserId = $request->auth->id ?? null;
+
+        // Prefetch the client rows we'll actually try to touch, in one
+        // query, so the per-tenant loop doesn't round-trip the DB for
+        // existence checks.
+        $existing = Client::whereIn('id', $clientIds)
+            ->pluck('company_name', 'id')
+            ->toArray();
+
+        $succeeded = [];
+        $failed    = [];
+
+        foreach ($clientIds as $cid) {
+            if (!isset($existing[$cid])) {
+                $failed[] = [
+                    'client_id' => $cid,
+                    'error'     => 'client_not_found',
+                    'message'   => "Client {$cid} not found",
+                ];
+                continue;
+            }
+
+            try {
+                $previousMode = optional(TenantFlag::where('client_id', $cid)->first())->pipeline_mode;
+
+                $flag = $this->flags->setTenantMode(
+                    clientId:         $cid,
+                    mode:             $mode,
+                    enabledByUserId:  $adminUserId,
+                    notes:            $notes,
+                    liveProvider:     null,
+                    liveDailyCap:     null,
+                    touchLiveColumns: false,
+                );
+
+                $succeeded[] = [
+                    'client_id'     => $cid,
+                    'company_name'  => (string) $existing[$cid],
+                    'previous_mode' => $previousMode,
+                    'new_mode'      => (string) $flag->pipeline_mode,
+                ];
+            } catch (Throwable $e) {
+                Log::warning('RVM cutover bulk: row failed', [
+                    'client_id' => $cid,
+                    'error'     => $e->getMessage(),
+                ]);
+                $failed[] = [
+                    'client_id' => $cid,
+                    'error'     => class_basename($e),
+                    'message'   => $e->getMessage(),
+                ];
+            }
+        }
+
+        Log::info('RVM cutover: bulk mode change', [
+            'admin_user_id'   => $adminUserId,
+            'mode'            => $mode,
+            'requested_count' => count($clientIds),
+            'succeeded_count' => count($succeeded),
+            'failed_count'    => count($failed),
+            'notes'           => $notes,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => sprintf(
+                'Bulk mode change: %d succeeded, %d failed',
+                count($succeeded),
+                count($failed)
+            ),
+            'data'    => [
+                'mode'            => $mode,
+                'requested_count' => count($clientIds),
+                'succeeded_count' => count($succeeded),
+                'failed_count'    => count($failed),
+                'succeeded'       => $succeeded,
+                'failed'          => $failed,
+            ],
+        ]);
+    }
+
+    /**
      * POST /admin/rvm/cutover/rollback-all
      *
      * Emergency "everything back to legacy" — used if the new pipeline

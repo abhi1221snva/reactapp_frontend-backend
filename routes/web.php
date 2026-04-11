@@ -226,6 +226,7 @@ $router->group(['middleware' => ['jwt.auth', 'auth.superadmin', 'audit.log', 'ro
   // between modes in the rvm_tenant_flags table.
   $router->get ('admin/rvm/dashboard',                            'AdminRvmCutoverController@dashboard');
   $router->get ('admin/rvm/cutover',                              'AdminRvmCutoverController@index');
+  $router->post('admin/rvm/cutover/bulk',                         'AdminRvmCutoverController@bulkSetMode');
   $router->post('admin/rvm/cutover/rollback-all',                 'AdminRvmCutoverController@rollbackAll');
   $router->get ('admin/rvm/cutover/{clientId}',                   'AdminRvmCutoverController@show');
   $router->get ('admin/rvm/cutover/{clientId}/history',           'AdminRvmCutoverController@history');
