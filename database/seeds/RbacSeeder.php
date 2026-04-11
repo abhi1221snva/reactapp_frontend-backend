@@ -37,6 +37,8 @@ class RbacSeeder extends Seeder
             ['key' => 'gmail',            'name' => 'Gmail',                'engine' => 'shared', 'url_patterns' => json_encode(['gmail'])],
             ['key' => 'calendar',         'name' => 'Google Calendar',      'engine' => 'shared', 'url_patterns' => json_encode(['calendar','integrations/google-calendar'])],
             ['key' => 'admin.clients',    'name' => 'Client Management',    'engine' => 'shared', 'url_patterns' => json_encode(['admin/clients'])],
+            // Prefix match — covers admin/rvm/cutover, admin/rvm/dashboard, and any future admin/rvm/* route.
+            ['key' => 'admin.rvm_cutover','name' => 'RVM Cutover',          'engine' => 'dialer', 'url_patterns' => json_encode(['admin/rvm'])],
             ['key' => 'admin.system',     'name' => 'System Admin',         'engine' => 'shared', 'url_patterns' => json_encode(['system/','docs','api/documentation'])],
 
             // ─── Dialer ───
@@ -138,6 +140,7 @@ class RbacSeeder extends Seeder
 
         $level9 = array_merge($level7, [ // super_admin
             'admin.clients',
+            'admin.rvm_cutover',
         ]);
 
         $mapping = [
@@ -248,9 +251,11 @@ class RbacSeeder extends Seeder
         $items[] = $this->item('dialer', 'SETTINGS', '/billing',          'Billing',           'CreditCard',  'billing',      7, ++$order);
 
         // SYSTEM ADMIN (dialer)
-        $items[] = $this->item('dialer', 'SYSTEM ADMIN', '/admin/clients',        'Client Management', 'Building2',  'admin.clients', 9,  ++$order);
-        $items[] = $this->item('dialer', 'SYSTEM ADMIN', '/admin/system-monitor', 'System Monitor',    'Activity',   'admin.system',  11, ++$order);
-        $items[] = $this->item('dialer', 'SYSTEM ADMIN', '/system/swagger',       'Swagger API Docs',  'BookMarked', 'admin.system',  11, ++$order);
+        $items[] = $this->item('dialer', 'SYSTEM ADMIN', '/admin/clients',        'Client Management', 'Building2',  'admin.clients',     9,  ++$order);
+        $items[] = $this->item('dialer', 'SYSTEM ADMIN', '/admin/rvm/dashboard',  'RVM Dashboard',     'BarChart3',  'admin.rvm_cutover', 9,  ++$order);
+        $items[] = $this->item('dialer', 'SYSTEM ADMIN', '/admin/rvm/cutover',    'RVM Cutover',       'Radio',      'admin.rvm_cutover', 9,  ++$order);
+        $items[] = $this->item('dialer', 'SYSTEM ADMIN', '/admin/system-monitor', 'System Monitor',    'Activity',   'admin.system',      11, ++$order);
+        $items[] = $this->item('dialer', 'SYSTEM ADMIN', '/system/swagger',       'Swagger API Docs',  'BookMarked', 'admin.system',      11, ++$order);
 
 
         // ─── CRM ENGINE ───
