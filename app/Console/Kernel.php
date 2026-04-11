@@ -165,6 +165,24 @@ class Kernel extends ConsoleKernel
         $schedule->call(function () {
             dispatch(new \App\Jobs\ReplenishPoolJob())->onConnection('database')->onQueue('clients');
         })->everyThirtyMinutes();
+
+        // Audit log retention: delete master.audit_log rows older than
+        // 90 days. The audit_log table was activated fleet-wide in
+        // Apr 2026 (prior to that its migration was Pending and the
+        // AuditLogMiddleware was silently catching the missing-table
+        // exception), so every admin mutation now writes a row. Keep
+        // 90 days on disk; older rows are pruned daily at 03:15 UTC.
+        $schedule->call(function () {
+            $cutoff  = now()->subDays(90);
+            $deleted = \DB::connection('master')
+                ->table('audit_log')
+                ->where('created_at', '<', $cutoff)
+                ->delete();
+            \Log::info('audit_log.retention', [
+                'cutoff'  => $cutoff->toDateTimeString(),
+                'deleted' => $deleted,
+            ]);
+        })->dailyAt('03:15')->name('audit-log-retention')->withoutOverlapping();
     }
 
 }
