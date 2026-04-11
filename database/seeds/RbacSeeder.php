@@ -20,9 +20,22 @@ class RbacSeeder extends Seeder
 
     public function run()
     {
-        $this->seedRouteGroups();
-        $this->seedRolePermissions();
-        $this->seedSidebarMenuItems();
+        // Idempotent full-replace. The three tables below are owned
+        // entirely by this seeder — nothing else writes to them — so
+        // wiping them at the top of the run and re-inserting from
+        // scratch is the least surprising way to make the seeder safe
+        // to re-run. delete() is transactional in InnoDB (unlike
+        // truncate() which implicitly commits) so a failure mid-run
+        // rolls back cleanly and leaves the old rows in place.
+        DB::connection('master')->transaction(function () {
+            DB::connection('master')->table('sidebar_menu_items')->delete();
+            DB::connection('master')->table('role_route_permissions')->delete();
+            DB::connection('master')->table('route_groups')->delete();
+
+            $this->seedRouteGroups();
+            $this->seedRolePermissions();
+            $this->seedSidebarMenuItems();
+        });
     }
 
     // ── Route Groups ────────────────────────────────────────────────────
