@@ -192,8 +192,9 @@ class RbacSeeder extends Seeder
         // ─── DIALER ENGINE ───
 
         // CORE
-        $items[] = $this->item('dialer', 'CORE', '/dashboard', 'Dashboard', 'LayoutDashboard', 'core.dashboard', 1, ++$order);
-        $items[] = $this->item('dialer', 'CORE', '/dialer',    'Dialer',    'Phone',           'core.dialer',    1, ++$order);
+        $items[] = $this->item('dialer', 'CORE', '/dashboard',      'Dashboard',     'LayoutDashboard', 'core.dashboard', 1, ++$order);
+        $items[] = $this->item('dialer', 'CORE', '/dialer',         'Dialer',        'Phone',           'core.dialer',    1, ++$order);
+        $items[] = $this->item('dialer', 'CORE', '/dialer-studio',  'Dialer Studio', 'Sparkles',        'core.dialer',    1, ++$order);
 
         // USER MANAGEMENT
         $items[] = $this->item('dialer', 'USER MANAGEMENT', '/users',            'Users & Agents',  'UserCog', 'users',            1, ++$order);

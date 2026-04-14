@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\Swagger\RouteSpecMerger;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use OpenApi\Analysers\DocBlockAnnotationFactory;
@@ -48,9 +49,12 @@ class SwaggerController extends Controller
 
             if (!$forceRegen && file_exists($specPath)) {
                 $json = file_get_contents($specPath);
+                // Note: CORS headers are already set by bootstrap/app.php
+                // based on the request Origin. Do NOT add another
+                // Access-Control-Allow-Origin here — duplicate headers
+                // are rejected by browsers (Swagger UI shows "Failed to fetch").
                 return response()->json(json_decode($json, true))
-                    ->header('X-Swagger-Source', 'cache')
-                    ->header('Access-Control-Allow-Origin', '*');
+                    ->header('X-Swagger-Source', 'cache');
             }
 
             return $this->generateAndServe($specPath);
@@ -97,7 +101,12 @@ class SwaggerController extends Controller
             return $this->failResponse('No OpenAPI annotations found in app/', [], null, 500);
         }
 
-        $json = $openapi->toJson();
+        // Merge in stubs for every route defined in routes/web.php that
+        // isn't already covered by an @OA annotation. Guarantees the
+        // Swagger UI shows a complete list of endpoints.
+        $spec = json_decode($openapi->toJson(), true);
+        $spec = (new RouteSpecMerger())->mergeRouteStubs($spec);
+        $json = json_encode($spec, JSON_UNESCAPED_SLASHES);
 
         // Ensure the storage directory exists
         $dir = dirname($specPath);
@@ -106,8 +115,10 @@ class SwaggerController extends Controller
         }
         file_put_contents($specPath, $json);
 
-        return response()->json(json_decode($json, true))
-            ->header('X-Swagger-Source', 'generated')
-            ->header('Access-Control-Allow-Origin', '*');
+        // Note: CORS headers are already set by bootstrap/app.php. Adding
+        // Access-Control-Allow-Origin here would duplicate the header and
+        // cause browsers to reject the response.
+        return response()->json($spec)
+            ->header('X-Swagger-Source', 'generated');
     }
 }

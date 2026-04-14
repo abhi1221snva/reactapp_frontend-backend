@@ -388,24 +388,29 @@ class ExtensionController extends Controller
      */
     public function getExtensionListCRMNew(Request $request)
     {
-        $clientId = $request->auth->parent_id;
-        $search   = $request->input('search', '');
-        $start    = (int) $request->input('start', 0);
-        $limit    = (int) $request->input('limit', 25);
-        $status   = $request->input('status', '');
+        $clientId  = $request->auth->parent_id;
+        $search    = $request->input('search', '');
+        $start     = (int) $request->input('start', 0);
+        $limit     = (int) $request->input('limit', 25);
+        $status    = $request->input('status', '');
         $userLevel = (int) ($request->auth->level ?? 1);
+        $userId    = (int) ($request->auth->id ?? 0);
 
-        // Base query: client users + admin-level users merged
+        // Base query: users within the same tenant only
         $query = User::join('roles', 'users.role', '=', 'roles.id')
             ->where('users.parent_id', $clientId)
             ->where('users.is_deleted', 0)
             ->orderBy('users.id', 'DESC')
             ->select('users.*', 'roles.name as role_name', 'roles.level');
 
-        // Agents and associates can only see their own row
-        if ($userLevel < 5) {
-            $query->where('users.id', $request->auth->id);
-        }
+        // Dynamic visibility rule (driven by `roles.level` — no hardcoded
+        // role numbers). A user may only see other users whose role level is
+        // strictly below their own, plus their own record. Re-level or add
+        // roles in the `roles` table and this query updates automatically.
+        $query->where(function ($q) use ($userLevel, $userId) {
+            $q->where('roles.level', '<', $userLevel)
+              ->orWhere('users.id', $userId);
+        });
 
         // Apply search
         if (!empty($search)) {

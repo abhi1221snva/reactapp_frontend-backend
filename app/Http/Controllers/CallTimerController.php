@@ -325,13 +325,16 @@ public function update(Request $request, $id)
             return response()->json(['message' => 'Timer not found'], 404);
         }
           // Check if any campaign is using this timer
-    $isAssigned = Campaign::on($connection)
+    $assignedCampaigns = Campaign::on($connection)
         ->where('call_schedule_id', $id)
-        ->exists();
+        ->where('is_deleted', 0)
+        ->select('id', 'title')
+        ->get();
 
-    if ($isAssigned) {
+    if ($assignedCampaigns->count() > 0) {
         return response()->json([
-            'message' => 'Cannot delete timer. It is assigned to a campaign.'
+            'message' => 'Cannot delete timer. It is assigned to a campaign.',
+            'campaigns' => $assignedCampaigns,
         ], 400); // 400 Bad Request
     }
 

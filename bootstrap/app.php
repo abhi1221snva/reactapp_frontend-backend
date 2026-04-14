@@ -161,6 +161,7 @@ $app->routeMiddleware([
     'auth.sysadmin'   => App\Http\Middleware\SystemAdminAuth::class,
     'route.access'    => App\Http\Middleware\CheckRouteAccess::class,
     'rvm.apikey'      => App\Http\Middleware\RvmApiKeyAuthMiddleware::class,
+    'merchant.jwt'    => App\Http\Middleware\MerchantJwtMiddleware::class,
 ]);
 
 if (!class_exists('Redis')) {

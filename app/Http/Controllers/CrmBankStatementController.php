@@ -41,6 +41,22 @@ class CrmBankStatementController extends Controller
         ]);
     }
 
+    // ── Single session by UUID (no lead_id required) ──────────────────────────
+
+    public function show(Request $request, string $sessionId): JsonResponse
+    {
+        $conn    = $this->tenantDb($request);
+        $session = CrmBankStatementSession::on($conn)
+            ->where('session_id', $sessionId)
+            ->first();
+
+        if (!$session) {
+            return response()->json(['success' => false, 'message' => 'Session not found.'], 404);
+        }
+
+        return $this->successResponse('Session retrieved.', $session->toArray());
+    }
+
     // ── Lead-specific ─────────────────────────────────────────────────────────
 
     public function leadSessions(Request $request, $id): JsonResponse

@@ -883,14 +883,13 @@ class DialerController extends Controller
     public function saveDisposition()
     {
         $this->validate($this->request, [
-            'campaign_id' => 'required|numeric',
+            'campaign_id'    => 'required|numeric',
             'disposition_id' => 'required|numeric',
-            'lead_id' => 'required|numeric',
-            'api_call' => 'required|numeric',
-            'comment' => 'string',
-            //'comment_callback' => 'string',
-            'pause_calling' => 'required|numeric',
-            //'call_back' => 'date_format:Y-m-d H:i:s'
+            'lead_id'        => 'required|numeric',
+            'api_call'       => 'numeric',        // optional — defaults to 0 in model
+            'comment'        => 'string',
+            'pause_calling'  => 'numeric',        // optional — defaults to 0 in model
+            //'call_back'    => 'date_format:Y-m-d H:i:s'
         ]);
         try {
 

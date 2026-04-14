@@ -352,6 +352,11 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
 $router->POST('merchant-add', 'Merchant\AuthController@add');
 $router->POST('merchant-auth', 'Merchant\AuthController@login');
 $router->POST('merchants', 'Merchant\AuthController@get');
+
+// ── Authenticated merchant portal (merchant.jwt required) ──────────────────
+$router->group(['middleware' => ['merchant.jwt', 'throttle:120,1']], function () use ($router) {
+    $router->get('merchant/my-applications', 'Merchant\DashboardController@listApplications');
+});
 ##########Merchant's routes ends
 
 // Team Chat Widget Public Routes (No Auth Required)
@@ -1981,6 +1986,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->get('crm/bank-statements/stats',                                     'CrmBankStatementController@stats');
   $router->get('crm/bank-statements/mca-lenders',                               'CrmBankStatementController@mcaLenders');
   $router->get('crm/bank-statements/learned-patterns',                          'CrmBankStatementController@learnedPatterns');
+  $router->get('crm/bank-statements/{sessionId}',                               'CrmBankStatementController@show');
   $router->delete('crm/bank-statements/learned-patterns',                       'CrmBankStatementController@clearLearnedPatterns');
   $router->delete('crm/bank-statements/learned-patterns/{patternId}',           'CrmBankStatementController@deleteLearnedPattern');
   $router->get('crm/balji/api-explorer',                                        'CrmBankStatementController@apiExplorer');
@@ -2509,5 +2515,14 @@ $router->group([
     // Slybroadcast
     $router->get ('slybroadcast/audio/{dropId}',  'CallbackController@slybroadcastAudio');
     $router->post('slybroadcast/status/{dropId}', 'CallbackController@slybroadcastStatus');
+});
+
+// ── Bank Analysis Viewer (standalone debug tool) ─────────────
+$router->get('/bank-analysis-viewer',  'BankAnalysisViewerController@index');
+$router->post('/bank-analysis-viewer', 'BankAnalysisViewerController@fetch');
+
+// ── Bank Analysis Viewer API (JWT-protected, for React frontend) ─────
+$router->group(['middleware' => 'jwt.auth'], function () use ($router) {
+    $router->post('/bank-analysis/fetch', 'BankAnalysisViewerController@fetchApi');
 });
 

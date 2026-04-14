@@ -445,7 +445,14 @@ class Dialer extends Model
                 $dt->setTimestamp($timestamp); //adjust the object to correct timestamp
                 $now_timezone_time = $dt->format('H:i:s');
                 $dayKey = strtolower($dt->format('l')); // ✅ REQUIRED
-
+            } else {
+                // Fallback: use UTC when user has no timezone configured.
+                // Without this, campaigns with call_schedule_id would always be excluded
+                // (empty $dayKey never matches any week_plan key).
+                $dt = new DateTime("now", new DateTimeZone('UTC'));
+                $now_timezone_time = $dt->format('H:i:s');
+                $dayKey = strtolower($dt->format('l'));
+                $timezoneValue = '+00:00';
             }
              
 
@@ -932,6 +939,17 @@ class Dialer extends Model
 
             /*close new code implement*/
 
+            // Guard: extension must be non-empty and numeric before proceeding
+            if (empty($extension) || !is_numeric($extension)) {
+                return response()->json([
+                    'success'    => false,
+                    'message'    => $dialer_mode == 2
+                        ? 'WebPhone extension (alt_extension) is not configured for your account. Contact your administrator.'
+                        : 'Extension is not configured for your account. Contact your administrator.',
+                    'error_code' => 'EXTENSION_NOT_CONFIGURED',
+                ], 402);
+            }
+
             error_log("extensionLogin: user_id={$request->auth->id} ext={$extension} alt_ext={$request->auth->alt_extension} hw_ext={$request->auth->extension} dialer_mode={$dialer_mode} campaign_id={$request->input('campaign_id')} parent_id={$request->auth->parent_id}");
 
             $getExtensionLive = $this->getExtensionLive($extension, $request->auth->parent_id);
@@ -1226,6 +1244,15 @@ class Dialer extends Model
         //echo $extension;die;
 
         /*close new code implement*/
+
+        // WebRTC mode (dialer_mode=2): the browser SIP stack already terminated the call.
+        // No Asterisk AMI hangup is needed — return success immediately.
+        if ($dialer_mode == 2) {
+            return array(
+                'success' => true,
+                'message' => 'Hang up successful (WebRTC)',
+            );
+        }
 
         try {
             $asterisk = $this->getAsterisk($request->auth->asterisk_server_id, $extension, $request->auth->parent_id);
@@ -1749,10 +1776,11 @@ public function getLead(int $parentId, int $extension)
         $campaignId = $request->input('campaign_id');
         $leadId = $request->input('lead_id');
         $dispositionId = $request->input('disposition_id');
-        $pauseCalling = $request->input('pause_calling');
+        // Default pause_calling=0 (continue dialing) and api_call=0 when not provided
+        $pauseCalling = $request->input('pause_calling') ?? 0;
         $callBack = $request->input('call_back');
         $comment = $request->input('comment');
-        $apiCall = $request->input('api_call');
+        $apiCall = $request->input('api_call') ?? 0;
         //Update extension_live table
         $status = ($pauseCalling == 1) ? 3 : 0;
         $sql = "";
@@ -1942,7 +1970,8 @@ public function getLead(int $parentId, int $extension)
                     $extension,
                     $request->auth->asterisk_server_id,
                     $request->auth->parent_id,
-                    $request->auth->id
+                    $request->auth->id,
+                    $dialer_mode  // pass WebRTC mode so next lead uses correct extension
                 );
                 $response["dail_next_lead"] = $addResponse;
             } catch (\Exception $exception) {
@@ -2196,7 +2225,8 @@ public function getLead(int $parentId, int $extension)
                     $extension,
                     $request->auth->asterisk_server_id,
                     $request->auth->parent_id,
-                    $request->auth->id
+                    $request->auth->id,
+                    $dialer_mode  // pass WebRTC mode so next lead uses correct extension
                 );
                 $response["dail_next_lead"] = $addResponse;
             } catch (\Exception $exception) {

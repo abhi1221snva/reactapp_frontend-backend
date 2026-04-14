@@ -2149,7 +2149,7 @@ class LeadController extends Controller
             if ($createdById) {
                 $agent = DB::table('users')
                     ->where('id', (int) $createdById)
-                    ->where('parent_id', $request->auth->parent_id)
+                    ->where('parent_id', $auth->parent_id)
                     ->select('first_name','last_name','mobile','email','company_name','logo')
                     ->first();
 
