@@ -493,7 +493,7 @@ class Cron extends Model
     {
         $dialingColumn = DB::connection($this->database)->selectOne("SELECT column_name FROM list_header WHERE list_id = :list_id AND is_dialing = :is_dialing", array('list_id' => $list_id, 'is_dialing' => '1'));
         $dialingColumn = (array)$dialingColumn;
-        return $dialingColumn['column_name'];
+        return $dialingColumn['column_name'] ?? null;
     }
 
     public function removeDuplicateRecord()

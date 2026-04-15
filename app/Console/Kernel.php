@@ -99,6 +99,7 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\GenerateSwaggerDocs::class,
         ProvisionClientCommand::class,
         \App\Console\Commands\EmailParserScanCommand::class,
+        \App\Console\Commands\AmiListenCommand::class,
     ];
 
     /**

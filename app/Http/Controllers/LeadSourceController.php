@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Model\Client\LeadSource;
+use App\Model\Master\LeadSourceWebhookToken;
 
 use Illuminate\Http\Request;
 use App\Model\Role;
@@ -10,6 +11,7 @@ use App\Model\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class LeadSourceController extends Controller
@@ -187,14 +189,24 @@ class LeadSourceController extends Controller
         ]);
 
         try {
-            $LeadSource = new LeadSource();
+            $webhookSecret = (string) Str::uuid();
             $uniqueId = mt_rand(100000, 999999);
+
+            $LeadSource = new LeadSource();
             $LeadSource->setConnection("mysql_$clientId");
             $LeadSource->url = $request->url;
             $LeadSource->source_title = $request->source_title;
             $LeadSource->unique_id = $uniqueId;
-
+            $LeadSource->webhook_secret = $webhookSecret;
             $LeadSource->saveOrFail();
+
+            // Register secret in master lookup table
+            LeadSourceWebhookToken::create([
+                'client_id' => $clientId,
+                'source_id' => $LeadSource->id,
+                'token'     => $webhookSecret,
+            ]);
+
             return $this->successResponse("Added Successfully", $LeadSource->toArray());
         } catch (\Exception $exception) {
             return $this->failResponse("Failed to create Lead Source ", [
@@ -320,6 +332,32 @@ class LeadSourceController extends Controller
 
 
 
+
+    /** POST /lead-source/{id}/rotate-secret — generate a new webhook secret */
+    public function rotateSecret(Request $request, $id)
+    {
+        $clientId = $request->auth->parent_id;
+        try {
+            $source = LeadSource::on("mysql_$clientId")->findOrFail($id);
+            $newSecret = (string) Str::uuid();
+
+            // Update client DB
+            $source->webhook_secret = $newSecret;
+            $source->saveOrFail();
+
+            // Update master lookup (upsert)
+            LeadSourceWebhookToken::updateOrCreate(
+                ['client_id' => $clientId, 'source_id' => $id],
+                ['token' => $newSecret]
+            );
+
+            return $this->successResponse("Webhook secret rotated", ['webhook_secret' => $newSecret]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return $this->failResponse("Lead Source Not Found", [], $e, 404);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to rotate secret", [$e->getMessage()], $e, 500);
+        }
+    }
 
     //  public function changeStatus(Request $request){
 

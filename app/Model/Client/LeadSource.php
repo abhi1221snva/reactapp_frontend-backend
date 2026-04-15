@@ -6,7 +6,7 @@ class LeadSource extends Model
 {
     public $timestamps = true;
     protected $table = "crm_lead_source";
-    protected $fillable = ['source_title','url','status'];
+    protected $fillable = ['source_title','url','status','webhook_secret'];
     
 
 }

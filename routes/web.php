@@ -506,6 +506,18 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->post('dialer/pacing/{campaignId}/record-outcome', 'DialerPacingController@recordOutcome');
   $router->post('dialer/pacing/{campaignId}/reset',          'DialerPacingController@reset');
 
+  // ─── Click-to-Call Campaign Dialer (Agent-First WebRTC) ───────────────────
+  $router->post('dialer/campaign/{id}/start',              'CampaignDialerController@start');
+  $router->post('dialer/campaign/{id}/stop',               'CampaignDialerController@stop');
+  $router->post('dialer/campaign/{id}/populate',           'CampaignDialerController@populateQueue');
+  $router->get('dialer/campaign/{id}/status',              'CampaignDialerController@status');
+  $router->get('dialer/campaign/{id}/agents',              'CampaignDialerController@listAgents');
+  $router->post('dialer/campaign/{id}/agents',             'CampaignDialerController@assignAgent');
+  $router->delete('dialer/campaign/{id}/agents/{userId}',  'CampaignDialerController@removeAgent');
+  $router->get('dialer/agent/{ext}/current-lead',          'CampaignDialerController@currentLead');
+  $router->get('dialer/lead',                              'CampaignDialerController@getLead');
+  $router->post('dialer/lead/{leadId}/disposition',        'CampaignDialerController@saveDispo');
+
 //campaign assign list
 
   $router->post('/campaign/assign-lists', 'CampaignController@assignLists');
@@ -1536,6 +1548,16 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->get('delete-lead-source/{id}', 'LeadSourceController@delete');
   $router->put('add-log-for-lead-source/add', 'LeadSourceController@addLogForLeadSource');
 
+  // Lead Source Fields
+  $router->get('lead-source/{sourceId}/fields', 'LeadSourceFieldController@list');
+  $router->put('lead-source/{sourceId}/fields', 'LeadSourceFieldController@create');
+  $router->post('lead-source/{sourceId}/fields/reorder', 'LeadSourceFieldController@reorder');
+  $router->post('lead-source/{sourceId}/fields/{fieldId}', 'LeadSourceFieldController@update');
+  $router->delete('lead-source/{sourceId}/fields/{fieldId}', 'LeadSourceFieldController@delete');
+
+  // Lead Source Webhook secret management
+  $router->post('lead-source/{id}/rotate-secret', 'LeadSourceController@rotateSecret');
+
 
   //lead data
 
@@ -2358,6 +2380,11 @@ $router->group(['middleware' => ['jwt.auth', 'tenant', 'route.access']], functio
 // Easify Bank Statement Webhook — no JWT, throttled
 $router->group(['middleware' => ['throttle:120,1']], function () use ($router) {
     $router->post('easify/webhook/bank-statement/{clientId}', 'EasifyWebhookController@bankStatementComplete');
+});
+
+// Lead Source Webhook — no JWT, token-authenticated, throttled 120/min per IP
+$router->group(['middleware' => ['throttle:120,1']], function () use ($router) {
+    $router->post('webhook/lead-source/{secret}', 'LeadSourceWebhookController@receive');
 });
 
 // Twilio Webhooks — signature validated, no JWT
