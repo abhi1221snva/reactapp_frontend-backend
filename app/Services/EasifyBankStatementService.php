@@ -558,7 +558,7 @@ class EasifyBankStatementService
                     'fraud_score'    => $summaryData['fraud_score'] ?? $summaryData['fraud_scoring']['score'] ?? null,
                     'total_revenue'  => $summaryData['total_revenue'] ?? $summaryData['true_revenue'] ?? null,
                     'total_deposits' => $summaryData['total_deposits'] ?? $summaryData['total_credits'] ?? null,
-                    'nsf_count'      => $summaryData['nsf_count'] ?? $summaryData['nsf_fees'] ?? null,
+                    'nsf_count'      => $summaryData['nsf_count'] ?? null,
                     'analyzed_at'    => now(),
                 ]);
             } elseif ($status === 'failed' || $status === 'error') {

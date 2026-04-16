@@ -359,23 +359,22 @@ class LeadSourceController extends Controller
         }
     }
 
-    //  public function changeStatus(Request $request){
+    public function changeStatus(Request $request, $id)
+    {
+        $clientId = $request->auth->parent_id;
+        $this->validate($request, [
+            'status' => 'required|in:0,1',
+        ]);
 
-    //         $clientId = $request->auth->parent_id;   
-    //     try {
-    //         $LeadStatus = LeadStatus::on("mysql_$clientId")->findOrFail($request->lead_status_id);
-    //         $LeadStatus->status =$request->status;
-    //         $LeadStatus->saveOrFail();
-    //         return $this->successResponse("Lead Status Updated", $LeadStatus->toArray());
-    //     } catch (ModelNotFoundException $exception) {
-    //         return $this->failResponse("Lead Status Not Found", [
-    //             "Invalid Lead Status id $id"
-    //         ], $exception, 404);
-    //     } catch (\Throwable $exception) {
-    //         return $this->failResponse("Failed to update Lead Status", [
-    //             $exception->getMessage()
-    //         ], $exception, 404);
-    //     }
-
-    // }
+        try {
+            $source = LeadSource::on("mysql_$clientId")->findOrFail($id);
+            $source->status = (int) $request->input('status');
+            $source->saveOrFail();
+            return $this->successResponse("Lead Source status updated", $source->toArray());
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return $this->failResponse("Lead Source Not Found", ["Invalid Lead Source id $id"], $e, 404);
+        } catch (\Throwable $exception) {
+            return $this->failResponse("Failed to update Lead Source status", [$exception->getMessage()], $exception, 500);
+        }
+    }
 }

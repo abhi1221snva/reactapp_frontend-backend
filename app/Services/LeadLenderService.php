@@ -376,6 +376,7 @@ class LeadLenderService
         $skipped   = [];
         $records   = [];
         $validationResults = [];
+        $emailWarning = null;
 
         // ── Pre-validation when skip_invalid is enabled ───────────────────────
         $skipSet = [];
@@ -476,6 +477,7 @@ class LeadLenderService
         }
         if (!$emailSvc) {
             Log::warning("submitApplication: no email config available for client {$clientId}");
+            $emailWarning = 'No email configuration found — submission records were created but email notifications were not sent.';
         }
 
         // ── Resolve merge tags in custom subject / body ────────────────────────
@@ -626,6 +628,10 @@ class LeadLenderService
                         $lender->secondary_email4 ?? null,
                     ]));
 
+                    if (empty($emailTargets) && !$emailWarning) {
+                        $emailWarning = 'One or more lenders have no email address configured — those submissions were recorded but no email was sent.';
+                    }
+
                     if ($emailSvc && !empty($emailTargets)) {
                         $primaryTo = array_shift($emailTargets);
                         try {
@@ -674,7 +680,7 @@ class LeadLenderService
             }
         }
 
-        return compact('submitted', 'failed', 'skipped', 'records', 'validationResults');
+        return compact('submitted', 'failed', 'skipped', 'records', 'validationResults', 'emailWarning');
     }
 
     /**

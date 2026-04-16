@@ -1557,6 +1557,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
 
   // Lead Source Webhook secret management
   $router->post('lead-source/{id}/rotate-secret', 'LeadSourceController@rotateSecret');
+  $router->post('lead-source/{id}/toggle-status', 'LeadSourceController@changeStatus');
 
 
   //lead data

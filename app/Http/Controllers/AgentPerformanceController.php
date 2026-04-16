@@ -363,7 +363,7 @@ class AgentPerformanceController extends Controller
         }
 
         $this->validate($request, [
-            'deal_type'        => 'required|in:new,renewal',
+            'deal_type'        => 'required|in:MCA,Term Loan,Line of Credit,SBA,Equipment,Invoice Factoring,Other,new,renewal',
             'commission_type'  => 'required|in:percentage,flat,points',
             'value'            => 'required|numeric|min:0',
             'agent_role'       => 'required|in:closer,opener,both',
@@ -396,7 +396,7 @@ class AgentPerformanceController extends Controller
         }
 
         $this->validate($request, [
-            'deal_type'        => 'in:new,renewal',
+            'deal_type'        => 'in:MCA,Term Loan,Line of Credit,SBA,Equipment,Invoice Factoring,Other,new,renewal',
             'commission_type'  => 'in:percentage,flat,points',
             'value'            => 'numeric|min:0',
             'agent_role'       => 'in:closer,opener,both',

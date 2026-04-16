@@ -2655,7 +2655,7 @@ class LeadController extends Controller
             $isHtml = (bool) $request->input('is_html', false);
             $html   = $isHtml ? $body : nl2br(e($body));
 
-            EmailService::forClient($clientId, 'online application')->send(
+            EmailService::forClientAny($clientId)->send(
                 to:      $to,
                 subject: $subject,
                 html:    $html,
