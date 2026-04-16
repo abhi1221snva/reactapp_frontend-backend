@@ -6,8 +6,9 @@ use App\Model\Client\LeadSource;
 use App\Model\Client\LeadSourceField;
 use App\Model\Master\LeadSourceWebhookToken;
 use App\Models\Client\CrmLeadRecord;
-use App\Services\LeadEavService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -22,12 +23,6 @@ use Illuminate\Support\Facades\Log;
  */
 class LeadSourceWebhookController extends Controller
 {
-    protected LeadEavService $eavService;
-
-    public function __construct()
-    {
-        $this->eavService = new LeadEavService();
-    }
 
     public function receive(Request $request, string $secret)
     {
@@ -121,19 +116,39 @@ class LeadSourceWebhookController extends Controller
 
             $leadId = $lead->id;
 
-            // Build EAV payload — use mapped_field_key (if set) as the storage key
-            // so the value lands in the correct CRM field.
-            $eavInput = [];
+            // ── Save EAV values directly ──────────────────────────────────────
+            // We bypass LeadEavService::save() (which whitelists only CORE_FIELDS
+            // + crm_labels keys) so that every field mapped by the lead source
+            // config is persisted regardless of whether it exists in crm_labels.
+            $now = Carbon::now();
             foreach ($configuredFields as $field) {
-                $incomingKey = $field->field_name;               // key in the webhook payload
-                $storageKey  = $field->mapped_field_key          // desired CRM EAV key
-                    ?: $field->field_name;                       // fallback: same as incoming key
-                if (array_key_exists($incomingKey, $input)) {
-                    $eavInput[$storageKey] = $input[$incomingKey];
-                }
-            }
+                $incomingKey = $field->field_name;
+                $storageKey  = $field->mapped_field_key ?: $field->field_name;
 
-            $this->eavService->save($clientId, $leadId, $eavInput);
+                if (!array_key_exists($incomingKey, $input)) {
+                    continue;
+                }
+
+                $val = $input[$incomingKey];
+
+                if ($val === null || $val === '') {
+                    continue; // skip empty — don't create blank EAV rows
+                }
+
+                DB::connection("mysql_$clientId")
+                    ->table('crm_lead_values')
+                    ->upsert(
+                        [
+                            'lead_id'     => $leadId,
+                            'field_key'   => $storageKey,
+                            'field_value' => trim((string) $val),
+                            'created_at'  => $now,
+                            'updated_at'  => $now,
+                        ],
+                        ['lead_id', 'field_key'],
+                        ['field_value', 'updated_at']
+                    );
+            }
 
             Log::info("LeadSourceWebhook: lead created", [
                 'client_id' => $clientId,

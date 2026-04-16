@@ -75,9 +75,8 @@ class CrmLabelController extends Controller
     {
         try {
             $clientId = $request->auth->parent_id;
-            //$clientId = 3;
             $Label = [];
-            $Label = CrmLabel::on("mysql_$clientId")->orderBy('display_order', 'ASC')->get()->all();
+            $Label = CrmLabel::on("mysql_$clientId")->where('status', true)->orderBy('display_order', 'ASC')->get()->all();
             if ($request->has('start') && $request->has('limit')) {
                 $total_row = count($Label);
                 $start = (int)$request->input('start'); // Start index (0-based)
@@ -101,22 +100,21 @@ class CrmLabelController extends Controller
     {
         try {
             $clientId = $request->auth->parent_id;
-            //$clientId = 3;
             $Label = [];
-            $Label = CrmLabel::on("mysql_$clientId")->orderBy('display_order', 'ASC')->get()->all();
+            $Label = CrmLabel::on("mysql_$clientId")->where('status', true)->orderBy('display_order', 'ASC')->get()->all();
 
             return $this->successResponse("List of Label", $Label);
         } catch (\Throwable $exception) {
             return $this->failResponse("Failed to Label ", [$exception->getMessage()], $exception, $exception->getCode());
         }
     }
+
     public function listAffiliates(Request $request, $client_id)
     {
         try {
             $clientId = $client_id;
-            //$clientId = 3;
             $Label = [];
-            $Label = CrmLabel::on("mysql_$clientId")->orderBy('display_order', 'ASC')->get()->all();
+            $Label = CrmLabel::on("mysql_$clientId")->where('status', true)->orderBy('display_order', 'ASC')->get()->all();
             return $this->successResponse("List of Label", $Label);
         } catch (\Throwable $exception) {
             return $this->failResponse("Failed to Label ", [$exception->getMessage()], $exception, $exception->getCode());
@@ -545,7 +543,12 @@ class CrmLabelController extends Controller
         try {
             $clientId = $request->auth->parent_id;
             $svc      = new LeadFieldService();
-            $fields   = $svc->getAllFields($clientId)['data'];
+            // Return ALL fields (active + inactive) so the frontend can:
+            //   1. Use all field_keys to suppress hardcoded fallback fields
+            //   2. Filter to status=true for actual rendering
+            // This ensures inactive fields are never shown but also never
+            // re-injected by hardcoded core-field fallback logic.
+            $fields = $svc->getAllFields($clientId)['data'];
             return $this->successResponse("Lead fields retrieved successfully", $fields);
         } catch (\Throwable $e) {
             return $this->failResponse("Failed to retrieve lead fields", [$e->getMessage()], $e);
