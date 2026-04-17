@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Services\TenantStorageService;
 use App\Services\SystemChannelService;
+use App\Services\LeadChangeTracker;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -395,6 +396,11 @@ class PublicApplicationService
 
         // ── Activity log ──────────────────────────────────────────────────────
         $this->logActivity($conn, $leadId, $affiliateUser->id, 'affiliate_application', 'Lead created via affiliate application form.');
+
+        // Record creation in change log
+        LeadChangeTracker::recordCreation(
+            (string)$clientId, $leadId, $formData, 'affiliate_form', $affiliateUser->id, 'affiliate'
+        );
 
         // Broadcast to #Merchant system channel
         $businessLabel = $formData['business_name'] ?? $formData['dba'] ?? 'New Lead';
@@ -989,6 +995,11 @@ HTML;
                 }
             }
         }
+
+        // ── 6. Record in lead_change_logs (skipActivity=true since we log per-field above) ──
+        LeadChangeTracker::recordDiff(
+            (string)$clientId, $leadId, $changes, 'merchant_portal', null, 'merchant', null, true
+        );
     }
 
     public function storeDocument(object $lead, int $clientId, $file, string $docType): array

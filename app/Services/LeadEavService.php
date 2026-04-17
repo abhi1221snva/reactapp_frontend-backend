@@ -53,6 +53,85 @@ class LeadEavService
     ];
 
     /**
+     * Upsert dynamic field values and return detected changes.
+     *
+     * Loads current EAV values first, diffs against input, performs same
+     * upsert/delete logic as save(), then returns only changed fields.
+     *
+     * @return array  [field_key => ['old' => string|null, 'new' => string|null], ...]
+     */
+    public function saveWithDiff(string $clientId, int $leadId, array $input): array
+    {
+        $changes = [];
+        try {
+            $conn = "mysql_{$clientId}";
+
+            // Load active field keys from crm_labels
+            $configuredKeys = DB::connection($conn)
+                ->table('crm_labels')
+                ->where('status', true)
+                ->pluck('field_key')
+                ->toArray();
+
+            $fieldKeys = array_unique(array_merge(self::CORE_FIELDS, $configuredKeys));
+
+            // Load current EAV values for this lead
+            $currentValues = [];
+            $rows = DB::connection($conn)
+                ->table('crm_lead_values')
+                ->where('lead_id', $leadId)
+                ->pluck('field_value', 'field_key')
+                ->toArray();
+            $currentValues = $rows;
+
+            $now = Carbon::now();
+
+            foreach ($fieldKeys as $fieldKey) {
+                if (!array_key_exists($fieldKey, $input)) {
+                    continue;
+                }
+
+                $val    = $input[$fieldKey];
+                $oldVal = $currentValues[$fieldKey] ?? null;
+                $newVal = ($val === null || $val === '') ? null : trim((string) $val);
+
+                // Detect change
+                if ((string) ($oldVal ?? '') !== (string) ($newVal ?? '')) {
+                    $changes[$fieldKey] = ['old' => $oldVal, 'new' => $newVal];
+                }
+
+                // Perform upsert / delete (same logic as save())
+                if ($newVal === null) {
+                    DB::connection($conn)
+                        ->table('crm_lead_values')
+                        ->where('lead_id', $leadId)
+                        ->where('field_key', $fieldKey)
+                        ->delete();
+                    continue;
+                }
+
+                DB::connection($conn)
+                    ->table('crm_lead_values')
+                    ->upsert(
+                        [
+                            'lead_id'     => $leadId,
+                            'field_key'   => $fieldKey,
+                            'field_value' => $newVal,
+                            'created_at'  => $now,
+                            'updated_at'  => $now,
+                        ],
+                        ['lead_id', 'field_key'],
+                        ['field_value', 'updated_at']
+                    );
+            }
+        } catch (\Throwable $e) {
+            // Non-fatal — EAV failures must not break lead saves
+        }
+
+        return $changes;
+    }
+
+    /**
      * Upsert all dynamic field values for a lead into crm_lead_values.
      * Skips system-column keys. Empty/null values delete the existing row.
      */

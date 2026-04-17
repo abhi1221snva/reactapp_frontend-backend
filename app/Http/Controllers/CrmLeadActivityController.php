@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Model\Client\CrmLeadActivity;
+use App\Models\Client\LeadChangeLog;
 use App\Model\Client\Lead;
 use App\Model\User;
 use Illuminate\Support\Facades\DB;
@@ -256,6 +257,69 @@ class CrmLeadActivityController extends Controller
             );
         } catch (\Throwable $e) {
             return $this->failResponse("Failed to pin activity", [$e->getMessage()], $e, 500);
+        }
+    }
+
+    /**
+     * GET /crm/lead/{id}/change-logs
+     * Returns the field-level audit trail from lead_change_logs.
+     */
+    public function changeLogs(Request $request, $id)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            $conn     = "mysql_{$clientId}";
+            $limit    = min((int)($request->input('limit', 50)), 200);
+            $offset   = (int)$request->input('offset', 0);
+            $source   = $request->input('source');
+
+            $query = DB::connection($conn)
+                ->table('lead_change_logs')
+                ->where('lead_id', $id);
+
+            if ($source) {
+                $query->where('source', $source);
+            }
+
+            $total = $query->count();
+            $items = $query->orderBy('created_at', 'desc')
+                ->skip($offset)
+                ->take($limit)
+                ->get();
+
+            // Decode JSON changes column
+            $items->transform(function ($item) {
+                if (is_string($item->changes)) {
+                    $item->changes = json_decode($item->changes, true);
+                }
+                return $item;
+            });
+
+            // Hydrate user names
+            $userIds = $items->pluck('user_id')->filter()->unique()->values();
+            $users = $userIds->isNotEmpty()
+                ? User::whereIn('id', $userIds)->get(['id', 'first_name', 'last_name'])->keyBy('id')
+                : collect();
+
+            $items->transform(function ($item) use ($users) {
+                $item->user_name = null;
+                if ($item->user_id && $users->has($item->user_id)) {
+                    $u = $users[$item->user_id];
+                    $item->user_name = trim($u->first_name . ' ' . $u->last_name) ?: null;
+                }
+                return $item;
+            });
+
+            return $this->successResponse("Lead Change Logs", [
+                'lead_id'  => (int)$id,
+                'total'    => $total,
+                'offset'   => $offset,
+                'limit'    => $limit,
+                'has_more' => ($offset + $limit) < $total,
+                'items'    => $items->values(),
+            ]);
+        } catch (\Throwable $e) {
+            return $this->failResponse("Failed to load change logs", [$e->getMessage()], $e, 500);
         }
     }
 }

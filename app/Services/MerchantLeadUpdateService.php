@@ -7,6 +7,7 @@ use App\Models\Client\CrmLeadLog;
 use App\Models\Client\CrmLeadNote;
 use App\Models\Client\CrmNotification;
 use App\Services\SystemChannelService;
+use App\Services\LeadChangeTracker;
 
 /**
  * Handles merchant-initiated lead updates with full audit trail.
@@ -282,6 +283,14 @@ class MerchantLeadUpdateService
                 'updated_at'        => $now,
             ]);
         });
+
+        // Record in lead_change_logs (skipActivity=true — this service already writes activity)
+        if (!empty($changes)) {
+            LeadChangeTracker::recordDiff(
+                (string)$clientId, (int)$lead->id, $changes,
+                'merchant_portal', $merchantId, 'merchant', $ip ?? null, true
+            );
+        }
 
         // Broadcast to #Merchant system channel
         if (!empty($changes)) {

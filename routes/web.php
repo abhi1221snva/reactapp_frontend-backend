@@ -1807,6 +1807,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->get('crm/lead/{id}/activity',            'CrmLeadActivityController@timeline');
   $router->put('crm/lead/{id}/activity',            'CrmLeadActivityController@addManualEntry');
   $router->post('crm/lead/{id}/activity/{aid}/pin', 'CrmLeadActivityController@pin');
+  $router->get('crm/lead/{id}/change-logs',          'CrmLeadActivityController@changeLogs');
   $router->get('crm/lead/{id}/status-history',      'CrmLeadStatusHistoryController@index');
 
   // Pipeline Board & Saved Views

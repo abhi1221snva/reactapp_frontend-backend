@@ -39,6 +39,7 @@ use App\Services\LeadLenderService;
 use App\Services\LeadQueryService;
 use App\Services\LeadTaskService;
 use App\Services\EmailService;
+use App\Services\LeadChangeTracker;
 
 
 class LeadController extends Controller
@@ -749,6 +750,11 @@ class LeadController extends Controller
                 $activity->save();
             } catch (\Throwable $e) {}
 
+            // Record creation in change log (skipActivity=true since we just logged lead_created)
+            LeadChangeTracker::recordCreation(
+                $clientId, $lastId, $input, 'crm_ui', $request->auth->id, 'agent'
+            );
+
             return $this->successResponse("Lead Added Successfully", $objLead->toArray());
         } catch (\Exception $exception) {
             return $this->failResponse("Failed to create Lead ", [
@@ -856,21 +862,22 @@ class LeadController extends Controller
             $objLead->updated_by = $request->auth->id;
             $objLead->saveOrFail();
 
-            // Save all dynamic fields (EAV) into crm_lead_values (use sanitized $input)
-            $this->eavService->save($clientId, (int)$id, $input);
+            // Save all dynamic fields (EAV) and capture changes
+            $eavChanges = $this->eavService->saveWithDiff($clientId, (int)$id, $input);
 
-            // ── CRM Activity: log field updates (additive — never breaks existing response) ──
-            try {
-                $activity = new CrmLeadActivity();
-                $activity->setConnection("mysql_$clientId");
-                $activity->lead_id       = (int)$id;
-                $activity->user_id       = $request->auth->id;
-                $activity->activity_type = 'field_update';
-                $activity->subject       = 'Lead updated by ' . ($request->auth->first_name ?? 'user');
-                $activity->meta          = ['changed_fields' => $changedFields];
-                $activity->source_type   = 'api';
-                $activity->save();
-            } catch (\Throwable $e) {}
+            // ── Track all field changes (system + EAV) via centralized tracker ──
+            $allChanges = array_merge($changedFields, $eavChanges);
+            if (!empty($allChanges)) {
+                LeadChangeTracker::recordDiff(
+                    $clientId,
+                    (int)$id,
+                    $allChanges,
+                    'crm_ui',
+                    $request->auth->id,
+                    'agent',
+                    $request->ip()
+                );
+            }
 
             $objLead['old_lead_status'] =  $oldlead_status;
             return $this->successResponse("Lead Updated Successfully", $objLead->toArray());
@@ -998,6 +1005,24 @@ class LeadController extends Controller
                 $activity->source_type = 'api';
                 $activity->save();
             } catch (\Throwable $e) {}
+
+            // Record status/type/assignment changes in change log
+            $statusChanges = [];
+            if ((string)$oldlead_status !== (string)$request->lead_status) {
+                $statusChanges['lead_status'] = ['old' => $oldlead_status, 'new' => $request->lead_status];
+            }
+            if ((string)$oldlead_type !== (string)$request->lead_type) {
+                $statusChanges['lead_type'] = ['old' => $oldlead_type, 'new' => $request->lead_type];
+            }
+            if ((int)$oldassigned_to !== (int)$request->assigned_to) {
+                $statusChanges['assigned_to'] = ['old' => $oldassigned_to, 'new' => $request->assigned_to];
+            }
+            if (!empty($statusChanges)) {
+                LeadChangeTracker::recordDiff(
+                    $clientId, (int)$id, $statusChanges, 'crm_ui',
+                    $request->auth->id, 'agent', $request->ip(), true
+                );
+            }
 
             return $this->successResponse("Lead Updated Successfully", $objLead->toArray());
         } catch (ModelNotFoundException $exception) {

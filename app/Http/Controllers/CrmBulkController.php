@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\LeadVisibilityService;
+use App\Services\LeadChangeTracker;
 use Illuminate\Http\Request;
 use App\Model\Client\Lead;
 use App\Model\Client\CrmLeadStatusHistory;
@@ -82,6 +83,7 @@ class CrmBulkController extends Controller
             $reason     = $request->input('reason', 'Bulk assignment');
             $processed  = 0;
             $failed     = [];
+            $bulkChanges = [];
 
             $leadIds = $this->filterAccessibleLeadIds($request, $clientId, $leadIds);
 
@@ -109,10 +111,21 @@ class CrmBulkController extends Controller
                         ['from_assigned_to' => $oldAssigned, 'to_assigned_to' => $assignedTo]
                     );
 
+                    $bulkChanges[$leadId] = [
+                        'assigned_to' => ['old' => $oldAssigned, 'new' => $assignedTo],
+                    ];
+
                     $processed++;
                 } catch (\Throwable $e) {
                     $failed[] = $leadId;
                 }
+            }
+
+            // Record bulk changes
+            if (!empty($bulkChanges)) {
+                LeadChangeTracker::recordBulk(
+                    (string)$clientId, $bulkChanges, 'bulk_operation', $request->auth->id, 'agent'
+                );
             }
 
             return $this->successResponse("Bulk Assign Complete", [
@@ -142,6 +155,7 @@ class CrmBulkController extends Controller
             $reason    = $request->input('reason', 'Bulk status change');
             $processed = 0;
             $failed    = [];
+            $bulkChanges = [];
 
             $leadIds = $this->filterAccessibleLeadIds($request, $clientId, $leadIds);
 
@@ -165,10 +179,21 @@ class CrmBulkController extends Controller
                         ['from_status' => $oldStatus, 'to_status' => $newStatus]
                     );
 
+                    $bulkChanges[$leadId] = [
+                        'lead_status' => ['old' => $oldStatus, 'new' => $newStatus],
+                    ];
+
                     $processed++;
                 } catch (\Throwable $e) {
                     $failed[] = $leadId;
                 }
+            }
+
+            // Record bulk changes
+            if (!empty($bulkChanges)) {
+                LeadChangeTracker::recordBulk(
+                    (string)$clientId, $bulkChanges, 'bulk_operation', $request->auth->id, 'agent'
+                );
             }
 
             return $this->successResponse("Bulk Status Change Complete", [
@@ -196,6 +221,7 @@ class CrmBulkController extends Controller
             $leadIds   = $request->input('lead_ids');
             $processed = 0;
             $failed    = [];
+            $bulkChanges = [];
 
             $leadIds = $this->filterAccessibleLeadIds($request, $clientId, $leadIds);
 
@@ -213,10 +239,21 @@ class CrmBulkController extends Controller
                         ['deleted_by' => $request->auth->id]
                     );
 
+                    $bulkChanges[$leadId] = [
+                        'is_deleted' => ['old' => '0', 'new' => '1'],
+                    ];
+
                     $processed++;
                 } catch (\Throwable $e) {
                     $failed[] = $leadId;
                 }
+            }
+
+            // Record bulk changes
+            if (!empty($bulkChanges)) {
+                LeadChangeTracker::recordBulk(
+                    (string)$clientId, $bulkChanges, 'bulk_operation', $request->auth->id, 'agent'
+                );
             }
 
             return $this->successResponse("Bulk Delete Complete", [
