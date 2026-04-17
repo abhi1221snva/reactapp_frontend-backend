@@ -1243,6 +1243,13 @@ class LeadController extends Controller
         $withoutRules = array_filter($fields, fn($f) => empty($f->validation_rules));
 
         if (!empty($withRules)) {
+            // Pre-sanitize SSN fields: strip dashes/spaces so numeric/digits rules pass
+            foreach ($withRules as $f) {
+                $k = $f->field_key ?? '';
+                if ($k && array_key_exists($k, $input)) {
+                    $fieldSvc->sanitize($input[$k], strtolower(trim((string) ($f->field_type ?? ''))), $input, $k);
+                }
+            }
             $builtRules  = $leadSvc->buildRules(array_values($withRules));
             $ruleErrors  = $leadSvc->validate($input, $builtRules, array_values($withRules));
             foreach ($ruleErrors as $key => $msgs) {

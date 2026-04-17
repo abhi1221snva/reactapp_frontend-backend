@@ -34,6 +34,13 @@ class FieldValidationService
             return $clean;
         }
 
+        // SSN: strip dashes/spaces — store digits only
+        if ($type === 'ssn' || preg_match('/\bssn\b/i', $key)) {
+            $clean       = preg_replace('/[^0-9]/', '', (string) $raw);
+            $input[$key] = $clean;
+            return $clean;
+        }
+
         return is_string($raw) ? trim($raw) : $raw;
     }
 

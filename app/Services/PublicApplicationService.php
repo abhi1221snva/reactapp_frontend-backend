@@ -488,6 +488,15 @@ class PublicApplicationService
                     ['lead_id' => $leadId, 'field_key' => $fieldKey],
                     ['field_value' => $relPath, 'updated_at' => now(), 'created_at' => now()]
                 );
+
+                // Also store the signature date so PDF templates can use [[signature_date]] / [[owner_2_signature_date]]
+                $dateKey = ($fieldKey === 'owner_2_signature_image')
+                    ? 'owner_2_signature_date'
+                    : 'signature_date';
+                DB::connection($conn)->table('crm_lead_values')->updateOrInsert(
+                    ['lead_id' => $leadId, 'field_key' => $dateKey],
+                    ['field_value' => date('m/d/Y'), 'updated_at' => now(), 'created_at' => now()]
+                );
             }
 
             // Return inline data URI (used immediately in success response)
@@ -564,11 +573,13 @@ class PublicApplicationService
         // Render both signatures side-by-side (show section only if at least one exists)
         $sigHtml = '';
         if ($sigInline || $sig2Inline) {
+            $sig1Date = htmlspecialchars($fields['signature_date'] ?? $date);
+            $sig2Date = htmlspecialchars($fields['owner_2_signature_date'] ?? $date);
             $sig1Cell = $sigInline
-                ? "<img src='" . $sigInline . "' class='sig-img' />"
+                ? "<img src='" . $sigInline . "' class='sig-img' /><div class='sig-date'>Date: {$sig1Date}</div>"
                 : "<span class='sig-empty'>Not provided</span>";
             $sig2Cell = $sig2Inline
-                ? "<img src='" . $sig2Inline . "' class='sig-img' />"
+                ? "<img src='" . $sig2Inline . "' class='sig-img' /><div class='sig-date'>Date: {$sig2Date}</div>"
                 : "<span class='sig-empty'>Not provided</span>";
             $sigHtml = "<div class='section'><div class='section-title'>Digital Signatures</div>"
                 . "<table width='100%' cellpadding='0' cellspacing='6'><tr>"
@@ -638,6 +649,7 @@ class PublicApplicationService
   .sig-img { max-height: 36px; border: 1px solid #e2e8f0; padding: 2px; background: #fff; }
   .sig-label { font-size: 6.5px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 3px; }
   .sig-empty { font-size: 7.5px; color: #94a3b8; font-style: italic; }
+  .sig-date  { font-size: 7px; color: #64748b; margin-top: 2px; }
 
   /* Documents — 2 columns via HTML table */
   .doc-table { border-collapse: separate; border-spacing: 2px; }

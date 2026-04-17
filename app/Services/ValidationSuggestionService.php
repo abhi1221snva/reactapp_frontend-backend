@@ -33,9 +33,10 @@ class ValidationSuggestionService
      */
     private array $keywordMap = [
         // ── SSN / Social Security ────────────────────────────────────────────
-        'social_security_number' => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 9]],
-        'social_security'        => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 9]],
-        'ssn'                    => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 9]],
+        // Only digits:9 — no 'numeric' rule because the UI auto-formats with dashes (XXX-XX-XXXX)
+        'social_security_number' => [['rule' => 'digits', 'value' => 9]],
+        'social_security'        => [['rule' => 'digits', 'value' => 9]],
+        'ssn'                    => [['rule' => 'digits', 'value' => 9]],
 
         // ── Phone / Mobile ───────────────────────────────────────────────────
         'phone_number'           => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 10]],

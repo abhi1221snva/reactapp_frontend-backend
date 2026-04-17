@@ -622,6 +622,14 @@ class PublicApplicationController extends Controller
         $withoutRules = array_filter($labels, fn($l) => empty($l->validation_rules));
 
         if (!empty($withRules)) {
+            // Pre-sanitize SSN fields: strip dashes/spaces so numeric/digits rules pass
+            foreach ($withRules as $f) {
+                $k = $f->field_key ?? '';
+                if ($k && array_key_exists($k, $input)) {
+                    $fieldSvc->sanitize($input[$k], strtolower(trim((string) ($f->field_type ?? ''))), $input, $k);
+                }
+            }
+
             // When $requireAll=false (merchant update), remove 'required' from rules
             // for fields that aren't present in the input so optional edits work.
             $labelsToValidate = $requireAll

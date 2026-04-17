@@ -423,6 +423,35 @@ class LeadPdfService
             }
         }
 
+        // ── Signature dates — ensure they are proper dates, never image paths ──
+        // The alias system may have copied a signature image path into a date key.
+        // Overwrite with the actual stored date or fall back to lead creation date.
+        $dateMap = [
+            'signature_date'           => 'signature_image',
+            'owner_2_signature_date'   => 'owner_2_signature_image',
+        ];
+        foreach ($dateMap as $dateKey => $sigKey) {
+            $currentVal = $data[$dateKey] ?? '';
+            // If the date field looks like a file path or <img> tag, it's corrupted — clear it
+            if (str_contains((string) $currentVal, '/') || str_contains((string) $currentVal, '<img') || str_contains((string) $currentVal, '.png')) {
+                $currentVal = '';
+            }
+            if (!empty($currentVal)) {
+                // Already a valid date string — keep it
+                $data[$dateKey] = $currentVal;
+            } elseif (!empty($data[$sigKey]) && str_contains((string) $data[$sigKey], '<img')) {
+                // Signature exists but no date stored — use lead created_at or today
+                $fallback = $data['created_at'] ?? date('m/d/Y');
+                try {
+                    $data[$dateKey] = date('m/d/Y', strtotime((string) $fallback));
+                } catch (\Throwable $e) {
+                    $data[$dateKey] = date('m/d/Y');
+                }
+            } else {
+                $data[$dateKey] = '';
+            }
+        }
+
         return $data;
     }
 
