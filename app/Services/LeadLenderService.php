@@ -253,7 +253,7 @@ class LeadLenderService
         try {
             $allLabels = DB::connection($conn)
                 ->table('crm_labels')
-                ->where('status', 'active')
+                ->where('status', 1)
                 ->pluck('label_name', 'field_key')
                 ->toArray();
         } catch (\Throwable) {}
@@ -490,12 +490,8 @@ class LeadLenderService
             $emailSubject = $mergeTagSvc->resolve((string) $clientId, $leadId, $emailSubject);
         }
 
-        // ── Render email body once ───────────────────────────────────────────────
-        $emailHtml = $emailHtmlOverride ?? view('emails.lender_application', [
-            'businessName' => $businessName,
-            'senderName'   => $submitterName,
-            'customNote'   => $notes,
-        ])->render();
+        // ── Use only the selected email template — no auto-generated fallback ────
+        $emailHtml = $emailHtmlOverride ?: '';
 
         $subject = $emailSubject ?: "New Funding Application — {$businessName}";
 
@@ -575,6 +571,13 @@ class LeadLenderService
                                     'submission_status' => 'submitted',
                                     'submission_type'   => $actualType,
                                     'application_pdf'   => $pdfStoragePath ?? $existingSub->application_pdf,
+                                    'lender_email'      => implode(', ', array_filter([
+                                        $lender->email,
+                                        $lender->secondary_email  ?? null,
+                                        $lender->secondary_email2 ?? null,
+                                        $lender->secondary_email3 ?? null,
+                                        $lender->secondary_email4 ?? null,
+                                    ])),
                                     'submitted_by'      => $userId,
                                     'submitted_at'      => $now,
                                     'notes'             => $newNotes,
@@ -587,7 +590,13 @@ class LeadLenderService
                                 'lead_id'           => $leadId,
                                 'lender_id'         => $lenderId,
                                 'lender_name'       => $lender->lender_name,
-                                'lender_email'      => $lender->email,
+                                'lender_email'      => implode(', ', array_filter([
+                                    $lender->email,
+                                    $lender->secondary_email  ?? null,
+                                    $lender->secondary_email2 ?? null,
+                                    $lender->secondary_email3 ?? null,
+                                    $lender->secondary_email4 ?? null,
+                                ])),
                                 'application_pdf'   => $pdfStoragePath,
                                 'submission_status' => 'submitted',
                                 'submission_type'   => $actualType,
@@ -628,12 +637,22 @@ class LeadLenderService
                         $lender->secondary_email4 ?? null,
                     ]));
 
-                    if (empty($emailTargets) && !$emailWarning) {
-                        $emailWarning = 'One or more lenders have no email address configured — those submissions were recorded but no email was sent.';
-                    }
+                    $emailResult   = null; // 'sent', 'failed', 'no_config', 'no_email'
+                    $emailError    = null;
+                    $emailRecipient = null;
 
-                    if ($emailSvc && !empty($emailTargets)) {
+                    if (empty($emailTargets)) {
+                        $emailResult = 'no_email';
+                        $emailError  = 'No email address configured for this lender';
+                        if (!$emailWarning) {
+                            $emailWarning = 'One or more lenders have no email address configured — those submissions were recorded but no email was sent.';
+                        }
+                    } elseif (!$emailSvc) {
+                        $emailResult = 'no_config';
+                        $emailError  = 'No SMTP configuration available';
+                    } else {
                         $primaryTo = array_shift($emailTargets);
+                        $emailRecipient = $primaryTo;
                         try {
                             $emailSvc->send(
                                 to:          trim($primaryTo),
@@ -642,15 +661,44 @@ class LeadLenderService
                                 attachments: $attachments,
                                 cc:          array_map('trim', $emailTargets),
                             );
-
-                            // Mark email as sent for delivery tracking
-                            DB::connection($conn)->table('crm_lender_submissions')
-                                ->where('id', $subId)
-                                ->update(['email_status' => 'sent', 'email_status_at' => $now]);
+                            $emailResult = 'sent';
                         } catch (\Throwable $mailEx) {
+                            $emailResult = 'failed';
+                            $emailError  = $mailEx->getMessage();
                             Log::warning("LenderApplicationMail failed for lender {$lenderId} → {$primaryTo}: " . $mailEx->getMessage());
                         }
                     }
+
+                    // Update submission record with email delivery status
+                    $emailUpdate = [
+                        'email_status'    => $emailResult,
+                        'email_status_at' => Carbon::now(),
+                        'updated_at'      => Carbon::now(),
+                    ];
+                    if ($emailResult !== 'sent') {
+                        $emailUpdate['api_error'] = $emailError;
+                    }
+                    DB::connection($conn)->table('crm_lender_submissions')
+                        ->where('id', $subId)
+                        ->update($emailUpdate);
+
+                    // Log email delivery result as activity
+                    $emailActivitySubject = $emailResult === 'sent'
+                        ? "Email sent to {$lender->lender_name}" . ($emailRecipient ? " ({$emailRecipient})" : '')
+                        : "Email failed to {$lender->lender_name}: {$emailError}";
+                    $emailActivityType = $emailResult === 'sent' ? 'email_sent' : 'email_failed';
+
+                    DB::connection($conn)->table('crm_lead_activity')->insert([
+                        'lead_id'       => $leadId,
+                        'user_id'       => $userId,
+                        'activity_type' => $emailActivityType,
+                        'subject'       => $emailActivitySubject,
+                        'body'          => $emailResult === 'sent'
+                            ? "Application emailed to: " . ($emailRecipient ?? '') . (!empty($emailTargets) ? ' (CC: ' . implode(', ', $emailTargets) . ')' : '')
+                            : "Error: {$emailError}",
+                        'created_at'    => Carbon::now(),
+                        'updated_at'    => Carbon::now(),
+                    ]);
                 }
 
                 // Broadcast to #Lender system channel
@@ -671,8 +719,8 @@ class LeadLenderService
                     'response_status'   => ($existingSub->response_status ?? 'pending'),
                     'submitted_at'      => $now->toDateTimeString(),
                     'notes'             => ($existingSub->notes ?? null),
-                    'email_status'      => $actualType === 'normal' ? 'sent' : null,
-                    'email_status_at'   => $actualType === 'normal' ? $now->toDateTimeString() : null,
+                    'email_status'      => $actualType === 'normal' ? ($emailResult ?? null) : null,
+                    'email_status_at'   => $actualType === 'normal' ? Carbon::now()->toDateTimeString() : null,
                 ];
             } catch (\Throwable $e) {
                 Log::error("submitApplication failed for lender {$lenderId}: " . $e->getMessage());

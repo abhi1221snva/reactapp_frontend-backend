@@ -72,6 +72,11 @@ class CrmLeadActivityController extends Controller
                 ->select(['id', 'lead_id', 'user_id', 'activity_type',
                           'subject', 'body', 'meta', 'is_pinned', 'created_at']);
 
+            // When filtering by email_sent, also include email_failed
+            if (!empty($types) && in_array('email_sent', $types) && !in_array('email_failed', $types)) {
+                $types[] = 'email_failed';
+            }
+
             if (!empty($types)) {
                 $query->whereIn('activity_type', $types);
             }

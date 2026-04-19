@@ -421,6 +421,10 @@ class OnDeckService
                 if ($value === null || $value === '') {
                     continue;
                 }
+                // Auto-normalise date fields to YYYY-MM-DD
+                if (is_string($value) && $this->isDateField($ondeckPath)) {
+                    $value = $this->normalizeDateToYmd($value) ?? $value;
+                }
                 $paths = is_array($ondeckPath) ? $ondeckPath : [$ondeckPath];
                 foreach ($paths as $path) {
                     $this->setNestedValue($payload, $path, $value);
@@ -471,7 +475,7 @@ class OnDeckService
         $business = array_filter([
             'name'                  => $d['company_name'] ?? '',
             'phone'                 => preg_replace('/\D/', '', $d['phone_number'] ?? ''),
-            'businessInceptionDate' => $d['inception_date'] ?? $d['business_inception_date'] ?? null,
+            'businessInceptionDate' => $this->normalizeDateToYmd($d['inception_date'] ?? $d['business_inception_date'] ?? '') ?: null,
             'taxID'                 => preg_replace('/\D/', '', $d['tax_id'] ?? $d['taxid'] ?? ''),
             'address'               => array_filter($businessAddress),
             'legalEntity'           => $d['legal_entity']       ?? null,
@@ -486,7 +490,7 @@ class OnDeckService
             'name'                => $ownerName ?: null,
             'email'               => $d['email']           ?? null,
             'ssn'                 => preg_replace('/\D/', '', $d['ssn'] ?? ''),
-            'dateOfBirth'         => $d['date_of_birth']   ?? $d['dob'] ?? null,
+            'dateOfBirth'         => $this->normalizeDateToYmd($d['date_of_birth'] ?? $d['dob'] ?? '') ?: null,
             'ownershipPercentage' => isset($d['ownership_percentage']) ? (int)$d['ownership_percentage'] : null,
             'homeAddress'         => array_filter($ownerAddress),
             'homePhone'           => preg_replace('/\D/', '', $d['phone_number'] ?? $d['home_phone'] ?? ''),
@@ -839,6 +843,62 @@ class OnDeckService
         }
 
         $ref[is_numeric($last) ? (int)$last : $last] = $value;
+    }
+
+    /**
+     * Check if a lender path represents a date field.
+     */
+    private function isDateField($path): bool
+    {
+        $paths = is_array($path) ? $path : [$path];
+        foreach ($paths as $p) {
+            $lower = strtolower($p);
+            foreach (['date', 'dob', 'birth', 'inception', 'started', 'founded'] as $kw) {
+                if (str_contains($lower, $kw)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Normalise a date string (any common format) to YYYY-MM-DD.
+     */
+    private function normalizeDateToYmd(string $value): ?string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+
+        // Already YYYY-MM-DD
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            return $value;
+        }
+
+        $formats = [
+            'd-m-Y', 'd/m/Y', 'm-d-Y', 'm/d/Y',
+            'Y/m/d', 'd.m.Y', 'm.d.Y',
+            'M d, Y', 'F d, Y', 'd M Y', 'd F Y',
+        ];
+
+        foreach ($formats as $fmt) {
+            $dt = \DateTime::createFromFormat($fmt, $value);
+            if ($dt && $dt->format($fmt) === $value) {
+                return $dt->format('Y-m-d');
+            }
+        }
+
+        $ts = strtotime($value);
+        if ($ts !== false && $ts > 0) {
+            $year = (int) date('Y', $ts);
+            if ($year >= 1900 && $year <= 2100) {
+                return date('Y-m-d', $ts);
+            }
+        }
+
+        return null;
     }
 
     /**

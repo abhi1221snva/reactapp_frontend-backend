@@ -77,8 +77,8 @@ $router->get('/test-fcm-trigger', 'NotificationController@testFcmTrigger');
 
 
 
-// Rate limited: 10 login attempts per minute per IP
-$router->group(['middleware' => ['throttle:10,1']], function () use ($router) {
+// Rate limited: 30 login attempts per minute per IP
+$router->group(['middleware' => ['throttle:30,1']], function () use ($router) {
     $router->post('authentication', 'AuthenticationController@authentication');
 });
 

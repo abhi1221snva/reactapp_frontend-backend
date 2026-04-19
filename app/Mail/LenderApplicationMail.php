@@ -13,6 +13,7 @@ class LenderApplicationMail extends Mailable
     public string $businessName;
     public string $senderName;
     public ?string $customNote;
+    public string $companyName;
 
     /**
      * @param string      $businessName Name of the business / lead
@@ -20,6 +21,7 @@ class LenderApplicationMail extends Mailable
      * @param string|null $pdfPath      Absolute filesystem path to the application PDF (null = no attachment)
      * @param string|null $pdfFileName  Display name for the attachment
      * @param string|null $customNote   Optional personal note to include in the body
+     * @param string|null $companyName  Client's company name (replaces "RocketDialer CRM" branding)
      */
     public function __construct(
         string  $businessName,
@@ -27,10 +29,12 @@ class LenderApplicationMail extends Mailable
         private ?string $pdfPath     = null,
         private ?string $pdfFileName = null,
         ?string $customNote          = null,
+        ?string $companyName         = null,
     ) {
         $this->businessName = $businessName;
         $this->senderName   = $senderName;
         $this->customNote   = $customNote;
+        $this->companyName  = $companyName ?: 'Our Team';
     }
 
     public function build(): static

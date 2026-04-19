@@ -577,7 +577,7 @@ class CrmLabelController extends Controller
         $this->validate($request, [
             'label_name'       => ['required', 'string', 'max:255'],
             // 'file' added to support MCA Documents section
-            'field_type'       => 'required|string|in:text,number,email,phone_number,date,textarea,dropdown,checkbox,radio,file',
+            'field_type'       => 'required|string|in:text,number,email,phone_number,date,textarea,dropdown,checkbox,radio,select_state,file',
             // field_key is optional — auto-generated from label_name when absent
             'field_key'        => ['sometimes', 'nullable', 'string', 'max:100', 'alpha_dash'],
             'validation_rules' => 'sometimes|nullable|array',
@@ -664,7 +664,7 @@ class CrmLabelController extends Controller
 
         $this->validate($request, [
             'label_name'       => 'sometimes|required|string|max:255',
-            'field_type'       => 'sometimes|string|in:text,number,email,phone_number,date,textarea,dropdown,checkbox,radio',
+            'field_type'       => 'sometimes|string|in:text,number,email,phone_number,date,textarea,dropdown,checkbox,radio,select_state,file',
             'section'          => 'sometimes|string|max:100',
             'required'         => 'sometimes|boolean',
             'status'           => 'sometimes|boolean',

@@ -927,6 +927,10 @@ class LenderApiService
                 if (str_ends_with($path, '.state') && strlen((string) $mapped) > 2) {
                     $mapped = self::normalizeState($mapped) ?? $mapped;
                 }
+                // Auto-normalise date fields to YYYY-MM-DD for lender APIs
+                if (self::isDatePath($path) && is_string($mapped) && $mapped !== '') {
+                    $mapped = self::normalizeDateToYmd($mapped) ?? $mapped;
+                }
                 $this->setNestedValue($payload, $path, $mapped);
             }
         }
@@ -980,6 +984,67 @@ class LenderApiService
             'wisconsin'=>'WI','wyoming'=>'WY','district of columbia'=>'DC',
         ];
         return $map[strtolower(trim($value))] ?? null;
+    }
+
+    /**
+     * Check if a lender payload path looks like a date field.
+     */
+    private static function isDatePath(string $path): bool
+    {
+        $lower = strtolower($path);
+        $dateKeywords = ['date', 'dob', 'birth', 'inception', 'started', 'founded'];
+        foreach ($dateKeywords as $kw) {
+            if (str_contains($lower, $kw)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Normalise a date string (any common format) to YYYY-MM-DD.
+     * Returns null if the value cannot be parsed as a valid date.
+     */
+    private static function normalizeDateToYmd(string $value): ?string
+    {
+        $value = trim($value);
+
+        // Already in YYYY-MM-DD
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            return $value;
+        }
+
+        // Common formats: DD-MM-YYYY, DD/MM/YYYY, MM-DD-YYYY, MM/DD/YYYY
+        $formats = [
+            'd-m-Y', 'd/m/Y',   // DD-MM-YYYY, DD/MM/YYYY
+            'm-d-Y', 'm/d/Y',   // MM-DD-YYYY, MM/DD/YYYY
+            'Y/m/d',             // YYYY/MM/DD
+            'd.m.Y',             // DD.MM.YYYY
+            'm.d.Y',             // MM.DD.YYYY
+            'M d, Y',            // Jan 15, 1985
+            'F d, Y',            // January 15, 1985
+            'd M Y',             // 15 Jan 1985
+            'd F Y',             // 15 January 1985
+        ];
+
+        foreach ($formats as $fmt) {
+            $dt = \DateTime::createFromFormat($fmt, $value);
+            if ($dt && $dt->format($fmt) === $value) {
+                return $dt->format('Y-m-d');
+            }
+        }
+
+        // Fallback: let PHP strtotime try
+        $ts = strtotime($value);
+        if ($ts !== false && $ts > 0) {
+            $year = (int) date('Y', $ts);
+            // Sanity: must be a reasonable birth/inception year (1900–2100)
+            if ($year >= 1900 && $year <= 2100) {
+                return date('Y-m-d', $ts);
+            }
+        }
+
+        return null;
     }
 
     // ── Response parsing ───────────────────────────────────────────────────────

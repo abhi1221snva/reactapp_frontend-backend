@@ -239,12 +239,12 @@ class SendLeadByLenderApi extends Job
                     'addressLine1' => $mapped['business.address']              ?? '',
                 ],
                 'phone'                  => $mapped['business.phone']                  ?? '',
-                'businessInceptionDate'  => $mapped['business.businessInceptionDate']  ?? '',
+                'businessInceptionDate'  => $this->normalizeDateToYmd($mapped['business.businessInceptionDate'] ?? ''),
                 'taxID'                  => preg_replace('/\D/', '', $mapped['business.taxID'] ?? ''),
                 'name'                   => $mapped['business.name']                   ?? '',
             ],
             'owners' => [[
-                'dateOfBirth' => $mapped['owners.dateOfBirth'] ?? '',
+                'dateOfBirth' => $this->normalizeDateToYmd($mapped['owners.dateOfBirth'] ?? ''),
                 'homeAddress' => [
                     'state'        => $mapped['owners.homeAddress.state']        ?? '',
                     'city'         => $mapped['owners.homeAddress.city']         ?? '',
@@ -650,7 +650,7 @@ class SendLeadByLenderApi extends Job
         $data = [
             'companyLegalName'      => $mapped['companyLegalName']      ?? '',
             'companyEIN'            => preg_replace('/\D/', '', $mapped['companyEIN'] ?? ''),
-            'companyInceptionDate'  => $mapped['companyInceptionDate']  ?? '',
+            'companyInceptionDate'  => $this->normalizeDateToYmd($mapped['companyInceptionDate'] ?? ''),
             'companyStreet'         => $mapped['companyStreet']         ?? '',
             'companyCity'           => $mapped['companyCity']           ?? '',
             'companyState'          => $mapped['companyState']          ?? '',
@@ -736,12 +736,12 @@ class SendLeadByLenderApi extends Job
                 'telephone'      => $mapped['business.telephone'] ?? '',
                 'fein'           => preg_replace('/\D/', '', $mapped['business.fein'] ?? ''),
                 'amountRequested'=> $mapped['business.amountRequested'] ?? '',
-                'startDate'      => $mapped['business.startDate'] ?? '',
+                'startDate'      => $this->normalizeDateToYmd($mapped['business.startDate'] ?? ''),
                 'owners'         => [[
                     'firstName'           => '',
                     'lastName'            => $mapped['owner.lastName']            ?? '',
                     'socialSecurityNumber'=> preg_replace('/\D/', '', $mapped['owner.socialSecurityNumber'] ?? ''),
-                    'dateOfBirth'         => $mapped['owner.dateOfBirth']         ?? '',
+                    'dateOfBirth'         => $this->normalizeDateToYmd($mapped['owner.dateOfBirth'] ?? ''),
                     'address'             => $mapped['owner.address']             ?? '',
                     'city'                => $mapped['owner.city']                ?? '',
                     'state'               => $mapped['owner.state']               ?? '',
@@ -1058,7 +1058,7 @@ class SendLeadByLenderApi extends Job
                 'last_name'           => $mapped['owner.last_name']  ?? '',
                 'tin'                 => preg_replace('/\D/', '', $mapped['owner.ssn'] ?? ''),
                 'ownership_percentage'=> 100,
-                'date_of_birth'       => $mapped['owner.born_on']    ?? '',
+                'date_of_birth'       => $this->normalizeDateToYmd($mapped['owner.born_on'] ?? ''),
                 'address' => [
                     'address_line1' => $mapped['owner.street1'] ?? '',
                     'city'          => $mapped['owner.city']    ?? '',
@@ -1456,6 +1456,42 @@ class SendLeadByLenderApi extends Job
             Log::warning("parseErrors failed", ['error' => $e->getMessage()]);
             return [];
         }
+    }
+
+    // ── Date Helper ─────────────────────────────────────────────────────────────
+
+    /**
+     * Normalise a date string to YYYY-MM-DD format.
+     */
+    private function normalizeDateToYmd(string $value): string
+    {
+        $value = trim($value);
+        if ($value === '' || preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            return $value;
+        }
+
+        $formats = [
+            'd-m-Y', 'd/m/Y', 'm-d-Y', 'm/d/Y',
+            'Y/m/d', 'd.m.Y', 'm.d.Y',
+            'M d, Y', 'F d, Y', 'd M Y', 'd F Y',
+        ];
+
+        foreach ($formats as $fmt) {
+            $dt = \DateTime::createFromFormat($fmt, $value);
+            if ($dt && $dt->format($fmt) === $value) {
+                return $dt->format('Y-m-d');
+            }
+        }
+
+        $ts = strtotime($value);
+        if ($ts !== false && $ts > 0) {
+            $year = (int) date('Y', $ts);
+            if ($year >= 1900 && $year <= 2100) {
+                return date('Y-m-d', $ts);
+            }
+        }
+
+        return $value;
     }
 
     // ── Logging ────────────────────────────────────────────────────────────────

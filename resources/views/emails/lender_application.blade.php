@@ -27,7 +27,7 @@
 
   <div class="header">
     <h1>New Funding Application</h1>
-    <p>Submitted via RocketDialer CRM</p>
+    <p>Submitted by {{ $companyName }}</p>
   </div>
 
   <div class="body">
@@ -62,13 +62,13 @@
     <p>
       Best regards,<br>
       <strong>{{ $senderName }}</strong><br>
-      <em style="color:#94a3b8;font-size:13px;">via RocketDialer CRM</em>
+      <em style="color:#94a3b8;font-size:13px;">{{ $companyName }}</em>
     </p>
   </div>
 
   <div class="footer">
     <p>
-      This message was sent automatically by RocketDialer CRM.<br>
+      This message was sent automatically by {{ $companyName }}.<br>
       Please do not reply to this automated message unless directed to do so.
     </p>
   </div>
