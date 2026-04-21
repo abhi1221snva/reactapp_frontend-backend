@@ -62,10 +62,28 @@ class JwtMiddleware
 
         $user = User::find($credentials->sub);
 
-        if (!$user || $user->is_deleted) {
+        if (!$user) {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthorized',
+                'message' => 'Account not found.',
+                'data' => []
+            ], 401);
+        }
+
+        if ($user->is_deleted) {
+            return response()->json([
+                'success' => false,
+                'code'    => 'ACCOUNT_DEACTIVATED',
+                'message' => 'Your account has been deactivated. Please contact support.',
+                'data' => []
+            ], 403);
+        }
+
+        if (isset($user->status) && $user->status == 0) {
+            return response()->json([
+                'success' => false,
+                'code'    => 'ACCOUNT_INACTIVE',
+                'message' => 'Your account is not active. Please contact support.',
                 'data' => []
             ], 403);
         }
@@ -91,7 +109,14 @@ class JwtMiddleware
             }
             $userData["role"] = $role["roleId"];
             $userData["level"] = $role["roleLevel"];
-            $userData["groups"] = ExtensionGroupService::getExtensionGroups($userData["parent_id"], $userData["extension"]);
+            try {
+                $userData["groups"] = ExtensionGroupService::getExtensionGroups($userData["parent_id"], $userData["extension"]);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('JwtMiddleware: extension group lookup failed for client ' . $userData["parent_id"], [
+                    'error' => $e->getMessage(),
+                ]);
+                $userData["groups"] = [0];
+            }
         } else {
             $role = RolesService::getById($user->role);
             $userData["level"] = $role["level"];
@@ -139,6 +164,15 @@ class JwtMiddleware
 
         $client = $request->header('x-client', null);
         $request->xClient = ($client === env("X_CLIENT") ? "internal" : "external");
+
+        // Throttled session last_active_at update (every 5 minutes)
+        $tokenHash = hash('sha256', $token);
+        $sessionCacheKey = "session_update:{$tokenHash}";
+        if (!\Illuminate\Support\Facades\Cache::has($sessionCacheKey)) {
+            \App\Model\Master\UserSession::where('token_hash', $tokenHash)
+                ->update(['last_active_at' => now()]);
+            \Illuminate\Support\Facades\Cache::put($sessionCacheKey, true, 300);
+        }
 
         return $next($request);
     }

@@ -14,6 +14,7 @@ use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
 use BaconQrCode\Writer;
 use App\Http\Helper\JwtToken;
+use App\Services\AuthAuditService;
 
 /**
  * @OA\Post(
@@ -190,6 +191,7 @@ class TwoFactorAuthController extends Controller
             $user->save();
 
             Log::info('2FA enabled', ['user_id' => $user->id]);
+            AuthAuditService::log($user->id, '2fa.enabled');
 
             return response()->json([
                 'status'  => true,
@@ -221,6 +223,7 @@ class TwoFactorAuthController extends Controller
             TotpBackupCode::where('user_id', $user->id)->delete();
 
             Log::info('2FA disabled', ['user_id' => $user->id]);
+            AuthAuditService::log($user->id, '2fa.disabled');
 
             return response()->json([
                 'status'  => true,
@@ -285,6 +288,7 @@ class TwoFactorAuthController extends Controller
 
             if (!$valid) {
                 $attempts = ($user->totp_login_attempts ?? 0) + 1;
+                AuthAuditService::log($user->id, '2fa.failed', ['attempts' => $attempts]);
                 if ($attempts >= 5) {
                     $user->totp_login_attempts    = $attempts;
                     $user->totp_login_locked_until = Carbon::now()->addMinutes(15);
@@ -314,7 +318,17 @@ class TwoFactorAuthController extends Controller
             $data['expires_at'] = $tokenData[1];
             $data['permissions']= $user->getPermissions(true);
 
+            // Generate refresh token
+            $refreshData = JwtToken::createRefreshToken(
+                (int) $user->id,
+                $request->ip(),
+                $request->userAgent()
+            );
+            $data['refresh_token']            = $refreshData[0];
+            $data['refresh_token_expires_at'] = $refreshData[1];
+
             Log::info('2FA verified, JWT issued', ['user_id' => $user->id]);
+            AuthAuditService::log($user->id, '2fa.verified');
 
             return response()->json([
                 'status'  => true,

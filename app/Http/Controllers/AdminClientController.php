@@ -226,6 +226,7 @@ class AdminClientController extends Controller
             'company_name'     => 'sometimes|required|string|max:255',
             'trunk'            => 'sometimes|required|string|max:30',
             'enable_2fa'       => 'sometimes|string',
+            'require_2fa'      => 'sometimes|boolean',
             'api_key'          => 'sometimes|required|string',
             'asterisk_servers' => 'sometimes|required|array',
         ]);
@@ -233,7 +234,7 @@ class AdminClientController extends Controller
         $client = Client::findOrFail($id);
         $input  = $request->only([
             'company_name', 'trunk', 'address_1', 'address_2', 'logo',
-            'enable_2fa', 'api_key', 'mca_crm', 'sms', 'fax', 'chat',
+            'enable_2fa', 'require_2fa', 'api_key', 'mca_crm', 'sms', 'fax', 'chat',
             'webphone', 'ringless', 'callchex', 'predictive_dial',
         ]);
 

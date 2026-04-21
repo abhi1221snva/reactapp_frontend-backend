@@ -162,6 +162,8 @@ $router->POST('verify_google_otp', 'TwoFactorController@verify_google_otp');
 $router->group(['middleware' => ['throttle:10,1']], function () use ($router) {
     // No JWT auth — called after partial login when 2FA is required
     $router->post('2fa/verify', 'TwoFactorAuthController@verify');
+    // Refresh token rotation — no JWT required (access token is expired)
+    $router->post('auth/refresh', 'AuthenticationController@refresh');
 });
 
 $router->group(['middleware' => ['jwt.auth', 'throttle:10,1']], function () use ($router) {
@@ -172,6 +174,10 @@ $router->group(['middleware' => ['jwt.auth', 'throttle:10,1']], function () use 
     $router->post('2fa/backup-codes/regenerate', 'TwoFactorAuthController@regenerateBackupCodes');
     // JWT token revocation — blacklists the token in Redis
     $router->post('logout', 'AuthenticationController@logout');
+    // Session management
+    $router->get('auth/sessions',          'SessionController@index');
+    $router->delete('auth/sessions/{id}',  'SessionController@destroy');
+    $router->delete('auth/sessions',       'SessionController@destroyAll');
 });
 //$router->POST('authentication_copy', 'AuthenticationController@authentication_copy');
 // $router->get('auth/google/redirect', 'GoogleController@redirectToGoogle');
@@ -211,6 +217,9 @@ $router->group(['middleware' => ['throttle:10,1']], function () use ($router) {
 
     // Google OAuth registration — verifies token, skips email OTP
     $router->post('register/google', 'RegistrationController@googleRegister');
+
+    // Quick email existence check (used by Google sign-up before showing business form)
+    $router->post('register/check-email', 'RegistrationController@checkEmail');
 
     // Slow-path provisioning status polling
     $router->get('register/status/{id}', 'RegistrationController@registrationStatus');

@@ -37,6 +37,7 @@ use App\Model\Client\Did;
 use Twilio\Rest\Client as TwilioClient;
 use Twilio\Exceptions\TwilioException;
 use App\Services\LoginOtpService;
+use App\Services\AuthAuditService;
 
 class AuthenticationController extends Controller
 {
@@ -126,6 +127,29 @@ class AuthenticationController extends Controller
             $clientIp = $this->request->input('clientIp', null);
             if (empty($clientIp)) $clientIp = $this->request->ip();
 
+            // --- Per-email brute force protection ---
+            $email = strtolower(trim($this->request->input('email', '')));
+            $bruteForceKey = 'login_fail:' . md5($email);
+            $failCount = (int) Cache::get($bruteForceKey, 0);
+            if ($failCount >= 10) {
+                $redis = Cache::getStore()->connection();
+                $ttlSeconds = $redis->ttl(config('cache.prefix', 'laravel_cache') . ':' . $bruteForceKey);
+                $remainingMinutes = max(1, (int) ceil(max($ttlSeconds, 0) / 60));
+                Log::warning('Login blocked: brute force lockout', [
+                    'email' => $email,
+                    'ip'    => $clientIp,
+                    'attempts' => $failCount,
+                ]);
+                AuthAuditService::log(null, 'login.locked', [
+                    'email'    => $email,
+                    'attempts' => $failCount,
+                ], $clientIp);
+                return response()->json([
+                    'success' => false,
+                    'message' => "Account temporarily locked due to too many failed attempts. Try again in {$remainingMinutes} minute(s).",
+                ], 429);
+            }
+
             //api key
 
 
@@ -147,24 +171,30 @@ class AuthenticationController extends Controller
 
                 $client = Client::findOrFail($data['base_parent_id']);
                 if ($client->is_deleted == 1) {
-                    throw new RenderableException('Account de-activated', [], 401);
+                    throw new RenderableException('Your organization account has been deactivated. Please contact support.', [], 403);
                 }
 
 
                 if ($device == 'mobile_app') {
                     $app_status = $data['app_status'];
                     if ($app_status == 0) {
-                        throw new RenderableException('Unauthorised For Mobile App Access', [], 401);
+                        throw new RenderableException('Mobile app access is not enabled for your account.', [], 403);
                     }
                 }
 
                 if ($data['ip_filtering'] == 1) {
-                    $allowed_ip = AllowedIp::on("mysql_" . $data["parent_id"])->where('ip_address', $clientIp)->get()->all();
-
-                    if (!empty($allowed_ip)) {
-                    } else {
-
-                        throw new RenderableException('Unauthorised IP address', [], 401);
+                    try {
+                        $allowed_ip = AllowedIp::on("mysql_" . $data["parent_id"])->where('ip_address', $clientIp)->get()->all();
+                        if (empty($allowed_ip)) {
+                            throw new RenderableException('Access denied from your current IP address.', [], 403);
+                        }
+                    } catch (RenderableException $e) {
+                        throw $e; // Re-throw the IP denied error
+                    } catch (\Throwable $e) {
+                        Log::warning('Login: IP filtering check failed for client ' . $data['parent_id'], [
+                            'error' => $e->getMessage(),
+                        ]);
+                        // Allow login to proceed — don't block because of a bad client DB
                     }
                 }
 
@@ -207,12 +237,8 @@ if (!empty($data['is_2fa_phone_enabled']) && $data['is_2fa_phone_enabled'] == 1)
                  //call when enable_2fa is active
 
 if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
-                    if (empty($data['country_code'])) {
-                        throw new RenderableException('Country Code not found for otp varification', [], 401);
-                    }
-
-                    if (empty($data['mobile'])) {
-                        throw new RenderableException('Mobile Number not found for otp varification', [], 401);
+                    if (empty($data['country_code']) || empty($data['mobile'])) {
+                        throw new RenderableException('Two-factor verification is not set up for this account. Please contact your administrator.', [], 400);
                     }
 
                     // --- Rate limiting ---
@@ -315,16 +341,30 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
                         $data['webphone'] = 0;
                     }
                 }
+
+                // Organization-level 2FA enforcement: if client requires 2FA but user hasn't set it up
+                if (empty($data['is_2fa_google_enabled']) || $data['is_2fa_google_enabled'] != 1) {
+                    $enforcementClient = Client::find($data['base_parent_id']);
+                    if ($enforcementClient && !empty($enforcementClient->require_2fa)) {
+                        return response()->json([
+                            'status'  => true,
+                            'message' => 'Your organization requires two-factor authentication. Please set it up.',
+                            'data'    => [
+                                'requires_2fa_setup' => true,
+                                'user_id'            => $data['id'],
+                                'token'              => $data['token'],
+                                'expires_at'         => $data['expires_at'],
+                            ],
+                        ]);
+                    }
+                }
             }
 
 
             $client = Client::findOrFail($data['base_parent_id']);
             if ($client->is_deleted == 1) {
-                throw new RenderableException('Account de-activated', [], 401);
+                throw new RenderableException('Your organization account has been deactivated. Please contact support.', [], 403);
             }
-
-
-
 
 
             $objUserExtension = UserExtension::where("username", $data['alt_extension'])->first();
@@ -410,10 +450,57 @@ if (!empty($data['enable_2fa']) && $data['enable_2fa'] == 1) {
             $log->user_agent = $userAgent;
             $log->save();
 
+            // Create session record for device tracking
+            $parsedUA = self::parseUserAgent($userAgent);
+            \App\Model\Master\UserSession::create([
+                'user_id'        => $data['id'],
+                'token_hash'     => hash('sha256', $data['token']),
+                'device_type'    => $parsedUA['device_type'],
+                'browser'        => $parsedUA['browser'],
+                'os'             => $parsedUA['os'],
+                'ip_address'     => $clientIp,
+                'last_active_at' => now(),
+            ]);
 
+            // Clear brute force counter on successful login
+            Cache::forget($bruteForceKey);
+
+            // Generate refresh token for token rotation
+            $refreshData = \App\Http\Helper\JwtToken::createRefreshToken(
+                (int) $data['id'],
+                $clientIp,
+                $userAgent
+            );
+            if (is_array($response)) {
+                $response['refresh_token']            = $refreshData[0];
+                $response['refresh_token_expires_at'] = $refreshData[1];
+            }
+
+            AuthAuditService::log($data['id'], 'login.success', [
+                'device' => $device,
+            ], $clientIp, $userAgent);
 
             return $this->successResponse("Login successful", $response);
         } catch (\Throwable $exception) {
+            // Increment per-email brute force counter on auth failure (401)
+            if (in_array($exception->getCode(), [401, 0])) {
+                if (Cache::has($bruteForceKey)) {
+                    Cache::increment($bruteForceKey);
+                } else {
+                    Cache::put($bruteForceKey, 1, 900); // 15 min TTL
+                }
+                $currentCount = (int) Cache::get($bruteForceKey, 1);
+                Log::warning('Login failed', [
+                    'email'    => $email,
+                    'ip'       => $clientIp ?? $this->request->ip(),
+                    'attempts' => $currentCount,
+                ]);
+
+                AuthAuditService::log(null, $currentCount >= 10 ? 'login.locked' : 'login.failed', [
+                    'email'    => $email,
+                    'attempts' => $currentCount,
+                ], $clientIp ?? $this->request->ip());
+            }
             return $this->failResponse($exception->getMessage(), [], $exception, $exception->getCode());
         }
     }
@@ -532,12 +619,19 @@ if ($device === 'mobile_app') {
         $clientIp = $this->request->ip();
 
         if ($data['ip_filtering'] == 1) {
-            $allowed_ip = AllowedIp::on("mysql_" . $data["parent_id"])
-                ->where('ip_address', $clientIp)
-                ->exists();
-
-            if (!$allowed_ip) {
-                throw new RenderableException('Unauthorised IP address', [], 401);
+            try {
+                $allowed_ip = AllowedIp::on("mysql_" . $data["parent_id"])
+                    ->where('ip_address', $clientIp)
+                    ->exists();
+                if (!$allowed_ip) {
+                    throw new RenderableException('Unauthorised IP address', [], 401);
+                }
+            } catch (RenderableException $e) {
+                throw $e;
+            } catch (\Throwable $e) {
+                Log::warning('Loginv2: IP filtering check failed for client ' . $data['parent_id'], [
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
 
@@ -620,7 +714,10 @@ public function createUser(Request $request)
             'name'         => 'required|string',
             'country_code' => ['required', 'regex:/^\+\d{1,4}$/'],
             'phone_number' => ['required', 'regex:/^\d{6,15}$/'],
-            'password'     => 'required|min:6',
+            'password'     => ['required', 'string', 'min:10', 'regex:/[A-Z]/', 'regex:/[a-z]/', 'regex:/[0-9]/', 'regex:/[^A-Za-z0-9]/'],
+        ], [
+            'password.min'   => 'Password must be at least 10 characters.',
+            'password.regex' => 'Password must include uppercase, lowercase, a number, and a special character.',
         ]);
 
         // 2️⃣ Validate headers
@@ -1406,10 +1503,85 @@ $phone = preg_replace('/\D/', '', $request->phone_number);
             \App\Http\Helper\JwtToken::blacklist($token);
         }
 
+        $userId = $request->auth->id ?? null;
+        if ($userId) {
+            \App\Http\Helper\JwtToken::revokeAllRefreshTokens((int) $userId);
+        }
+        AuthAuditService::log($userId, 'logout');
+
         return $this->successResponse('Logged out successfully.');
     }
 
+    /**
+     * POST /auth/refresh
+     * Exchange a valid refresh token for a new access token + rotated refresh token.
+     */
+    public function refresh(Request $request)
+    {
+        $this->validate($request, [
+            'refresh_token' => 'required|string',
+        ]);
+
+        $result = \App\Http\Helper\JwtToken::rotateRefreshToken(
+            $request->input('refresh_token'),
+            $request->ip(),
+            $request->userAgent()
+        );
+
+        if (!$result) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid or expired refresh token. Please log in again.',
+            ], 401);
+        }
+
+        [$userId, $newRefreshToken, $refreshExpiresAt] = $result;
+
+        $user = User::find($userId);
+        if (!$user || $user->is_deleted || ($user->status ?? 1) == 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Account not active.',
+            ], 403);
+        }
+
+        $tokenData = \App\Http\Helper\JwtToken::createToken($userId);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Token refreshed.',
+            'data'    => [
+                'token'                    => $tokenData[0],
+                'expires_at'               => $tokenData[1],
+                'refresh_token'            => $newRefreshToken,
+                'refresh_token_expires_at' => $refreshExpiresAt,
+            ],
+        ]);
+    }
+
+    /**
+     * Parse a User-Agent string into device type, browser, and OS.
+     */
+    private static function parseUserAgent(?string $ua): array
+    {
+        $ua = $ua ?? '';
+        $device = 'desktop';
+        if (preg_match('/Mobile|Android|iPhone/i', $ua)) $device = 'mobile';
+        elseif (preg_match('/Tablet|iPad/i', $ua)) $device = 'tablet';
+
+        $browser = 'Unknown';
+        if (preg_match('/Edg(e|\/)/i', $ua)) $browser = 'Edge';
+        elseif (preg_match('/Chrome\//i', $ua)) $browser = 'Chrome';
+        elseif (preg_match('/Firefox\//i', $ua)) $browser = 'Firefox';
+        elseif (preg_match('/Safari\//i', $ua) && !preg_match('/Chrome/i', $ua)) $browser = 'Safari';
+
+        $os = 'Unknown';
+        if (preg_match('/Windows/i', $ua)) $os = 'Windows';
+        elseif (preg_match('/Macintosh|Mac OS/i', $ua)) $os = 'macOS';
+        elseif (preg_match('/iPhone|iPad/i', $ua)) $os = 'iOS';
+        elseif (preg_match('/Android/i', $ua)) $os = 'Android';
+        elseif (preg_match('/Linux/i', $ua)) $os = 'Linux';
+
+        return ['device_type' => $device, 'browser' => $browser, 'os' => $os];
+    }
 }
-
-
-

@@ -2,30 +2,41 @@
 
 namespace App\Http\Helper;
 
+use App\Model\Master\RefreshToken;
+use Carbon\Carbon;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 
 class JwtToken
 {
+    /**
+     * Access token TTL in seconds (30 minutes).
+     */
+    private const ACCESS_TTL = 30 * 60;
+
+    /**
+     * Refresh token TTL in days.
+     */
+    private const REFRESH_TTL_DAYS = 7;
+
     public static function createToken($userId)
     {
         $payload = [
-            'iss' => "lumen-jwt", // Issuer of the token
-            'sub' => $userId,     // Subject of the token
-            'iat' => time(),      // Issued at
-            'exp' => time() + 14 * 60 * 60 // Expires in 14 hours
+            'iss' => "lumen-jwt",
+            'sub' => $userId,
+            'iat' => time(),
+            'exp' => time() + self::ACCESS_TTL,
         ];
 
-        $secret = env('JWT_SECRET');
+        $secret    = env('JWT_SECRET');
         $algorithm = 'HS256';
-
-        $token = JWT::encode($payload, $secret, $algorithm);
+        $token     = JWT::encode($payload, $secret, $algorithm);
 
         return [
             $token,
-            Carbon::parse($payload['exp'])->toIso8601ZuluString()
+            \Illuminate\Support\Carbon::parse($payload['exp'])->toIso8601ZuluString(),
         ];
     }
 
@@ -39,7 +50,7 @@ class JwtToken
             'iss'             => "lumen-jwt",
             'sub'             => $userId,
             'iat'             => time(),
-            'exp'             => time() + 14 * 60 * 60,
+            'exp'             => time() + self::ACCESS_TTL,
             'client_override' => $clientOverride,
         ];
 
@@ -47,14 +58,12 @@ class JwtToken
 
         return [
             $token,
-            Carbon::parse($payload['exp'])->toIso8601ZuluString(),
+            \Illuminate\Support\Carbon::parse($payload['exp'])->toIso8601ZuluString(),
         ];
     }
 
     /**
      * Blacklist a token so it cannot be used again.
-     * TTL is set to match the token remaining lifetime so the Redis key
-     * is automatically cleaned up once the token would have expired anyway.
      */
     public static function blacklist(string $token): void
     {
@@ -69,7 +78,7 @@ class JwtToken
                 );
             }
         } catch (\Exception $e) {
-            // Token already invalid or malformed - nothing to blacklist
+            // Token already invalid or malformed — nothing to blacklist
         }
     }
 
@@ -81,5 +90,95 @@ class JwtToken
         return (bool) Cache::get(
             'jwt_blacklist:' . hash('sha256', $token)
         );
+    }
+
+    // ── Refresh token methods ─────────────────────────────────────────────
+
+    /**
+     * Generate a cryptographically secure refresh token string.
+     */
+    public static function generateRefreshToken(): string
+    {
+        return bin2hex(random_bytes(32)); // 64-char hex
+    }
+
+    /**
+     * Create a refresh token DB record and return the plaintext token + expiry.
+     */
+    public static function createRefreshToken(int $userId, ?string $ip = null, ?string $userAgent = null): array
+    {
+        $plainToken = self::generateRefreshToken();
+        $familyId   = (string) Str::uuid();
+        $expiresAt  = Carbon::now()->addDays(self::REFRESH_TTL_DAYS);
+
+        RefreshToken::create([
+            'user_id'    => $userId,
+            'token_hash' => hash('sha256', $plainToken),
+            'family_id'  => $familyId,
+            'expires_at' => $expiresAt,
+            'revoked'    => false,
+            'ip_address' => $ip,
+            'user_agent' => $userAgent ? substr($userAgent, 0, 500) : null,
+        ]);
+
+        return [$plainToken, $expiresAt->toIso8601ZuluString()];
+    }
+
+    /**
+     * Rotate a refresh token: consume old, issue new in the same family.
+     *
+     * Returns [userId, newPlainToken, newExpiresAt] or null on failure.
+     * If a revoked token is reused, the entire family is revoked (replay attack detection).
+     */
+    public static function rotateRefreshToken(string $plainToken, ?string $ip = null, ?string $ua = null): ?array
+    {
+        $hash   = hash('sha256', $plainToken);
+        $record = RefreshToken::where('token_hash', $hash)->first();
+
+        if (!$record) {
+            return null;
+        }
+
+        // Replay attack: if already revoked, revoke entire family
+        if ($record->revoked) {
+            RefreshToken::where('family_id', $record->family_id)
+                ->update(['revoked' => true]);
+            return null;
+        }
+
+        // Expired
+        if ($record->expires_at->isPast()) {
+            $record->update(['revoked' => true]);
+            return null;
+        }
+
+        // Revoke old token
+        $record->update(['revoked' => true]);
+
+        // Issue new token in the same family
+        $newPlain  = self::generateRefreshToken();
+        $expiresAt = Carbon::now()->addDays(self::REFRESH_TTL_DAYS);
+
+        RefreshToken::create([
+            'user_id'    => $record->user_id,
+            'token_hash' => hash('sha256', $newPlain),
+            'family_id'  => $record->family_id,
+            'expires_at' => $expiresAt,
+            'revoked'    => false,
+            'ip_address' => $ip,
+            'user_agent' => $ua ? substr($ua, 0, 500) : null,
+        ]);
+
+        return [(int) $record->user_id, $newPlain, $expiresAt->toIso8601ZuluString()];
+    }
+
+    /**
+     * Revoke all refresh tokens for a user (e.g. on logout).
+     */
+    public static function revokeAllRefreshTokens(int $userId): void
+    {
+        RefreshToken::where('user_id', $userId)
+            ->where('revoked', false)
+            ->update(['revoked' => true]);
     }
 }

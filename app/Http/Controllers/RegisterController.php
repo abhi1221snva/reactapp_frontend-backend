@@ -48,10 +48,11 @@ class RegisterController extends Controller
                 'company_name' => 'nullable|string|max:255',
                 'country_code' => 'nullable|string|max:10',
                 'phone_number' => 'nullable|string|max:20',
-                'password'     => 'nullable|string|min:8|max:64',
+                'password'     => ['nullable', 'string', 'min:10', 'max:64', 'regex:/[A-Z]/', 'regex:/[a-z]/', 'regex:/[0-9]/', 'regex:/[^A-Za-z0-9]/'],
             ], [
                 'email.unique'   => 'This email is already registered. Please log in or use a different email.',
-                'password.min'   => 'Password must be at least 8 characters.',
+                'password.min'   => 'Password must be at least 10 characters.',
+                'password.regex' => 'Password must include uppercase, lowercase, a number, and a special character.',
             ]);
 
             if ($validator->fails())

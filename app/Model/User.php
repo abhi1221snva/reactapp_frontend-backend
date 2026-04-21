@@ -48,6 +48,10 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
 
     protected $fillable = ['first_name', 'last_name', 'mobile', 'email', 'password', 'role', 'profile_pic', 'extension', 'rpm', 'vm_pin', 'voicemail', 'voicemail_greeting', 'asterisk_server_id', 'voicemail_send_to_email', 'follow_me', 'call_forward', 'dialpad', 'agent_voice_id', 'cli_setting', 'cli', 'local_ip', 'public_ip', 'phone_status', 'status', 'is_deleted', 'alt_extension', 'allowed_ip', 'twinning', 'directory_name', 'extension_type', 'vm_drop', 'vm_drop_location', 'country_code', 'dialpad_lastname', 'base_parent_id', 'sms_setting_id', 'receive_sms_on_email', 'receive_sms_on_mobile', 'ip_filtering', 'enable_2fa', 'voip_configuration_id', 'app_status', 'app_extension', 'affiliate_link', 'google_id', 'first_google_login', 'twitter_id', 'first_twitter_login', 'is_2fa_google_enabled', 'is_2fa_phone_enabled', 'phone_number','allow_google_authenticator','two_factor_authentication','allow_mobile_login','easify_user_uuid','user_type','owner_id','google_access_token','google_refresh_token','google_token_expires_at', 'pusher_uuid', 'google2fa_secret', 'totp_enabled_at', 'totp_backup_codes_generated_at'];
 
+    protected $casts = [
+        'google2fa_secret' => 'encrypted',
+    ];
+
     protected $connection = 'master';
 
     protected static function boot()
@@ -488,6 +492,7 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
 
                             $sql = "UPDATE users set password = '" . Hash::make($new_password) . "' WHERE id =" . $id;
                             $record = DB::connection('master')->update($sql);
+                            \App\Services\AuthAuditService::log((int) $id, 'password.changed');
                             return array(
                                 'success' => 'true',
                                 'message' => 'Password changed successfully.',
@@ -534,6 +539,7 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
 
                         $reset_password_link = "UPDATE password_reset_email_varification set status = '0' WHERE email ='" . $email . "'";
                         DB::connection('master')->update($reset_password_link);
+                        \App\Services\AuthAuditService::log((int) $record->id, 'password.reset', ['email' => $email]);
                         return array(
                             'success' => 'true',
                             'message' => 'Password changed successfully.',

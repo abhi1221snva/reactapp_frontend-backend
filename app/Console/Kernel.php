@@ -100,6 +100,9 @@ class Kernel extends ConsoleKernel
         ProvisionClientCommand::class,
         \App\Console\Commands\EmailParserScanCommand::class,
         \App\Console\Commands\AmiListenCommand::class,
+        \App\Console\Commands\EncryptTotpSecrets::class,
+        \App\Console\Commands\CleanAuthEvents::class,
+        \App\Console\Commands\CleanExpiredRefreshTokens::class,
     ];
 
     /**
@@ -190,6 +193,12 @@ class Kernel extends ConsoleKernel
                 'deleted' => $deleted,
             ]);
         })->dailyAt('03:15')->name('audit-log-retention')->withoutOverlapping();
+
+        // Auth events retention: prune entries older than 90 days
+        $schedule->command('auth:clean-events')->dailyAt('03:30')->name('auth-events-retention')->withoutOverlapping();
+
+        // Refresh token cleanup
+        $schedule->command('auth:clean-refresh-tokens')->dailyAt('03:45')->name('refresh-token-cleanup')->withoutOverlapping();
     }
 
 }
