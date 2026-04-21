@@ -25,6 +25,11 @@ use App\Services\EasifyCreditService;
 
 
 use App\Model\Api;
+use App\Model\Client\Campaign;
+use App\Model\Client\CampaignLeadQueue;
+use App\Model\Client\AgentStatus;
+use App\Services\AsteriskAmiService;
+use App\Services\CallerIdResolverService;
 
 class DialerController extends Controller
 {
@@ -406,6 +411,215 @@ class DialerController extends Controller
         // return response()->json($response, $statusCode);
      return response()->json($response);
 
+    }
+
+    /**
+     * Agent-first campaign dial: AMI rings agent's webphone first,
+     * then auto-dials the lead on answer (via ConfBridge + AmiListenCommand).
+     *
+     * POST /campaign-dial-next { campaign_id }
+     */
+    public function campaignDialNext()
+    {
+        $this->validate($this->request, [
+            'campaign_id' => 'required|numeric',
+        ]);
+
+        $campaignId   = (int) $this->request->input('campaign_id');
+        $clientId     = (int) $this->request->auth->parent_id;
+        $dbConnection = 'mysql_' . $clientId;
+
+        // Resolve agent extension (WebPhone = alt_extension)
+        $dataUser  = User::where('id', $this->request->auth->id)->first();
+        $dialer_mode = $this->request->has('dialer_mode')
+            ? intval($this->request->input('dialer_mode'))
+            : ($dataUser->dialer_mode ?? 2);
+
+        if ($dialer_mode == 3) {
+            $extension = $dataUser->app_extension;
+        } elseif ($dialer_mode == 2) {
+            $extension = $this->request->auth->alt_extension;
+        } else {
+            $extension = $this->request->auth->extension;
+        }
+
+        if (!$extension) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No extension configured for your account',
+            ], 400);
+        }
+
+        // Validate campaign exists
+        $campaign = Campaign::on($dbConnection)->find($campaignId);
+        if (!$campaign) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Campaign not found',
+            ], 404);
+        }
+
+        // Auto-populate lead queue if empty (first-time dial for this campaign)
+        $queueCount = CampaignLeadQueue::on($dbConnection)
+            ->where('campaign_id', $campaignId)
+            ->count();
+
+        if ($queueCount === 0) {
+            CampaignLeadQueue::populateFromCampaign($campaignId, $dbConnection);
+        }
+
+        // Pick next dialable lead
+        $entry = DB::connection($dbConnection)->transaction(function () use ($campaignId, $dbConnection) {
+            return CampaignLeadQueue::nextDialable($campaignId, $dbConnection);
+        });
+
+        if (!$entry) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No leads available in this campaign',
+            ], 404);
+        }
+
+        // Mark lead as being called
+        $entry->update([
+            'status'    => CampaignLeadQueue::STATUS_CALLING,
+            'attempts'  => DB::raw('attempts + 1'),
+            'called_at' => now(),
+        ]);
+
+        // Load lead phone number
+        $leadRow = DB::connection($dbConnection)
+            ->table('list_data')
+            ->where('id', $entry->lead_id)
+            ->first();
+
+        $phone = null;
+        if ($leadRow) {
+            $dialCol = DB::connection($dbConnection)
+                ->table('list_header')
+                ->where('list_id', $leadRow->list_id)
+                ->where('is_dialing', 1)
+                ->value('column_name');
+            $phone = $dialCol ? ($leadRow->$dialCol ?? null) : null;
+        }
+
+        if (!$phone) {
+            $entry->update(['status' => CampaignLeadQueue::STATUS_SKIPPED]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Lead has no phone number — skipped',
+            ], 400);
+        }
+
+        // Build lead data for frontend
+        $lead = (object) [
+            'id'           => $leadRow->id,
+            'lead_id'      => $leadRow->id,
+            'phone_number' => $phone,
+            'first_name'   => $leadRow->option_1 ?? '',
+            'last_name'    => $leadRow->option_2 ?? '',
+            'list_id'      => $leadRow->list_id ?? null,
+        ];
+
+        // Conference room + mark extension live
+        $confRoom = "camp_{$campaignId}_{$entry->lead_id}_{$extension}_" . time();
+
+        ExtensionLive::markLive(
+            $extension,
+            $campaignId,
+            $entry->lead_id,
+            null,
+            ExtensionLive::CALL_STATUS_RINGING,
+            $confRoom,
+            $dbConnection
+        );
+
+        // Resolve caller ID
+        $callerIdResolver = new CallerIdResolverService();
+        $resolvedCli = $callerIdResolver->resolve($dbConnection, $campaignId, $phone) ?? '0000000000';
+
+        // Connect to AMI
+        $ami = new AsteriskAmiService();
+        if (!$ami->connectForClient($clientId)) {
+            $entry->update(['status' => CampaignLeadQueue::STATUS_PENDING]);
+            ExtensionLive::markIdle($extension, $dbConnection);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to connect to Asterisk AMI',
+            ], 500);
+        }
+
+        $actionId = "camp_{$campaignId}_lead_{$entry->lead_id}_ext_{$extension}_" . time();
+
+        try {
+            $ami->originate([
+                'Channel'  => "PJSIP/{$extension}",
+                'Context'  => 'campaign-conf-agent',
+                'Exten'    => 's',
+                'Priority' => '1',
+                'CallerID' => '"Campaign Call" <' . $resolvedCli . '>',
+                'Timeout'  => 30000,
+                'ActionID' => $actionId,
+                'Variable' => [
+                    "LEAD_ID={$entry->lead_id}",
+                    "CAMPAIGN_ID={$campaignId}",
+                    "CLIENT_ID={$clientId}",
+                    "DB_CONN={$dbConnection}",
+                    "AGENT_EXT={$extension}",
+                    "CUSTOMER_NUM={$phone}",
+                    "CALLER_ID_NUM={$resolvedCli}",
+                    "TRUNK={$ami->getTrunk()}",
+                    "CALL_TIMEOUT=60",
+                    "CONF_ROOM={$confRoom}",
+                ],
+            ]);
+
+            $ami->disconnect();
+
+            Log::info("CampaignDialNext: agent {$extension}, lead {$entry->lead_id}, campaign {$campaignId}, phone {$phone}");
+
+            // Build lead fields array for frontend (same format as getLead)
+            $fields = [];
+            if ($leadRow) {
+                $headers = DB::connection($dbConnection)
+                    ->table('list_header')
+                    ->where('list_id', $leadRow->list_id)
+                    ->orderBy('id')
+                    ->get();
+                foreach ($headers as $h) {
+                    $col = $h->column_name;
+                    $fields[] = [
+                        'label'      => $h->display_name ?? $col,
+                        'value'      => $leadRow->$col ?? '',
+                        'is_dialing' => $h->is_dialing ?? 0,
+                    ];
+                }
+            }
+
+            return response()->json([
+                'success'      => true,
+                'message'      => 'Ringing your webphone — lead will be dialed on answer',
+                'dial_mode'    => 'ami_agent_first',
+                'lead_id'      => $lead->id,
+                'phone_number' => $phone,
+                'first_name'   => $lead->first_name,
+                'last_name'    => $lead->last_name,
+                'list_id'      => $lead->list_id,
+                'campaign_id'  => $campaignId,
+                'conf_room'    => $confRoom,
+                'action_id'    => $actionId,
+                'fields'       => $fields,
+            ]);
+        } catch (\Exception $e) {
+            $ami->disconnect();
+            $entry->update(['status' => CampaignLeadQueue::STATUS_PENDING]);
+            ExtensionLive::markIdle($extension, $dbConnection);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Originate failed: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     /*

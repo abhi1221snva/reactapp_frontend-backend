@@ -120,6 +120,15 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log']], function () use ($ro
     $router->get('system/queue-stats',         'SystemHealthController@queueStats');
     $router->get('system/error-trends',        'SystemHealthController@errorTrends');
     $router->get('system/performance-metrics', 'SystemHealthController@performanceMetrics');
+
+});
+
+// ─── AMI Originate ──────────────────────────────────────────────────────────
+$router->get('api-dial/originate', 'AmiOriginateController@originate');
+
+// ─── Campaign Dial Next — JWT only, no route.access restriction ─────────────
+$router->group(['middleware' => ['jwt.auth']], function () use ($router) {
+    $router->post('campaign-dial-next', 'DialerController@campaignDialNext');
 });
 
 // ─── Server Monitoring + Swagger (level 11 — system_administrator only) ──────

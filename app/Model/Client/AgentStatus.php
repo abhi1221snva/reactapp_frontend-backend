@@ -38,9 +38,10 @@ class AgentStatus extends Model
     /**
      * Upsert agent dialer status and broadcast via Pusher to workforce channel.
      */
-    public static function setStatus(int $userId, string $status, ?int $campaignId = null, ?int $parentId = null): self
+    public static function setStatus(int $userId, string $status, ?int $campaignId = null, ?int $parentId = null, ?string $dbConnection = null): self
     {
-        $record = self::firstOrNew(['user_id' => $userId]);
+        $query = $dbConnection ? static::on($dbConnection) : static::query();
+        $record = $query->firstOrNew(['user_id' => $userId]);
         $record->status          = $status;
         if ($campaignId !== null) {
             $record->campaign_id = $campaignId;

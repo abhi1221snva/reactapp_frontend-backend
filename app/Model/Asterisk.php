@@ -620,7 +620,7 @@ class Asterisk extends Model
                 // so the SIP INVITE reaches the browser WebPhone.
                 // For hardware phones: use the local channel via dialler-room-caller dialplan.
                 if ($dialer_mode == 2) {
-                    $channel = "PJSIP/" . $this->extension;
+                    $channel = "PJSIP/" . $this->extension. "-" . $number . "-" . $this->admin . "@dialler-room-caller";
                 } else {
                     $channel = "local/" . $this->extension . "-" . $number . "-" . $this->admin . "@dialler-room-caller";
                 }

@@ -39,9 +39,11 @@ class CampaignLeadQueue extends Model
      * Get next dialable lead for a campaign (ready-to-call, not already being attempted).
      * Uses pessimistic lock to prevent concurrent workers from double-dialing.
      */
-    public static function nextDialable(int $campaignId): ?self
+    public static function nextDialable(int $campaignId, string $dbConnection = null): ?self
     {
-        return self::where('campaign_id', $campaignId)
+        $query = $dbConnection ? static::on($dbConnection) : static::query();
+
+        return $query->where('campaign_id', $campaignId)
             ->where('status', self::STATUS_PENDING)
             ->where(function ($q) {
                 $q->whereNull('next_attempt_at')

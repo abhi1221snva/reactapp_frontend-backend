@@ -17,10 +17,11 @@ use Pusher\Pusher;
  *
  * Flow:
  *  1. dialNextLead()  — pick next queued lead, find idle agent, AMI originate → agent
- *  2. handleAgentAnswered()  — agent picked up; update extension_live; Asterisk now dials customer
- *  3. handleCallBridged()    — customer answered, agent+customer bridged; push lead data to UI
- *  4. handleCallHangup()     — call ended; reset extension, log CDR, dispatch next dial
+ *  2. handleAgentAnswered()  — agent picked up + entered ConfBridge; second originate → customer
+ *  3. handleCallBridged()    — customer answered, joined same conference room; push lead data to UI
+ *  4. handleCallHangup()     — call ended (with dedup); reset extension, log CDR, dispatch next
  *  5. handleAgentNoAnswer()  — agent timeout; retry or move to failed
+ *  6. handleCustomerOriginateFailed() — customer didn't answer; kick conf, notify agent
  */
 class CampaignDialerService
 {
@@ -67,8 +68,8 @@ class CampaignDialerService
         }
 
         // Pick next lead — transaction ensures only one worker grabs it
-        $entry = DB::connection($dbConnection)->transaction(function () use ($campaignId) {
-            return CampaignLeadQueue::nextDialable($campaignId);
+        $entry = DB::connection($dbConnection)->transaction(function () use ($campaignId, $dbConnection) {
+            return CampaignLeadQueue::nextDialable($campaignId, $dbConnection);
         });
 
         if (!$entry) {
@@ -115,21 +116,27 @@ class CampaignDialerService
             return $this->dialNextLead($campaignId, $clientId, $dbConnection);
         }
 
+        // Generate a unique conference room name for this call
+        $confRoom = "camp_{$campaignId}_{$entry->lead_id}_{$agentExt}_" . time();
+
         // Pre-populate extension_live so frontend can see "ringing" immediately
-        ExtensionLive::on($dbConnection)->markLive(
+        ExtensionLive::markLive(
             $agentExt,
             $campaignId,
             $entry->lead_id,
             null,
-            ExtensionLive::CALL_STATUS_RINGING
+            ExtensionLive::CALL_STATUS_RINGING,
+            $confRoom,
+            $dbConnection
         );
 
         // Update agent status
-        AgentStatus::on($dbConnection)->setStatus(
+        AgentStatus::setStatus(
             $this->extensionToUserId($agentExt, $dbConnection),
             AgentStatus::ON_CALL,
             $campaignId,
-            $clientId
+            $clientId,
+            $dbConnection
         );
 
         // Build ActionID so we can match OriginateResponse events back to this call
@@ -148,10 +155,11 @@ class CampaignDialerService
             $this->ami->connectForClient($clientId);
         }
 
-        // Originate: ring the AGENT first. When agent answers, dialplan dials customer.
+        // Originate: ring the AGENT first. When agent answers, dialplan puts them
+        // into a ConfBridge room. Backend then originates a second call to the customer.
         $this->ami->originate([
             'Channel'  => "PJSIP/{$agentExt}",
-            'Context'  => 'campaign-outbound',
+            'Context'  => 'campaign-conf-agent',
             'Exten'    => 's',
             'Priority' => '1',
             // CallerID shown to AGENT when their WebPhone rings (internal label)
@@ -165,11 +173,10 @@ class CampaignDialerService
                 "DB_CONN={$dbConnection}",
                 "AGENT_EXT={$agentExt}",
                 "CUSTOMER_NUM={$lead->phone_number}",
-                // CALLER_ID_NUM is set in the dialplan before Dial() so the customer
-                // sees the resolved CLI on their phone screen (not the agent's extension)
                 "CALLER_ID_NUM={$resolvedCli}",
                 "TRUNK={$this->ami->getTrunk()}",
                 "CALL_TIMEOUT=60",
+                "CONF_ROOM={$confRoom}",
             ],
         ]);
 
@@ -183,18 +190,27 @@ class CampaignDialerService
     // -------------------------------------------------------------------------
 
     /**
-     * Agent answered the incoming SIP call. Dialplan now dials the customer.
+     * Agent answered the incoming SIP call and entered the ConfBridge room.
+     * Now send a second AMI Originate to dial the customer into the same room.
      */
-    public function handleAgentAnswered(array $event, string $dbConnection): void
+    public function handleAgentAnswered(array $event, string $dbConnection, int $clientId): void
     {
-        $leadId    = (int) ($event['LeadID'] ?? 0);
-        $agentExt  = (int) ($event['AgentExt'] ?? 0);
-        $channel   = $event['Channel'] ?? null;
+        $leadId      = (int) ($event['LeadID'] ?? 0);
+        $agentExt    = (int) ($event['AgentExt'] ?? 0);
+        $channel     = $event['Channel'] ?? null;
+        $confRoom    = $event['ConfRoom'] ?? null;
+        $customerNum = $event['CustomerNum'] ?? null;
+        $callerIdNum = $event['CallerIdNum'] ?? null;
+        $trunk       = $event['Trunk'] ?? 'outbound-trunk-endpoint';
+        $callTimeout = (int) ($event['CallTimeout'] ?? 60);
+        $campaignId  = (int) ($event['CampaignID'] ?? 0);
 
-        if (!$leadId || !$agentExt) {
+        if (!$leadId || !$agentExt || !$confRoom || !$customerNum) {
+            Log::warning("CampaignDialer: AgentAnswered missing required fields", $event);
             return;
         }
 
+        // Update extension_live: agent is connected, waiting for customer
         ExtensionLive::on($dbConnection)
             ->where('extension', $agentExt)
             ->where('lead_id', $leadId)
@@ -202,9 +218,37 @@ class CampaignDialerService
                 'status'      => 1,
                 'channel'     => $channel,
                 'call_status' => ExtensionLive::CALL_STATUS_CONNECTED,
+                'conf_room'   => $confRoom,
             ]);
 
-        Log::info("CampaignDialer: agent {$agentExt} answered, lead {$leadId} — dialing customer");
+        // Ensure AMI is connected
+        if (!$this->ami->isConnected()) {
+            $this->ami->connectForClient($clientId);
+        }
+
+        // Second originate: dial the customer into the same conference room
+        $custActionId = "cust_{$confRoom}_" . time();
+
+        $this->ami->originate([
+            'Channel'  => "PJSIP/{$customerNum}@{$trunk}",
+            'Context'  => 'campaign-conf-customer-join',
+            'Exten'    => 's',
+            'Priority' => '1',
+            'CallerID' => $callerIdNum ?: '0000000000',
+            'Timeout'  => $callTimeout * 1000,
+            'ActionID' => $custActionId,
+            'Variable' => [
+                "LEAD_ID={$leadId}",
+                "CAMPAIGN_ID={$campaignId}",
+                "CLIENT_ID=" . ($event['ClientID'] ?? 0),
+                "DB_CONN={$dbConnection}",
+                "AGENT_EXT={$agentExt}",
+                "CUSTOMER_NUM={$customerNum}",
+                "CONF_ROOM={$confRoom}",
+            ],
+        ]);
+
+        Log::info("CampaignDialer: agent {$agentExt} answered, lead {$leadId} — originating customer call to {$customerNum} (room: {$confRoom})");
     }
 
     /**
@@ -238,25 +282,45 @@ class CampaignDialerService
 
     /**
      * Call hung up (by agent or customer). Log CDR, reset extension, dispatch next dial.
+     *
+     * Conference model: both agent and customer legs fire CallHangup with a `Who` field.
+     * Dedup guard: if extension_live is already idle, skip (the other leg already processed it).
+     * If customer hung up first, kick all from the conference to tear down the agent leg.
      */
     public function handleCallHangup(array $event, string $dbConnection, int $clientId): void
     {
-        $leadId     = (int) ($event['LeadID'] ?? 0);
-        $agentExt   = (int) ($event['AgentExt'] ?? 0);
-        $campaignId = (int) ($event['CampaignID'] ?? 0);
+        $leadId      = (int) ($event['LeadID'] ?? 0);
+        $agentExt    = (int) ($event['AgentExt'] ?? 0);
+        $campaignId  = (int) ($event['CampaignID'] ?? 0);
         $hangupCause = (int) ($event['HangupCause'] ?? 0);
+        $who         = $event['Who'] ?? 'unknown';
+        $confRoom    = $event['ConfRoom'] ?? null;
 
         if (!$leadId || !$agentExt) {
             return;
         }
 
-        // Read extension_live before clearing it (needed for CDR)
+        // Dedup guard: skip if extension_live is already idle (the other leg already ran cleanup)
         $live = ExtensionLive::on($dbConnection)
             ->where('extension', $agentExt)
             ->first();
 
+        if (!$live || !$live->status) {
+            Log::debug("CampaignDialer: hangup dedup — agent {$agentExt} already idle (Who: {$who})");
+            return;
+        }
+
+        // If customer hung up, kick all from conference to tear down the agent leg too
+        if ($who === 'customer' && $confRoom) {
+            try {
+                $this->ami->confbridgeKickAll($confRoom);
+            } catch (\Throwable $e) {
+                Log::warning("CampaignDialer: confbridge kick failed for {$confRoom}: {$e->getMessage()}");
+            }
+        }
+
         // Reset extension to idle
-        ExtensionLive::on($dbConnection)->markIdle($agentExt);
+        ExtensionLive::markIdle($agentExt, $dbConnection);
 
         // Write CDR record
         $this->writeCdr($agentExt, $leadId, $campaignId, $live, $dbConnection);
@@ -273,15 +337,16 @@ class CampaignDialerService
 
         // Update agent status back to available
         $userId = $this->extensionToUserId($agentExt, $dbConnection);
-        AgentStatus::on($dbConnection)->setStatus($userId, AgentStatus::AVAILABLE, $campaignId, $clientId);
+        AgentStatus::setStatus($userId, AgentStatus::AVAILABLE, $campaignId, $clientId, $dbConnection);
 
         // Push hangup event to agent's browser
         $this->pushToAgent($agentExt, 'call.ended', [
-            'lead_id'    => $leadId,
+            'lead_id'      => $leadId,
             'hangup_cause' => $hangupCause,
+            'who'          => $who,
         ], $clientId);
 
-        Log::info("CampaignDialer: hangup — agent {$agentExt}, lead {$leadId}, cause {$hangupCause}");
+        Log::info("CampaignDialer: hangup — agent {$agentExt}, lead {$leadId}, cause {$hangupCause}, who: {$who}");
 
         // Dispatch next call after a short grace period
         dispatch(
@@ -289,6 +354,55 @@ class CampaignDialerService
                 ->onQueue('campaign-dialer')
                 ->delay(now()->addSeconds(2))
         );
+    }
+
+    /**
+     * Customer originate failed (no answer, busy, rejected).
+     * Kick agent from conference, notify browser, clean up.
+     */
+    public function handleCustomerOriginateFailed(array $event, string $dbConnection, int $clientId): void
+    {
+        $actionId = $event['ActionID'] ?? '';
+
+        // Parse conf_room from ActionID: "cust_{confRoom}_{ts}"
+        if (!preg_match('/^cust_(.+)_\d+$/', $actionId, $m)) {
+            return;
+        }
+
+        $confRoom = $m[1];
+
+        // Find the extension_live row by conf_room
+        $live = ExtensionLive::on($dbConnection)
+            ->where('conf_room', $confRoom)
+            ->where('status', 1)
+            ->first();
+
+        if (!$live) {
+            Log::warning("CampaignDialer: customer originate failed but no live extension for room {$confRoom}");
+            return;
+        }
+
+        $agentExt   = (int) $live->extension;
+        $leadId     = (int) $live->lead_id;
+        $campaignId = (int) $live->campaign_id;
+
+        // Kick everyone from the conference — this triggers agent hangup via h extension
+        try {
+            $this->ami->confbridgeKickAll($confRoom);
+        } catch (\Throwable $e) {
+            Log::warning("CampaignDialer: confbridge kick failed for {$confRoom}: {$e->getMessage()}");
+        }
+
+        // Push customer_noanswer event to agent's browser
+        $this->pushToAgent($agentExt, 'call.customer_noanswer', [
+            'lead_id'     => $leadId,
+            'campaign_id' => $campaignId,
+            'conf_room'   => $confRoom,
+        ], $clientId);
+
+        Log::info("CampaignDialer: customer no-answer — agent {$agentExt}, lead {$leadId}, room {$confRoom}");
+
+        // Note: conference teardown triggers agent hangup event → handleCallHangup() runs normal cleanup
     }
 
     /**
@@ -308,7 +422,7 @@ class CampaignDialerService
         $leadId     = (int) $leadId;
         $agentExt   = (int) $agentExt;
 
-        ExtensionLive::on($dbConnection)->markIdle($agentExt);
+        ExtensionLive::markIdle($agentExt, $dbConnection);
 
         // Retry or fail the lead
         $entry = CampaignLeadQueue::on($dbConnection)
@@ -332,7 +446,7 @@ class CampaignDialerService
 
         // Update agent status back to available
         $userId = $this->extensionToUserId($agentExt, $dbConnection);
-        AgentStatus::on($dbConnection)->setStatus($userId, AgentStatus::AVAILABLE, null, $clientId);
+        AgentStatus::setStatus($userId, AgentStatus::AVAILABLE, null, $clientId, $dbConnection);
 
         // Try next lead immediately
         dispatch(
@@ -378,31 +492,46 @@ class CampaignDialerService
             return null;
         }
 
-        // Get their extensions from master DB users table, exclude those already on a call
+        // Get their extensions from master DB users table, exclude those already on a call.
+        // Always use alt_extension (WebPhone) when set; only fall back to extension
+        // for users who have no alt_extension configured.
         $busyExtensions = DB::connection($dbConnection)
             ->table('extension_live')
             ->where('status', 1)
             ->pluck('extension')
             ->toArray();
 
-        $user = DB::connection('master')
+        $users = DB::connection('master')
             ->table('users')
             ->whereIn('id', $availableUserIds)
-            ->whereNotNull('extension')
-            ->when(!empty($busyExtensions), fn ($q) => $q->whereNotIn('extension', $busyExtensions))
-            ->first();
+            ->get(['id', 'extension', 'alt_extension']);
 
-        return $user ? (int) $user->extension : null;
+        foreach ($users as $user) {
+            // Always prefer alt_extension (WebPhone/WebRTC).
+            // Fall back to hardware extension only when alt_extension is not set.
+            $ext = !empty($user->alt_extension) ? $user->alt_extension : $user->extension;
+            if (empty($ext)) {
+                Log::info("CampaignDialer: user {$user->id} has no extension — skipping");
+                continue;
+            }
+            if (in_array($ext, $busyExtensions)) continue;
+            return (int) $ext;
+        }
+
+        Log::info("CampaignDialer: no available agent extensions for campaign {$campaignId} (busy or unconfigured)");
+        return null;
     }
 
     /**
      * Resolve user_id from extension number (master users table).
+     * Checks both alt_extension (WebRTC) and extension (hardware).
      */
     protected function extensionToUserId(int $extension, string $dbConnection): int
     {
         $user = DB::connection('master')
             ->table('users')
-            ->where('extension', $extension)
+            ->where('alt_extension', $extension)
+            ->orWhere('extension', $extension)
             ->value('id');
 
         return (int) $user;

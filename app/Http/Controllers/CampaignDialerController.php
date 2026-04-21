@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\TenantAware;
 use App\Jobs\DialNextLeadJob;
+use App\Model\Client\AgentStatus;
 use App\Model\Client\Campaign;
 use App\Model\Client\CampaignAgent;
 use App\Model\Client\CampaignLeadQueue;
@@ -56,6 +57,25 @@ class CampaignDialerController extends Controller
         }
 
         Campaign::on($conn)->where('id', $id)->update(['dialer_status' => 'running']);
+
+        // Ensure all assigned agents have an "available" status so the dialer can pick them up.
+        // Without this, getIdleAgentExtension() finds no idle agents and the first call never fires.
+        $assignedUserIds = CampaignAgent::on($conn)
+            ->where('campaign_id', $id)
+            ->pluck('user_id');
+
+        foreach ($assignedUserIds as $userId) {
+            $existing = AgentStatus::on($conn)->where('user_id', $userId)->first();
+            // Only set to available if they have no status yet or are offline
+            if (!$existing || $existing->status === AgentStatus::OFFLINE) {
+                AgentStatus::setStatus((int) $userId, AgentStatus::AVAILABLE, $id, $clientId, $conn);
+            }
+        }
+
+        // Reset any stale extension_live entries for this campaign
+        ExtensionLive::on($conn)
+            ->where('campaign_id', $id)
+            ->update(['status' => 0, 'lead_id' => null, 'call_status' => null, 'channel' => null, 'conf_room' => null]);
 
         // Dispatch first dial immediately
         dispatch((new DialNextLeadJob($id, $clientId, $conn))->onQueue('campaign-dialer'));
@@ -287,7 +307,7 @@ class CampaignDialerController extends Controller
         $users = DB::connection('master')
             ->table('users')
             ->whereIn('id', $assignedUserIds)
-            ->selectRaw('id, CONCAT(first_name, " ", last_name) AS name, email, extension')
+            ->selectRaw('id, CONCAT(first_name, " ", last_name) AS name, email, extension, alt_extension')
             ->get()
             ->keyBy('id');
 
@@ -302,7 +322,7 @@ class CampaignDialerController extends Controller
                 'user_id'   => $user->id,
                 'name'      => $user->name,
                 'email'     => $user->email,
-                'extension' => $user->extension,
+                'extension' => $user->alt_extension ?: $user->extension,
                 'status'    => $statuses[$user->id] ?? 'offline',
             ];
         })->values();
@@ -319,15 +339,31 @@ class CampaignDialerController extends Controller
     {
         $this->validate($request, ['user_id' => 'required|integer']);
 
-        $conn   = $this->tenantDb($request);
-        $userId = (int) $request->input('user_id');
+        $conn     = $this->tenantDb($request);
+        $clientId = $this->tenantId($request);
+        $userId   = (int) $request->input('user_id');
 
-        Campaign::on($conn)->findOrFail($id);
+        $campaign = Campaign::on($conn)->findOrFail($id);
 
         CampaignAgent::on($conn)->firstOrCreate([
             'campaign_id' => $id,
             'user_id'     => $userId,
         ]);
+
+        // Set agent to available so the dialer can pick them up immediately
+        $existing = AgentStatus::on($conn)->where('user_id', $userId)->first();
+        if (!$existing || $existing->status === AgentStatus::OFFLINE) {
+            AgentStatus::setStatus($userId, AgentStatus::AVAILABLE, $id, $clientId, $conn);
+        }
+
+        // If campaign is already running, dispatch a dial attempt in case this was the missing agent
+        if ($campaign->dialer_status === 'running') {
+            dispatch(
+                (new DialNextLeadJob($id, $clientId, $conn))
+                    ->onQueue('campaign-dialer')
+                    ->delay(now()->addSeconds(1))
+            );
+        }
 
         return response()->json(['message' => 'Agent assigned', 'campaign_id' => $id, 'user_id' => $userId]);
     }

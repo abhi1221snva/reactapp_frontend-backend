@@ -28,6 +28,7 @@ class ExtensionLive extends Model
         'lead_id',
         'call_status',
         'transfer_status',
+        'conf_room',
     ];
 
     protected $casts = [
@@ -46,9 +47,13 @@ class ExtensionLive extends Model
         int $campaignId,
         int $leadId,
         string $channel = null,
-        string $callStatus = self::CALL_STATUS_RINGING
+        string $callStatus = self::CALL_STATUS_RINGING,
+        string $confRoom = null,
+        string $dbConnection = null
     ): self {
-        return self::updateOrCreate(
+        $query = $dbConnection ? static::on($dbConnection) : static::query();
+
+        return $query->updateOrCreate(
             ['extension' => $extension],
             [
                 'status'      => 1,
@@ -56,6 +61,7 @@ class ExtensionLive extends Model
                 'campaign_id' => $campaignId,
                 'lead_id'     => $leadId,
                 'call_status' => $callStatus,
+                'conf_room'   => $confRoom,
             ]
         );
     }
@@ -63,15 +69,18 @@ class ExtensionLive extends Model
     /**
      * Reset extension to idle after call ends.
      */
-    public static function markIdle(int $extension): void
+    public static function markIdle(int $extension, string $dbConnection = null): void
     {
-        self::where('extension', $extension)->update([
+        $query = $dbConnection ? static::on($dbConnection) : static::query();
+
+        $query->where('extension', $extension)->update([
             'status'          => 0,
             'channel'         => null,
             'campaign_id'     => null,
             'lead_id'         => null,
             'call_status'     => null,
             'transfer_status' => null,
+            'conf_room'       => null,
         ]);
     }
 }

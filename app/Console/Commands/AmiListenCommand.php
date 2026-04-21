@@ -24,12 +24,14 @@ use Illuminate\Support\Facades\Log;
  *   stdout_logfile=/var/log/supervisor/ami-listen.out.log
  *
  * AMI UserEvents this command handles:
- *   AgentAnswered  — agent picked up; Asterisk now dials customer
- *   CallBridged    — customer answered; push lead data to browser
- *   CallHangup     — call ended; reset state, trigger next dial
+ *   AgentAnswered  — agent picked up + entered conf; second originate → customer
+ *   CallBridged    — customer answered + joined conf; push lead data to browser
+ *   CallHangup     — call ended (Who: agent|customer); reset state, trigger next dial
+ *   CustomerNoAnswer — customer originate failed (future use if dialplan sends it)
  *
  * OriginateResponse (built-in):
- *   Reason != 4    — agent didn't answer in time; retry or mark failed
+ *   ActionID cust_* + Reason != 4 — customer didn't answer; kick conf, notify agent
+ *   ActionID camp_* + Reason != 4 — agent didn't answer in time; retry or mark failed
  */
 class AmiListenCommand extends Command
 {
@@ -91,7 +93,14 @@ class AmiListenCommand extends Command
                         case 'OriginateResponse':
                             // Reason: 0=failure, 1=busy, 2=noanswer, 3=rejected, 4=answered
                             if ((int)($event['Reason'] ?? 0) !== 4) {
-                                $service->handleAgentNoAnswer($event, $dbConnection, $clientId);
+                                $actionId = $event['ActionID'] ?? '';
+                                if (str_starts_with($actionId, 'cust_')) {
+                                    // Customer originate failed — kick conf, notify agent
+                                    $service->handleCustomerOriginateFailed($event, $dbConnection, $clientId);
+                                } else {
+                                    // Agent originate failed — retry or mark failed
+                                    $service->handleAgentNoAnswer($event, $dbConnection, $clientId);
+                                }
                             }
                             break;
                     }
@@ -129,7 +138,7 @@ class AmiListenCommand extends Command
 
         switch ($userEvent) {
             case 'AgentAnswered':
-                $service->handleAgentAnswered($event, $dbConnection);
+                $service->handleAgentAnswered($event, $dbConnection, $clientId);
                 break;
 
             case 'CallBridged':
@@ -138,6 +147,10 @@ class AmiListenCommand extends Command
 
             case 'CallHangup':
                 $service->handleCallHangup($event, $dbConnection, $clientId);
+                break;
+
+            case 'CustomerNoAnswer':
+                $service->handleCustomerOriginateFailed($event, $dbConnection, $clientId);
                 break;
 
             default:

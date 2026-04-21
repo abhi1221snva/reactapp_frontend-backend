@@ -152,6 +152,17 @@ class AsteriskAmiService
     }
 
     /**
+     * Kick all participants from a ConfBridge room, tearing down the conference.
+     */
+    public function confbridgeKickAll(string $confRoom): void
+    {
+        $this->sendRaw([
+            'Action'  => 'Command',
+            'Command' => "confbridge kick {$confRoom} all",
+        ]);
+    }
+
+    /**
      * Send a raw AMI action packet.
      * $action is an associative array; duplicate keys are supported by passing
      * an array as value (e.g., 'Variable' => ['K=V', 'K2=V2']).
