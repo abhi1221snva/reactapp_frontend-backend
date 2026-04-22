@@ -300,11 +300,11 @@ class LeadPdfService
             $data['full_name'] = trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? ''));
         }
 
-        // ── Agent / Specialist data (from created_by user) ────────────────────
-        $createdById = $data['created_by'] ?? null;
-        if ($createdById) {
+        // ── Agent / Specialist data (prefer assigned_to, fall back to created_by)
+        $agentUserId = $data['assigned_to'] ?? $data['created_by'] ?? null;
+        if ($agentUserId) {
             $agent = DB::table('users')
-                ->where('id', (int) $createdById)
+                ->where('id', (int) $agentUserId)
                 ->select('first_name', 'last_name', 'mobile', 'email', 'company_name', 'logo')
                 ->first();
 
@@ -508,6 +508,11 @@ class LeadPdfService
 
     public function applyPlaceholders(string $text, array $data): string
     {
+        // Legacy _logo_ placeholder (used in older templates)
+        if (isset($data['company_logo'])) {
+            $text = str_replace('_logo_', (string) $data['company_logo'], $text);
+        }
+
         foreach ($data as $key => $value) {
             $val  = (string) ($value ?? '');
             $text = str_replace("[[{$key}]]", $val, $text);

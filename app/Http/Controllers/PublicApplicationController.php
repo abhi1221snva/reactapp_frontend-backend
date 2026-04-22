@@ -222,6 +222,65 @@ class PublicApplicationController extends Controller
 
             $this->svc->updateMerchantLead($lead, $clientId, $request->all());
 
+            // Re-generate the application PDF if a signature already exists
+            try {
+                $conn = "mysql_{$clientId}";
+                $hasSig = DB::connection($conn)->table('crm_lead_values')
+                    ->where('lead_id', $lead->id)
+                    ->where('field_key', 'signature_image')
+                    ->whereNotNull('field_value')
+                    ->where('field_value', '!=', '')
+                    ->exists();
+
+                if (!$hasSig) {
+                    // Fallback: check legacy table
+                    $hasSig = DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_data')
+                        && DB::connection($conn)->table('crm_lead_data')
+                            ->where('id', $lead->id)
+                            ->whereNotNull('signature_image')
+                            ->where('signature_image', '!=', '')
+                            ->exists();
+                }
+
+                if ($hasSig) {
+                    $pdfResult   = $this->pdfSvc->renderPdfBinary($clientId, $lead->id);
+                    $pdfBinary   = $pdfResult['pdf'];
+                    $pdfFileName = $pdfResult['filename'];
+
+                    $storagePath = "crm_documents/client_{$clientId}/lead_{$lead->id}/{$pdfFileName}";
+                    \Storage::disk('public')->put($storagePath, $pdfBinary);
+                    $publicUrl = \Storage::disk('public')->url($storagePath);
+
+                    $now = now();
+                    $existing = DB::connection($conn)->table('crm_documents')
+                        ->where('lead_id', $lead->id)
+                        ->where('document_type', 'Online Application')
+                        ->whereNull('deleted_at')
+                        ->first();
+
+                    if ($existing) {
+                        if ($existing->file_path !== $publicUrl) {
+                            $oldRel = str_replace(rtrim(config('app.url'), '/') . '/storage/', '', $existing->file_path);
+                            \Storage::disk('public')->delete($oldRel);
+                        }
+                        DB::connection($conn)->table('crm_documents')
+                            ->where('id', $existing->id)
+                            ->update(['file_path' => $publicUrl, 'file_name' => $pdfFileName, 'file_size' => strlen($pdfBinary), 'updated_at' => $now]);
+                    } else {
+                        DB::connection($conn)->table('crm_documents')->insert([
+                            'lead_id' => $lead->id, 'document_type' => 'Online Application',
+                            'file_name' => $pdfFileName, 'file_path' => $publicUrl,
+                            'file_size' => strlen($pdfBinary), 'uploaded_by' => null,
+                            'created_at' => $now, 'updated_at' => $now,
+                        ]);
+                    }
+                }
+            } catch (\Throwable $e) {
+                \Log::warning('[updateMerchant] PDF re-generation failed (non-blocking)', [
+                    'lead_id' => $lead->id, 'error' => $e->getMessage(),
+                ]);
+            }
+
             return response()->json(['success' => true, 'message' => 'Application updated successfully.']);
         } catch (\RuntimeException $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], $e->getCode() ?: 400);
@@ -371,15 +430,77 @@ class PublicApplicationController extends Controller
 
             // Return the backend-served URL matching the field saved
             $base     = rtrim(env('APP_URL'), '/');
-            $token2   = $lead->lead_token;
+            $token2   = $lead->lead_token ?: ($lead->unique_token ?? $token);
             $serveUrl = $field === 'owner_2_signature_image'
                 ? "{$base}/public/lead/{$token2}/signature2"
                 : "{$base}/public/lead/{$token2}/signature";
+
+            // Auto-generate the application PDF and register it as a CRM document
+            $pdfUrl = null;
+            try {
+                $pdfResult = $this->pdfSvc->renderPdfBinary($clientId, $lead->id);
+                $pdfBinary = $pdfResult['pdf'];
+                $pdfFileName = $pdfResult['filename'];
+
+                // Store in public disk (same location as CRM document uploads)
+                $storagePath = "crm_documents/client_{$clientId}/lead_{$lead->id}/{$pdfFileName}";
+                \Storage::disk('public')->put($storagePath, $pdfBinary);
+                $publicUrl = \Storage::disk('public')->url($storagePath);
+
+                // Upsert crm_documents record (replace previous auto-generated PDF if any)
+                $now = now();
+                $existing = DB::connection($conn)->table('crm_documents')
+                    ->where('lead_id', $lead->id)
+                    ->where('document_type', 'Online Application')
+                    ->whereNull('deleted_at')
+                    ->first();
+
+                if ($existing) {
+                    // Delete old file if path changed
+                    if ($existing->file_path !== $publicUrl) {
+                        $oldRelative = str_replace(rtrim(config('app.url'), '/') . '/storage/', '', $existing->file_path);
+                        \Storage::disk('public')->delete($oldRelative);
+                    }
+                    DB::connection($conn)->table('crm_documents')
+                        ->where('id', $existing->id)
+                        ->update([
+                            'file_path'  => $publicUrl,
+                            'file_name'  => $pdfFileName,
+                            'file_size'  => strlen($pdfBinary),
+                            'updated_at' => $now,
+                        ]);
+                } else {
+                    DB::connection($conn)->table('crm_documents')->insert([
+                        'lead_id'       => $lead->id,
+                        'document_type' => 'Online Application',
+                        'file_name'     => $pdfFileName,
+                        'file_path'     => $publicUrl,
+                        'file_size'     => strlen($pdfBinary),
+                        'uploaded_by'   => null,
+                        'created_at'    => $now,
+                        'updated_at'    => $now,
+                    ]);
+                }
+
+                $pdfUrl = "{$base}/public/merchant/{$token2}/download";
+                \Log::info('[saveMerchantSignature] PDF auto-generated & registered', [
+                    'client_id' => $clientId,
+                    'lead_id'   => $lead->id,
+                    'file_path' => $publicUrl,
+                ]);
+            } catch (\Throwable $pdfErr) {
+                \Log::warning('[saveMerchantSignature] PDF generation failed (non-blocking)', [
+                    'client_id' => $clientId,
+                    'lead_id'   => $lead->id,
+                    'error'     => $pdfErr->getMessage(),
+                ]);
+            }
 
             return response()->json([
                 'success'       => true,
                 'message'       => 'Signature saved.',
                 'signature_url' => $serveUrl,
+                'pdf_url'       => $pdfUrl,
             ]);
         } catch (\RuntimeException $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], $e->getCode() ?: 400);

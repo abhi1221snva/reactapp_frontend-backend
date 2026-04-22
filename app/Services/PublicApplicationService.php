@@ -865,7 +865,7 @@ HTML;
         // Build backend-served signature URLs so the frontend never needs to
         // construct paths into non-public app storage directories.
         $base          = rtrim(env('APP_URL'), '/');
-        $token         = $lead->lead_token;
+        $token         = $lead->lead_token ?: ($lead->unique_token ?? null);
         $signatureUrl  = !empty($merged['signature_image'])
             ? "{$base}/public/lead/{$token}/signature"
             : null;
