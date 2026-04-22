@@ -1601,12 +1601,30 @@ class TeamChatController extends Controller
      */
     public function getIceServers(Request $request)
     {
+        $servers = [
+            ['urls' => 'stun:stun.l.google.com:19302'],
+            ['urls' => 'stun:stun1.l.google.com:19302'],
+        ];
+
+        $turnHost = env('TURN_SERVER_HOST');
+        $turnUser = env('TURN_SERVER_USERNAME');
+        $turnPass = env('TURN_SERVER_CREDENTIAL');
+
+        if ($turnHost && $turnUser && $turnPass) {
+            $servers[] = [
+                'urls'       => "turn:{$turnHost}:3478?transport=tcp",
+                'username'   => $turnUser,
+                'credential' => $turnPass,
+            ];
+            $servers[] = [
+                'urls'       => "turns:{$turnHost}:5349?transport=tcp",
+                'username'   => $turnUser,
+                'credential' => $turnPass,
+            ];
+        }
+
         return $this->successResponse("ICE servers", [
-            'iceServers' => [
-                ['urls' => 'stun:stun.l.google.com:19302'],
-                ['urls' => 'stun:stun1.l.google.com:19302'],
-                ['urls' => 'stun:stun2.l.google.com:19302'],
-            ]
+            'iceServers' => $servers,
         ]);
     }
 }
