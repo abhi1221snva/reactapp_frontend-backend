@@ -134,8 +134,8 @@ class SmsInboxService
 
     /**
      * Send an outbound SMS for a conversation.
-     * Resolves a "from" number from campaign_numbers, then delegates to TwilioService.
-     * Saves the message record regardless of Twilio success/failure.
+     * Resolves a "from" number, then delegates to Plivo or Twilio.
+     * Saves the message record regardless of provider success/failure.
      */
     public function sendMessage(int $clientId, int $conversationId, string $body, int $userId, ?string $fromNumber = null): CrmSmsMessage
     {
@@ -143,9 +143,8 @@ class SmsInboxService
         $conversation = CrmSmsConversation::on($conn)->findOrFail($conversationId);
 
         // Use caller-supplied number, then reuse previous outbound from_number for this conversation,
-        // then fall back to any active Twilio number, then config default
+        // then fall back to any active number (Plivo first, then Twilio), then config default
         if (!$fromNumber) {
-            // Reuse the from_number already in use for this conversation
             $fromNumber = DB::connection($conn)
                 ->table('crm_sms_messages')
                 ->where('conversation_id', $conversationId)
@@ -155,7 +154,13 @@ class SmsInboxService
                 ->value('from_number');
         }
         if (!$fromNumber) {
-            // Any active Twilio number (no SMS capability filter — local DB has stale capability data)
+            $fromNumber = DB::connection($conn)
+                ->table('plivo_numbers')
+                ->where('status', 'active')
+                ->orderBy('number')
+                ->value('number');
+        }
+        if (!$fromNumber) {
             $fromNumber = DB::connection($conn)
                 ->table('twilio_numbers')
                 ->where('status', 'active')
@@ -166,16 +171,30 @@ class SmsInboxService
             $fromNumber = config('services.twilio.from_number', '+10000000000');
         }
 
+        // Determine provider: check if fromNumber is a Plivo number
+        $provider = $this->resolveProvider($conn, $fromNumber);
+
         $sid    = null;
         $status = 'failed';
 
-        try {
-            $twilio = \App\Services\TwilioService::forClient($clientId);
-            $result = $twilio->sendSms($conversation->lead_phone, $fromNumber, $body);
-            $sid    = $result['sms_sid'] ?? null;
-            $status = 'sent';
-        } catch (\Exception $e) {
-            Log::warning("SmsInboxService::sendMessage Twilio error for client {$clientId}: " . $e->getMessage());
+        if ($provider === 'plivo') {
+            try {
+                $plivo  = \App\Services\PlivoService::forClient($clientId);
+                $result = $plivo->sendSms($conversation->lead_phone, $fromNumber, $body);
+                $sid    = $result['message_uuid'] ?? null;
+                $status = 'sent';
+            } catch (\Exception $e) {
+                Log::warning("SmsInboxService::sendMessage Plivo error for client {$clientId}: " . $e->getMessage());
+            }
+        } else {
+            try {
+                $twilio = \App\Services\TwilioService::forClient($clientId);
+                $result = $twilio->sendSms($conversation->lead_phone, $fromNumber, $body);
+                $sid    = $result['sms_sid'] ?? null;
+                $status = 'sent';
+            } catch (\Exception $e) {
+                Log::warning("SmsInboxService::sendMessage Twilio error for client {$clientId}: " . $e->getMessage());
+            }
         }
 
         /** @var CrmSmsMessage $message */
@@ -194,6 +213,20 @@ class SmsInboxService
         $conversation->update(['last_message_at' => Carbon::now()]);
 
         return $message;
+    }
+
+    /**
+     * Determine whether a from_number belongs to Plivo or Twilio.
+     */
+    private function resolveProvider(string $conn, string $number): string
+    {
+        $isPlivoNumber = DB::connection($conn)
+            ->table('plivo_numbers')
+            ->where('number', $number)
+            ->where('status', 'active')
+            ->exists();
+
+        return $isPlivoNumber ? 'plivo' : 'twilio';
     }
 
     /**

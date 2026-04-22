@@ -83,49 +83,84 @@ class CrmSmsInboxController extends Controller
 
     /**
      * GET /crm/sms/sender-numbers
-     * Returns all Twilio numbers for the account (no SMS capability filter —
-     * local DB has bad capability data; let Twilio reject on send if truly incapable).
-     * Primary source: live Twilio API (always up-to-date).
-     * Fallback: local twilio_numbers table (if Twilio API unreachable).
+     * Returns all Twilio + Plivo numbers for the account.
+     * Primary source: live API (always up-to-date).
+     * Fallback: local DB tables (if API unreachable).
      */
     public function getSenderNumbers(Request $request)
     {
         $clientId = (int) $request->auth->parent_id;
+        $conn     = "mysql_{$clientId}";
+        $allNumbers = collect();
+
         try {
-            // Always try the live Twilio API first so all account numbers are shown
+            // ── Twilio numbers ──────────────────────────────────────────
             try {
                 $twilio      = \App\Services\TwilioService::forClient($clientId);
                 $liveNumbers = $twilio->listNumbers(100);
 
-                $numbers = collect($liveNumbers)
-                    ->values()
-                    ->map(fn ($n) => [
-                        'id'            => 0,
-                        'phone_number'  => $n['phone_number'],
-                        'friendly_name' => $n['phone_number'],
-                    ]);
-
-                if ($numbers->isNotEmpty()) {
-                    return $this->successResponse('Sender numbers retrieved.', ['numbers' => $numbers]);
-                }
-            } catch (\Exception $te) {
-                \Illuminate\Support\Facades\Log::debug("getSenderNumbers Twilio API failed for client {$clientId}: " . $te->getMessage());
-            }
-
-            // Fallback: read all active numbers from local synced table
-            $numbers = \Illuminate\Support\Facades\DB::connection("mysql_{$clientId}")
-                ->table('twilio_numbers')
-                ->where('status', 'active')
-                ->orderBy('phone_number')
-                ->get(['id', 'phone_number', 'friendly_name'])
-                ->values()
-                ->map(fn ($r) => [
-                    'id'            => $r->id,
-                    'phone_number'  => $r->phone_number,
-                    'friendly_name' => $r->friendly_name ?: $r->phone_number,
+                $twilioNumbers = collect($liveNumbers)->values()->map(fn ($n) => [
+                    'id'            => 0,
+                    'phone_number'  => $n['phone_number'],
+                    'friendly_name' => $n['phone_number'],
+                    'provider'      => 'twilio',
                 ]);
 
-            return $this->successResponse('Sender numbers retrieved.', ['numbers' => $numbers]);
+                $allNumbers = $allNumbers->merge($twilioNumbers);
+            } catch (\Exception $te) {
+                \Illuminate\Support\Facades\Log::debug("getSenderNumbers Twilio API failed for client {$clientId}: " . $te->getMessage());
+
+                // Fallback: local twilio_numbers table
+                $fallback = \Illuminate\Support\Facades\DB::connection($conn)
+                    ->table('twilio_numbers')
+                    ->where('status', 'active')
+                    ->orderBy('phone_number')
+                    ->get(['id', 'phone_number', 'friendly_name'])
+                    ->map(fn ($r) => [
+                        'id'            => $r->id,
+                        'phone_number'  => $r->phone_number,
+                        'friendly_name' => $r->friendly_name ?: $r->phone_number,
+                        'provider'      => 'twilio',
+                    ]);
+                $allNumbers = $allNumbers->merge($fallback);
+            }
+
+            // ── Plivo numbers ───────────────────────────────────────────
+            try {
+                $plivo      = \App\Services\PlivoService::forClient($clientId);
+                $livePlivo  = $plivo->listNumbers(100);
+
+                $plivoNumbers = collect($livePlivo)->values()->map(fn ($n) => [
+                    'id'            => 0,
+                    'phone_number'  => $n['number'],
+                    'friendly_name' => $n['alias'] ?: $n['number'],
+                    'provider'      => 'plivo',
+                ]);
+
+                $allNumbers = $allNumbers->merge($plivoNumbers);
+            } catch (\Exception $pe) {
+                \Illuminate\Support\Facades\Log::debug("getSenderNumbers Plivo API failed for client {$clientId}: " . $pe->getMessage());
+
+                // Fallback: local plivo_numbers table
+                try {
+                    $fallback = \Illuminate\Support\Facades\DB::connection($conn)
+                        ->table('plivo_numbers')
+                        ->where('status', 'active')
+                        ->orderBy('number')
+                        ->get(['id', 'number'])
+                        ->map(fn ($r) => [
+                            'id'            => $r->id,
+                            'phone_number'  => $r->number,
+                            'friendly_name' => $r->number,
+                            'provider'      => 'plivo',
+                        ]);
+                    $allNumbers = $allNumbers->merge($fallback);
+                } catch (\Exception $ignored) {
+                    // plivo_numbers table may not exist for this client
+                }
+            }
+
+            return $this->successResponse('Sender numbers retrieved.', ['numbers' => $allNumbers->values()]);
         } catch (\Exception $e) {
             return $this->failResponse('Failed to retrieve sender numbers.', [], $e, 500);
         }

@@ -113,6 +113,8 @@ class TwilioWebhookController extends Controller
 
         if ($clientId) {
             $conn = 'mysql_' . $clientId;
+
+            // Store in raw Twilio SMS log
             TwilioSms::on($conn)->updateOrCreate(
                 ['sms_sid' => $smsSid],
                 [
@@ -124,6 +126,16 @@ class TwilioWebhookController extends Controller
                     'sent_at'     => \Carbon\Carbon::now(),
                 ]
             );
+
+            // Feed into CRM SMS inbox (conversations + messages)
+            try {
+                $smsSvc = app(\App\Services\SmsInboxService::class);
+                $smsSvc->receiveMessage($clientId, $from, $to, $body, $smsSid);
+            } catch (\Throwable $e) {
+                Log::warning('Twilio inbound SMS: CRM inbox insert failed', [
+                    'sid' => $smsSid, 'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         $response = new MessagingResponse();

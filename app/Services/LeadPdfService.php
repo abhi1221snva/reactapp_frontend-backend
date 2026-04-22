@@ -508,9 +508,12 @@ class LeadPdfService
 
     public function applyPlaceholders(string $text, array $data): string
     {
-        // Legacy _logo_ placeholder (used in older templates)
+        // Legacy underscore-wrapped placeholders (used in older templates)
         if (isset($data['company_logo'])) {
             $text = str_replace('_logo_', (string) $data['company_logo'], $text);
+        }
+        if (isset($data['company_name'])) {
+            $text = str_replace('_company_name_', (string) $data['company_name'], $text);
         }
 
         foreach ($data as $key => $value) {

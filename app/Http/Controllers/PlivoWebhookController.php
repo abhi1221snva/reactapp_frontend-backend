@@ -110,6 +110,8 @@ class PlivoWebhookController extends Controller
 
         if ($clientId) {
             $conn = "mysql_{$clientId}";
+
+            // Store in raw Plivo SMS log
             PlivoSms::on($conn)->updateOrCreate(
                 ['message_uuid' => $messageUuid],
                 [
@@ -121,6 +123,16 @@ class PlivoWebhookController extends Controller
                     'sent_at'     => \Carbon\Carbon::now(),
                 ]
             );
+
+            // Feed into CRM SMS inbox (conversations + messages)
+            try {
+                $smsSvc = app(\App\Services\SmsInboxService::class);
+                $smsSvc->receiveMessage($clientId, $from, $to, $body, $messageUuid);
+            } catch (\Throwable $e) {
+                Log::warning('Plivo inbound SMS: CRM inbox insert failed', [
+                    'uuid' => $messageUuid, 'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         // Return empty 200 — no auto-reply
