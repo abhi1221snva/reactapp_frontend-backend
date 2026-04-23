@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Carbon\Carbon;
+use App\Services\LeadVisibilityService;
 
 /**
  * @OA\Get(
@@ -56,6 +57,30 @@ use Carbon\Carbon;
  */
 class CrmAnalyticsController extends Controller
 {
+    /**
+     * Build a visibility-aware cache key suffix.
+     * Admins share a common cache; restricted users get user-specific caches.
+     */
+    private function visibilityCacheSuffix(Request $request): string
+    {
+        $vis = new LeadVisibilityService();
+        $clientId = $request->auth->parent_id;
+        if ($vis->hasFullAccess($request->auth, (int) $clientId)) {
+            return '';
+        }
+        return '_u' . $request->auth->id;
+    }
+
+    /**
+     * Apply lead visibility scope to a query on crm_lead_data (or aliased table).
+     */
+    private function applyVisibility($query, Request $request, string $alias = ''): void
+    {
+        (new LeadVisibilityService())->applyVisibilityScope(
+            $query, $request->auth, (int) $request->auth->parent_id, $alias
+        );
+    }
+
     private function period(Request $request): array
     {
         $period = $request->input('period', 'month');
@@ -86,34 +111,30 @@ class CrmAnalyticsController extends Controller
     {
         try {
             $clientId = $request->auth->parent_id;
+            $suffix   = $this->visibilityCacheSuffix($request);
+            $cacheKey = "analytics_{$clientId}_status_dist_current{$suffix}";
+            $auth     = $request->auth;
 
-            $cacheKey = "analytics_{$clientId}_status_dist_current";
-
-            $data = Cache::remember($cacheKey, 120, function () use ($clientId) {
+            $data = Cache::remember($cacheKey, 120, function () use ($clientId, $auth) {
                 $statuses = DB::connection("mysql_$clientId")
                     ->table('crm_lead_status')
                     ->where('status', '1')
                     ->orderBy('display_order')
                     ->get(['title', 'lead_title_url', 'color_code']);
 
-                // Count ALL active leads per status (no date filter — current pipeline state)
-                $total = DB::connection("mysql_$clientId")
-                    ->table('crm_lead_data')
-                    ->where('is_deleted', 0)
-                    ->count();
+                $totalQ = DB::connection("mysql_$clientId")->table('crm_lead_data')->where('is_deleted', 0);
+                (new LeadVisibilityService())->applyVisibilityScope($totalQ, $auth, (int) $clientId);
+                $total = $totalQ->count();
 
-                $counts = DB::connection("mysql_$clientId")
-                    ->table('crm_lead_data')
-                    ->where('is_deleted', 0)
-                    ->select('lead_status', DB::raw('COUNT(*) as count'))
-                    ->groupBy('lead_status')
-                    ->pluck('count', 'lead_status')
-                    ->toArray();
+                $countsQ = DB::connection("mysql_$clientId")->table('crm_lead_data')->where('is_deleted', 0)
+                    ->select('lead_status', DB::raw('COUNT(*) as count'))->groupBy('lead_status');
+                (new LeadVisibilityService())->applyVisibilityScope($countsQ, $auth, (int) $clientId);
+                $counts = $countsQ->pluck('count', 'lead_status')->toArray();
 
                 $result = [];
                 foreach ($statuses as $s) {
                     $count = $counts[$s->lead_title_url] ?? 0;
-                    if ($count === 0) continue; // skip empty stages
+                    if ($count === 0) continue;
                     $result[] = [
                         'status'     => $s->lead_title_url,
                         'title'      => $s->title,
@@ -123,7 +144,6 @@ class CrmAnalyticsController extends Controller
                     ];
                 }
 
-                // Also include statuses not in crm_lead_status (legacy/custom)
                 foreach ($counts as $slug => $cnt) {
                     $alreadyIn = collect($result)->firstWhere('status', $slug);
                     if (!$alreadyIn && $cnt > 0) {
@@ -156,25 +176,25 @@ class CrmAnalyticsController extends Controller
         try {
             $clientId = $request->auth->parent_id;
             [$start, $end] = $this->period($request);
+            $suffix   = $this->visibilityCacheSuffix($request);
+            $cacheKey = "analytics_{$clientId}_velocity_{$start}_{$end}{$suffix}";
+            $auth     = $request->auth;
 
-            $cacheKey = "analytics_{$clientId}_velocity_{$start}_{$end}";
-
-            $data = Cache::remember($cacheKey, 300, function () use ($clientId, $start, $end) {
+            $data = Cache::remember($cacheKey, 300, function () use ($clientId, $start, $end, $auth) {
                 $daily = DB::connection("mysql_$clientId")
                     ->table('crm_lead_data')
                     ->where('is_deleted', 0)
-                    ->whereBetween(DB::raw('DATE(created_at)'), [$start, $end])
-                    ->select(DB::raw('DATE(created_at) as date'), DB::raw('COUNT(*) as new_leads'))
+                    ->whereBetween(DB::raw('DATE(created_at)'), [$start, $end]);
+                (new LeadVisibilityService())->applyVisibilityScope($daily, $auth, (int) $clientId);
+                $daily = $daily->select(DB::raw('DATE(created_at) as date'), DB::raw('COUNT(*) as new_leads'))
                     ->groupBy(DB::raw('DATE(created_at)'))
                     ->orderBy('date')
                     ->get();
 
-                // If selected period has no data, fall back to the last 180 days that have data
                 if ($daily->isEmpty()) {
-                    $latestDate = DB::connection("mysql_$clientId")
-                        ->table('crm_lead_data')
-                        ->where('is_deleted', 0)
-                        ->max(DB::raw('DATE(created_at)'));
+                    $latestQ = DB::connection("mysql_$clientId")->table('crm_lead_data')->where('is_deleted', 0);
+                    (new LeadVisibilityService())->applyVisibilityScope($latestQ, $auth, (int) $clientId);
+                    $latestDate = $latestQ->max(DB::raw('DATE(created_at)'));
 
                     if ($latestDate) {
                         $fallbackEnd   = $latestDate;
@@ -183,8 +203,9 @@ class CrmAnalyticsController extends Controller
                         $daily = DB::connection("mysql_$clientId")
                             ->table('crm_lead_data')
                             ->where('is_deleted', 0)
-                            ->whereBetween(DB::raw('DATE(created_at)'), [$fallbackStart, $fallbackEnd])
-                            ->select(DB::raw('DATE(created_at) as date'), DB::raw('COUNT(*) as new_leads'))
+                            ->whereBetween(DB::raw('DATE(created_at)'), [$fallbackStart, $fallbackEnd]);
+                        (new LeadVisibilityService())->applyVisibilityScope($daily, $auth, (int) $clientId);
+                        $daily = $daily->select(DB::raw('DATE(created_at) as date'), DB::raw('COUNT(*) as new_leads'))
                             ->groupBy(DB::raw('DATE(created_at)'))
                             ->orderBy('date')
                             ->get();
@@ -218,14 +239,16 @@ class CrmAnalyticsController extends Controller
         try {
             $clientId = $request->auth->parent_id;
             $agentIds = $request->input('agent_ids', []);
+            $suffix   = $this->visibilityCacheSuffix($request);
+            $cacheKey = "analytics_{$clientId}_agent_perf_current_{$suffix}_" . md5(implode(',', $agentIds));
+            $auth     = $request->auth;
 
-            $cacheKey = "analytics_{$clientId}_agent_perf_current_" . md5(implode(',', $agentIds));
-
-            $data = Cache::remember($cacheKey, 120, function () use ($clientId, $agentIds) {
+            $data = Cache::remember($cacheKey, 120, function () use ($clientId, $agentIds, $auth) {
                 $query = DB::connection("mysql_$clientId")
                     ->table('crm_lead_data')
-                    ->where('is_deleted', 0)
-                    ->select('assigned_to', 'lead_status', DB::raw('COUNT(*) as count'))
+                    ->where('is_deleted', 0);
+                (new LeadVisibilityService())->applyVisibilityScope($query, $auth, (int) $clientId);
+                $query->select('assigned_to', 'lead_status', DB::raw('COUNT(*) as count'))
                     ->groupBy('assigned_to', 'lead_status')
                     ->orderBy('assigned_to');
 
@@ -279,20 +302,22 @@ class CrmAnalyticsController extends Controller
     {
         try {
             $clientId = $request->auth->parent_id;
+            $suffix   = $this->visibilityCacheSuffix($request);
+            $cacheKey = "analytics_{$clientId}_funnel_current{$suffix}";
+            $auth     = $request->auth;
 
-            $cacheKey = "analytics_{$clientId}_funnel_current";
-
-            $data = Cache::remember($cacheKey, 120, function () use ($clientId) {
+            $data = Cache::remember($cacheKey, 120, function () use ($clientId, $auth) {
                 $stages = DB::connection("mysql_$clientId")
                     ->table('crm_lead_status')
                     ->where('status', '1')
                     ->orderBy('display_order')
                     ->pluck('title', 'lead_title_url');
 
-                $counts = DB::connection("mysql_$clientId")
+                $countsQ = DB::connection("mysql_$clientId")
                     ->table('crm_lead_data')
-                    ->where('is_deleted', 0)
-                    ->select('lead_status', DB::raw('COUNT(*) as count'))
+                    ->where('is_deleted', 0);
+                (new LeadVisibilityService())->applyVisibilityScope($countsQ, $auth, (int) $clientId);
+                $counts = $countsQ->select('lead_status', DB::raw('COUNT(*) as count'))
                     ->groupBy('lead_status')
                     ->pluck('count', 'lead_status')
                     ->toArray();
@@ -332,11 +357,23 @@ class CrmAnalyticsController extends Controller
         try {
             $clientId = $request->auth->parent_id;
             [$start, $end] = $this->period($request);
+            $suffix   = $this->visibilityCacheSuffix($request);
+            $cacheKey = "analytics_{$clientId}_lender_perf_{$start}_{$end}{$suffix}";
+            $auth     = $request->auth;
 
-            $cacheKey = "analytics_{$clientId}_lender_perf_{$start}_{$end}";
-
-            $data = Cache::remember($cacheKey, 300, function () use ($clientId, $start, $end) {
+            $data = Cache::remember($cacheKey, 300, function () use ($clientId, $start, $end, $auth) {
                 $db = DB::connection("mysql_$clientId");
+
+                // Build visible lead IDs subquery for restricted users
+                $visScope = (new LeadVisibilityService())->buildVisibilityScope($auth, (int) $clientId);
+                $visibleLeadIds = null;
+                if ($visScope !== null) {
+                    $visibleLeadIds = $db->table('crm_lead_data')
+                        ->where('is_deleted', 0)
+                        ->whereRaw($visScope['condition'], $visScope['bindings'])
+                        ->pluck('id')
+                        ->toArray();
+                }
 
                 // Build a status-id → title map
                 $statusMap = [];
@@ -351,11 +388,14 @@ class CrmAnalyticsController extends Controller
                     // table may not exist yet
                 }
 
-                $submissions = $db
+                $submissionsQ = $db
                     ->table('crm_send_lead_to_lender_record as r')
                     ->join('crm_lender as l', 'l.id', '=', DB::raw('CAST(r.lender_id AS UNSIGNED)'))
-                    ->whereBetween(DB::raw('DATE(r.created_at)'), [$start, $end])
-                    ->select(
+                    ->whereBetween(DB::raw('DATE(r.created_at)'), [$start, $end]);
+                if ($visibleLeadIds !== null) {
+                    $submissionsQ->whereIn('r.lead_id', $visibleLeadIds);
+                }
+                $submissions = $submissionsQ->select(
                         'r.lender_id',
                         'l.lender_name',
                         DB::raw('COUNT(*) as total_submissions'),
@@ -367,9 +407,13 @@ class CrmAnalyticsController extends Controller
                 // Count funded deals per lender in the same period
                 $fundedCounts = [];
                 try {
-                    $funded = $db->table('crm_funded_deals')
+                    $fundedQ = $db->table('crm_funded_deals')
                         ->whereIn('status', ['funded', 'in_repayment', 'paid_off', 'renewed'])
-                        ->whereBetween(DB::raw('DATE(COALESCE(funding_date, created_at))'), [$start, $end])
+                        ->whereBetween(DB::raw('DATE(COALESCE(funding_date, created_at))'), [$start, $end]);
+                    if ($visibleLeadIds !== null) {
+                        $fundedQ->whereIn('lead_id', $visibleLeadIds);
+                    }
+                    $funded = $fundedQ
                         ->select('lender_id', DB::raw('COUNT(*) as cnt'), DB::raw('SUM(funded_amount) as total_amount'))
                         ->groupBy('lender_id')
                         ->get();
@@ -445,13 +489,29 @@ class CrmAnalyticsController extends Controller
     {
         try {
             $clientId = $request->auth->parent_id;
-            $cacheKey = "analytics_{$clientId}_revenue_trend_12m";
+            $suffix   = $this->visibilityCacheSuffix($request);
+            $cacheKey = "analytics_{$clientId}_revenue_trend_12m{$suffix}";
+            $auth     = $request->auth;
 
-            $data = Cache::remember($cacheKey, 600, function () use ($clientId) {
-                $rows = DB::connection("mysql_$clientId")
+            $data = Cache::remember($cacheKey, 600, function () use ($clientId, $auth) {
+                // Build visible lead IDs for restricted users
+                $visScope = (new LeadVisibilityService())->buildVisibilityScope($auth, (int) $clientId);
+                $visibleLeadIds = null;
+                if ($visScope !== null) {
+                    $visibleLeadIds = DB::connection("mysql_$clientId")->table('crm_lead_data')
+                        ->where('is_deleted', 0)
+                        ->whereRaw($visScope['condition'], $visScope['bindings'])
+                        ->pluck('id')->toArray();
+                }
+
+                $q = DB::connection("mysql_$clientId")
                     ->table('crm_funded_deals')
                     ->whereIn('status', ['funded', 'in_repayment', 'paid_off', 'renewed'])
-                    ->where('created_at', '>=', Carbon::now()->subMonths(12)->startOfMonth())
+                    ->where('created_at', '>=', Carbon::now()->subMonths(12)->startOfMonth());
+                if ($visibleLeadIds !== null) {
+                    $q->whereIn('lead_id', $visibleLeadIds);
+                }
+                $rows = $q
                     ->select(
                         DB::raw("DATE_FORMAT(COALESCE(funding_date, created_at), '%Y-%m') as month"),
                         DB::raw('SUM(funded_amount) as total_funded'),
@@ -500,14 +560,18 @@ class CrmAnalyticsController extends Controller
         try {
             $clientId = $request->auth->parent_id;
             [$start, $end] = $this->period($request);
-            $cacheKey = "analytics_{$clientId}_pipeline_velocity_{$start}_{$end}";
+            $suffix   = $this->visibilityCacheSuffix($request);
+            $cacheKey = "analytics_{$clientId}_pipeline_velocity_{$start}_{$end}{$suffix}";
+            $auth     = $request->auth;
 
-            $data = Cache::remember($cacheKey, 300, function () use ($clientId, $start, $end) {
-                $rows = DB::connection("mysql_$clientId")
+            $data = Cache::remember($cacheKey, 300, function () use ($clientId, $start, $end, $auth) {
+                $q = DB::connection("mysql_$clientId")
                     ->table('crm_lead_data as ld')
                     ->join('crm_lead_status as s', 's.lead_title_url', '=', 'ld.lead_status')
                     ->where('ld.is_deleted', 0)
-                    ->whereBetween(DB::raw('DATE(ld.created_at)'), [$start, $end])
+                    ->whereBetween(DB::raw('DATE(ld.created_at)'), [$start, $end]);
+                (new LeadVisibilityService())->applyVisibilityScope($q, $auth, (int) $clientId, 'ld');
+                $rows = $q
                     ->select(
                         'ld.lead_status as status_slug',
                         's.title as status_name',
@@ -554,12 +618,28 @@ class CrmAnalyticsController extends Controller
         try {
             $clientId = $request->auth->parent_id;
             [$start, $end] = $this->period($request);
-            $cacheKey = "analytics_{$clientId}_deal_quality_{$start}_{$end}";
+            $suffix   = $this->visibilityCacheSuffix($request);
+            $cacheKey = "analytics_{$clientId}_deal_quality_{$start}_{$end}{$suffix}";
+            $auth     = $request->auth;
 
-            $data = Cache::remember($cacheKey, 300, function () use ($clientId, $start, $end) {
-                $deal = DB::connection("mysql_$clientId")
+            $data = Cache::remember($cacheKey, 300, function () use ($clientId, $start, $end, $auth) {
+                // Build visible lead IDs for restricted users
+                $visScope = (new LeadVisibilityService())->buildVisibilityScope($auth, (int) $clientId);
+                $visibleLeadIds = null;
+                if ($visScope !== null) {
+                    $visibleLeadIds = DB::connection("mysql_$clientId")->table('crm_lead_data')
+                        ->where('is_deleted', 0)
+                        ->whereRaw($visScope['condition'], $visScope['bindings'])
+                        ->pluck('id')->toArray();
+                }
+
+                $dealQ = DB::connection("mysql_$clientId")
                     ->table('crm_funded_deals')
-                    ->whereBetween(DB::raw('DATE(created_at)'), [$start, $end])
+                    ->whereBetween(DB::raw('DATE(created_at)'), [$start, $end]);
+                if ($visibleLeadIds !== null) {
+                    $dealQ->whereIn('lead_id', $visibleLeadIds);
+                }
+                $deal = $dealQ
                     ->select(
                         DB::raw('COUNT(*) as total_deals'),
                         DB::raw("SUM(CASE WHEN status = 'defaulted'             THEN 1 ELSE 0 END) as defaulted"),
@@ -604,17 +684,21 @@ class CrmAnalyticsController extends Controller
         try {
             $clientId = $request->auth->parent_id;
             $days     = max(1, min(90, (int) $request->input('days', 14)));
-            $cacheKey = "analytics_{$clientId}_stale_leads_{$days}";
+            $suffix   = $this->visibilityCacheSuffix($request);
+            $cacheKey = "analytics_{$clientId}_stale_leads_{$days}{$suffix}";
+            $auth     = $request->auth;
 
-            $data = Cache::remember($cacheKey, 120, function () use ($clientId, $days) {
+            $data = Cache::remember($cacheKey, 120, function () use ($clientId, $days, $auth) {
                 $cutoff = Carbon::now()->subDays($days)->toDateTimeString();
 
-                $rows = DB::connection("mysql_$clientId")
+                $q = DB::connection("mysql_$clientId")
                     ->table('crm_lead_data as ld')
                     ->leftJoin('crm_lead_status as s', 's.lead_title_url', '=', 'ld.lead_status')
                     ->where('ld.is_deleted', 0)
                     ->where('ld.updated_at', '<', $cutoff)
-                    ->whereNotIn('ld.lead_status', ['funded', 'closed_lost', 'declined', 'dead', 'closed_won'])
+                    ->whereNotIn('ld.lead_status', ['funded', 'closed_lost', 'declined', 'dead', 'closed_won']);
+                (new LeadVisibilityService())->applyVisibilityScope($q, $auth, (int) $clientId, 'ld');
+                $rows = $q
                     ->select(
                         'ld.lead_status as status_slug',
                         DB::raw("COALESCE(s.title, ld.lead_status) as status_name"),

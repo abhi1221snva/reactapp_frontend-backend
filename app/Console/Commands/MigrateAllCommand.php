@@ -70,10 +70,18 @@ class MigrateAllCommand extends Command
                     Log::info("MigrateAllCommand:handle", ["Executing: $stmt"]);
                     DB::connection('master')->statement($stmt);
 
-                    $stmt = "GRANT ALL PRIVILEGES ON " . $connection->db_name . ".* TO '" . $connection->db_user . "'@'".$connection->ip."'";
-                    $this->info("Executing: $stmt");
-                    Log::info("MigrateAllCommand:handle", ["Executing: $stmt"]);
-                    DB::connection('master')->statement($stmt);
+                    // Try granting to wildcard user first, then specific host
+                    try {
+                        $stmt = "GRANT ALL PRIVILEGES ON " . $connection->db_name . ".* TO '" . $connection->db_user . "'@'".$connection->ip."'";
+                        $this->info("Executing: $stmt");
+                        Log::info("MigrateAllCommand:handle", ["Executing: $stmt"]);
+                        DB::connection('master')->statement($stmt);
+                    } catch (\Throwable $grantEx) {
+                        $stmt = "GRANT ALL PRIVILEGES ON " . $connection->db_name . ".* TO '" . $connection->db_user . "'@'%'";
+                        $this->info("Fallback: $stmt");
+                        Log::info("MigrateAllCommand:handle", ["Fallback grant: $stmt"]);
+                        DB::connection('master')->statement($stmt);
+                    }
 
                     $stmt = "FLUSH PRIVILEGES";
                     $this->info("Executing: $stmt");
@@ -82,7 +90,8 @@ class MigrateAllCommand extends Command
                 } catch (\Throwable $throwable) {
                     Log::error("Error creating database", buildContext($throwable));
                     $this->error($throwable->getMessage());
-                    throw $throwable;
+                    // Continue to next client instead of stopping all migrations
+                    continue;
                 }
             }
 

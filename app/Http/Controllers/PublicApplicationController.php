@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\MerchantNotificationJob;
 use App\Services\PublicApplicationService;
 use App\Services\LeadPdfService;
 use App\Services\FieldValidationService;
@@ -24,6 +25,73 @@ class PublicApplicationController extends Controller
     {
         $this->svc    = $svc;
         $this->pdfSvc = $pdfSvc;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // DOMAIN BRANDING (login page)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * GET /public/domain-branding?domain=app.businessfundusa.com
+     * Resolves a domain to tenant branding (logo, company name) for the login page.
+     */
+    public function domainBranding(Request $request)
+    {
+        $domain = $request->input('domain', '');
+        if (!$domain) {
+            return response()->json(['success' => false, 'message' => 'domain parameter required'], 400);
+        }
+
+        try {
+            // Search domain_whitelist — match against stored URLs
+            $entry = DB::connection('master')->table('domain_whitelist')
+                ->where('domain_name', 'LIKE', "%{$domain}%")
+                ->first(['client_id']);
+
+            if (!$entry) {
+                // Fallback: search crm_system_setting.company_domain across all clients
+                $clients = DB::connection('master')->table('clients')->pluck('id');
+                foreach ($clients as $cid) {
+                    try {
+                        $found = DB::connection("mysql_{$cid}")->table('crm_system_setting')
+                            ->where('company_domain', 'LIKE', "%{$domain}%")
+                            ->exists();
+                        if ($found) {
+                            $entry = (object) ['client_id' => $cid];
+                            break;
+                        }
+                    } catch (\Throwable $ignored) {}
+                }
+            }
+
+            if (!$entry) {
+                return response()->json(['success' => true, 'data' => null]);
+            }
+
+            $clientId = $entry->client_id;
+            $setting  = DB::connection("mysql_{$clientId}")->table('crm_system_setting')->first(['company_name', 'logo']);
+
+            $logoUrl = null;
+            if ($setting && $setting->logo) {
+                $raw = $setting->logo;
+                if (str_starts_with($raw, 'http://') || str_starts_with($raw, 'https://')) {
+                    $logoUrl = $raw;
+                } else {
+                    $logoUrl = rtrim(env('APP_URL', ''), '/') . "/public/tenant/{$clientId}/logo";
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'data'    => [
+                    'company_name' => $setting->company_name ?? null,
+                    'logo_url'     => $logoUrl,
+                    'client_id'    => $clientId,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => true, 'data' => null]);
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -243,6 +311,9 @@ class PublicApplicationController extends Controller
                 }
 
                 if ($hasSig) {
+                    // Update signature date(s) to current timestamp in agent's timezone
+                    $this->updateSignatureDates($conn, $lead->id, $clientId);
+
                     $pdfResult   = $this->pdfSvc->renderPdfBinary($clientId, $lead->id);
                     $pdfBinary   = $pdfResult['pdf'];
                     $pdfFileName = $pdfResult['filename'];
@@ -438,6 +509,9 @@ class PublicApplicationController extends Controller
             // Auto-generate the application PDF and register it as a CRM document
             $pdfUrl = null;
             try {
+                // Update signature date to current timestamp in agent's timezone
+                $this->updateSignatureDates("mysql_{$clientId}", $lead->id, $clientId);
+
                 $pdfResult = $this->pdfSvc->renderPdfBinary($clientId, $lead->id);
                 $pdfBinary = $pdfResult['pdf'];
                 $pdfFileName = $pdfResult['filename'];
@@ -495,6 +569,11 @@ class PublicApplicationController extends Controller
                     'error'     => $pdfErr->getMessage(),
                 ]);
             }
+
+            // Dispatch merchant notification (non-blocking — failure won't affect response)
+            try {
+                dispatch(new MerchantNotificationJob($clientId, $lead->id, 'signature'));
+            } catch (\Throwable $ignored) {}
 
             return response()->json([
                 'success'       => true,
@@ -661,11 +740,57 @@ class PublicApplicationController extends Controller
             $file   = $request->file('document');
             $result = $this->svc->storeDocument($lead, $clientId, $file, $request->input('document_type', 'general'));
 
+            // Dispatch merchant notification (non-blocking)
+            try {
+                dispatch(new MerchantNotificationJob($clientId, $lead->id, 'document_upload', [
+                    'file_name' => $file->getClientOriginalName(),
+                ]));
+            } catch (\Throwable $ignored) {}
+
             return response()->json(['success' => true, 'data' => $result]);
         } catch (\RuntimeException $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], $e->getCode() ?: 400);
         } catch (\Throwable $e) {
             return response()->json(['success' => false, 'message' => 'Failed to upload document.'], 500);
+        }
+    }
+
+    /**
+     * POST /public/merchant/{token}/submit
+     * Called when the merchant clicks "Finish" — dispatches notification to the assigned agent.
+     */
+    public function submitMerchantApplication(Request $request, string $token)
+    {
+        try {
+            [$lead, $clientId] = $this->svc->resolveLeadToken($token);
+
+            // Log activity
+            $conn = "mysql_{$clientId}";
+            $now  = now();
+
+            // Check if crm_lead_activity table exists before inserting
+            try {
+                if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_activity')) {
+                    DB::connection($conn)->table('crm_lead_activity')->insert([
+                        'lead_id'     => $lead->id,
+                        'activity'    => 'Merchant submitted the application via portal.',
+                        'performed_by' => null,
+                        'created_at'  => $now,
+                        'updated_at'  => $now,
+                    ]);
+                }
+            } catch (\Throwable $ignored) {}
+
+            // Dispatch notification
+            try {
+                dispatch(new MerchantNotificationJob($clientId, $lead->id, 'submitted'));
+            } catch (\Throwable $ignored) {}
+
+            return response()->json(['success' => true, 'message' => 'Application submitted successfully.']);
+        } catch (\RuntimeException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], $e->getCode() ?: 400);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => 'Failed to submit application.'], 500);
         }
     }
 
@@ -690,6 +815,61 @@ class PublicApplicationController extends Controller
      *                              'system'    → all labels (no filter)
      * @return array                { field_key: [errorMessage] } — empty means valid
      */
+    /**
+     * Update signature_date (and owner_2_signature_date if sig exists) to current
+     * timestamp in the assigned agent's timezone.
+     */
+    private function updateSignatureDates(string $conn, int $leadId, $clientId): void
+    {
+        // Resolve agent timezone
+        $agentTz = 'America/New_York';
+        try {
+            $agentId = DB::connection($conn)->table('crm_leads')
+                ->where('id', $leadId)->value('assigned_to');
+            if ($agentId) {
+                $tz = DB::connection('master')->table('users')
+                    ->where('id', $agentId)->value('timezone');
+                if ($tz) {
+                    new \DateTimeZone($tz); // validate
+                    $agentTz = $tz;
+                }
+            }
+        } catch (\Throwable $ignored) {}
+
+        $nowFormatted = \Carbon\Carbon::now($agentTz)->format('m/d/Y');
+        $now = now();
+
+        // Update signature_date if signature exists
+        $hasSig = DB::connection($conn)->table('crm_lead_values')
+            ->where('lead_id', $leadId)
+            ->where('field_key', 'signature_image')
+            ->where('field_value', '!=', '')
+            ->exists();
+
+        if ($hasSig) {
+            DB::connection($conn)->table('crm_lead_values')->upsert(
+                ['lead_id' => $leadId, 'field_key' => 'signature_date', 'field_value' => $nowFormatted, 'created_at' => $now, 'updated_at' => $now],
+                ['lead_id', 'field_key'],
+                ['field_value', 'updated_at']
+            );
+        }
+
+        // Update owner_2_signature_date if owner 2 signature exists
+        $hasSig2 = DB::connection($conn)->table('crm_lead_values')
+            ->where('lead_id', $leadId)
+            ->where('field_key', 'owner_2_signature_image')
+            ->where('field_value', '!=', '')
+            ->exists();
+
+        if ($hasSig2) {
+            DB::connection($conn)->table('crm_lead_values')->upsert(
+                ['lead_id' => $leadId, 'field_key' => 'owner_2_signature_date', 'field_value' => $nowFormatted, 'created_at' => $now, 'updated_at' => $now],
+                ['lead_id', 'field_key'],
+                ['field_value', 'updated_at']
+            );
+        }
+    }
+
     private function validateEavFields(Request $request, string $clientId, bool $requireAll, string $context = 'system'): array
     {
         $query = DB::connection("mysql_{$clientId}")

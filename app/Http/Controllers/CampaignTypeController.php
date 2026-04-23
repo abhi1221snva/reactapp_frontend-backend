@@ -19,7 +19,7 @@ class CampaignTypeController extends Controller
         $this->validate($request, [
             'title' => 'required|string|max:255|unique:'.'mysql_'.$request->auth->parent_id.'.campaign_types',
         ]);
-        $attributes = $request->all();
+        $attributes = $request->only(['title', 'title_url', 'status']);
         $campaign_type = CampaignTypes::on("mysql_" . $request->auth->parent_id)->create($attributes);
         $campaign_type->saveOrFail();
         return $this->successResponse("Campaign Type Created", $campaign_type->toArray());
@@ -48,7 +48,7 @@ class CampaignTypeController extends Controller
         $this->validate($request, [
             'title' => 'required|string|max:255',
         ]);
-         $input = $request->all();
+         $input = $request->only(['title', 'title_url', 'status']);
         try
         {
             $campaign_type = CampaignTypes::on("mysql_" . $request->auth->parent_id)->findOrFail($id);

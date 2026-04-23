@@ -473,25 +473,30 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                 if (!empty($record)) {
                     if (!empty($record->password)) {
 
-                        $sql_extension = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =" . $record->extension . "";
-                        DB::connection('master')->update($sql_extension);
+                        DB::connection('master')->update(
+                            'UPDATE user_extensions SET secret = ? WHERE name = ?',
+                            [$new_password, $record->extension]
+                        );
 
-                        $sql_alt = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =" . $record->alt_extension . "";
-                        DB::connection('master')->update($sql_alt);
+                        DB::connection('master')->update(
+                            'UPDATE user_extensions SET secret = ? WHERE name = ?',
+                            [$new_password, $record->alt_extension]
+                        );
 
                         if (!empty($record->app_extension)) {
-
-                            $sql_app_extension = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =" . $record->app_extension . "";
-                            DB::connection('master')->update($sql_app_extension);
+                            DB::connection('master')->update(
+                                'UPDATE user_extensions SET secret = ? WHERE name = ?',
+                                [$new_password, $record->app_extension]
+                            );
                         }
-
-
 
                         // Verify the password and generate the token
                         if (Hash::check($password, $record->password)) {
 
-                            $sql = "UPDATE users set password = '" . Hash::make($new_password) . "' WHERE id =" . $id;
-                            $record = DB::connection('master')->update($sql);
+                            DB::connection('master')->update(
+                                'UPDATE users SET password = ? WHERE id = ?',
+                                [Hash::make($new_password), $id]
+                            );
                             \App\Services\AuthAuditService::log((int) $id, 'password.changed');
                             return array(
                                 'success' => 'true',
@@ -524,33 +529,41 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
     {
         try {
             if (!empty($email)) {
-                $sql = "SELECT email,id,extension,alt_extension FROM users WHERE email = :email";
-                $record = DB::connection('master')->selectOne($sql, array('email' => $email));
-                if (!empty($record)) {
-                    if (!empty($record->email)) {
-                        $sql = "UPDATE users set password = '" . Hash::make($new_password) . "' WHERE id ='" . $record->id . "'";
-                        DB::connection('master')->update($sql);
+                $record = DB::connection('master')
+                    ->table('users')
+                    ->where('email', $email)
+                    ->select('email', 'id', 'extension', 'alt_extension')
+                    ->first();
 
-                        $sql_extension = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =" . $record->extension . "";
-                        DB::connection('master')->update($sql_extension);
+                if (!empty($record) && !empty($record->email)) {
+                    $hashedPassword = Hash::make($new_password);
 
-                        $sql_alt = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =" . $record->alt_extension . "";
-                        DB::connection('master')->update($sql_alt);
+                    DB::connection('master')
+                        ->table('users')
+                        ->where('id', $record->id)
+                        ->update(['password' => $hashedPassword]);
 
-                        $reset_password_link = "UPDATE password_reset_email_varification set status = '0' WHERE email ='" . $email . "'";
-                        DB::connection('master')->update($reset_password_link);
-                        \App\Services\AuthAuditService::log((int) $record->id, 'password.reset', ['email' => $email]);
-                        return array(
-                            'success' => 'true',
-                            'message' => 'Password changed successfully.',
-                            'data' => array()
-                        );
-                    } else {
-                        return array(
-                            'success' => 'false',
-                            'message' => 'Password change not successfully.'
-                        );
-                    }
+                    DB::connection('master')
+                        ->table('user_extensions')
+                        ->where('name', $record->extension)
+                        ->update(['secret' => $hashedPassword]);
+
+                    DB::connection('master')
+                        ->table('user_extensions')
+                        ->where('name', $record->alt_extension)
+                        ->update(['secret' => $hashedPassword]);
+
+                    DB::connection('master')
+                        ->table('password_reset_email_varification')
+                        ->where('email', $email)
+                        ->update(['status' => '0']);
+
+                    \App\Services\AuthAuditService::log((int) $record->id, 'password.reset', ['email' => $email]);
+                    return array(
+                        'success' => 'true',
+                        'message' => 'Password changed successfully.',
+                        'data' => array()
+                    );
                 } else {
                     return array(
                         'success' => 'false',
@@ -559,9 +572,9 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                 }
             }
         } catch (Exception $e) {
-            Log::log($e->getMessage());
+            Log::error($e->getMessage());
         } catch (InvalidArgumentException $e) {
-            Log::log($e->getMessage());
+            Log::error($e->getMessage());
         }
     }
 
@@ -583,15 +596,14 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                     */
                     $dt['name'] = $UserData->extension;
                     $dt['username'] = $UserData->extension;
-                    $dt['secret'] = $new_password;
-                    $dt['context'] = 'user-extensions-phones'; //'default';
+                    $dt['secret'] = Hash::make($new_password);
+                    $dt['context'] = 'user-extensions-phones';
                     $dt['host'] = 'dynamic';
                     $dt['nat'] = 'force_rport,comedia';
                     $dt['qualify'] = 'no';
                     $dt['type'] = 'friend';
                     $dt['fullname'] = $UserData->first_name . ' ' . $UserData->last_name;
-                    $insertData = "INSERT INTO user_extensions SET fullname= :fullname, context= :context, name= :name, type= :type , qualify= :qualify , nat= :nat , host= :host, secret= :secret,username= :username";
-                    $record_ustextSav = DB::connection('master')->select($insertData, $dt);
+                    DB::connection('master')->table('user_extensions')->insert($dt);
                 } else {
                     // $dt['secret'] = $new_password;
                     //  $dt['name'] = $UserData->extension;
@@ -599,15 +611,23 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                     //$insertData = "UPDATE user_extensions SET secret= :secret WHERE name= :name ";
                     //$record_ustext = DB::connection('master')->select($insertData, $dt);
 
-                    $sql = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =" . $UserData->extension;
-                    $record = DB::connection('master')->update($sql);
+                    $hashedPassword = Hash::make($new_password);
 
-                    $sql_alt = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =" . $UserData->alt_extension;
-                    $record = DB::connection('master')->update($sql_alt);
+                    DB::connection('master')
+                        ->table('user_extensions')
+                        ->where('name', $UserData->extension)
+                        ->update(['secret' => $hashedPassword]);
+
+                    DB::connection('master')
+                        ->table('user_extensions')
+                        ->where('name', $UserData->alt_extension)
+                        ->update(['secret' => $hashedPassword]);
 
                     if (!empty($UserData->app_extension)) {
-                        $sql_app_extension = "UPDATE user_extensions set secret = '" . $new_password . "' WHERE name =" . $UserData->app_extension;
-                        $record = DB::connection('master')->update($sql_app_extension);
+                        DB::connection('master')
+                            ->table('user_extensions')
+                            ->where('name', $UserData->app_extension)
+                            ->update(['secret' => $hashedPassword]);
                     }
                 }
 
@@ -628,23 +648,22 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
         } catch (Exception $e) {
             Log::log($e->getMessage());
         } catch (InvalidArgumentException $e) {
-            eLog::log($e->getMessage());
+            Log::error($e->getMessage());
         }
     }
 
     public function updateAllowedIp($ext_id, $allowed_ip)
     {
         try {
+            if (!empty($allowed_ip) && !empty($ext_id)) {
+                DB::connection('master')
+                    ->table('users')
+                    ->where('id', (int) $ext_id)
+                    ->update(['allowed_ip' => $allowed_ip]);
 
-            if (!empty($allowed_ip)) {
-                // Verify the password and generate the token
-
-                $sql = "UPDATE users set allowed_ip = '" . $allowed_ip . "' WHERE id =" . $ext_id;
-                $record = DB::connection('master')->update($sql);
                 return array(
                     'success' => 'true',
                     'message' => 'Allowed Ip changed successfully.',
-                    //'data'   => array()
                 );
             } else {
                 return array(
@@ -653,37 +672,36 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                 );
             }
         } catch (Exception $e) {
-            Log::log($e->getMessage());
+            Log::error($e->getMessage());
         } catch (InvalidArgumentException $e) {
-            eLog::log($e->getMessage());
+            Log::error($e->getMessage());
         }
     }
 
     public function deleteVoicemail($auto_id, $voicemail_id, $parentId)
     {
         try {
-
             if (!empty($voicemail_id)) {
-                // Verify the password and generate the token
+                DB::connection('mysql_' . (int) $parentId)
+                    ->table('voicemail_drop')
+                    ->where('id', (int) $voicemail_id)
+                    ->delete();
 
-                $sql = "delete from voicemail_drop WHERE id =" . $voicemail_id;
-                $record = DB::connection('mysql_' . $parentId)->delete($sql);
                 return array(
                     'success' => 'true',
                     'message' => 'Vm Drop Location delete successfully.',
-                    //'data'   => array()
                 );
             }
 
             if (!empty($auto_id)) {
-                // Verify the password and generate the token
+                DB::connection('master')
+                    ->table('users')
+                    ->where('id', (int) $auto_id)
+                    ->update(['vm_drop_location' => '']);
 
-                $sql = "UPDATE users set vm_drop_location = '' WHERE id =" . $auto_id;
-                $record = DB::connection('master')->update($sql);
                 return array(
                     'success' => 'true',
                     'message' => 'Vm Drop Location delete successfully.',
-                    //'data'   => array()
                 );
             } else {
                 return array(
@@ -692,26 +710,24 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                 );
             }
         } catch (Exception $e) {
-            Log::log($e->getMessage());
+            Log::error($e->getMessage());
         } catch (InvalidArgumentException $e) {
-            eLog::log($e->getMessage());
+            Log::error($e->getMessage());
         }
     }
 
     public function updateVoiceMail($auto_id, $voice_mail_location)
     {
-
-
         try {
             if (!empty($auto_id)) {
-                // Verify the password and generate the token
+                DB::connection('master')
+                    ->table('users')
+                    ->where('id', (int) $auto_id)
+                    ->update(['vm_drop_location' => $voice_mail_location]);
 
-                $sql = "UPDATE users set vm_drop_location = '" . $voice_mail_location . "' WHERE id =" . $auto_id;
-                $record = DB::connection('master')->update($sql);
                 return array(
                     'success' => 'true',
                     'message' => 'Vm Drop Location Update successfully.',
-                    //'data'   => array()
                 );
             } else {
                 return array(
@@ -720,9 +736,9 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                 );
             }
         } catch (Exception $e) {
-            Log::log($e->getMessage());
+            Log::error($e->getMessage());
         } catch (InvalidArgumentException $e) {
-            Log::log($e->getMessage());
+            Log::error($e->getMessage());
         }
     }
 
@@ -798,7 +814,7 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
         } catch (Exception $e) {
             Log::log($e->getMessage());
         } catch (InvalidArgumentException $e) {
-            eLog::log($e->getMessage());
+            Log::error($e->getMessage());
         }
     }
     function updateLogo(int $id, int $parentId, string $logo)
@@ -816,33 +832,28 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
 
     function updateEmailSetting($emails, $chk)
     {
-
-        //return $this->id;die;
         try {
             if (!empty($this->id) && is_numeric($this->id)) {
-                $sql_setting = "Select * FROM user_setting";
-                $record_show = DB::connection('mysql_' . $this->parent_id)->select($sql_setting, array());
-                if (!empty($record_show)) {
-                    $data = (array)$record_show;
+                $record_show = DB::connection('mysql_' . $this->parent_id)
+                    ->table('user_setting')
+                    ->get();
 
-                    //return $emails;
-
+                if ($record_show->isNotEmpty()) {
                     foreach ($emails as $key => $email) {
-
-
                         $mails = json_encode($email);
-                        if (empty($chk[$key][0])) {
-                            $chk[$key][0] = 0;
-                        }
+                        $status = !empty($chk[$key][0]) ? $chk[$key][0] : 0;
 
-
-
-                        $updateData = "Update user_setting set sender_list='" . $mails . "',status='" . $chk[$key][0] . "' where auto_id= '" . $key . "'";
-                        $record_updateData = DB::connection('mysql_' . $this->parent_id)->select($updateData, array());
+                        DB::connection('mysql_' . $this->parent_id)
+                            ->table('user_setting')
+                            ->where('auto_id', (int) $key)
+                            ->update([
+                                'sender_list' => $mails,
+                                'status' => (int) $status,
+                            ]);
                     }
                     return array(
                         'success' => 'true',
-                        'message' => 'Email Setting  Updated Successfully.'
+                        'message' => 'Email Setting Updated Successfully.'
                     );
                 }
             }
@@ -851,9 +862,9 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
                 'message' => 'Email Setting doesn\'t exist.'
             );
         } catch (Exception $e) {
-            Log::log($e->getMessage());
+            Log::error($e->getMessage());
         } catch (InvalidArgumentException $e) {
-            Log::log($e->getMessage());
+            Log::error($e->getMessage());
         }
     }
 

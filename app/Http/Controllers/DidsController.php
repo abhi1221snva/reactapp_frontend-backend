@@ -325,6 +325,35 @@ class DidsController extends Controller
      */
     public function addDid()
     {
+        $validator = \Illuminate\Support\Facades\Validator::make($this->request->all(), [
+            'cli'              => 'required|string|max:20',
+            'cnam'             => 'nullable|string|max:80',
+            'dest_type'        => 'required|integer|in:0,1,2,4,5,6,8,12',
+            'voip_provider'    => 'nullable|string|in:twilio,telnyx,plivo,vonage,other',
+            'forward_number'   => 'nullable|string|max:20',
+            'extension'        => 'nullable|string|max:20',
+            'ivr_id'           => 'nullable|integer',
+            'voicemail_id'     => 'nullable|integer',
+            'ingroup'          => 'nullable|string|max:100',
+            'area_code'        => 'nullable|string|max:10',
+            'country_code'     => 'nullable|string|max:5',
+            'sms'              => 'nullable|in:0,1',
+            'sms_email'        => 'nullable|integer',
+            'default_did'      => 'nullable|in:0,1',
+            'call_screening_status' => 'nullable|in:0,1',
+            'redirect_last_agent'   => 'nullable|in:0,1',
+            'dest_type_ooh'    => 'nullable|integer|in:0,1,2,4,5,8,12',
+            'audio_file'       => 'nullable|file|mimes:mp3,wav,ogg|max:10240',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => 'false',
+                'message' => $validator->errors()->first(),
+                'errors'  => $validator->errors()->all(),
+            ], 422);
+        }
+
         $response = $this->model->addList($this->request);
         return response()->json($response);
     }

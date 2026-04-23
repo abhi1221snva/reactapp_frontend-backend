@@ -57,8 +57,9 @@ class CampaignStaffingController extends Controller
     public function index()
     {
         try {
-            // Join with campaign table for names
-            $rows = DB::table('campaign_staffing')
+            $conn = $this->tenantDb($this->request);
+
+            $rows = DB::connection($conn)->table('campaign_staffing')
                 ->leftJoin('campaign', 'campaign_staffing.campaign_id', '=', 'campaign.id')
                 ->select([
                     'campaign_staffing.id',
@@ -77,7 +78,7 @@ class CampaignStaffingController extends Controller
                 'total'   => $rows->count(),
             ]);
         } catch (\Exception $e) {
-            return response()->json(['success' => 'false', 'message' => $e->getMessage()], 500);
+            return response()->json(['success' => 'false', 'message' => 'Server error.'], 500);
         }
     }
 
@@ -89,12 +90,14 @@ class CampaignStaffingController extends Controller
     {
         $this->validate($this->request, [
             'campaign_id'     => 'required|numeric',
-            'required_agents' => 'required|numeric|min:0',
-            'min_agents'      => 'numeric|min:0',
+            'required_agents' => 'required|numeric|min:1',
+            'min_agents'      => 'numeric|min:1',
         ]);
 
         try {
-            $record = CampaignStaffing::updateOrCreate(
+            $conn = $this->tenantDb($this->request);
+
+            $record = CampaignStaffing::on($conn)->updateOrCreate(
                 ['campaign_id' => (int) $this->request->campaign_id],
                 [
                     'required_agents' => (int) $this->request->required_agents,
@@ -108,7 +111,7 @@ class CampaignStaffingController extends Controller
                 'data'    => $record,
             ]);
         } catch (\Exception $e) {
-            return response()->json(['success' => 'false', 'message' => $e->getMessage()], 500);
+            return response()->json(['success' => 'false', 'message' => 'Server error.'], 500);
         }
     }
 
@@ -119,10 +122,12 @@ class CampaignStaffingController extends Controller
     public function destroy(int $campaignId)
     {
         try {
-            CampaignStaffing::where('campaign_id', $campaignId)->delete();
+            $conn = $this->tenantDb($this->request);
+
+            CampaignStaffing::on($conn)->where('campaign_id', $campaignId)->delete();
             return response()->json(['success' => 'true', 'message' => 'Staffing requirement removed.']);
         } catch (\Exception $e) {
-            return response()->json(['success' => 'false', 'message' => $e->getMessage()], 500);
+            return response()->json(['success' => 'false', 'message' => 'Server error.'], 500);
         }
     }
 }

@@ -253,27 +253,49 @@ class UserController extends Controller
      */
     public function updatePermissionSuperAdmin(Request $request)
     {
+        // C3: Only superadmin (level >= 9) can change permissions
+        if ((int) $this->request->auth->level < 9) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized.'], 403);
+        }
+
+        $this->validate($request, [
+            'user_id' => 'required|numeric',
+            'roleId'  => 'required|numeric|in:1,3,5,7,9',
+        ]);
+
         $userId = $request->user_id;
         $roleId = $request->roleId;
+
+        // Verify target user belongs to same tenant
+        $target = User::find($userId);
+        if (!$target || (int) $target->parent_id !== (int) $this->request->auth->parent_id) {
+            return response()->json(['success' => false, 'message' => 'User not found.'], 404);
+        }
+
+        // Prevent escalation above caller's own level
+        if ((int) $roleId > (int) $this->request->auth->level) {
+            return response()->json(['success' => false, 'message' => 'Cannot assign role higher than your own.'], 403);
+        }
+
         $permission_delete = Permission::where('user_id', $userId)->delete();
 
         if ($roleId == 5) //role Id Super admin
         {
-            // $clients = \App\Model\Master\Client::all();
             $clients = $request->clients_name;
-            foreach ($clients as $client) {
-                $permission = new Permission();
-                $permission->user_id = $userId;
-                $permission->client_id = $client;
-                $permission->role = $roleId;
-                try {
-                    $permission->saveOrFail();
-                } catch (ModelNotFoundException $modelNotFoundException) {
-                    throw new NotFoundHttpException("Resource with userId $userId not found");
+            if (is_array($clients)) {
+                foreach ($clients as $client) {
+                    $permission = new Permission();
+                    $permission->user_id = $userId;
+                    $permission->client_id = (int) $client;
+                    $permission->role = $roleId;
+                    try {
+                        $permission->saveOrFail();
+                    } catch (ModelNotFoundException $modelNotFoundException) {
+                        throw new NotFoundHttpException("Resource with userId $userId not found");
+                    }
                 }
             }
         }
-
 
         try {
             /** @var User $user */
@@ -810,6 +832,17 @@ public function assignableRolesNew(Request $request)
 
     public function updateUserPassword(User $user)
     {
+        $this->validate($this->request, [
+            'id'           => 'required|numeric',
+            'password'     => 'required|string',
+            'new_password' => ['required', 'string', 'min:10', 'regex:/[A-Z]/', 'regex:/[a-z]/', 'regex:/[0-9]/', 'regex:/[^A-Za-z0-9]/'],
+        ]);
+
+        $target = User::find($this->request->input('id'));
+        if (!$target || (int) $target->parent_id !== (int) $this->request->auth->parent_id) {
+            return response()->json(['success' => false, 'message' => 'User not found.'], 404);
+        }
+
         $response = $user->updateUserPassword($this->request->input('id'), $this->request->input('password'), $this->request->input('new_password'));
         return response()->json($response);
     }
@@ -922,6 +955,16 @@ public function assignableRolesNew(Request $request)
 
     public function updateAgentByAdminPassword(User $user)
     {
+        $this->validate($this->request, [
+            'ext_id'   => 'required|numeric',
+            'password' => ['required', 'string', 'min:10', 'regex:/[A-Z]/', 'regex:/[a-z]/', 'regex:/[0-9]/', 'regex:/[^A-Za-z0-9]/'],
+        ]);
+
+        $target = User::find($this->request->input('ext_id'));
+        if (!$target || (int) $target->parent_id !== (int) $this->request->auth->parent_id) {
+            return response()->json(['success' => false, 'message' => 'User not found.'], 404);
+        }
+
         $response = $user->updateAgentByAdminPassword($this->request->input('ext_id'), $this->request->input('password'));
         return response()->json($response);
     }
@@ -929,6 +972,16 @@ public function assignableRolesNew(Request $request)
 
     public function updateAllowedIp(User $user)
     {
+        $this->validate($this->request, [
+            'ext_id'     => 'required|numeric',
+            'allowed_ip' => 'required|string',
+        ]);
+
+        $target = User::find($this->request->input('ext_id'));
+        if (!$target || (int) $target->parent_id !== (int) $this->request->auth->parent_id) {
+            return response()->json(['success' => false, 'message' => 'User not found.'], 404);
+        }
+
         $response = $user->updateAllowedIp($this->request->input('ext_id'), $this->request->input('allowed_ip'));
         return response()->json($response);
     }
@@ -970,7 +1023,16 @@ public function assignableRolesNew(Request $request)
 
     public function deleteVoicemail(User $user)
     {
-        $response = $user->deleteVoicemail($this->request->input('auto_id'), $this->request->input('voicemail_id'), $this->request->input('parentId'));
+        $parentId = (int) $this->request->auth->parent_id;
+
+        if ($this->request->input('auto_id')) {
+            $target = User::find($this->request->input('auto_id'));
+            if (!$target || (int) $target->parent_id !== $parentId) {
+                return response()->json(['success' => false, 'message' => 'User not found.'], 404);
+            }
+        }
+
+        $response = $user->deleteVoicemail($this->request->input('auto_id'), $this->request->input('voicemail_id'), $parentId);
         return response()->json($response);
     }
 
@@ -1250,6 +1312,16 @@ public function assignableRolesNew(Request $request)
 
     public function updateVoiceMail(User $user)
     {
+        $this->validate($this->request, [
+            'auto_id'           => 'required|numeric',
+            'vm_drop_location'  => 'required|string',
+        ]);
+
+        $target = User::find($this->request->input('auto_id'));
+        if (!$target || (int) $target->parent_id !== (int) $this->request->auth->parent_id) {
+            return response()->json(['success' => false, 'message' => 'User not found.'], 404);
+        }
+
         $response = $user->updateVoiceMail($this->request->input('auto_id'), $this->request->input('vm_drop_location'));
         return response()->json($response);
     }

@@ -40,8 +40,8 @@ class Dids extends Model
         $emailId = $request->input("id");
         try {
 
-            $sql = "SELECT * FROM " . $this->table . " where sms_email='" . $emailId . "'";
-            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
+            $sql = "SELECT * FROM " . $this->table . " WHERE sms_email = ?";
+            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, [$emailId]);
             $data = (array)$record;
             if (!empty($data)) {
                 return array(
@@ -194,25 +194,30 @@ public function getListnew($request)
         $baseSql = "SELECT * FROM " . $this->table . " WHERE is_deleted = '0'";
 
         // Apply search
+        $bindings = [];
         if ($request->has('search') && !empty($request->input('search'))) {
             $search = $request->input('search');
-            $baseSql .= " AND cli = '" . $search . "'";
+            $baseSql .= " AND cli = ?";
+            $bindings[] = $search;
         }
 
         // Count query
         $countSql = str_replace("SELECT *", "SELECT COUNT(*) AS total", $baseSql);
-        $countResult = DB::connection($database)->select($countSql);
+        $countResult = DB::connection($database)->select($countSql, $bindings);
         $totalRows = isset($countResult[0]->total) ? (int)$countResult[0]->total : 0;
 
         // Pagination
         $paginatedSql = $baseSql;
+        $paginatedBindings = $bindings;
         if ($request->has('start') && $request->has('limit')) {
             $start = (int)$request->input('start');
             $limit = (int)$request->input('limit');
-            $paginatedSql .= " LIMIT $start, $limit";
+            $paginatedSql .= " LIMIT ?, ?";
+            $paginatedBindings[] = $start;
+            $paginatedBindings[] = $limit;
         }
 
-        $records = DB::connection($database)->select($paginatedSql);
+        $records = DB::connection($database)->select($paginatedSql, $paginatedBindings);
         $data = $records;
 
         // Fetch dest_type_list from main DB (or same connection if applicable)
@@ -308,43 +313,43 @@ public function getList($request)
         // Base query
         $baseSql = "SELECT * FROM " . $this->table . " WHERE is_deleted = '0'";
 
-        // // Apply search
-        // if ($request->has('search') && !empty($request->input('search'))) {
-        //     $search = $request->input('search');
-        //     $baseSql .= " AND cli = '" . $search . "'";
-        // }
+        $bindings = [];
         if ($request->has('search') && !empty($request->input('search'))) {
             $search = $request->input('search');
-        
+
             // Remove everything except digits
             $normalizedSearch = preg_replace('/\D+/', '', $search);
-        
+
             // If number entered without country code (assume last 10 digits)
             if (strlen($normalizedSearch) > 10) {
                 $last10 = substr($normalizedSearch, -10);
             } else {
                 $last10 = $normalizedSearch;
             }
-        
-            // Match last 10 digits in DB (works for all formats)
-            $baseSql .= " AND REPLACE(REPLACE(REPLACE(REPLACE(cli, '+', ''), '-', ''), ' ', ''), '(', '') LIKE '%$last10%'";
+
+            // Match last 10 digits in DB (works for all formats) — parameterized
+            $baseSql .= " AND REPLACE(REPLACE(REPLACE(REPLACE(cli, '+', ''), '-', ''), ' ', ''), '(', '') LIKE ?";
+            $bindings[] = '%' . $last10 . '%';
         }
-        
+
 
         // Count query
         $countSql = str_replace("SELECT *", "SELECT COUNT(*) AS total", $baseSql);
-        $countResult = DB::connection($database)->select($countSql);
+        $countResult = DB::connection($database)->select($countSql, $bindings);
         $totalRows = isset($countResult[0]->total) ? (int) $countResult[0]->total : 0;
 
         // Pagination
         $paginatedSql = $baseSql;
+        $paginatedBindings = $bindings;
         if ($request->has('start') && $request->has('limit')) {
             $start = (int) $request->input('start');
             $limit = (int) $request->input('limit');
-            $paginatedSql .= " LIMIT $start, $limit";
+            $paginatedSql .= " LIMIT ?, ?";
+            $paginatedBindings[] = $start;
+            $paginatedBindings[] = $limit;
         }
 
-        $records = DB::connection($database)->select($paginatedSql);
+        $records = DB::connection($database)->select($paginatedSql, $paginatedBindings);
         $data = $records;
 
         // Fetch dest_type_list (mapping)
@@ -511,10 +516,9 @@ public function getList($request)
     public function addList($request)
     {
         if ($request->has('cli')) {
-            //$user_data = DB::connection('mysql_'.$request->auth->parent_id)->where('cli', '19027063135')->first();
             $cli = $request->input("cli");
-            $query = 'SELECT count(1) as row_count from did WHERE cli="' . $cli . '" ';
-            $countObj = collect(DB::connection('mysql_' . $request->auth->parent_id)->select($query))->first();
+            $countObj = DB::connection('mysql_' . $request->auth->parent_id)
+                ->selectOne('SELECT count(1) as row_count FROM did WHERE cli = ?', [$cli]);
             if ($countObj->row_count == 0) {
 
                 $data['cli'] = $request->input('cli');
@@ -548,14 +552,21 @@ public function getList($request)
                     $addFile = $request->file('audio_file');
                     $addAllowedExt = ['mp3', 'wav', 'ogg'];
                     $addExt = $addFile->getClientOriginalExtension();
-                    if (!in_array(strtolower($addExt), $addAllowedExt)) {
+                    $addMime = $addFile->getMimeType();
+                    $allowedMimes = ['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/ogg'];
+                    if (!in_array(strtolower($addExt), $addAllowedExt) || !in_array($addMime, $allowedMimes)) {
                         return ['success' => 'false', 'message' => 'Invalid audio format. Allowed: mp3, wav, ogg'];
                     }
-                    $addFilename = time() . '_' . $addFile->getClientOriginalName();
+                    if ($addFile->getSize() > 10 * 1024 * 1024) {
+                        return ['success' => 'false', 'message' => 'Audio file too large. Maximum 10MB allowed.'];
+                    }
+                    // Sanitize filename: only keep alphanumeric, dash, underscore
+                    $safeName = preg_replace('/[^a-zA-Z0-9_\-]/', '_', pathinfo($addFile->getClientOriginalName(), PATHINFO_FILENAME));
+                    $addFilename = time() . '_' . $safeName . '.' . strtolower($addExt);
                     $addPath = 'uploads/dids/audio/';
                     $addPublicPath = base_path('public/' . $addPath);
                     if (!File::exists($addPublicPath)) {
-                        File::makeDirectory($addPublicPath, 0777, true, true);
+                        File::makeDirectory($addPublicPath, 0755, true, true);
                     }
                     $addFile->move($addPublicPath, $addFilename);
                     $addAudioFilePath = $addPath . $addFilename;
@@ -631,7 +642,7 @@ public function getList($request)
                 }
 
                 if ($add == true) {
-                    $lastInsertId = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT * FROM " . $this->table . " where cli='" . $data['cli'] . "' ");
+                    $lastInsertId = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT * FROM " . $this->table . " WHERE cli = ?", [$data['cli']]);
                     $didInsertedId = $lastInsertId->id;
 
                     //update default did set
@@ -747,21 +758,22 @@ public function getList($request)
     {
         if ($request->has('did')) {
             $editId = $request->input('did');
-            $query = 'SELECT count(1) as row_count from did WHERE id="' . $editId . '" ';
-            $countObj = collect(DB::connection('mysql_' . $request->auth->parent_id)->select($query))->first();
-            if ($countObj->row_count > 0) {
-                $query = 'SELECT * from did WHERE id="' . $editId . '" ';
-                $countObj = collect(DB::connection('mysql_' . $request->auth->parent_id)->select($query))->first();
-                return array(
+            $connection = 'mysql_' . $request->auth->parent_id;
+
+            $record = DB::connection($connection)
+                ->selectOne('SELECT * FROM did WHERE id = ?', [$editId]);
+
+            if ($record) {
+                return [
                     'success' => 'true',
                     'message' => 'Did detail available.',
-                    'data' => (array)$countObj
-                );
+                    'data' => (array)$record
+                ];
             } else {
-                return array(
+                return [
                     'success' => 'false',
                     'message' => 'Did not available in list'
-                );
+                ];
             }
         }
     }
@@ -769,14 +781,30 @@ public function getList($request)
     function saveEdit($request)
     {
         $validator = Validator::make($request->all(), [
-            'did_id' => 'required|integer',
-            'cli'    => 'required',
+            'did_id'           => 'required|integer',
+            'cli'              => 'required|string|max:20',
+            'cnam'             => 'nullable|string|max:80',
+            'dest_type'        => 'required|integer|in:0,1,2,4,5,6,8,12',
+            'voip_provider'    => 'nullable|string|in:twilio,telnyx,plivo,vonage,other',
+            'forward_number'   => 'nullable|string|max:20',
+            'extension'        => 'nullable|string|max:20',
+            'ivr_id'           => 'nullable|integer',
+            'voicemail_id'     => 'nullable|integer',
+            'ingroup'          => 'nullable|string|max:100',
+            'sms'              => 'nullable|in:0,1',
+            'sms_email'        => 'nullable|integer',
+            'default_did'      => 'nullable|in:0,1',
+            'call_screening_status' => 'nullable|in:0,1',
+            'redirect_last_agent'   => 'nullable|in:0,1',
+            'dest_type_ooh'    => 'nullable|integer|in:0,1,2,4,5,8,12',
+            'audio_file'       => 'nullable|file|mimes:mp3,wav,ogg|max:10240',
         ]);
-        
+
         if ($validator->fails()) {
             return [
                 'success' => 'false',
-                'message' => $validator->errors()->first(), // proper message
+                'message' => $validator->errors()->first(),
+                'errors'  => $validator->errors()->all(),
             ];
         }
         
@@ -796,21 +824,32 @@ if ($request->hasFile('audio_file')) {
 
     $allowedExt = ['mp3', 'wav', 'ogg'];
     $ext = $file->getClientOriginalExtension();
+    $mime = $file->getMimeType();
+    $allowedMimes = ['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/ogg'];
 
-    if (!in_array(strtolower($ext), $allowedExt)) {
+    if (!in_array(strtolower($ext), $allowedExt) || !in_array($mime, $allowedMimes)) {
         return [
             'success' => 'false',
             'message' => 'Invalid audio format. Allowed: mp3, wav, ogg'
         ];
     }
 
-    $filename = time() . '_' . $file->getClientOriginalName();
+    if ($file->getSize() > 10 * 1024 * 1024) {
+        return [
+            'success' => 'false',
+            'message' => 'Audio file too large. Maximum 10MB allowed.'
+        ];
+    }
+
+    // Sanitize filename: only keep alphanumeric, dash, underscore
+    $safeName = preg_replace('/[^a-zA-Z0-9_\-]/', '_', pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME));
+    $filename = time() . '_' . $safeName . '.' . strtolower($ext);
     $path = 'uploads/dids/audio/';
-    
+
     $publicPath = base_path('public/' . $path);
 
     if (!File::exists($publicPath)) {
-        File::makeDirectory($publicPath, 0777, true, true);
+        File::makeDirectory($publicPath, 0755, true, true);
     }
 
     $file->move($publicPath, $filename);
@@ -969,12 +1008,12 @@ $didObj->sms_email      = (!empty($request->sms)) ? $request->sms_email : '';
                 }
 
 
-                if (!empty($request->sms_email) && !empty($request->sms_email)) {
-                    Did::where('cli', $request->cli)->update(['user_id' => $request->sms_email]);
+                if (!empty($request->sms_email)) {
+                    Did::on('mysql_' . $request->auth->parent_id)->where('cli', $request->cli)->update(['user_id' => $request->sms_email]);
                 }
 
                 if ($editRecord == true) {
-                    $lastInsertObj = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT * FROM " . $this->table . " where id='" . $request->did_id . "' ");
+                    $lastInsertObj = DB::connection('mysql_' . $request->auth->parent_id)->selectOne("SELECT * FROM " . $this->table . " WHERE id = ?", [$request->did_id]);
    // Convert to array safely
     $lastInsertId = (array) $lastInsertObj;
 
@@ -1155,8 +1194,8 @@ public function deleteDid($request)
     {
         $userData = array();
         $counter = 0;
-        $sql = "select * from users where parent_id ={$request->auth->parent_id} and is_deleted=0  order by created_at desc Limit 8 ";
-        $record = DB::connection('master')->select($sql);
+        $sql = "SELECT * FROM users WHERE parent_id = ? AND is_deleted = 0 ORDER BY created_at DESC LIMIT 8";
+        $record = DB::connection('master')->select($sql, [$request->auth->parent_id]);
         $data = (array)$record;
         if (count($data) > 0) {
             foreach ($data as $key => $val) {

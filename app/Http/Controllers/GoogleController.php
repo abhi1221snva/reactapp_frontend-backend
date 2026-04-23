@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use App\Model\User;
 use App\Http\Helper\JwtToken;
@@ -54,10 +55,28 @@ class GoogleController extends Controller
                 ->where('is_deleted', 0)
                 ->first();
 
+            // SECURITY: If found by google_id, verify the email matches.
+            // A stale or mislinked google_id must NOT grant access to a
+            // different user's account.
+            if ($user && strtolower($user->email) !== strtolower($email)) {
+                Log::warning('Google login: google_id/email mismatch — clearing stale link', [
+                    'user_id'      => $user->id,
+                    'stored_email' => $user->email,
+                    'google_email' => $email,
+                    'google_id'    => $googleId,
+                ]);
+
+                // Clear the stale google_id so it won't match again
+                $user->google_id = null;
+                $user->save();
+
+                // Do NOT use this user — fall through to email lookup
+                $user = null;
+            }
+
             if (!$user) {
-                $user = User::where('email', $email)
-                    ->where('is_deleted', 0)
-                    ->first();
+                // Search ALL users (including deleted) to give the right error message
+                $user = User::where('email', $email)->first();
 
                 if (!$user) {
                     Log::warning('Google login: no matching user', ['email' => $email]);
@@ -68,15 +87,36 @@ class GoogleController extends Controller
                     ], 422);
                 }
 
-                // Link Google ID to the existing account on first use
-                $user->google_id = $googleId;
-                $user->save();
+                if ($user->is_deleted) {
+                    return response()->json([
+                        'success' => false,
+                        'code'    => 'ACCOUNT_DEACTIVATED',
+                        'message' => 'Your account has been deactivated. Please contact support.',
+                    ], 403);
+                }
+
+                // Require password verification before linking Google ID
+                return response()->json([
+                    'success' => false,
+                    'code'    => 'GOOGLE_LINK_REQUIRED',
+                    'message' => 'Enter your account password to link Google login.',
+                    'data'    => ['email' => $email, 'credential' => $credential],
+                ], 200);
             }
 
             if ($user->is_deleted) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Account is deactivated',
+                    'code'    => 'ACCOUNT_DEACTIVATED',
+                    'message' => 'Your account has been deactivated. Please contact support.',
+                ], 403);
+            }
+
+            if (isset($user->status) && $user->status == 0) {
+                return response()->json([
+                    'success' => false,
+                    'code'    => 'ACCOUNT_INACTIVE',
+                    'message' => 'Your account is not active. Please contact support.',
                 ], 403);
             }
 
@@ -158,6 +198,80 @@ class GoogleController extends Controller
         } catch (\Exception $e) {
             Log::error('Google token verification error', ['message' => $e->getMessage()]);
             return null;
+        }
+    }
+
+    /**
+     * Link a Google account to an existing user after password verification.
+     * Accepts the Google credential + user's password, verifies both,
+     * then links the google_id and returns a JWT.
+     */
+    public function linkGoogleAccount(Request $request)
+    {
+        $this->validate($request, [
+            'credential' => 'required|string',
+            'password'   => 'required|string',
+        ]);
+
+        try {
+            $credential = $request->input('credential');
+            $password   = $request->input('password');
+
+            $tokenInfo = $this->verifyGoogleToken($credential);
+            if (!$tokenInfo) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid or expired Google token.',
+                ], 401);
+            }
+
+            $googleId = $tokenInfo['sub'];
+            $email    = $tokenInfo['email'];
+
+            $user = User::where('email', $email)->where('is_deleted', 0)->first();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Account not found.',
+                ], 404);
+            }
+
+            if (!Hash::check($password, $user->password)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Incorrect password.',
+                ], 401);
+            }
+
+            // Password verified — link Google ID
+            $user->google_id = $googleId;
+            $user->save();
+
+            // Generate JWT
+            $tokenPair = JwtToken::createToken($user->id);
+
+            $data              = $user->userDetail();
+            $data['token']     = $tokenPair[0];
+            $data['expires_at'] = $tokenPair[1];
+
+            Log::info('Google account linked via password verification', [
+                'user_id' => $user->id,
+                'email'   => $email,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Google account linked successfully.',
+                'data'    => $data,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Google link exception', ['message' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to link Google account. Please try again.',
+            ], 500);
         }
     }
 }

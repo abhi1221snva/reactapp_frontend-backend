@@ -243,30 +243,26 @@ class CampaignController extends Controller
     {
         $this->validate($this->request, [
             'title'             => 'string|max:255',
-            'status'            => 'numeric',
+            'status'            => 'in:0,1',
             'is_deleted'        => 'numeric',
             'campaign_id'       => 'required|numeric',
-            // 'id'                => 'required|numeric',
             'description'       => 'string|max:255',
             'caller_id'         => 'string|max:255',
             'custom_caller_id'  => 'numeric',
             'time_based_calling' => 'numeric',
             'call_time_start'   => 'date_format:H:i',
             'call_time_end'     => 'date_format:H:i',
-            'timezone'          => 'sometimes|nullable|string|max:64',
+            'timezone'          => 'sometimes|nullable|string|max:64|timezone',
             'call_schedule_id'  => 'sometimes|nullable|numeric',
             'dial_mode'         => 'string|max:255',
-               // 👇 CONDITIONAL RULE
-             'group_id'           => 'required_if:dial_mode,super_power_dial|numeric',
+            'group_id'          => 'required_if:dial_mode,super_power_dial|numeric',
             'max_lead_temp'     => 'numeric',
             'min_lead_temp'     => 'numeric',
             'api'               => 'numeric',
-            'is_deleted'        => 'numeric',
             'send_report'       => 'numeric',
+            'disposition_id.*'  => 'integer|min:1',
             'hopper_mode'       => 'numeric',
-            'call_metric' => 'string',
-
-
+            'call_metric'       => 'string',
         ]);
         $result = $this->model->updateCampaign($this->request);
        // return response()->json($response);
@@ -350,37 +346,33 @@ class CampaignController extends Controller
 
     public function addCampaign(Request $request)
     {
-        Log::info('campaign reached', [$request->all()]);
+        Log::info('campaign reached', ['title' => $request->input('title'), 'dial_mode' => $request->input('dial_mode')]);
         $this->validate($this->request, [
             // 'id'                => 'required|numeric',
             'title'             => 'required|string|max:255',
             'description'       => 'string|max:255',
-            'status'            => 'numeric',
+            'status'            => 'in:0,1',
             'is_deleted'        => 'numeric',
             'caller_id'         => 'string|max:255',
             'custom_caller_id'  => 'numeric',
             'time_based_calling' => 'numeric',
             'call_time_start'   => 'date_format:H:i',
             'call_time_end'     => 'date_format:H:i',
-            'timezone'          => 'sometimes|nullable|string|max:64',
+            'timezone'          => 'sometimes|nullable|string|max:64|timezone',
             'call_schedule_id'  => 'sometimes|nullable|numeric',
             'dial_mode'         => 'string|max:255',
-            // 'group_id'          => 'numeric',
             'max_lead_temp'     => 'numeric',
             'min_lead_temp'     => 'numeric',
             'api'               => 'numeric',
-                // 👇 CONDITIONAL RULE
-    'group_id'           => 'required_if:dial_mode,super_power_dial|numeric',
-            // 'group_id'          => 'required|numeric',
+            'group_id'          => 'required_if:dial_mode,super_power_dial|numeric',
             'send_report'       => 'numeric',
-            'disposition_id'    => 'required|array',
+            'disposition_id'    => 'required|array|max:500',
+            'disposition_id.*'  => 'integer|min:1',
             'hopper_mode'       => 'numeric',
             'call_ratio'        => 'string',
             'duration'          => 'string',
             'automated_duration' => 'string',
-            'call_metric' => 'string',
-
-
+            'call_metric'       => 'string',
         ]);
 
         if ($this->request->crm_title_url == 'hubspot') {
@@ -507,7 +499,15 @@ class CampaignController extends Controller
 
     public function getCampaignAndList()
     {
-        $campaign = Campaign::on($this->tenantDb($this->request))->where('id', $this->request->campaign_id)->get()->first();
+        $campaign = Campaign::on($this->tenantDb($this->request))->where('id', $this->request->campaign_id)->first();
+
+        if (!$campaign) {
+            return response()->json([
+                'success' => 'false',
+                'message' => 'Campaign not found.',
+                'data'    => []
+            ], 404);
+        }
 
         if ($campaign->crm_title_url == 'hubspot') {
             $response = $this->hubspot->getCampaignAndListHubspot($this->request);
@@ -585,6 +585,9 @@ class CampaignController extends Controller
 
     function getDispositionAndList()
     {
+        $this->validate($this->request, [
+            'list_id' => 'required|numeric',
+        ]);
         $response = $this->model->getDispositionAndList($this->request);
         return response()->json($response);
     }
@@ -674,6 +677,12 @@ class CampaignController extends Controller
      */
     function deleteDispositionAndList()
     {
+        $this->validate($this->request, [
+            'campaign_id' => 'required|numeric',
+            'list_id'     => 'required|numeric',
+            'disposition' => 'required|array',
+            'select_id'   => 'required|array',
+        ]);
         $response = $this->model->deleteDispositionAndList($this->request);
         return response()->json($response);
     }
@@ -725,6 +734,9 @@ class CampaignController extends Controller
      */
     function copyCampaign()
     {
+        $this->validate($this->request, [
+            'c_id' => 'required|numeric',
+        ]);
         $response = $this->model->copyCampaign($this->request);
         return response()->json($response);
     }
@@ -820,16 +832,51 @@ class CampaignController extends Controller
      */
     function deleteCampaign(Request $request)
     {
+        $this->validate($request, [
+            'campaign_id' => 'required|numeric',
+        ]);
+
         $campaign_id = $request->campaign_id;
-        $Campaign = Campaign::on($this->tenantDb($request))->findOrFail($campaign_id);
+        $conn = $this->tenantDb($request);
+
+        // Ownership check: non-admin users can only delete campaigns in their groups
+        Campaign::authorizeAccess((int) $campaign_id, $request);
+
+        $Campaign = Campaign::on($conn)->findOrFail($campaign_id);
         $Campaign->is_deleted = 1;
         $deleted = $Campaign->update();
 
         if ($deleted) {
+            // Cascade: deactivate related records
+            DB::connection($conn)->table('campaign_list')
+                ->where('campaign_id', $campaign_id)
+                ->update(['is_deleted' => 1, 'status' => '0']);
+
+            DB::connection($conn)->table('campaign_disposition')
+                ->where('campaign_id', $campaign_id)
+                ->update(['is_deleted' => 1]);
+
+            // Cleanup queue, agents, staffing, and numbers
+            DB::connection($conn)->table('campaign_lead_queue')
+                ->where('campaign_id', $campaign_id)
+                ->delete();
+
+            DB::connection($conn)->table('campaign_agents')
+                ->where('campaign_id', $campaign_id)
+                ->delete();
+
+            DB::connection($conn)->table('campaign_staffing')
+                ->where('campaign_id', $campaign_id)
+                ->delete();
+
+            DB::connection($conn)->table('campaign_numbers')
+                ->where('campaign_id', $campaign_id)
+                ->delete();
+
             return $this->successResponse("Campaign Deleted Successfully", $Campaign->toArray());
         } else {
             return $this->failResponse("Failed to delete the Campaign ", [
-                "Unkown"
+                "Unknown"
             ]);
         }
     }
@@ -868,6 +915,10 @@ class CampaignController extends Controller
      */
     public function updateCampaignStatus()
     {
+        $this->validate($this->request, [
+            'listId' => 'required|numeric',
+            'status' => 'required|in:0,1',
+        ]);
         $response = $this->model->updateCampaignStatus($this->request);
         return response()->json($response);
     }
@@ -906,6 +957,10 @@ class CampaignController extends Controller
      */
     public function updateCampaignHopper()
     {
+        $this->validate($this->request, [
+            'listId' => 'required|numeric',
+            'status' => 'required|in:0,1',
+        ]);
         $response = $this->model->updateCampaignHopper($this->request);
         return response()->json($response);
     }
@@ -973,8 +1028,8 @@ public function assignLists(Request $request)
     // 1. Basic request validation (format only)
     $validator = Validator::make($request->all(), [
         'campaign_id'    => 'required|integer',
-        'lead_list_ids'  => 'required|array|min:1',
-        'lead_list_ids.*'=> 'integer',
+        'lead_list_ids'  => 'required|array|min:1|max:100',
+        'lead_list_ids.*'=> 'integer|distinct',
     ]);
 
     if ($validator->fails()) {

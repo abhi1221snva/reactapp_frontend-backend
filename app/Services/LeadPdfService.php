@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Dompdf\Dompdf;
 use Dompdf\Options;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -198,6 +199,7 @@ class LeadPdfService
     public function buildLeadData(int $leadId, string $conn, int $clientId): array
     {
         $data = [];
+        $eavValues = [];
 
         // 2a. New EAV: crm_lead_values (field_key → field_value)
         $schemaEav = DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_values');
@@ -212,6 +214,8 @@ class LeadPdfService
 
             // Create aliases from label_name so templates using friendly keys
             // (e.g. [[owner_2_first_name]]) resolve to option_* EAV values.
+            // The field_key is the canonical source (what the form saves to), so its
+            // value OVERRIDES any stale EAV entry stored under the alias key.
             $schemaLabels = DB::connection($conn)->getSchemaBuilder()->hasTable('crm_labels');
             if ($schemaLabels) {
                 $crmLabels = DB::connection($conn)
@@ -225,8 +229,7 @@ class LeadPdfService
                     $alias = preg_replace('/[^a-z0-9]+/', '_', $alias);
                     $alias = trim($alias, '_');
 
-                    // Only add alias if it differs from field_key and doesn't already exist
-                    if ($alias && $alias !== $lbl->field_key && !isset($data[$alias]) && isset($data[$lbl->field_key])) {
+                    if ($alias && $alias !== $lbl->field_key && isset($data[$lbl->field_key])) {
                         $data[$alias] = $data[$lbl->field_key];
                     }
                 }
@@ -283,6 +286,24 @@ class LeadPdfService
             }
         }
 
+        // If EAV is active and Owner 2 was removed (no EAV rows), strip legacy Owner 2 data
+        if ($schemaEav && !empty($eavValues)) {
+            $hasOwner2InEav = false;
+            foreach ($eavValues as $k => $v) {
+                if (str_starts_with($k, 'owner_2_') && $v !== '' && $v !== null) {
+                    $hasOwner2InEav = true;
+                    break;
+                }
+            }
+            if (!$hasOwner2InEav) {
+                foreach (array_keys($data) as $k) {
+                    if (str_starts_with($k, 'owner_2_') || preg_match('/^option_7(3[4-9]|4[0-5])$/', $k)) {
+                        unset($data[$k]);
+                    }
+                }
+            }
+        }
+
         // ── Convenience aliases so templates can use common shorthand keys ────
         if (!isset($data['mobile']) && isset($data['phone_number'])) {
             $data['mobile'] = $data['phone_number'];
@@ -299,13 +320,51 @@ class LeadPdfService
         if (!isset($data['full_name'])) {
             $data['full_name'] = trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? ''));
         }
+        if (!isset($data['owner_zipcode'])) {
+            $data['owner_zipcode'] = $data['option_46'] ?? $data['zip'] ?? '';
+        }
+        if (!isset($data['dob']) && isset($data['date_of_birth'])) {
+            $data['dob'] = $data['date_of_birth'];
+        }
+        if (!isset($data['dob'])) {
+            $data['dob'] = $data['option_40'] ?? '';
+        }
+        if (!isset($data['owner_email'])) {
+            $data['owner_email'] = $data['email'] ?? '';
+        }
+        if (!isset($data['home_address'])) {
+            $data['home_address'] = $data['option_37'] ?? $data['address'] ?? '';
+        }
+        if (!isset($data['home_city'])) {
+            $data['home_city'] = $data['option_36'] ?? $data['city'] ?? '';
+        }
+        if (!isset($data['home_state'])) {
+            $data['home_state'] = $data['option_34'] ?? $data['state'] ?? '';
+        }
+
+        // ── Case-insensitive aliases: duplicate lowercase keys as mixed-case
+        //    so templates using [[Business_State]] match data['business_state']
+        $caseMirror = [];
+        foreach ($data as $k => $v) {
+            $lower = strtolower($k);
+            if ($lower !== $k && !isset($data[$lower])) {
+                $caseMirror[$lower] = $v;
+            } elseif ($lower === $k) {
+                // Build ucfirst-style variants: business_state → Business_State
+                $ucKey = implode('_', array_map('ucfirst', explode('_', $k)));
+                if ($ucKey !== $k && !isset($data[$ucKey])) {
+                    $caseMirror[$ucKey] = $v;
+                }
+            }
+        }
+        $data = array_merge($data, $caseMirror);
 
         // ── Agent / Specialist data (prefer assigned_to, fall back to created_by)
         $agentUserId = $data['assigned_to'] ?? $data['created_by'] ?? null;
         if ($agentUserId) {
             $agent = DB::table('users')
                 ->where('id', (int) $agentUserId)
-                ->select('first_name', 'last_name', 'mobile', 'email', 'company_name', 'logo')
+                ->select('first_name', 'last_name', 'mobile', 'email', 'company_name', 'logo', 'timezone')
                 ->first();
 
             if ($agent) {
@@ -424,8 +483,12 @@ class LeadPdfService
         }
 
         // ── Signature dates — ensure they are proper dates, never image paths ──
-        // The alias system may have copied a signature image path into a date key.
-        // Overwrite with the actual stored date or fall back to lead creation date.
+        // Use agent's timezone for date display.
+        $agentTz = 'America/New_York'; // default
+        if (isset($agent) && !empty($agent->timezone)) {
+            try { new \DateTimeZone($agent->timezone); $agentTz = $agent->timezone; } catch (\Throwable $ignored) {}
+        }
+
         $dateMap = [
             'signature_date'           => 'signature_image',
             'owner_2_signature_date'   => 'owner_2_signature_image',
@@ -433,23 +496,38 @@ class LeadPdfService
         foreach ($dateMap as $dateKey => $sigKey) {
             $currentVal = $data[$dateKey] ?? '';
             // If the date field looks like a file path or <img> tag, it's corrupted — clear it
-            if (str_contains((string) $currentVal, '/') || str_contains((string) $currentVal, '<img') || str_contains((string) $currentVal, '.png')) {
+            // But don't clear actual dates like "04/22/2026" — only clear paths/HTML
+            if (str_contains((string) $currentVal, '<img') || str_contains((string) $currentVal, '.png')
+                || (str_contains((string) $currentVal, '/') && preg_match('#[a-z].*/#i', (string) $currentVal))) {
                 $currentVal = '';
             }
             if (!empty($currentVal)) {
-                // Already a valid date string — keep it
-                $data[$dateKey] = $currentVal;
-            } elseif (!empty($data[$sigKey]) && str_contains((string) $data[$sigKey], '<img')) {
-                // Signature exists but no date stored — use lead created_at or today
-                $fallback = $data['created_at'] ?? date('m/d/Y');
+                // Already a valid date string — format in agent timezone
                 try {
-                    $data[$dateKey] = date('m/d/Y', strtotime((string) $fallback));
+                    $data[$dateKey] = Carbon::parse((string) $currentVal)->setTimezone($agentTz)->format('m/d/Y');
                 } catch (\Throwable $e) {
-                    $data[$dateKey] = date('m/d/Y');
+                    $data[$dateKey] = $currentVal;
+                }
+            } elseif (!empty($data[$sigKey]) && str_contains((string) $data[$sigKey], '<img')) {
+                // Signature exists but no date stored — use lead created_at or now in agent tz
+                $fallback = $data['created_at'] ?? null;
+                try {
+                    $data[$dateKey] = $fallback
+                        ? Carbon::parse((string) $fallback)->setTimezone($agentTz)->format('m/d/Y')
+                        : Carbon::now($agentTz)->format('m/d/Y');
+                } catch (\Throwable $e) {
+                    $data[$dateKey] = Carbon::now($agentTz)->format('m/d/Y');
                 }
             } else {
                 $data[$dateKey] = '';
             }
+        }
+
+        // Also format lead_created_at in agent timezone
+        if (!empty($data['created_at'])) {
+            try {
+                $data['lead_created_at'] = Carbon::parse((string) $data['created_at'])->setTimezone($agentTz)->format('m/d/Y');
+            } catch (\Throwable $ignored) {}
         }
 
         return $data;

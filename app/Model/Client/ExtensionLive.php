@@ -29,6 +29,7 @@ class ExtensionLive extends Model
         'call_status',
         'transfer_status',
         'conf_room',
+        'customer_channel',
     ];
 
     protected $casts = [
@@ -74,13 +75,14 @@ class ExtensionLive extends Model
         $query = $dbConnection ? static::on($dbConnection) : static::query();
 
         $query->where('extension', $extension)->update([
-            'status'          => 0,
-            'channel'         => null,
-            'campaign_id'     => null,
-            'lead_id'         => null,
-            'call_status'     => null,
-            'transfer_status' => null,
-            'conf_room'       => null,
+            'status'           => 0,
+            'channel'          => null,
+            'campaign_id'      => null,
+            'lead_id'          => null,
+            'call_status'      => null,
+            'transfer_status'  => null,
+            'conf_room'        => null,
+            'customer_channel' => null,
         ]);
     }
 }

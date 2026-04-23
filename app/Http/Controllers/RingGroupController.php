@@ -145,6 +145,9 @@ class RingGroupController extends Controller
 
     public function getRingGroup()
     {
+        if ($this->request->auth->level < 5) {
+            return response()->json(['success' => false, 'message' => 'Access denied'], 403);
+        }
         $response = $this->model->ringGroupDetail($this->request);
         return response()->json($response);
     }
@@ -197,14 +200,20 @@ class RingGroupController extends Controller
      */
     public function editRingGroup()
     {
+        if ($this->request->auth->level < 7) {
+            return response()->json(['success' => 'false', 'message' => 'Access denied. Manager level required.'], 403);
+        }
 
-        // echo $this->request;die;
-        /*$this->validate($this->request, [
-            'number'    => 'required|numeric|regex:/^([0-9\s\-\+\(\)]*)$/|min:10',
-            'extension' => 'numeric',
-            'comment'   => 'string',
-            'id'        => 'required|numeric'
-        ]);*/
+        $this->validate($this->request, [
+            'ring_id'    => 'required|numeric',
+            'title'      => 'sometimes|string|max:255',
+            'extension'  => 'required|array|min:1',
+            'extension.*'=> 'string',
+            'emails'     => 'nullable|array',
+            'ring_type'  => 'sometimes|in:1,2,3',
+            'receive_on' => 'sometimes|in:web_phone,mobile,desk_phone',
+        ]);
+
         $response = $this->model->ringGroupUpdate($this->request);
         return response()->json($response);
     }
@@ -267,11 +276,21 @@ class RingGroupController extends Controller
 
     public function addRingGroup()
     {
-        /*$this->validate($this->request, [
-            'title'    => 'string',
-            'description' => 'string',
-            'extension'   => 'array',
-             ]);*/
+        if ($this->request->auth->level < 7) {
+            return response()->json(['success' => 'false', 'message' => 'Access denied. Manager level required.'], 403);
+        }
+
+        $this->validate($this->request, [
+            'title'       => 'required|string|max:255',
+            'description' => 'nullable|string|max:500',
+            'extension'   => 'required|array|min:1',
+            'extension.*' => 'string',
+            'emails'      => 'nullable|array',
+            'emails.*'    => 'nullable|email',
+            'ring_type'   => 'required|in:1,2,3',
+            'receive_on'  => 'nullable|in:web_phone,mobile,desk_phone',
+        ]);
+
         $response = $this->model->addRingGroup($this->request);
         return response()->json($response);
     }
@@ -334,10 +353,14 @@ class RingGroupController extends Controller
 
     public function deleteRingGroup()
     {
+        if ($this->request->auth->level < 7) {
+            return response()->json(['success' => 'false', 'message' => 'Access denied. Manager level required.'], 403);
+        }
+
         $this->validate($this->request, [
-            // 'number'    => 'required|numeric|regex:/^([0-9\s\-\+\(\)]*)$/|min:10',
-            // 'id'        => 'required|numeric'
+            'ring_id' => 'required|numeric',
         ]);
+
         $response = $this->model->ringDelete($this->request);
         return response()->json($response);
     }

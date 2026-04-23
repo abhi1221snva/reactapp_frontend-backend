@@ -862,6 +862,33 @@ HTML;
 
         $merged = array_merge($legacyData, $eavData);
 
+        // If EAV is the active system (has any data for this lead), treat it as
+        // source of truth for Owner 2 fields.  When Owner 2 was removed in the CRM
+        // the EAV rows are deleted — but the legacy table still holds stale values.
+        // Strip those legacy Owner 2 fields so they don't reappear.
+        if (!empty($eavData)) {
+            $owner2Prefixes = ['owner_2_', 'option_734', 'option_735', 'option_736',
+                'option_737', 'option_738', 'option_739', 'option_740', 'option_741',
+                'option_742', 'option_743', 'option_744', 'option_745'];
+            $hasOwner2InEav = false;
+            foreach ($eavData as $k => $v) {
+                if (str_starts_with($k, 'owner_2_') && $v !== '' && $v !== null) {
+                    $hasOwner2InEav = true;
+                    break;
+                }
+            }
+            if (!$hasOwner2InEav) {
+                foreach (array_keys($merged) as $k) {
+                    foreach ($owner2Prefixes as $prefix) {
+                        if (str_starts_with($k, $prefix)) {
+                            unset($merged[$k]);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
         // Build backend-served signature URLs so the frontend never needs to
         // construct paths into non-public app storage directories.
         $base          = rtrim(env('APP_URL'), '/');

@@ -260,46 +260,63 @@ public function ringGroupDetail($request)
         // ✅ Fetch as array of objects (keep objects intact)
         $ringGroupsData = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
 
-        foreach ($ringGroupsData as $key_ext => $ext) {
-            $array_extension = [];
-            $extension_ids = [];
+        // Collect all unique extension numbers across all ring groups for batch lookup
+        $allExtNums = [];
+        $ringExtMap = []; // key_ext => [ext numbers]
 
-            // ✅ Normalize extension string (handle PJSIP/, SIP/, &, -, etc.)
+        foreach ($ringGroupsData as $key_ext => $ext) {
             $extenRaw = trim($ext->extensions ?? '');
             $extenRaw = str_replace(['PJSIP/', 'SIP/'], '', $extenRaw);
             $extenRaw = str_replace(['-', ',', ' '], '&', $extenRaw);
-            $extensionList = array_filter(array_unique(explode('&', $extenRaw)));
-
+            $extensionList = array_values(array_filter(array_unique(explode('&', $extenRaw))));
+            $ringExtMap[$key_ext] = $extensionList;
             foreach ($extensionList as $check) {
                 if (!empty($check) && is_numeric($check)) {
-                    $userSql = "
-                        SELECT id, first_name, last_name, extension, alt_extension
+                    $allExtNums[$check] = true;
+                }
+            }
+        }
+
+        // Batch query: fetch all users matching any of these extension numbers (with tenant filter)
+        $userLookup = []; // extension_number => user object
+        if (!empty($allExtNums)) {
+            $extNumList = array_keys($allExtNums);
+            $placeholders = implode(',', array_fill(0, count($extNumList), '?'));
+            $tenantId = $request->auth->parent_id;
+            $userSql = "SELECT id, first_name, last_name, extension, alt_extension
                         FROM users
-                        WHERE extension = :ext1 OR alt_extension = :ext2
-                        LIMIT 1
-                    ";
-                    $userRecord = DB::connection('master')->selectOne($userSql, [
-                        'ext1' => $check,
-                        'ext2' => $check,
-                    ]);
+                        WHERE parent_id = ? AND (extension IN ($placeholders) OR alt_extension IN ($placeholders))";
+            $bindings = array_merge([$tenantId], $extNumList, $extNumList);
+            $userRecords = DB::connection('master')->select($userSql, $bindings);
 
-                    if (!empty($userRecord)) {
-                        $matchedExt = ($userRecord->extension == $check)
-                            ? $userRecord->extension
-                            : $userRecord->alt_extension;
+            foreach ($userRecords as $ur) {
+                if (!empty($ur->extension)) $userLookup[$ur->extension] = $ur;
+                if (!empty($ur->alt_extension)) $userLookup[$ur->alt_extension] = $ur;
+            }
+        }
 
-                        if (!in_array($userRecord->id, $extension_ids)) {
-                            $array_extension[] = "{$userRecord->first_name} {$userRecord->last_name}-{$matchedExt}";
-                            $extension_ids[] = $userRecord->id;
-                        }
+        foreach ($ringGroupsData as $key_ext => $ext) {
+            $array_extension = [];
+            $extension_ids = [];
+            $extensionList = $ringExtMap[$key_ext] ?? [];
+
+            foreach ($extensionList as $check) {
+                if (!empty($check) && is_numeric($check) && isset($userLookup[$check])) {
+                    $userRecord = $userLookup[$check];
+                    $matchedExt = ($userRecord->extension == $check)
+                        ? $userRecord->extension
+                        : $userRecord->alt_extension;
+
+                    if (!in_array($userRecord->id, $extension_ids)) {
+                        $array_extension[] = "{$userRecord->first_name} {$userRecord->last_name}-{$matchedExt}";
+                        $extension_ids[] = $userRecord->id;
                     }
                 }
             }
 
-            // ✅ Add results
             $ringGroupsData[$key_ext]->extension_name = implode(',', $array_extension);
             $ringGroupsData[$key_ext]->extension_id = $extension_ids;
-            $ringGroupsData[$key_ext]->extension_count = count($extension_ids); // ✅ Accurate count
+            $ringGroupsData[$key_ext]->extension_count = count($extension_ids);
         }
 
         return [
@@ -645,123 +662,119 @@ public function ringGroupDetail($request)
     {
         try
         {
+            // Validate title is provided
+            if (!$request->has('title') || empty(trim($request->input('title')))) {
+                return [
+                    'success' => 'false',
+                    'message' => 'Title is required.'
+                ];
+            }
 
-            if(is_array($request->input('extension'))){
-                $count = 0;
-                foreach ($request->input('extension') as $key=>$value)
+            // Validate ring_type
+            $ringType = $request->input('ring_type', 1);
+            if (!in_array($ringType, [1, 2, 3])) {
+                return [
+                    'success' => 'false',
+                    'message' => 'Invalid ring type. Must be 1, 2, or 3.'
+                ];
+            }
+
+            $extension = '';
+            $extension_mobile = '';
+            $count = 0;
+
+            if (is_array($request->input('extension')) && !empty($request->input('extension'))) {
+                $ext = [];
+                $ext_phone = [];
+
+                $client = Client::where('id', $request->auth->parent_id)->first();
+                $tech_prefix = !empty($client) ? $client->tech_prefix : '';
+
+                foreach ($request->input('extension') as $value)
                 {
-                    $user_data['alt_extension'] = User::where('extension',$value)->get()->first();
-                    ++$count;
-                    $ext[] = 'PJSIP/'.$value.'&'.'PJSIP/'.$user_data['alt_extension']->alt_extension;
-                    //$ext[] = 'PJSIP/'.$user_data['alt_extension']->alt_extension;
-               
+                    $user = User::where('extension', $value)
+                        ->where('parent_id', $request->auth->parent_id)
+                        ->first();
 
-                    //phone number
-
-                    $user_data['mobile'] = User::where('extension',$value)->get()->first();
-                    ++$count;
-
-                    $client = Client::where('id',$request->auth->parent_id)->get()->first();
-                    if(!empty($client))
-                    {
-                        $tech_prefix = $client->tech_prefix;
-                        $ext_phone[] = 'PJSIP/telnyx/'.$tech_prefix.$user_data['mobile']->mobile;
+                    if (!$user) {
+                        return [
+                            'success' => 'false',
+                            'message' => "Extension {$value} not found."
+                        ];
                     }
-                    else
-                    {
-                        $ext_phone[] = 'PJSIP/telnyx/'.$user_data['mobile']->mobile;
+
+                    if (empty($user->alt_extension)) {
+                        return [
+                            'success' => 'false',
+                            'message' => "Alt extension not found for extension {$value}."
+                        ];
                     }
 
+                    ++$count;
+                    $ext[] = 'PJSIP/' . $value . '&PJSIP/' . $user->alt_extension;
 
-                    
-                   
-                    
+                    if (!empty($user->mobile)) {
+                        $ext_phone[] = 'PJSIP/telnyx/' . $tech_prefix . $user->mobile;
+                    }
                 }
-                $extension_mobile = implode('&',$ext_phone);
 
-                if($request->input('ring_type') == 1)
-                {
-                $extension = implode('&',$ext);
+                $extension_mobile = implode('&', $ext_phone);
 
+                if ($ringType == 1) {
+                    $extension = implode('&', $ext);
+                } else {
+                    $extension = implode('-', $ext);
                 }
-                else
-                {
-                $extension = implode('-',$ext);
-
-                }
-                
-
-                //echo "<pre>";print_r($extension);die;
+            } else {
+                return [
+                    'success' => 'false',
+                    'message' => 'At least one extension is required.'
+                ];
             }
 
-            if(is_array($request->input('emails'))){
-                foreach ($request->input('emails') as $key=>$value)
-                {
-                    $email_listl[] = $value;
+            $emails = '';
+            if (is_array($request->input('emails'))) {
+                $email_list = [];
+                foreach ($request->input('emails') as $value) {
+                    if (!empty(trim($value))) {
+                        $email_list[] = trim($value);
+                    }
                 }
-                $emails = implode(',',$email_listl);
-                //echo "<pre>";print_r($extension);die;
+                $emails = implode(',', $email_list);
             }
 
-            
+            $data = [];
+            $data['title'] = trim($request->input('title'));
+            $data['description'] = $request->input('description', '');
+            $data['extensions'] = $extension;
+            $data['phone_number'] = $extension_mobile;
+            $data['emails'] = $emails;
+            $data['ring_type'] = $ringType;
+            $data['receive_on'] = $request->input('receive_on', 'web_phone');
+            $data['extension_count'] = $count;
 
-            if($request->has('title') && !empty($request->input('title'))) {
-                $data['title'] = $request->input('title');
-                 $data['description'] = $request->input('description');
+            $query = "INSERT INTO " . $this->table . " (title, description, extensions, phone_number, emails, ring_type, extension_count, receive_on) VALUE (:title, :description, :extensions, :phone_number, :emails, :ring_type, :extension_count, :receive_on)";
+            $add = DB::connection('mysql_' . $request->auth->parent_id)->insert($query, $data);
 
-                $data['extensions'] = $extension;
-                $data['phone_number'] = $extension_mobile;
-
-                
-
-                 if($request->has('emails') && !empty($request->input('emails'))) {
-                $data['emails'] = $emails;
-                }
-                else
-                {
-                    $data['emails']="";
-                }
-
-                if($request->has('ring_type') && !empty($request->input('ring_type'))) {
-                $data['ring_type'] = $request->input('ring_type');
-                }
-
-                if($request->has('receive_on') && !empty($request->input('receive_on'))) {
-                $data['receive_on'] = $request->input('receive_on');
-                }
-
-                $data['extension_count'] = $count;
-               
-                $query = "INSERT INTO ".$this->table." (title, description, extensions,phone_number,emails,ring_type,extension_count,receive_on) VALUE (:title, :description, :extensions, :phone_number,:emails,:ring_type,:extension_count,:receive_on)";
-                $add =  DB::connection('mysql_'.$request->auth->parent_id)->insert($query, $data);
-                if($add == 1)
-                {
-                    return array(
-                        'success'=> 'true',
-                        'message'=> 'Ring Group added successfully.'
-                    );
-                }
-                else
-                {
-                    return array(
-                        'success'=> 'false',
-                        'message'=> 'Ring Group not added successfully.'
-                    );
-                }
+            if ($add == 1) {
+                return [
+                    'success' => 'true',
+                    'message' => 'Ring Group added successfully.'
+                ];
             }
 
-            return array(
-                'success'=> 'false',
-                'message'=> 'Ring Group are not added successfully.'
-            );
+            return [
+                'success' => 'false',
+                'message' => 'Ring Group not added successfully.'
+            ];
         }
-        catch (Exception $e)
+        catch (\Exception $e)
         {
-            Log::log($e->getMessage());
-        }
-        catch (InvalidArgumentException $e)
-        {
-            Log::log($e->getMessage());
+            Log::error('RingGroup.addRingGroup error', ['message' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()]);
+            return [
+                'success' => 'false',
+                'message' => 'Error: ' . $e->getMessage()
+            ];
         }
     }
     /*
@@ -773,39 +786,36 @@ public function ringGroupDetail($request)
     {
         try
         {
-            if($request->has('ring_id') && is_numeric($request->input('ring_id')))
-            {
-                $data['id'] = $request->input('ring_id');
-                $query = "DELETE FROM ".$this->table." WHERE id = :id";
-                $save =  DB::connection('mysql_'.$request->auth->parent_id)->update($query, $data);
-                if($save == 1)
-                {
-                    return array(
-                        'success'=> 'true',
-                        'message'=> 'Ring Group deleted successfully.'
-                    );
-                }
-                else
-                {
-                    return array(
-                        'success'=> 'false',
-                        'message'=> 'Ring Group are not deleted successfully.'
-                    );
-                }
-
+            if (!$request->has('ring_id') || !is_numeric($request->input('ring_id'))) {
+                return [
+                    'success' => 'false',
+                    'message' => 'Ring Group doesn\'t exist.'
+                ];
             }
-            return array(
-                'success'=> 'false',
-                'message'=> 'Ring Group doesn\'t exist.'
-            );
+
+            $data['id'] = $request->input('ring_id');
+            $query = "DELETE FROM " . $this->table . " WHERE id = :id";
+            $save = DB::connection('mysql_' . $request->auth->parent_id)->update($query, $data);
+
+            if ($save == 1) {
+                return [
+                    'success' => 'true',
+                    'message' => 'Ring Group deleted successfully.'
+                ];
+            }
+
+            return [
+                'success' => 'false',
+                'message' => 'Ring Group not found or already deleted.'
+            ];
         }
-        catch (Exception $e)
+        catch (\Exception $e)
         {
-            Log::log($e->getMessage());
-        }
-        catch (InvalidArgumentException $e)
-        {
-            Log::log($e->getMessage());
+            Log::error('RingGroup.ringDelete error', ['message' => $e->getMessage()]);
+            return [
+                'success' => 'false',
+                'message' => 'Error: ' . $e->getMessage()
+            ];
         }
     }
 

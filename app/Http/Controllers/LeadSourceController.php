@@ -198,6 +198,9 @@ class LeadSourceController extends Controller
             $LeadSource->source_title = $request->source_title;
             $LeadSource->unique_id = $uniqueId;
             $LeadSource->webhook_secret = $webhookSecret;
+            $LeadSource->notify_email    = (bool) $request->input('notify_email', false);
+            $LeadSource->notify_sms      = (bool) $request->input('notify_sms', false);
+            $LeadSource->notify_user_ids = $request->input('notify_user_ids', []);
             $LeadSource->saveOrFail();
 
             // Register secret in master lookup table
@@ -314,6 +317,15 @@ class LeadSourceController extends Controller
             }
             if ($request->has("source_title")) {
                 $LeadSource->source_title = $request->input("source_title");
+            }
+            if ($request->has('notify_email')) {
+                $LeadSource->notify_email = (bool) $request->input('notify_email');
+            }
+            if ($request->has('notify_sms')) {
+                $LeadSource->notify_sms = (bool) $request->input('notify_sms');
+            }
+            if ($request->has('notify_user_ids')) {
+                $LeadSource->notify_user_ids = $request->input('notify_user_ids', []);
             }
 
             $LeadSource->saveOrFail();

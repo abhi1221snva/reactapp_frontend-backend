@@ -158,8 +158,8 @@ class ExtensionController extends Controller
     public function showDetails(Request $request, int $id)
     {
         try {
-            // RBAC: System Administrator only
-            $minLevel = 11;
+            // RBAC: Admin+ can view user details
+            $minLevel = 7;
             if (($request->auth->level ?? 0) < $minLevel) {
                 return response()->json([
                     'success' => false,
@@ -167,17 +167,29 @@ class ExtensionController extends Controller
                 ], 403);
             }
 
-            // Fetch user via existing helper (handles parent_id scoping)
-            $response = $this->model->extensionDetail($this->request, $id);
-            $user = $response['data'];
+            // Fetch user — for admin+ use parent_id scope (not base_parent_id)
+            // to handle impersonation and cross-account access correctly
+            $parentId = $request->auth->parent_id;
+            $userRecord = \App\Model\User::where('id', $id)
+                ->where('is_deleted', 0)
+                ->where(function ($q) use ($parentId, $request) {
+                    $q->where('parent_id', $parentId);
+                    // Also check base_parent_id for sub-account users
+                    $baseParentId = $request->auth->base_parent_id ?? $parentId;
+                    if ($baseParentId != $parentId) {
+                        $q->orWhere('parent_id', $baseParentId);
+                    }
+                })
+                ->first();
 
-            if (!$user) {
+            if (!$userRecord) {
                 return response()->json([
                     'success' => false,
                     'message' => 'User not found',
                 ], 404);
             }
 
+            $user = $userRecord->toArray();
             unset($user['password']);
 
             // Fetch SIP extension records from user_extensions table
@@ -351,7 +363,12 @@ class ExtensionController extends Controller
         //$users = User::join('roles', 'users.role', '=', 'roles.id')->where('users.parent_id',$clientId)->where('users.is_deleted','0')->orderBy('users.id','DESC')
         //->get(['users.*', 'roles.name as role_name','roles.level'])->all();
 
-        $users_admin = User::join('roles', 'users.role', '=', 'roles.id')->where('users.user_level', '9')->orWhere('users.user_level', '11')->orderBy('users.id', 'DESC')
+        $users_admin = User::join('roles', 'users.role', '=', 'roles.id')
+            ->where('users.parent_id', $clientId)
+            ->where(function ($q) {
+                $q->where('users.user_level', 9)->orWhere('users.user_level', 11);
+            })
+            ->orderBy('users.id', 'DESC')
             ->get(['users.*', 'roles.name as role_name', 'roles.level'])->all();
 
         $users = array_merge($users_all, $users_admin);
@@ -544,7 +561,7 @@ class ExtensionController extends Controller
         $this->validate($this->request, [
             'first_name' => 'string|max:255',
             'last_name' => 'string|max:255',
-            'email' => 'email',
+            'email' => 'email|unique:master.users,email,' . $this->request->input('extension_id'),
             'mobile' => 'numeric|regex:/^([0-9\s\-\+\(\)]*)$/|min:10',
             'password' => 'string|max:255',
             'follow_me' => 'numeric',
@@ -559,8 +576,8 @@ class ExtensionController extends Controller
 
         // Agents/associates can only edit their own record
         $userLevel = (int) ($this->request->auth->level ?? 1);
+        $targetId = (int) $this->request->input('extension_id');
         if ($userLevel < 5) {
-            $targetId = (int) $this->request->input('extension_id');
             if ($targetId !== (int) $this->request->auth->id) {
                 return response()->json([
                     'success' => false,
@@ -568,6 +585,15 @@ class ExtensionController extends Controller
                     'data' => [],
                 ], 403);
             }
+        }
+
+        // Tenant isolation — target user must belong to same client
+        $targetUser = User::find($targetId);
+        if (!$targetUser || (int) $targetUser->parent_id !== (int) $this->request->auth->parent_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not found.',
+            ], 404);
         }
 
         $response = $this->model->editExtension($this->request);
@@ -1028,7 +1054,7 @@ class ExtensionController extends Controller
             'first_name' => 'required|string|max:255',
             'last_name' => 'string|min:1|max:255',
             'email' => 'required|email|unique:master.users',
-            'password' => 'required|string|min:4',
+            'password' => ['required', 'string', 'min:10', 'regex:/[A-Z]/', 'regex:/[a-z]/', 'regex:/[0-9]/', 'regex:/[^A-Za-z0-9]/'],
             'profile_pic' => ["sometimes", "required", "string", "min:1", "regex:/^.+\.(jpg|png)$/"],
             'extension' => 'required|int|min:1000|max:9999',
             'rpm' => 'sometimes|required|string|min:1|max:100',
@@ -1076,7 +1102,7 @@ class ExtensionController extends Controller
             ], 422);
         }
     
-        Log::info('Request data before saving extension', $request->all());
+        Log::info('Request data before saving extension', $request->except(['password']));
         Log::info('Easify CREATE API request started', [
             'email' => $request->email
         ]);
@@ -1193,7 +1219,7 @@ if (!empty($easifyUserToken)) {
             'first_name' => 'required|string|max:255',
             'last_name' => 'string|min:1|max:255',
             'email' => 'required|email|unique:master.users',
-            'password' => 'required|string|min:4',
+            'password' => ['required', 'string', 'min:10', 'regex:/[A-Z]/', 'regex:/[a-z]/', 'regex:/[0-9]/', 'regex:/[^A-Za-z0-9]/'],
             'profile_pic' => ["sometimes", "required", "string", "min:1", "regex:/^.+\.(jpg|png)$/"],
             'extension' => 'required|int|min:1000|max:9999',
             'rpm' => 'sometimes|required|string|min:1|max:100',

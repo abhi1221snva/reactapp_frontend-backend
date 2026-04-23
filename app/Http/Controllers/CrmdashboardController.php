@@ -90,7 +90,7 @@ class CrmdashboardController extends Controller
             $metrics['conversions'] = $this->getConversionMetrics($connection, $dates['start'], $dates['end'], $auth, $clientId);
 
             // 4. Agent/User Performance
-            $metrics['agentPerformance'] = $this->getAgentPerformance($connection, $clientId, $dates['start'], $dates['end']);
+            $metrics['agentPerformance'] = $this->getAgentPerformance($connection, $clientId, $dates['start'], $dates['end'], $auth);
 
             // 5. Document Status
             $metrics['documentStatus'] = $this->getDocumentStatus($connection, $auth, $clientId);
@@ -190,11 +190,13 @@ class CrmdashboardController extends Controller
         ')->first();
 
         // Calculate funding by day for the period
-        $dailyFunding = DB::connection($connection)->table('crm_lead_data')
+        $dailyQ = DB::connection($connection)->table('crm_lead_data')
             ->whereNotNull('funded_amount')
             ->where('funded_amount', '>', 0)
             ->whereBetween('funding_date', [$startDate, $endDate])
-            ->whereNull('deleted_at')
+            ->whereNull('deleted_at');
+        (new LeadVisibilityService())->applyVisibilityScope($dailyQ, $auth, $clientId);
+        $dailyFunding = $dailyQ
             ->selectRaw('DATE(funding_date) as date, COUNT(*) as deals, SUM(funded_amount) as amount')
             ->groupBy(DB::raw('DATE(funding_date)'))
             ->orderBy('date')
@@ -277,12 +279,18 @@ class CrmdashboardController extends Controller
     /**
      * Get Agent Performance
      */
-    private function getAgentPerformance($connection, $clientId, $startDate, $endDate)
+    private function getAgentPerformance($connection, $clientId, $startDate, $endDate, $auth = null)
     {
         $agentStats = DB::connection($connection)->table('crm_lead_data')
             ->whereNotNull('assigned_to')
             ->whereBetween('created_at', [$startDate, $endDate])
-            ->whereNull('deleted_at')
+            ->whereNull('deleted_at');
+
+        if ($auth) {
+            (new LeadVisibilityService())->applyVisibilityScope($agentStats, $auth, (int) $clientId);
+        }
+
+        $agentStats = $agentStats
             ->selectRaw('
                 assigned_to,
                 COUNT(*) as total_leads,

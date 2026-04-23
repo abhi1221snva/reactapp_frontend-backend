@@ -8,6 +8,10 @@ class CreateCrmLeadSourceFieldsTable extends Migration
 {
     public function up()
     {
+        if (Schema::hasTable('crm_lead_source_fields')) {
+            return;
+        }
+
         Schema::create('crm_lead_source_fields', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('lead_source_id');

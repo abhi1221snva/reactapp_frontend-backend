@@ -24,16 +24,40 @@ class Campaign extends Model
     public $timestamps = false;
 
 
+    /**
+     * Check that the authenticated user has access to the given campaign.
+     * Admin/Manager (level >= 7) can access any campaign.
+     * Agents (level < 7) can only access campaigns in their groups.
+     */
+    public static function authorizeAccess(int $campaignId, $request): void
+    {
+        $conn = 'mysql_' . $request->auth->parent_id;
+        $campaign = DB::connection($conn)->table('campaign')
+            ->where('id', $campaignId)->where('is_deleted', 0)->first();
+        if (!$campaign) {
+            abort(404, 'Campaign not found.');
+        }
+        if ($request->auth->level < 7) {
+            $groups = is_array($request->auth->groups) ? $request->auth->groups : [];
+            if (!in_array((int) $campaign->group_id, array_map('intval', $groups))) {
+                abort(403, 'You do not have access to this campaign.');
+            }
+        }
+    }
+
     public static function allowedCampaigns(int $clientId, int $level, array $groups = [])
     {
         if (empty($groups)) $groups = [0];
-        $sql = "SELECT * FROM campaign WHERE is_deleted=0";
-        //$sql = "SELECT * FROM campaign WHERE status=1";
+
+        $query = DB::connection("mysql_$clientId")
+            ->table('campaign')
+            ->where('is_deleted', 0);
 
         if ($level < 7) {
-            $sql .= " AND group_id IN (" . implode(",", $groups) . ")";
+            $query->whereIn('group_id', array_map('intval', $groups));
         }
-        $records = DB::connection("mysql_$clientId")->select($sql);
+
+        $records = $query->get();
         $data = [];
         foreach ($records as $record) {
             $data[$record->id] = $record;
@@ -100,20 +124,25 @@ public function campaignDetaillatest($request)
             $campaign->rowList = count($list);
 
             $id_list = array_map(fn($x) => $x->list_id, $list);
-            $list_ids = $id_list ? "'" . implode("','", $id_list) . "'" : "''";
 
             // 3) list_data / hubspot_lists
-            if ($campaign->crm_title_url == 'hubspot') {
-                $sql_count_list = "SELECT sum(size) as rowCountList
-                                   FROM hubspot_lists
-                                   WHERE list_id IN ({$list_ids})";
+            if (!empty($id_list)) {
+                if ($campaign->crm_title_url == 'hubspot') {
+                    $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)
+                        ->table('hubspot_lists')
+                        ->whereIn('list_id', $id_list)
+                        ->selectRaw('sum(size) as rowCountList')
+                        ->get();
+                } else {
+                    $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)
+                        ->table('list_data')
+                        ->whereIn('list_id', $id_list)
+                        ->selectRaw('count(1) as rowCountList')
+                        ->get();
+                }
             } else {
-                $sql_count_list = "SELECT count(1) as rowCountList
-                                   FROM list_data
-                                   WHERE list_id IN ({$list_ids})";
+                $record_count_list = collect([(object)['rowCountList' => 0]]);
             }
-
-            $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_count_list);
             $campaign->rowListData = $record_count_list[0]->rowCountList ?? 0;
 
             // 4) lead_temp count
@@ -220,15 +249,11 @@ usort($campaigns, function ($a, $b) {
              * 2️⃣ TOTAL LEADS (ONLY ACTIVE LISTS)
              * ------------------------------------------------- */
             if (!empty($listIds)) {
-                $listIdsStr = implode(',', $listIds);
-
-                $sqlTotalLeads = "
-                    SELECT SUM(lead_count) AS total
-                    FROM list
-                    WHERE id IN ($listIdsStr)
-                ";
-
-                $totalLeads = DB::connection($connection)->selectOne($sqlTotalLeads);
+                $totalLeads = DB::connection($connection)
+                    ->table('list')
+                    ->whereIn('id', $listIds)
+                    ->selectRaw('SUM(lead_count) AS total')
+                    ->first();
                 $id->total_leads = $totalLeads->total ?? 0;
             } else {
                 $id->total_leads = 0;
@@ -238,40 +263,21 @@ usort($campaigns, function ($a, $b) {
              * 3️⃣ DIALED LEADS (ONLY ACTIVE LISTS)
              * ------------------------------------------------- */
             if (!empty($listIds)) {
-                $listIdsStr = implode(',', $listIds);
-
-                $sqlDialed = "
-                    SELECT COUNT(1) AS total
-                    FROM lead_report
-                    WHERE campaign_id = :campaign_id
-                      AND list_id IN ($listIdsStr)
-                ";
-
-                $dialed = DB::connection($connection)->selectOne($sqlDialed, $params);
+                $dialed = DB::connection($connection)
+                    ->table('lead_report')
+                    ->where('campaign_id', $id->id)
+                    ->whereIn('list_id', $listIds)
+                    ->selectRaw('COUNT(1) AS total')
+                    ->first();
                 $id->dialed_leads = $dialed->total ?? 0;
-                
             } else {
                 $id->dialed_leads = 0;
             }
-/* -------------------------------------------------
- * 6️⃣ AUTO INACTIVATE CAMPAIGN (GUARDED)
- * ------------------------------------------------- */
-if (
-    $id->total_leads > 0 &&
-    $id->dialed_leads >= $id->total_leads &&
-    (int) $id->status === 1
-) {
-    DB::connection($connection)->update(
-        "UPDATE campaign
-         SET status = 0
-         WHERE id = :campaign_id
-           AND status = 1",
-        ['campaign_id' => $id->id]
-    );
-
-    // reflect immediately in response
-    $id->status = 0;
-}
+            // Note: auto-deactivation removed from listing — should be handled by a scheduled job or dialer completion.
+            // Flag exhausted campaigns in response only (no DB write)
+            if ($id->total_leads > 0 && $id->dialed_leads >= $id->total_leads && (int) $id->status === 1) {
+                $id->leads_exhausted = true;
+            }
 
             /* -------------------------------------------------
              * 4️⃣ HOPPER COUNT (UNCHANGED)
@@ -376,32 +382,35 @@ if (
                 $id_list[] = $listItem->list_id;
             }
 
-            $list_ids_str = implode(',', $id_list);
-
             $id->lists_associated = $count;
 
             // 3. rowListData: use lead_count from list table if exists, else fallback to existing logic
             if (!empty($id_list)) {
-                // Sum lead_count from list table
-               // $sql_lead_count = "SELECT SUM(lead_count) as totalLeadCount FROM list WHERE id IN (" . $list_ids_str . ")";
-                $sql_lead_count = "SELECT SUM(lead_count) as totalLeadCount 
-                   FROM list 
-                   WHERE id IN (" . $list_ids_str . ")";
-
-                $lead_count_record = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_lead_count);
+                $lead_count_record = DB::connection('mysql_' . $request->auth->parent_id)
+                    ->table('list')
+                    ->whereIn('id', $id_list)
+                    ->selectRaw('SUM(lead_count) as totalLeadCount')
+                    ->first();
 
                 if (!empty($lead_count_record) && $lead_count_record->totalLeadCount > 0) {
                     $id->total_leads = $lead_count_record->totalLeadCount;
                 } else {
                     // fallback to existing logic
                     if ($id->crm_title_url == 'hubspot') {
-                        $sql_count_list = "SELECT sum(size) as rowCountList FROM hubspot_lists WHERE list_id IN ('" . implode("','", $id_list) . "')";
+                        $fallback = DB::connection('mysql_' . $request->auth->parent_id)
+                            ->table('hubspot_lists')
+                            ->whereIn('list_id', $id_list)
+                            ->selectRaw('sum(size) as rowCountList')
+                            ->first();
                     } else {
-                        $sql_count_list = "SELECT count(1) as rowCountList FROM list_data WHERE list_id IN ('" . implode("','", $id_list) . "')";
+                        $fallback = DB::connection('mysql_' . $request->auth->parent_id)
+                            ->table('list_data')
+                            ->whereIn('list_id', $id_list)
+                            ->selectRaw('count(1) as rowCountList')
+                            ->first();
                     }
 
-                    $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_count_list);
-                    $id->total_leads  = $record_count_list[0]->rowCountList ?? 0;
+                    $id->total_leads = $fallback->rowCountList ?? 0;
                 }
             } else {
                 $id->total_leads  = 0; // no lists
@@ -477,6 +486,19 @@ public function updateCampaign($request)
         $cmpId = $request->input('campaign_id');
         $date_time = date('Y-m-d H:i:s');
         $data['id'] = $cmpId;
+
+        // Duplicate title check on update
+        if (isset($data['title'])) {
+            $titleExists = DB::connection('mysql_' . $request->auth->parent_id)
+                ->selectOne(
+                    "SELECT id FROM {$this->table} WHERE LOWER(title) = ? AND is_deleted = 0 AND id != ? LIMIT 1",
+                    [strtolower(trim($data['title'])), $cmpId]
+                );
+            if ($titleExists) {
+                return ['success' => false, 'message' => 'Campaign title already exists. Please use a different title.', 'status' => 409];
+            }
+        }
+
         $status = $request->input('status');
 if ($status == 1) {
 
@@ -500,30 +522,33 @@ if ($status == 1) {
     $dialedLeads = 0;
 
     if (!empty($listIds)) {
-
-        $listIdsStr = implode(',', $listIds);
-
-        $total = DB::connection($connection)->selectOne("
-            SELECT SUM(lead_count) AS total
-            FROM list
-            WHERE id IN ($listIdsStr)
-        ");
+        $total = DB::connection($connection)
+            ->table('list')
+            ->whereIn('id', $listIds)
+            ->selectRaw('SUM(lead_count) AS total')
+            ->first();
 
         $totalLeads = $total->total ?? 0;
 
-        $dialed = DB::connection($connection)->selectOne("
-            SELECT COUNT(1) AS total
-            FROM lead_report
-            WHERE campaign_id = :campaign_id
-              AND list_id IN ($listIdsStr)
-        ", [
-            'campaign_id' => $cmpId
-        ]);
+        $dialed = DB::connection($connection)
+            ->table('lead_report')
+            ->where('campaign_id', $cmpId)
+            ->whereIn('list_id', $listIds)
+            ->selectRaw('COUNT(1) AS total')
+            ->first();
 
         $dialedLeads = $dialed->total ?? 0;
     }
 
-    if ($totalLeads > 0 && $dialedLeads >= $totalLeads) {
+    if ($totalLeads == 0) {
+        return [
+            'success' => false,
+            'message' => 'Campaign cannot be activated. Please assign at least one list with leads.',
+            'status'  => 422
+        ];
+    }
+
+    if ($dialedLeads >= $totalLeads) {
         return [
             'success' => false,
             'message' => 'Campaign cannot be activated. All leads are already dialed. Please add more leads.',
@@ -896,7 +921,7 @@ if ($request->filled('title')) {
         $data = array();
         if ($request->has('title') && !empty($request->input('title'))) {
             array_push($string, 'title = :title');
-            $data['title'] = $request->input('title');
+            $data['title'] = trim($request->input('title'));
         }
         if ($request->has('description') && !empty($request->input('description'))) {
             array_push($string, 'description = :description');
@@ -1153,10 +1178,12 @@ if ($request->input('dial_mode') === 'super_power_dial') {
                     'message' => 'User does not have agent permission'
                 );
             }
-        } catch (Exception $e) {
-            echo $e->getMessage();
-        } catch (InvalidArgumentException $e) {
-            echo $e->getMessage();
+        } catch (\Exception $e) {
+            Log::error('getAgentCampaign error', ['error' => $e->getMessage()]);
+            return ['success' => 'false', 'message' => 'Server error.', 'data' => []];
+        } catch (\InvalidArgumentException $e) {
+            Log::error('getAgentCampaign error', ['error' => $e->getMessage()]);
+            return ['success' => 'false', 'message' => 'Server error.', 'data' => []];
         }
     }
 
@@ -1172,10 +1199,12 @@ if ($request->input('dial_mode') === 'super_power_dial') {
                 'message' => 'Extension is not belong to any campaign.',
                 'data' => $data['rowCount']
             );
-        } catch (Exception $e) {
-            echo $e->getMessage();
-        } catch (InvalidArgumentException $e) {
-            echo $e->getMessage();
+        } catch (\Exception $e) {
+            Log::error('getCampaignCount error', ['error' => $e->getMessage()]);
+            return ['success' => 'false', 'message' => 'Server error.', 'data' => 0];
+        } catch (\InvalidArgumentException $e) {
+            Log::error('getCampaignCount error', ['error' => $e->getMessage()]);
+            return ['success' => 'false', 'message' => 'Server error.', 'data' => 0];
         }
     }
 
@@ -1800,10 +1829,17 @@ public function deleteDispositionAndList($request)
 
     public function copyCampaign($request)
     {
-        $campignStatus = '';
         $campaignId = $request->input('c_id');
-        $userArray = Campaign::on('mysql_' . $request->auth->parent_id)->where('id', $campaignId)->first();
-        if ($userArray['id']) {
+        $connection = 'mysql_' . $request->auth->parent_id;
+        $userArray = Campaign::on($connection)->where('id', $campaignId)->where('is_deleted', 0)->first();
+
+        if (!$userArray) {
+            return ['success' => 'false', 'message' => 'Source campaign not found.', 'data' => []];
+        }
+
+        return DB::connection($connection)->transaction(function () use ($request, $userArray, $campaignId, $connection) {
+            $campignStatus = '';
+            if ($userArray['id']) {
             $id = Campaign::on('mysql_' . $request->auth->parent_id)->insertGetId(
                 [
                     'title' => 'Copy ' . $userArray['title'],
@@ -1815,6 +1851,7 @@ public function deleteDispositionAndList($request)
                     'time_based_calling' => $userArray['time_based_calling'],
                     'call_time_start' => $userArray['call_time_start'],
                     'call_time_end' => $userArray['call_time_end'],
+                    'timezone' => $userArray['timezone'],
                     'dial_mode' => $userArray['dial_mode'],
                     'group_id' => $userArray['group_id'],
                     'max_lead_temp' => $userArray['max_lead_temp'],
@@ -1825,6 +1862,23 @@ public function deleteDispositionAndList($request)
                     'send_crm' => $userArray['send_crm'],
                     'email' => $userArray['email'],
                     'sms' => $userArray['sms'],
+                    'amd' => $userArray['amd'],
+                    'amd_drop_action' => $userArray['amd_drop_action'],
+                    'call_ratio' => $userArray['call_ratio'],
+                    'duration' => $userArray['duration'],
+                    'automated_duration' => $userArray['automated_duration'],
+                    'redirect_to' => $userArray['redirect_to'],
+                    'redirect_to_dropdown' => $userArray['redirect_to_dropdown'],
+                    'no_agent_available_action' => $userArray['no_agent_available_action'],
+                    'no_agent_dropdown_action' => $userArray['no_agent_dropdown_action'],
+                    'voicedrop_option_user_id' => $userArray['voicedrop_option_user_id'],
+                    'country_code' => $userArray['country_code'],
+                    'voip_configuration_id' => $userArray['voip_configuration_id'],
+                    'call_transfer' => $userArray['call_transfer'],
+                    'call_metric' => $userArray['call_metric'],
+                    'hopper_mode' => $userArray['hopper_mode'],
+                    'percentage_inc_dec' => $userArray['percentage_inc_dec'],
+                    'call_schedule_id' => $userArray['call_schedule_id'],
                 ]
             );
 
@@ -1865,6 +1919,7 @@ public function deleteDispositionAndList($request)
                 );
             }
         }
+        }); // end transaction
     }
 
 function campaignById($request)
@@ -1882,7 +1937,7 @@ if (!$campaign) {
         'success' => false,
         'message' => 'Campaign not found.',
         'data' => []
-    ], 402);
+    ], 404);
 }
 
     // === Predictive Dial logic ===
@@ -2003,43 +2058,27 @@ if (!$campaign) {
 
 // === Total leads (same logic as campaignDetail) ===
 if (!empty($id_list)) {
-
-   // === TOTAL LEADS (MATCH campaignDetail) ===
-if (!empty($id_list)) {
-
-    $sqlTotalLeads = "
-        SELECT SUM(lead_count) AS total
-        FROM list
-        WHERE id IN (" . implode(',', $id_list) . ")
-    ";
-
     $total = DB::connection('mysql_' . $request->auth->parent_id)
-        ->selectOne($sqlTotalLeads);
+        ->table('list')
+        ->whereIn('id', $id_list)
+        ->selectRaw('SUM(lead_count) AS total')
+        ->first();
 
     $campaign->total_leads = (int) ($total->total ?? 0);
-
 } else {
     $campaign->total_leads = 0;
 }
 
-}
 // === DIALED LEADS (MATCH campaignDetail) ===
 if (!empty($id_list)) {
-
-    $sqlDialed = "
-        SELECT COUNT(1) AS total
-        FROM lead_report
-        WHERE campaign_id = :campaign_id
-          AND list_id IN (" . implode(',', $id_list) . ")
-    ";
-
     $dialed = DB::connection('mysql_' . $request->auth->parent_id)
-        ->selectOne($sqlDialed, [
-            'campaign_id' => $campaign->id
-        ]);
+        ->table('lead_report')
+        ->where('campaign_id', $campaign->id)
+        ->whereIn('list_id', $id_list)
+        ->selectRaw('COUNT(1) AS total')
+        ->first();
 
     $campaign->dialed_leads = (int) ($dialed->total ?? 0);
-
 } else {
     $campaign->dialed_leads = 0;
 }
@@ -2181,15 +2220,24 @@ if (!empty($campaign->updated)) {
 
         $campaign->rowList = $count;
 
-        $list_ids = "'" . implode("','", $id_list) . "'";
-        if ($campaign->crm_title_url === 'hubspot') {
-            $sql_count_list = "SELECT sum(size) as rowCountList FROM hubspot_lists WHERE list_id IN ($list_ids)";
+        if (!empty($id_list)) {
+            if ($campaign->crm_title_url === 'hubspot') {
+                $countResult = DB::connection('mysql_' . $request->auth->parent_id)
+                    ->table('hubspot_lists')
+                    ->whereIn('list_id', $id_list)
+                    ->selectRaw('sum(size) as rowCountList')
+                    ->first();
+            } else {
+                $countResult = DB::connection('mysql_' . $request->auth->parent_id)
+                    ->table('list_data')
+                    ->whereIn('list_id', $id_list)
+                    ->selectRaw('count(1) as rowCountList')
+                    ->first();
+            }
+            $campaign->rowListData = $countResult->rowCountList ?? 0;
         } else {
-            $sql_count_list = "SELECT count(1) as rowCountList FROM list_data WHERE list_id IN ($list_ids)";
+            $campaign->rowListData = 0;
         }
-
-        $record_count_list = DB::connection('mysql_' . $request->auth->parent_id)->select($sql_count_list);
-        $campaign->rowListData = $record_count_list[0]->rowCountList ?? 0;
 
         // 4. lead_temp count
         $sql_lead_temp = "SELECT count(1) as rowLeadTemp FROM lead_temp WHERE campaign_id = :campaign_id ";
@@ -2236,9 +2284,25 @@ if (!empty($campaign->updated)) {
                 $data['is_deleted'] = $request->input('is_deleted');
             }
 
-            $sql = "SELECT campaign_list.campaign_id,campaign_list.status,campaign_list.list_id,campaign_list.is_deleted,list.title as l_title,list.id,campaign.title,campaign.crm_title_url,list.size as rowListData FROM hubspot_campaign_list as campaign_list inner join hubspot_lists as list on campaign_list.list_id = list.id inner join campaign on campaign_list.campaign_id = campaign.id WHERE campaign_list.campaign_id = '" . $request->input('campaign_id') . "' and campaign_list.is_deleted ='" . $request->input('is_deleted') . "'";
-
-            $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql, $data);
+            $record = DB::connection('mysql_' . $request->auth->parent_id)
+                ->table('hubspot_campaign_list as campaign_list')
+                ->join('hubspot_lists as list', 'campaign_list.list_id', '=', 'list.id')
+                ->join('campaign', 'campaign_list.campaign_id', '=', 'campaign.id')
+                ->where('campaign_list.campaign_id', $data['campaign_id'] ?? null)
+                ->where('campaign_list.is_deleted', $data['is_deleted'] ?? 0)
+                ->select([
+                    'campaign_list.campaign_id',
+                    'campaign_list.status',
+                    'campaign_list.list_id',
+                    'campaign_list.is_deleted',
+                    'list.title as l_title',
+                    'list.id',
+                    'campaign.title',
+                    'campaign.crm_title_url',
+                    'list.size as rowListData',
+                ])
+                ->get()
+                ->all();
             $data = (array) $record;
 
             foreach ($data as $key => $id) {
@@ -2274,10 +2338,12 @@ if (!empty($campaign->updated)) {
                 'message' => 'Campaign List Found.',
                 'data' => array()
             );
-        } catch (Exception $e) {
-            echo $e->getMessage();
-        } catch (InvalidArgumentException $e) {
-            echo $e->getMessage();
+        } catch (\Exception $e) {
+            Log::error('getCampaignAndListHubspot error', ['error' => $e->getMessage()]);
+            return ['success' => 'false', 'message' => 'Server error.', 'data' => []];
+        } catch (\InvalidArgumentException $e) {
+            Log::error('getCampaignAndListHubspot error', ['error' => $e->getMessage()]);
+            return ['success' => 'false', 'message' => 'Server error.', 'data' => []];
         }
     }
 
@@ -2315,34 +2381,25 @@ if (!empty($campaign->updated)) {
         $dialedLeads = 0;
 
         if (!empty($listIds)) {
-
-            $listIdsStr = implode(',', $listIds);
-
             /* -------------------------------------------------
              * 2️⃣ TOTAL LEADS
              * ------------------------------------------------- */
-            $sqlTotalLeads = "
-                SELECT SUM(lead_count) AS total
-                FROM list
-                WHERE id IN ($listIdsStr)
-            ";
-
-            $total = DB::connection($connection)->selectOne($sqlTotalLeads);
+            $total = DB::connection($connection)
+                ->table('list')
+                ->whereIn('id', $listIds)
+                ->selectRaw('SUM(lead_count) AS total')
+                ->first();
             $totalLeads = $total->total ?? 0;
 
             /* -------------------------------------------------
              * 3️⃣ DIALED LEADS
              * ------------------------------------------------- */
-            $sqlDialed = "
-                SELECT COUNT(1) AS total
-                FROM lead_report
-                WHERE campaign_id = :campaign_id
-                  AND list_id IN ($listIdsStr)
-            ";
-
-            $dialed = DB::connection($connection)->selectOne($sqlDialed, [
-                'campaign_id' => $listId
-            ]);
+            $dialed = DB::connection($connection)
+                ->table('lead_report')
+                ->where('campaign_id', $listId)
+                ->whereIn('list_id', $listIds)
+                ->selectRaw('COUNT(1) AS total')
+                ->first();
 
             $dialedLeads = $dialed->total ?? 0;
         }

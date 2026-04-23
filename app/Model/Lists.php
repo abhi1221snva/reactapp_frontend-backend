@@ -238,40 +238,65 @@ class Lists extends Model
         }
 
         $number = $request->input('header_value');
+        $headerColumn = $request->input('header_column');
 
-        // Prepare list condition
-        if ($data['list_id'][0] == '0') {
-            $list = "'" . implode("','", $data['list_id']) . "'";
-            $data['list_id'] = $list;
+        // Whitelist header_column against known option columns to prevent SQL injection
+        $allowedColumns = array_merge($this->column_name, ['id', 'list_id']);
+        if (!in_array($headerColumn, $allowedColumns, true)) {
+            return array(
+                'success' => 'false',
+                'message' => 'Invalid column name.',
+                'total_rows' => 0,
+                'data' => array()
+            );
+        }
 
-            $baseSql = "FROM list_data WHERE list_id NOT IN($list) AND {$request->input('header_column')} = '$number'";
+        // Sanitize list_id array — only allow numeric values
+        $listIds = array_filter($data['list_id'], 'is_numeric');
+        if (empty($listIds)) {
+            return array(
+                'success' => 'false',
+                'message' => 'Invalid list IDs.',
+                'total_rows' => 0,
+                'data' => array()
+            );
+        }
+
+        $conn = DB::connection('mysql_' . $request->auth->parent_id);
+        $placeholders = implode(',', array_fill(0, count($listIds), '?'));
+        $bindings = array_values($listIds);
+        $bindings[] = $number; // for the column = ? clause
+
+        // Prepare list condition — $headerColumn is whitelisted above so safe to interpolate
+        if ($listIds[0] == '0') {
+            $baseSql = "FROM list_data WHERE list_id NOT IN($placeholders) AND `$headerColumn` = ?";
         } else {
-            $list = "'" . implode("','", $data['list_id']) . "'";
-            $data['list_id'] = $list;
-
-            $baseSql = "FROM list_data WHERE list_id IN($list) AND {$request->input('header_column')} = '$number'";
+            $baseSql = "FROM list_data WHERE list_id IN($placeholders) AND `$headerColumn` = ?";
         }
 
         // Get total rows (without pagination)
         $countSql = "SELECT COUNT(*) as total " . $baseSql;
-        $countResult = DB::connection('mysql_' . $request->auth->parent_id)->select($countSql);
+        $countResult = $conn->select($countSql, $bindings);
         $totalRows = $countResult[0]->total ?? 0;
 
         // Fetch paginated data
         $sql = "SELECT * " . $baseSql;
+        $paginatedBindings = $bindings;
         if ($request->has('start') && $request->has('limit')) {
             $start = (int) $request->input('start');
             $limit = (int) $request->input('limit');
-            $sql .= " LIMIT $limit OFFSET $start";
+            $sql .= " LIMIT ? OFFSET ?";
+            $paginatedBindings[] = $limit;
+            $paginatedBindings[] = $start;
         }
 
-        $record = DB::connection('mysql_' . $request->auth->parent_id)->select($sql);
+        $record = $conn->select($sql, $paginatedBindings);
 
         if (!empty($record)) {
             return array(
                 'success' => 'true',
                 'message' => 'Lead detail.',
-                'total_rows'   => $totalRows, // ✅ Added total count
+                'total_rows'   => $totalRows,
                 'data'    => $record
             );
         }
@@ -659,6 +684,12 @@ public function getListwithoutCampaign($request)
             $params['title'] = '%' . $titleSearch . '%';
         }
 
+        // Filter by is_active if provided
+        if ($request->has('is_active') && in_array($request->input('is_active'), ['0', '1'], true)) {
+            $sql .= " AND l.is_active = :is_active";
+            $params['is_active'] = (int) $request->input('is_active');
+        }
+
         $data = DB::connection($connection)->select($sql, $params);
 
         foreach ($data as $list) {
@@ -770,8 +801,18 @@ public function editListold($request)
         $updateBindings = [];
 
         if ($request->has('new_campaign_id') && is_numeric($request->input('new_campaign_id'))) {
+            $newCampaignId = (int) $request->input('new_campaign_id');
+            // Verify target campaign exists in this tenant's database
+            $campaignExists = DB::connection($parentConn)->selectOne(
+                "SELECT id FROM campaign WHERE id = ? LIMIT 1",
+                [$newCampaignId]
+            );
+            if (!$campaignExists) {
+                DB::connection($parentConn)->rollBack();
+                return ['success' => 'false', 'message' => 'Target campaign not found.'];
+            }
             $updateClauses[] = "campaign_id = :new_campaign_id";
-            $updateBindings['new_campaign_id'] = (int) $request->input('new_campaign_id');
+            $updateBindings['new_campaign_id'] = $newCampaignId;
         }
 
         if ($request->has('status') && is_numeric($request->input('status'))) {
@@ -1270,6 +1311,19 @@ if ($request->input('is_deleted') == 1) {
     $conn   = DB::connection($parentConn);
     $listId = (int) $request->input('list_id');
 
+    // Prevent deleting a list that is currently being dialed
+    $listRecord = $conn->selectOne(
+        "SELECT is_dialing FROM `list` WHERE id = ? LIMIT 1",
+        [$listId]
+    );
+    if ($listRecord && (int) $listRecord->is_dialing === 1) {
+        DB::connection($parentConn)->rollBack();
+        return [
+            'success' => 'false',
+            'message' => 'Cannot delete a list that is currently being dialed. Please stop dialing first.'
+        ];
+    }
+
     // campaign_list
     $conn->delete(
         "DELETE FROM campaign_list WHERE list_id = :list_id",
@@ -1294,9 +1348,9 @@ if ($request->input('is_deleted') == 1) {
         ['list_id' => $listId]
     );
 
-    // list_header
-    $conn->delete(
-        "DELETE FROM list_header WHERE list_id = :list_id",
+    // list_header — soft delete instead of hard delete
+    $conn->update(
+        "UPDATE list_header SET is_deleted = 1 WHERE list_id = :list_id",
         ['list_id' => $listId]
     );
 
@@ -1311,7 +1365,7 @@ if ($request->input('is_deleted') == 1) {
 
     $listModel->delete();
 
-  
+
 
     DB::connection($parentConn)->commit();
 
@@ -2132,18 +2186,40 @@ public function updateListMapping($request)
     $columns  = $request->input('columns', []);
     $dataBase = 'mysql_' . $request->auth->parent_id;
 
+    // Enforce exactly one dial column — only the first is_dialing=1 is accepted
+    $dialSet = false;
+
     // Reset all is_dialing flags for this list
     DB::connection($dataBase)
         ->table('list_header')
         ->where('list_id', $listId)
         ->update(['is_dialing' => 0]);
 
+    // Pre-fetch valid label IDs for validation
+    $validLabelIds = DB::connection($dataBase)
+        ->table('label')
+        ->pluck('id')
+        ->toArray();
+
     foreach ($columns as $col) {
         $headerId  = (int) ($col['id'] ?? 0);
         $labelId   = isset($col['label_id']) && is_numeric($col['label_id']) ? (int)$col['label_id'] : null;
         $isDialing = !empty($col['is_dialing']) ? 1 : 0;
 
+        // Enforce single dial column
+        if ($isDialing && $dialSet) {
+            $isDialing = 0;
+        }
+        if ($isDialing) {
+            $dialSet = true;
+        }
+
         if ($headerId <= 0) continue;
+
+        // Validate label_id exists if provided
+        if ($labelId !== null && !in_array($labelId, $validLabelIds, true)) {
+            continue; // Skip invalid label assignments
+        }
 
         DB::connection($dataBase)
             ->table('list_header')
@@ -2798,18 +2874,23 @@ usort($finalLeadArr, function ($a, $b) {
     function updateLeadData($request, $parent_id)
     {
         $newColCnt = 0;
-        $leadId = $request->input('lead_id');
+        $leadId = (int) $request->input('lead_id');
         $number = $request->input('number');
         $arrLabelId = $request->input('label_id');
-        $arrLabelVal = $request->input('label_value');;
-        $list_id = $this->getListFromListData($leadId, $parent_id);
-        //get all list_header columun (option_1,option_2)
+        $arrLabelVal = $request->input('label_value');
+        $list_id = (int) $this->getListFromListData($leadId, $parent_id);
+        $conn = DB::connection('mysql_' . $parent_id);
+
+        // Whitelist of allowed column names for dynamic SET clauses
+        $allowedColumns = $this->column_name;
+
+        //get all list_header column (option_1,option_2)
         $sql = "SELECT list_header.is_dialing, list_header.column_name, label.title, label.id "
             . "FROM list_header inner join label on label.id = list_header.label_id  "
-            . "WHERE list_header.list_id = $list_id group by label.title ORDER BY label.id ASC";
-        $listHeaders = DB::connection('mysql_' . $parent_id)->select($sql);
+            . "WHERE list_header.list_id = ? group by label.title ORDER BY label.id ASC";
+        $listHeaders = $conn->select($sql, [$list_id]);
 
-        //Create lead array from intermidiate List header array
+        //Create lead array from intermediate List header array
         $leadDataArr = [];
         foreach ($listHeaders as $header) {
             if (($key = array_search($header->column_name, $this->column_name)) !== false) {
@@ -2820,33 +2901,51 @@ usort($finalLeadArr, function ($a, $b) {
         $this->column_name = array_values($this->column_name);
 
         if ($leadId == 0) {
-            $query = "INSERT INTO list_data (list_id) VALUE (:list_id)";
-            DB::connection('mysql_' . $parent_id)->insert($query, array('list_id' => $list_id));
-            $query = "SELECT id FROM list_data ORDER BY id DESC LIMIT 1";
-            $lead = DB::connection('mysql_' . $parent_id)->select($query);
-            if (isset($lead[0]->id)) {
-                $leadId = $lead[0]->id;
-                $query = "UPDATE cdr SET lead_id = $leadId WHERE number = :number";
-                DB::connection('mysql_' . $parent_id)->update($query, array('number' => $number));
-                $query = "UPDATE cdr_archive SET lead_id = $leadId WHERE number = :number";
-                DB::connection('mysql_' . $parent_id)->update($query, array('number' => $number));
+            // Use insertGetId to avoid race condition with SELECT MAX(id)
+            $leadId = (int) $conn->table('list_data')->insertGetId(['list_id' => $list_id]);
+            if ($leadId > 0) {
+                $conn->update(
+                    "UPDATE cdr SET lead_id = :lead_id WHERE number = :number",
+                    ['lead_id' => $leadId, 'number' => $number]
+                );
+                $conn->update(
+                    "UPDATE cdr_archive SET lead_id = :lead_id WHERE number = :number",
+                    ['lead_id' => $leadId, 'number' => $number]
+                );
             }
         }
+
+        $isNewLead = ($request->input('lead_id') == 0);
 
         for ($i = 0; $i < count($arrLabelId); $i++) {
             if (isset($arrLabelVal[$i]) && $arrLabelVal[$i] != '') {
                 if (isset($leadDataArr[$arrLabelId[$i]])) {
-                    $query = "UPDATE list_data SET " . $leadDataArr[$arrLabelId[$i]] . " = :option_value WHERE id = :lead_id";
-                    DB::connection('mysql_' . $parent_id)->update($query, array('option_value' => $arrLabelVal[$i], 'lead_id' => $leadId));
+                    $colName = $leadDataArr[$arrLabelId[$i]];
+                    // Validate column name against whitelist
+                    if (!in_array($colName, $allowedColumns, true)) continue;
+                    $conn->update(
+                        "UPDATE list_data SET `$colName` = :option_value WHERE id = :lead_id",
+                        ['option_value' => $arrLabelVal[$i], 'lead_id' => $leadId]
+                    );
                 } else {
                     $query = "INSERT INTO list_header (column_name, list_id, label_id) VALUE (:column_name, :list_id, :label)";
-                    DB::connection('mysql_' . $parent_id)->insert($query, array('column_name' => $this->column_name[$newColCnt], 'list_id' => $list_id, 'label' => $arrLabelId[$i]));
+                    $conn->insert($query, array('column_name' => $this->column_name[$newColCnt], 'list_id' => $list_id, 'label' => $arrLabelId[$i]));
                     usleep(25000);
-                    $query = "UPDATE list_data SET " . $this->column_name[$newColCnt] . " = :option_value WHERE id = :lead_id";
-                    DB::connection('mysql_' . $parent_id)->update($query, array('option_value' => $arrLabelVal[$i], 'lead_id' => $leadId));
+                    $colName = $this->column_name[$newColCnt];
+                    // $colName comes from $this->column_name which is a hardcoded whitelist
+                    $conn->update(
+                        "UPDATE list_data SET `$colName` = :option_value WHERE id = :lead_id",
+                        ['option_value' => $arrLabelVal[$i], 'lead_id' => $leadId]
+                    );
                     $newColCnt++;
                 }
             }
+        }
+
+        // Refresh lead_count when a new lead was created
+        if ($isNewLead && $list_id) {
+            $count = $conn->selectOne("SELECT COUNT(1) AS total FROM list_data WHERE list_id = ?", [$list_id]);
+            $conn->table('list')->where('id', $list_id)->update(['lead_count' => $count->total ?? 0]);
         }
 
         return array(
@@ -2859,18 +2958,23 @@ usort($finalLeadArr, function ($a, $b) {
     function updateLeadData_copy($request, $parent_id)
     {
         $newColCnt = 0;
-        $leadId = $request->input('lead_id');
+        $leadId = (int) $request->input('lead_id');
         $number = $request->input('number');
         $arrLabelId = $request->input('label_id');
-        $arrLabelVal = $request->input('label_value');;
-        $list_id = $this->getListFromListData_copy($leadId, $parent_id);
-        //get all list_header columun (option_1,option_2)
+        $arrLabelVal = $request->input('label_value');
+        $list_id = (int) $this->getListFromListData_copy($leadId, $parent_id);
+        $conn = DB::connection('mysql_' . $parent_id);
+
+        // Whitelist of allowed column names for dynamic SET clauses
+        $allowedColumns = $this->column_name;
+
+        //get all list_header column (option_1,option_2)
         $sql = "SELECT list_header.is_dialing, list_header.column_name, label.title, label.id "
             . "FROM list_header inner join label on label.id = list_header.label_id  "
-            . "WHERE list_header.list_id = $list_id group by label.title ORDER BY label.id ASC";
-        $listHeaders = DB::connection('mysql_' . $parent_id)->select($sql);
+            . "WHERE list_header.list_id = ? group by label.title ORDER BY label.id ASC";
+        $listHeaders = $conn->select($sql, [$list_id]);
 
-        //Create lead array from intermidiate List header array
+        //Create lead array from intermediate List header array
         $leadDataArr = [];
         foreach ($listHeaders as $header) {
             if (($key = array_search($header->column_name, $this->column_name)) !== false) {
@@ -2881,33 +2985,50 @@ usort($finalLeadArr, function ($a, $b) {
         $this->column_name = array_values($this->column_name);
 
         if ($leadId == 0) {
-            $query = "INSERT INTO list_data (list_id) VALUE (:list_id)";
-            DB::connection('mysql_' . $parent_id)->insert($query, array('list_id' => $list_id));
-            $query = "SELECT id FROM list_data ORDER BY id DESC LIMIT 1";
-            $lead = DB::connection('mysql_' . $parent_id)->select($query);
-            if (isset($lead[0]->id)) {
-                $leadId = $lead[0]->id;
-                $query = "UPDATE cdr SET lead_id = $leadId WHERE number = :number";
-                DB::connection('mysql_' . $parent_id)->update($query, array('number' => $number));
-                $query = "UPDATE cdr_archive SET lead_id = $leadId WHERE number = :number";
-                DB::connection('mysql_' . $parent_id)->update($query, array('number' => $number));
+            // Use insertGetId to avoid race condition with SELECT MAX(id)
+            $leadId = (int) $conn->table('list_data')->insertGetId(['list_id' => $list_id]);
+            if ($leadId > 0) {
+                $conn->update(
+                    "UPDATE cdr SET lead_id = :lead_id WHERE number = :number",
+                    ['lead_id' => $leadId, 'number' => $number]
+                );
+                $conn->update(
+                    "UPDATE cdr_archive SET lead_id = :lead_id WHERE number = :number",
+                    ['lead_id' => $leadId, 'number' => $number]
+                );
             }
         }
+
+        $isNewLead = ($request->input('lead_id') == 0);
 
         for ($i = 0; $i < count($arrLabelId); $i++) {
             if (isset($arrLabelVal[$i]) && $arrLabelVal[$i] != '') {
                 if (isset($leadDataArr[$arrLabelId[$i]])) {
-                    $query = "UPDATE list_data SET " . $leadDataArr[$arrLabelId[$i]] . " = :option_value WHERE id = :lead_id";
-                    DB::connection('mysql_' . $parent_id)->update($query, array('option_value' => $arrLabelVal[$i], 'lead_id' => $leadId));
+                    $colName = $leadDataArr[$arrLabelId[$i]];
+                    // Validate column name against whitelist
+                    if (!in_array($colName, $allowedColumns, true)) continue;
+                    $conn->update(
+                        "UPDATE list_data SET `$colName` = :option_value WHERE id = :lead_id",
+                        ['option_value' => $arrLabelVal[$i], 'lead_id' => $leadId]
+                    );
                 } else {
                     $query = "INSERT INTO list_header (column_name, list_id, label_id) VALUE (:column_name, :list_id, :label)";
-                    DB::connection('mysql_' . $parent_id)->insert($query, array('column_name' => $this->column_name[$newColCnt], 'list_id' => $list_id, 'label' => $arrLabelId[$i]));
+                    $conn->insert($query, array('column_name' => $this->column_name[$newColCnt], 'list_id' => $list_id, 'label' => $arrLabelId[$i]));
                     usleep(25000);
-                    $query = "UPDATE list_data SET " . $this->column_name[$newColCnt] . " = :option_value WHERE id = :lead_id";
-                    DB::connection('mysql_' . $parent_id)->update($query, array('option_value' => $arrLabelVal[$i], 'lead_id' => $leadId));
+                    $colName = $this->column_name[$newColCnt];
+                    $conn->update(
+                        "UPDATE list_data SET `$colName` = :option_value WHERE id = :lead_id",
+                        ['option_value' => $arrLabelVal[$i], 'lead_id' => $leadId]
+                    );
                     $newColCnt++;
                 }
             }
+        }
+
+        // Refresh lead_count when a new lead was created
+        if ($isNewLead && $list_id) {
+            $count = $conn->selectOne("SELECT COUNT(1) AS total FROM list_data WHERE list_id = ?", [$list_id]);
+            $conn->table('list')->where('id', $list_id)->update(['lead_count' => $count->total ?? 0]);
         }
 
         return array(
@@ -2921,12 +3042,17 @@ usort($finalLeadArr, function ($a, $b) {
     {
 
         $cdr_id = $request->input('cdr_id');
-        $disposition_id = $request->input('disposition_id');
+        $disposition_id = (int) $request->input('disposition_id');
 
-        $query = "UPDATE cdr SET disposition_id = $disposition_id WHERE id = :id";
-        DB::connection('mysql_' . $parent_id)->update($query, array('id' => $cdr_id));
-        $query = "UPDATE cdr_archive SET disposition_id = $disposition_id WHERE id = :id";
-        DB::connection('mysql_' . $parent_id)->update($query, array('id' => $cdr_id));
+        $conn = DB::connection('mysql_' . $parent_id);
+        $conn->update(
+            "UPDATE cdr SET disposition_id = :disposition_id WHERE id = :id",
+            ['disposition_id' => $disposition_id, 'id' => $cdr_id]
+        );
+        $conn->update(
+            "UPDATE cdr_archive SET disposition_id = :disposition_id WHERE id = :id",
+            ['disposition_id' => $disposition_id, 'id' => $cdr_id]
+        );
 
         return array(
             'success' => 'true',
@@ -2943,16 +3069,19 @@ usort($finalLeadArr, function ($a, $b) {
      */
     function getListFromListData($lead_id, $parent_id)
     {
-        $sql = "(SELECT * FROM list_data WHERE id = $lead_id) "
-            . "UNION (SELECT * FROM list_data_archive WHERE id = $lead_id)";
-        $record = DB::connection('mysql_' . $parent_id)->select($sql);
+        $lead_id = (int) $lead_id;
+        $conn = DB::connection('mysql_' . $parent_id);
+
+        $sql = "(SELECT * FROM list_data WHERE id = ?) "
+            . "UNION (SELECT * FROM list_data_archive WHERE id = ?)";
+        $record = $conn->select($sql, [$lead_id, $lead_id]);
         $listData = (array) $record;
 
         if (!empty($listData)) {
             $list_id = $listData[0]->list_id;
         } else { //if no lead id found then get from list table having type = 2
             $sql = "SELECT id FROM list WHERE type = 2";
-            $record = DB::connection('mysql_' . $parent_id)->select($sql);
+            $record = $conn->select($sql);
             $list = (array) $record;
             $list_id = $list[0]->id;
         }
@@ -2995,9 +3124,10 @@ usort($finalLeadArr, function ($a, $b) {
         })->implode(', ');
 
 
-        $sql = "(SELECT  $listDataSelect  FROM list_data WHERE id = $lead_id) "
-            . "UNION (SELECT $archiveSelect  FROM list_data_archive WHERE id = $lead_id)";
-        $record = DB::connection('mysql_' . $parent_id)->select($sql);
+        $lead_id = (int) $lead_id;
+        $sql = "(SELECT  $listDataSelect  FROM list_data WHERE id = ?) "
+            . "UNION (SELECT $archiveSelect  FROM list_data_archive WHERE id = ?)";
+        $record = DB::connection('mysql_' . $parent_id)->select($sql, [$lead_id, $lead_id]);
         $listData = (array) $record;
 
         if (!empty($listData)) {

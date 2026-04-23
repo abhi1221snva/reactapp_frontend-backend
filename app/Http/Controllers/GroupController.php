@@ -265,6 +265,14 @@ class GroupController extends Controller
             'extensions' => 'nullable|array',
         ]);
 
+        // Authorization: level < 7 users can only modify groups they belong to
+        if ($request->auth->level < 7) {
+            $userGroups = $request->auth->groups ?? [];
+            if (!in_array($id, $userGroups)) {
+                return $this->failResponse("Access denied", ["Unauthorized to modify this extension group"], null, 403);
+            }
+        }
+
         $conn = 'mysql_' . $request->auth->parent_id;
 
         try {
@@ -381,13 +389,20 @@ public function patchNew(Request $request)
         'extensions' => 'sometimes|array'
     ]);
 
+    // Authorization: level < 7 users can only modify groups they belong to
+    $id = $request->group_id;
+    if ($request->auth->level < 7) {
+        $userGroups = $request->auth->groups ?? [];
+        if (!in_array($id, $userGroups)) {
+            return $this->failResponse("Access denied", ["Unauthorized to modify this extension group"], null, 403);
+        }
+    }
+
     $conn = 'mysql_' . $request->auth->parent_id;
 
     DB::connection($conn)->beginTransaction();
 
     try {
-        $id = $request->group_id;
-
         $extGroup = ExtensionGroup::on($conn)->findOrFail($id);
 
         if ($extGroup->is_deleted) {
@@ -512,19 +527,46 @@ if ($request->has('extensions')) {
     public function delete(Request $request, $id)
     {
         try {
-            $extGroup = ExtensionGroup::on("mysql_" . $request->auth->parent_id)->findOrFail($id);
-            if (!$extGroup->is_deleted) {
-                $extGroup->title = $extGroup->title . "| Deleted on " . date("Y-m-d H:i:s");
-                $extGroup->is_deleted = 1;
-                $extGroup->saveOrFail();
-                return $this->successResponse("Extension group deleted", $extGroup->toArray());
-            } else {
+            $connection = "mysql_" . $request->auth->parent_id;
+
+            $extGroup = ExtensionGroup::on($connection)->findOrFail($id);
+
+            if ($extGroup->is_deleted) {
                 return $this->failResponse("Extension group not found", ["Invalid extension group id $id"], null, 404);
             }
+
+            // Check if group is assigned to any active campaign (consistent with deleteNew)
+            $isAssignedToCampaign = Campaign::on($connection)
+                ->where('group_id', $id)
+                ->where('is_deleted', 0)
+                ->exists();
+
+            if ($isAssignedToCampaign) {
+                return $this->failResponse(
+                    "Extension group cannot be deleted",
+                    ["This group is already assigned to a campaign."],
+                    null,
+                    400
+                );
+            }
+
+            // Soft delete the group
+            $extGroup->title = $extGroup->title . " | Deleted on " . date("Y-m-d H:i:s");
+            $extGroup->is_deleted = 1;
+            $extGroup->saveOrFail();
+
+            // Cascade: soft-delete all extension_group_map records for this group
+            DB::connection($connection)
+                ->table('extension_group_map')
+                ->where('group_id', $id)
+                ->update(['is_deleted' => 1]);
+
+            return $this->successResponse("Extension group deleted", $extGroup->toArray());
+
         } catch (ModelNotFoundException $exception) {
             return $this->failResponse("Extension group not found", ["Invalid extension group id $id"], $exception, 404);
         } catch (\Throwable $exception) {
-            return $this->failResponse("Failed to delete extension group", [$exception->getMessage()], $exception, 404);
+            return $this->failResponse("Failed to delete extension group", [$exception->getMessage()], $exception, 500);
         }
     }
     public function deleteNew1(Request $request)
@@ -596,6 +638,12 @@ if ($request->has('extensions')) {
         $extGroup->title = $extGroup->title . " | Deleted on " . Carbon::now()->format('Y-m-d H:i:s');
         $extGroup->is_deleted = 1;
         $extGroup->saveOrFail();
+
+        // 5️⃣ Cascade: soft-delete all extension_group_map records for this group
+        DB::connection($connection)
+            ->table('extension_group_map')
+            ->where('group_id', $id)
+            ->update(['is_deleted' => 1]);
 
         return $this->successResponse(
             "Extension group deleted",
@@ -832,28 +880,41 @@ if ($request->has('extensions')) {
 
     function updateGroupStatus(Request $request)
     {
+        $this->validate($request, [
+            'listId' => 'required|integer',
+            'status' => 'required',
+        ]);
+
+        // Authorization: level < 7 users can only toggle groups they belong to
         $listId = $request->input('listId');
-        $status = $request->input('status');
+        if ($request->auth->level < 7) {
+            $userGroups = $request->auth->groups ?? [];
+            if (!in_array($listId, $userGroups)) {
+                return response()->json([
+                    'success' => 'false',
+                    'message' => 'Access denied'
+                ], 403);
+            }
+        }
+
+        $status = $request->input('status') ? 1 : 0;
 
         $saveRecord = ExtensionGroup::on('mysql_' . $request->auth->parent_id)
-            ->where('id', $listId) // Use the actual listId received from the request
-            ->update(array('status' => $status));
+            ->where('id', $listId)
+            ->where('is_deleted', 0)
+            ->update(['status' => $status]);
 
-
-        // Log::debug('Received listId: ', ['listId' => $listId]);
-        // Log::debug('Received status: ', ['status' => $status]);
-        // Log::debug('Number of updated rows: ', ['saveRecord' => $saveRecord]);
         if ($saveRecord > 0) {
             return response()->json([
-                'success' => 'true',
-                'status' => 'true',
+                'success' => true,
+                'status' => true,
                 'message' => 'Group status updated successfully'
             ]);
         } else {
             return response()->json([
-                'success' => 'false',
-                'status' => 'false',
-                'message' => 'Status  update failed'
+                'success' => false,
+                'status' => false,
+                'message' => 'Status update failed'
             ]);
         }
     }

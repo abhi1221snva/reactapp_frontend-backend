@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Model\Client\ExtensionLive;
 use App\Services\AsteriskAmiService;
 use App\Services\CampaignDialerService;
 use Illuminate\Console\Command;
@@ -91,9 +92,20 @@ class AmiListenCommand extends Command
                             break;
 
                         case 'OriginateResponse':
-                            // Reason: 0=failure, 1=busy, 2=noanswer, 3=rejected, 4=answered
-                            if ((int)($event['Reason'] ?? 0) !== 4) {
-                                $actionId = $event['ActionID'] ?? '';
+                            $reason   = (int) ($event['Reason'] ?? 0);
+                            $actionId = $event['ActionID'] ?? '';
+
+                            if ($reason === 4 && str_starts_with($actionId, 'cust_')) {
+                                // Customer answered — store channel for customer-only hangup
+                                $channel = $event['Channel'] ?? null;
+                                if ($channel && preg_match('/^cust_(.+)_\d+$/', $actionId, $m)) {
+                                    $confRoom = $m[1];
+                                    ExtensionLive::on($dbConnection)
+                                        ->where('conf_room', $confRoom)
+                                        ->where('status', 1)
+                                        ->update(['customer_channel' => $channel]);
+                                }
+                            } elseif ($reason !== 4) {
                                 if (str_starts_with($actionId, 'cust_')) {
                                     // Customer originate failed — kick conf, notify agent
                                     $service->handleCustomerOriginateFailed($event, $dbConnection, $clientId);

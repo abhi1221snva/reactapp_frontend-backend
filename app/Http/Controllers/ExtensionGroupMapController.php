@@ -150,37 +150,42 @@ class ExtensionGroupMapController extends Controller
 public function index(Request $request)
 {
     try {
-        // Base query
+        $masterDb = DB::connection('master')->getDatabaseName();
+        $clientDb = 'client_' . $request->auth->parent_id;
+        $tenantId = $request->auth->parent_id;
+
+        // Base query with tenant filter on master users
         $extensionGroupMap = "
-            SELECT 
+            SELECT
                 egm.*,
                 up.extension AS ext,
                 up.first_name,
                 up.last_name,
                 up.id AS user_id
-            FROM master.users AS up
-            JOIN client_{$request->auth->parent_id}.extension_group_map AS egm 
+            FROM {$masterDb}.users AS up
+            JOIN {$clientDb}.extension_group_map AS egm
                 ON egm.extension = up.extension
             WHERE egm.is_deleted = 0
+              AND up.parent_id = :tenant_id
         ";
 
-        $params = [];
+        $params = ['tenant_id' => $tenantId];
 
-        // ✅ Optional filter by group_id
+        // Optional filter by group_id
         if ($request->has('group_id') && !empty($request->group_id)) {
             $extensionGroupMap .= " AND egm.group_id = :group_id";
-            $params['group_id'] = $request->group_id;
+            $params['group_id'] = (int) $request->group_id;
         }
 
         // Execute query
         $groupMap = DB::select($extensionGroupMap, $params);
 
-        // ✅ Pagination logic
+        // Pagination logic
         if ($request->has('start') && $request->has('limit')) {
             $total_row = count($groupMap);
 
-            $start = (int) $request->input('start', 0);
-            $limit = (int) $request->input('limit', 10);
+            $start = max(0, (int) $request->input('start', 0));
+            $limit = max(1, (int) $request->input('limit', 10));
 
             $groupMap = array_slice($groupMap, $start, $limit, false);
 
@@ -192,7 +197,7 @@ public function index(Request $request)
             ]);
         }
 
-        // ✅ Return full list without pagination
+        // Return full list without pagination
         return $this->successResponse("Extension Group Map List", $groupMap);
 
     } catch (\Exception $e) {

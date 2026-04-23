@@ -434,15 +434,22 @@ class RinglessCampaignController extends Controller
     function deleteCampaign(Request $request)
     {
         $campaign_id = $request->campaign_id;
-        $Campaign = RinglessCampaign::on("mysql_" . $request->auth->parent_id)->findOrFail($campaign_id);
+        $conn = "mysql_" . $request->auth->parent_id;
+        $Campaign = RinglessCampaign::on($conn)->findOrFail($campaign_id);
         $Campaign->is_deleted = 1;
         $deleted = $Campaign->update();
 
         if ($deleted) {
-            return $this->successResponse("Campaign List", $Campaign->toArray());
+            // Cascade: deactivate related ringless campaign lists
+            \Illuminate\Support\Facades\DB::connection($conn)
+                ->table('ringless_campaign_list')
+                ->where('campaign_id', $campaign_id)
+                ->update(['is_deleted' => 1]);
+
+            return $this->successResponse("Campaign Deleted Successfully", $Campaign->toArray());
         } else {
             return $this->failResponse("Failed to delete the Campaign ", [
-                "Unkown"
+                "Unknown"
             ]);
         }
     }

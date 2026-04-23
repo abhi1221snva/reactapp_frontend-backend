@@ -363,4 +363,54 @@ class SmsInboxService
             ->where('id', $conversationId)
             ->update(['unread_count' => 0]);
     }
+
+    /**
+     * Insert a system-generated chat note into a lead's SMS conversation.
+     * NOT an actual SMS — just an in-app note visible to the agent.
+     *
+     * Resolves the merchant's phone from crm_lead_values, finds or creates
+     * the conversation, then inserts a direction='system' message.
+     */
+    public function addSystemMessage(int $clientId, int $leadId, string $body): ?CrmSmsMessage
+    {
+        $conn = "mysql_{$clientId}";
+
+        // Resolve merchant phone from EAV (priority order)
+        $phone = null;
+        foreach (['phone_number', 'mobile', 'phone', 'cell_phone'] as $key) {
+            $phone = DB::connection($conn)
+                ->table('crm_lead_values')
+                ->where('lead_id', $leadId)
+                ->where('field_key', $key)
+                ->whereNotNull('field_value')
+                ->where('field_value', '!=', '')
+                ->value('field_value');
+            if ($phone) break;
+        }
+
+        if (!$phone) {
+            Log::warning("SmsInboxService::addSystemMessage — no phone found for lead {$leadId} on client {$clientId}");
+            return null;
+        }
+
+        $conversation = $this->getOrCreateConversation($clientId, $leadId, $phone);
+
+        /** @var CrmSmsMessage $message */
+        $message = CrmSmsMessage::on($conn)->create([
+            'conversation_id' => $conversation->id,
+            'direction'       => 'system',
+            'body'            => $body,
+            'from_number'     => null,
+            'to_number'       => null,
+            'status'          => 'system',
+            'twilio_sid'      => null,
+            'sent_by'         => null,
+        ]);
+
+        $conversation->setConnection($conn);
+        $conversation->increment('unread_count');
+        $conversation->update(['last_message_at' => Carbon::now()]);
+
+        return $message;
+    }
 }

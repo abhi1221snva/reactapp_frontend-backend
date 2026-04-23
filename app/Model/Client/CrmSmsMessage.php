@@ -19,6 +19,6 @@ class CrmSmsMessage extends Model
         'sent_by',
     ];
 
-    public const DIRECTIONS = ['inbound', 'outbound'];
-    public const STATUSES   = ['pending', 'sent', 'delivered', 'failed', 'received'];
+    public const DIRECTIONS = ['inbound', 'outbound', 'system'];
+    public const STATUSES   = ['pending', 'sent', 'delivered', 'failed', 'received', 'system'];
 }

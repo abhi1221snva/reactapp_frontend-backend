@@ -9,6 +9,6 @@ class CampaignTypes extends Model
         public $timestamps = false;
 
     protected $table = 'campaign_types';
-    protected $fillable = ['id','title','title_url','status'];
+    protected $fillable = ['title','title_url','status'];
 
 }

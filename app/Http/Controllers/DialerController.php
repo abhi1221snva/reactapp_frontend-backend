@@ -459,25 +459,55 @@ class DialerController extends Controller
             ], 404);
         }
 
-        // Auto-populate lead queue if empty (first-time dial for this campaign)
-        $queueCount = CampaignLeadQueue::on($dbConnection)
-            ->where('campaign_id', $campaignId)
-            ->count();
+        // Redial support: if lead_id is provided, re-queue that specific lead
+        $redialLeadId = $this->request->input('lead_id');
 
-        if ($queueCount === 0) {
-            CampaignLeadQueue::populateFromCampaign($campaignId, $dbConnection);
-        }
+        if ($redialLeadId) {
+            $redialLeadId = (int) $redialLeadId;
+            $entry = CampaignLeadQueue::on($dbConnection)
+                ->where('campaign_id', $campaignId)
+                ->where('lead_id', $redialLeadId)
+                ->first();
 
-        // Pick next dialable lead
-        $entry = DB::connection($dbConnection)->transaction(function () use ($campaignId, $dbConnection) {
-            return CampaignLeadQueue::nextDialable($campaignId, $dbConnection);
-        });
+            if ($entry) {
+                // Reset queue entry so it can be dialed again
+                $entry->update([
+                    'status'    => CampaignLeadQueue::STATUS_CALLING,
+                    'attempts'  => DB::raw('attempts + 1'),
+                    'called_at' => now(),
+                ]);
+            } else {
+                // Lead not in queue (edge case) — create entry
+                $entry = CampaignLeadQueue::on($dbConnection)->create([
+                    'campaign_id' => $campaignId,
+                    'lead_id'     => $redialLeadId,
+                    'status'      => CampaignLeadQueue::STATUS_CALLING,
+                    'attempts'    => 1,
+                    'called_at'   => now(),
+                    'sort_order'  => 0,
+                ]);
+            }
+        } else {
+            // Normal flow: auto-populate queue + pick next dialable lead
 
-        if (!$entry) {
-            return response()->json([
-                'success' => false,
-                'message' => 'No leads available in this campaign',
-            ], 404);
+            $queueCount = CampaignLeadQueue::on($dbConnection)
+                ->where('campaign_id', $campaignId)
+                ->count();
+
+            if ($queueCount === 0) {
+                CampaignLeadQueue::populateFromCampaign($campaignId, $dbConnection);
+            }
+
+            $entry = DB::connection($dbConnection)->transaction(function () use ($campaignId, $dbConnection) {
+                return CampaignLeadQueue::nextDialable($campaignId, $dbConnection);
+            });
+
+            if (!$entry) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No leads available in this campaign',
+                ], 404);
+            }
         }
 
         // Mark lead as being called

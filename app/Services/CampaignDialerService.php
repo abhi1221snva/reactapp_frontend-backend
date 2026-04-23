@@ -8,6 +8,7 @@ use App\Model\Client\ExtensionLive;
 use App\Model\Client\AgentStatus;
 use App\Model\Client\CampaignAgent;
 use App\Services\CallerIdResolverService;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Pusher\Pusher;
@@ -113,7 +114,19 @@ class CampaignDialerService
         if (!$lead || empty($lead->phone_number)) {
             Log::warning("CampaignDialer: lead {$entry->lead_id} has no phone — skipping");
             $entry->update(['status' => CampaignLeadQueue::STATUS_SKIPPED]);
-            return $this->dialNextLead($campaignId, $clientId, $dbConnection);
+
+            // Guard against deep recursion — skip up to 50 phoneless leads, then bail
+            static $skipCount = 0;
+            $skipCount++;
+            if ($skipCount >= 50) {
+                $skipCount = 0;
+                Log::warning("CampaignDialer: 50 consecutive phoneless leads in campaign {$campaignId} — stopping");
+                return null;
+            }
+
+            $result = $this->dialNextLead($campaignId, $clientId, $dbConnection);
+            $skipCount = 0;
+            return $result;
         }
 
         // Generate a unique conference room name for this call
@@ -393,14 +406,18 @@ class CampaignDialerService
             Log::warning("CampaignDialer: confbridge kick failed for {$confRoom}: {$e->getMessage()}");
         }
 
-        // Push customer_noanswer event to agent's browser
+        // Map AMI reason code to human-readable message
+        $reason = $this->mapOriginateFailReason($event);
+
+        // Push customer_noanswer event to agent's browser with reason
         $this->pushToAgent($agentExt, 'call.customer_noanswer', [
             'lead_id'     => $leadId,
             'campaign_id' => $campaignId,
             'conf_room'   => $confRoom,
+            'reason'      => $reason,
         ], $clientId);
 
-        Log::info("CampaignDialer: customer no-answer — agent {$agentExt}, lead {$leadId}, room {$confRoom}");
+        Log::info("CampaignDialer: customer originate failed — agent {$agentExt}, lead {$leadId}, room {$confRoom}, reason: {$reason}");
 
         // Note: conference teardown triggers agent hangup event → handleCallHangup() runs normal cleanup
     }
@@ -448,12 +465,198 @@ class CampaignDialerService
         $userId = $this->extensionToUserId($agentExt, $dbConnection);
         AgentStatus::setStatus($userId, AgentStatus::AVAILABLE, null, $clientId, $dbConnection);
 
+        // Map AMI reason code to human-readable message
+        $reason = $this->mapOriginateFailReason($event);
+
+        // Push call.failed event to agent's browser so UI shows error in real time
+        $this->pushToAgent($agentExt, 'call.failed', [
+            'lead_id'     => $leadId,
+            'campaign_id' => $campaignId,
+            'reason'      => $reason,
+            'message'     => $reason,
+        ], $clientId);
+
+        Log::info("CampaignDialer: agent no-answer — ext {$agentExt}, lead {$leadId}, reason: {$reason}");
+
         // Try next lead immediately
         dispatch(
             (new \App\Jobs\DialNextLeadJob($campaignId, $clientId, $dbConnection))
                 ->onQueue('campaign-dialer')
                 ->delay(now()->addSeconds(3))
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // Persistent Conference: hang up customer only, dial next lead
+    // -------------------------------------------------------------------------
+
+    /**
+     * Hang up only the customer channel while keeping the agent in the conference.
+     * Then pick the next lead and originate the customer call into the same conf room.
+     *
+     * Returns: ['status' => 'next_lead'|'no_more_leads', 'lead' => [...] | null]
+     */
+    public function hangupCustomerAndDialNext(
+        int    $campaignId,
+        int    $agentExt,
+        int    $clientId,
+        string $dbConnection
+    ): array {
+        $live = ExtensionLive::on($dbConnection)
+            ->where('extension', $agentExt)
+            ->where('status', 1)
+            ->first();
+
+        if (!$live) {
+            return ['status' => 'error', 'message' => 'Agent not in an active call'];
+        }
+
+        $previousLeadId = (int) $live->lead_id;
+        $confRoom       = $live->conf_room;
+
+        // 1) Hang up the customer channel only (if tracked)
+        if ($live->customer_channel) {
+            try {
+                if (!$this->ami->isConnected()) {
+                    $this->ami->connectForClient($clientId);
+                }
+                $this->ami->hangup($live->customer_channel);
+            } catch (\Throwable $e) {
+                Log::warning("CampaignDialer: failed to hangup customer channel {$live->customer_channel}: {$e->getMessage()}");
+            }
+        }
+
+        // 2) Write CDR for completed call
+        $this->writeCdr($agentExt, $previousLeadId, $campaignId, $live, $dbConnection);
+
+        // 3) Mark previous lead as completed in queue
+        CampaignLeadQueue::on($dbConnection)
+            ->where('campaign_id', $campaignId)
+            ->where('lead_id', $previousLeadId)
+            ->where('status', CampaignLeadQueue::STATUS_CALLING)
+            ->update([
+                'status'       => CampaignLeadQueue::STATUS_COMPLETED,
+                'completed_at' => now(),
+            ]);
+
+        // 4) Pick next lead from queue
+        $entry = DB::connection($dbConnection)->transaction(function () use ($campaignId, $dbConnection) {
+            return CampaignLeadQueue::nextDialable($campaignId, $dbConnection);
+        });
+
+        if (!$entry) {
+            // No more leads — agent should end session
+            $campaign = Campaign::on($dbConnection)->find($campaignId);
+            if ($campaign) {
+                $this->checkCampaignCompletion($campaignId, $campaign, $dbConnection);
+            }
+
+            // Clear customer channel but keep agent in conf
+            ExtensionLive::on($dbConnection)
+                ->where('extension', $agentExt)
+                ->update(['lead_id' => null, 'customer_channel' => null, 'call_status' => ExtensionLive::CALL_STATUS_CONNECTED]);
+
+            return ['status' => 'no_more_leads', 'lead' => null];
+        }
+
+        // 5) Mark new lead as calling
+        $entry->update([
+            'status'    => CampaignLeadQueue::STATUS_CALLING,
+            'attempts'  => DB::raw('attempts + 1'),
+            'called_at' => now(),
+        ]);
+
+        // 6) Resolve phone number for new lead
+        $leadRow = DB::connection($dbConnection)
+            ->table('list_data')
+            ->where('id', $entry->lead_id)
+            ->first();
+
+        $phone = null;
+        if ($leadRow) {
+            $dialCol = DB::connection($dbConnection)
+                ->table('list_header')
+                ->where('list_id', $leadRow->list_id)
+                ->where('is_dialing', 1)
+                ->value('column_name');
+            $phone = $dialCol ? ($leadRow->$dialCol ?? null) : null;
+        }
+
+        if (!$phone) {
+            $entry->update(['status' => CampaignLeadQueue::STATUS_SKIPPED]);
+            // Recurse to try next lead (limited by queue size)
+            return $this->hangupCustomerAndDialNext($campaignId, $agentExt, $clientId, $dbConnection);
+        }
+
+        // 7) Update extension_live with new lead
+        ExtensionLive::on($dbConnection)
+            ->where('extension', $agentExt)
+            ->update([
+                'lead_id'          => $entry->lead_id,
+                'call_status'      => ExtensionLive::CALL_STATUS_CONNECTED,
+                'customer_channel' => null,
+            ]);
+
+        // 8) Originate customer call into same conf room
+        $resolvedCli = $this->callerIdResolver->resolve(
+            $dbConnection,
+            $campaignId,
+            $phone
+        ) ?? '0000000000';
+
+        if (!$this->ami->isConnected()) {
+            $this->ami->connectForClient($clientId);
+        }
+
+        $trunk       = $this->ami->getTrunk();
+        $custActionId = "cust_{$confRoom}_" . time();
+
+        $this->ami->originate([
+            'Channel'  => "PJSIP/{$phone}@{$trunk}",
+            'Context'  => 'campaign-conf-customer-join',
+            'Exten'    => 's',
+            'Priority' => '1',
+            'CallerID' => $resolvedCli,
+            'Timeout'  => 60000,
+            'ActionID' => $custActionId,
+            'Variable' => [
+                "LEAD_ID={$entry->lead_id}",
+                "CAMPAIGN_ID={$campaignId}",
+                "CLIENT_ID={$clientId}",
+                "DB_CONN={$dbConnection}",
+                "AGENT_EXT={$agentExt}",
+                "CUSTOMER_NUM={$phone}",
+                "CONF_ROOM={$confRoom}",
+            ],
+        ]);
+
+        Log::info("CampaignDialer: next-customer — agent {$agentExt} stays in conf, dialing lead {$entry->lead_id} ({$phone})");
+
+        // 9) Build lead response for frontend
+        $leadData = [
+            'lead_id'      => $entry->lead_id,
+            'phone_number' => $phone,
+            'list_id'      => $leadRow->list_id ?? 0,
+        ];
+
+        // Map list_header fields to the response
+        if ($leadRow) {
+            $headers = DB::connection($dbConnection)
+                ->table('list_header')
+                ->where('list_id', $leadRow->list_id)
+                ->where('is_deleted', 0)
+                ->get(['column_name', 'header', 'is_dialing']);
+
+            $fields = [];
+            foreach ($headers as $h) {
+                $val = $leadRow->{$h->column_name} ?? '';
+                $fields[] = ['label' => $h->header, 'value' => $val, 'is_dialing' => $h->is_dialing];
+            }
+            $leadData['fields'] = $fields;
+            $leadData['success'] = true;
+        }
+
+        return ['status' => 'next_lead', 'lead' => $leadData];
     }
 
     // -------------------------------------------------------------------------
@@ -528,10 +731,16 @@ class CampaignDialerService
      */
     protected function extensionToUserId(int $extension, string $dbConnection): int
     {
+        // Extract client ID from connection name (mysql_123 → 123)
+        $clientId = (int) str_replace('mysql_', '', $dbConnection);
+
         $user = DB::connection('master')
             ->table('users')
-            ->where('alt_extension', $extension)
-            ->orWhere('extension', $extension)
+            ->where('parent_id', $clientId)
+            ->where(function ($q) use ($extension) {
+                $q->where('alt_extension', $extension)
+                  ->orWhere('extension', $extension);
+            })
             ->value('id');
 
         return (int) $user;
@@ -555,14 +764,24 @@ class CampaignDialerService
         }
         $lead = $phone;
 
+        // Calculate duration from extension_live updated_at (set when call was connected)
+        $duration = null;
+        if ($live && !empty($live->updated_at)) {
+            try {
+                $duration = (int) Carbon::parse($live->updated_at)->diffInSeconds(now());
+            } catch (\Throwable $e) {
+                // Non-fatal
+            }
+        }
+
         DB::connection($dbConnection)->table('cdr')->insert([
             'extension'   => $agentExt,
             'route'       => 'OUT',
             'type'        => 'dialer',
             'number'      => preg_replace('/\D/', '', $lead ?? '0'),
             'channel'     => $live->channel ?? '',
-            'duration'    => null,
-            'start_time'  => $live ? now() : now(),
+            'duration'    => $duration,
+            'start_time'  => $live->updated_at ?? now(),
             'campaign_id' => $campaignId,
             'lead_id'     => $leadId,
         ]);
@@ -588,6 +807,36 @@ class CampaignDialerService
     }
 
     /**
+     * Map AMI OriginateResponse reason code to a human-readable failure message.
+     * Also checks Response field and common provider error indicators.
+     */
+    protected function mapOriginateFailReason(array $event): string
+    {
+        $response = $event['Response'] ?? '';
+        $reason   = (int) ($event['Reason'] ?? -1);
+
+        // Check for provider-specific error text in the event
+        // AMI may include a 'Cause-txt' or 'ChannelStateDesc' with provider details
+        $causeTxt = $event['Cause-txt'] ?? $event['cause-txt'] ?? '';
+        if (!empty($causeTxt)) {
+            return "Provider error: {$causeTxt}";
+        }
+
+        // Map standard AMI Originate reason codes
+        // See: https://docs.asterisk.org/Asterisk_18_Documentation/API_Documentation/AMI_Events/OriginateResponse/
+        return match ($reason) {
+            0       => 'No answer — call timed out',
+            1       => 'Line busy',
+            3       => 'No route to destination',
+            5       => 'Call rejected by provider',
+            8       => 'Congestion — trunk or provider unavailable',
+            default => !empty($response) && strtolower($response) === 'failure'
+                        ? 'Call failed — provider could not connect'
+                        : 'Call failed',
+        };
+    }
+
+    /**
      * Push a Pusher event to a private channel keyed on agent extension.
      * Channel: "private-agent-dialer.{extension}"
      */
@@ -595,10 +844,10 @@ class CampaignDialerService
     {
         try {
             $pusher = new Pusher(
-                env('PUSHER_APP_KEY'),
-                env('PUSHER_APP_SECRET'),
-                env('PUSHER_APP_ID'),
-                ['cluster' => env('PUSHER_APP_CLUSTER'), 'useTLS' => true]
+                config('broadcasting.connections.pusher.key'),
+                config('broadcasting.connections.pusher.secret'),
+                config('broadcasting.connections.pusher.app_id'),
+                ['cluster' => config('broadcasting.connections.pusher.options.cluster'), 'useTLS' => true]
             );
 
             // Public channel: "dialer-agent.{extension}" — matches existing app pattern

@@ -45,41 +45,42 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
         {
             // Find the user by email
             /** @var User $user */
-           // 1️⃣ Check email first
                 $user = User::where('email', $email)->first();
 
                 if (!$user) {
                     throw new RenderableException(
-                        'Email not registered',
+                        'Invalid email or password',
                         [],
                         401
                     );
                 }
 
-                // 2️⃣ Check Easify token match
-               /* if ($user->easify_user_uuid !== $easifyToken) {
-                    throw new RenderableException(
-                        'Invalid or mismatched X-Easify-User-Token',
-                        [],
-                        401
-                    );
-                }*/
+            // Check account status BEFORE password verification to avoid timing leaks
             if ($user->is_deleted) {
-                throw new RenderableException('Account de-activated', [], 403);
+                throw new RenderableException('Your account has been deactivated. Please contact support.', [], 403);
             }
-			
-			$didObj = Dids::on('mysql_' . $user->parent_id)->where([["sms_email", "=", $user->id]])->first();
+
+            if (isset($user->status) && $user->status == 0) {
+                throw new RenderableException('Your account is not active. Please contact support.', [], 403);
+            }
 
             // Verify the password and generate the token
             if (Hash::check($password, $user->password)) {
                 $data = $user->toArray();
                 $data['permissions'] = $user->getPermissions(true);
 
-				if($didObj){
-					$data['did'] = $didObj->cli;
-				}else{
-					$data['did'] = '';
-				}
+                // DID lookup — after auth, wrapped in try-catch so a bad client DB never blocks login
+                $data['did'] = '';
+                try {
+                    $didObj = Dids::on('mysql_' . $user->parent_id)->where([["sms_email", "=", $user->id]])->first();
+                    if ($didObj) {
+                        $data['did'] = $didObj->cli;
+                    }
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('Login: DID lookup failed for client ' . $user->parent_id, [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
                 //keep existing user table role too
                 $roleInfo = RolesService::getById($data['role']);
                 $data['role'] = $roleInfo["name"];
@@ -103,85 +104,59 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
     {
         if(!empty($email) && !empty($apiKey))
         {
-            // Find the user by email
             /** @var User $user */
             $user = User::where('email', "=", $email)->where('user_level', '<=', '11' )->first();
             if (!$user) {
-                throw new RenderableException('Email not registered', [], 401);
+                throw new RenderableException('Invalid email or API key', [], 401);
             }
-                 // 2️⃣ Check Easify token match
-                // if ($user->easify_user_uuid !== $easifyToken) {
-                //     throw new RenderableException(
-                //         'Invalid or mismatched X-Easify-User-Token',
-                //         [],
-                //         401
-                //     );
-                // }
+
+            // Check account status BEFORE any further processing
             if ($user->is_deleted) {
-                throw new RenderableException('Account de-activated', [], 403);
+                throw new RenderableException('Your account has been deactivated. Please contact support.', [], 403);
             }
-            
-            $didObj = Dids::on('mysql_' . $user->parent_id)->where([["sms_email", "=", $user->id]])->first();
+
+            if (isset($user->status) && $user->status == 0) {
+                throw new RenderableException('Your account is not active. Please contact support.', [], 403);
+            }
+
             $client = Client::where([["id", "=", $user->parent_id]])->first();
 
             $client_api_key = $client->api_key;
 
-
-            // Verify the password and generate the token
-           // if (Hash::check($password, $user->password)) {
-
-
-            if($user->user_level  > 5)
-            {
-                $data = $user->toArray();
-                $data['permissions'] = $user->getPermissions(true);
-
-                if($didObj){
-                    $data['did'] = $didObj->cli;
-                }else{
-                    $data['did'] = '';
-                }
-                //keep existing user table role too
-                $roleInfo = RolesService::getById($data['role']);
-                $data['role'] = $roleInfo["name"];
-                $data['level'] = $roleInfo["level"];
-
-                $this->enrichWithSipConfig($data, $user);
-
-                $token = JwtToken::createToken($user->id);
-                $data['token'] = $token[0];
-                $data['expires_at'] = $token[1];
-
-                return $data;
+            // ALWAYS validate API key — regardless of user level
+            if ($apiKey != $client_api_key) {
+                throw new RenderableException('Invalid email or API key', [], 401);
             }
 
-            else
-            if ($apiKey == $client_api_key) {
+            $data = $user->toArray();
+            $data['permissions'] = $user->getPermissions(true);
 
-                $data = $user->toArray();
-                $data['permissions'] = $user->getPermissions(true);
-
-                if($didObj){
+            // DID lookup — wrapped in try-catch so a bad client DB never blocks login
+            $data['did'] = '';
+            try {
+                $didObj = Dids::on('mysql_' . $user->parent_id)->where([["sms_email", "=", $user->id]])->first();
+                if ($didObj) {
                     $data['did'] = $didObj->cli;
-                }else{
-                    $data['did'] = '';
                 }
-                //keep existing user table role too
-                $roleInfo = RolesService::getById($data['role']);
-                $data['role'] = $roleInfo["name"];
-                $data['level'] = $roleInfo["level"];
-
-                $this->enrichWithSipConfig($data, $user);
-
-                $token = JwtToken::createToken($user->id);
-                $data['token'] = $token[0];
-                $data['expires_at'] = $token[1];
-
-                return $data;
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('LoginApiKey: DID lookup failed for client ' . $user->parent_id, [
+                    'error' => $e->getMessage(),
+                ]);
             }
+            //keep existing user table role too
+            $roleInfo = RolesService::getById($data['role']);
+            $data['role'] = $roleInfo["name"];
+            $data['level'] = $roleInfo["level"];
+
+            $this->enrichWithSipConfig($data, $user);
+
+            $token = JwtToken::createToken($user->id);
+            $data['token'] = $token[0];
+            $data['expires_at'] = $token[1];
+
+            return $data;
         }
-        // Bad Request response
-        throw new RenderableException('Invalid email or ApiKey', [], 401);
+        throw new RenderableException('Invalid email or API key', [], 401);
     }
 /**
      * Enrich a login response array with the Asterisk server address and SIP
@@ -197,30 +172,35 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
      */
     private function enrichWithSipConfig(array &$data, User $user): void
     {
-        // Asterisk server address
-        if ($user->asterisk_server_id) {
-            $asterisk = DB::table('asterisk_server')
-                ->where('id', $user->asterisk_server_id)
-                ->select('host', 'domain')
-                ->first();
+        $data['server'] = null;
+        $data['domain'] = null;
+        $data['secret'] = null;
 
-            $data['server'] = $asterisk->host  ?? null;
-            $data['domain'] = $asterisk->domain ?? null;
-        } else {
-            $data['server'] = null;
-            $data['domain'] = null;
-        }
+        try {
+            // Asterisk server address
+            if ($user->asterisk_server_id) {
+                $asterisk = DB::table('asterisk_server')
+                    ->where('id', $user->asterisk_server_id)
+                    ->select('host', 'domain')
+                    ->first();
 
-        // SIP secret — prefer alt_extension (WebRTC), fall back to extension
-        $sipExt = $user->alt_extension ?: (string) $user->extension;
-        if ($sipExt) {
-            $extRow = DB::table('user_extensions')
-                ->where('username', $sipExt)
-                ->select('secret')
-                ->first();
-            $data['secret'] = $extRow->secret ?? null;
-        } else {
-            $data['secret'] = null;
+                $data['server'] = $asterisk->host  ?? null;
+                $data['domain'] = $asterisk->domain ?? null;
+            }
+
+            // SIP secret — prefer alt_extension (WebRTC), fall back to extension
+            $sipExt = $user->alt_extension ?: (string) $user->extension;
+            if ($sipExt) {
+                $extRow = DB::table('user_extensions')
+                    ->where('username', $sipExt)
+                    ->select('secret')
+                    ->first();
+                $data['secret'] = $extRow->secret ?? null;
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('enrichWithSipConfig: failed for user ' . $user->id, [
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
@@ -230,10 +210,13 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
     $user = User::findOrFail($userId);
 
     if ($user->is_deleted) {
-        throw new RenderableException('Account de-activated', [], 403);
+        throw new RenderableException('Your account has been deactivated. Please contact support.', [], 403);
     }
 
-    // 🔁 Reuse existing login logic without password
+    if (isset($user->status) && $user->status == 0) {
+        throw new RenderableException('Your account is not active. Please contact support.', [], 403);
+    }
+
     return $this->loginWithoutPassword($user);
 }
 
@@ -242,11 +225,20 @@ protected function loginWithoutPassword(User $user)
     $data = $user->toArray();
     $data['permissions'] = $user->getPermissions(true);
 
-    $didObj = Dids::on('mysql_' . $user->parent_id)
-        ->where('sms_email', $user->id)
-        ->first();
-
-    $data['did'] = $didObj ? $didObj->cli : '';
+    // DID lookup — wrapped in try-catch so a bad client DB never blocks login/switch
+    $data['did'] = '';
+    try {
+        $didObj = Dids::on('mysql_' . $user->parent_id)
+            ->where('sms_email', $user->id)
+            ->first();
+        if ($didObj) {
+            $data['did'] = $didObj->cli;
+        }
+    } catch (\Throwable $e) {
+        \Illuminate\Support\Facades\Log::warning('LoginWithoutPassword: DID lookup failed for client ' . $user->parent_id, [
+            'error' => $e->getMessage(),
+        ]);
+    }
 
     // role info
     $roleInfo = RolesService::getById($data['role']);

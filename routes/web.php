@@ -24,6 +24,7 @@ $router->group(['middleware' => ['throttle:60,1']], function () use ($router) {
     $router->get('public/merchant/{token}/download',     'PublicApplicationController@downloadMerchantPdf');
     $router->get('public/merchant/{token}/document-types', 'PublicApplicationController@getDocumentTypes');
     $router->post('public/merchant/{token}/upload',        'PublicApplicationController@uploadDocument');
+    $router->post('public/merchant/{token}/submit',       'PublicApplicationController@submitMerchantApplication');
 
     // ── Merchant Lead Update API (token-auth, no JWT required) ───────────────
     // GET  /api/merchant/lead/{token}        — fetch lead data
@@ -37,6 +38,9 @@ $router->group(['middleware' => ['throttle:60,1']], function () use ($router) {
 
     // Tenant company logo — public (shown on apply forms, PDFs, etc.)
     $router->get('public/tenant/{clientId}/logo',        'TenantFileController@serveLogo');
+
+    // Domain → branding resolution (login page logo/name)
+    $router->get('public/domain-branding',               'PublicApplicationController@domainBranding');
 
     // Lead document serve — validated by lead_token ownership
     $router->get('public/lead/{token}/document/{docId}', 'PublicApplicationController@serveDocument');
@@ -182,6 +186,7 @@ $router->group(['middleware' => ['jwt.auth', 'throttle:10,1']], function () use 
 //$router->POST('authentication_copy', 'AuthenticationController@authentication_copy');
 // $router->get('auth/google/redirect', 'GoogleController@redirectToGoogle');
 $router->post('auth/google/callback', 'GoogleController@handleGoogleCallback');
+$router->post('auth/google/link', 'GoogleController@linkGoogleAccount');
 $router->post('auth/twitter/callback', 'TwitterController@handleTwitterCallback');
 
 //cron job
@@ -535,6 +540,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->get('dialer/agent/{ext}/current-lead',          'CampaignDialerController@currentLead');
   $router->get('dialer/lead',                              'CampaignDialerController@getLead');
   $router->post('dialer/lead/{leadId}/disposition',        'CampaignDialerController@saveDispo');
+  $router->post('dialer/campaign/{id}/next-customer',      'CampaignDialerController@nextCustomer');
 
 //campaign assign list
 
@@ -954,7 +960,8 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->post('edit-ring-group', 'RingGroupController@editRingGroup');
   $router->post('upload-dnc', 'DncController@uploadDnc');
 
-  $router->get('extension-ring-group', 'RingGroupController@mapExtensionRingGroup');
+  // Removed: dead route — mapExtensionRingGroup method does not exist in controller
+  // $router->get('extension-ring-group', 'RingGroupController@mapExtensionRingGroup');
 
 
   //mailbox
@@ -1614,7 +1621,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->put('lender/notes/add', 'LeadController@addNotes');
   $router->get('showlenders/{id}', 'LeadController@showNotes');
   $router->post('lender/notes/edit', 'LeadController@editNotes');
-  $router->get('user/{id}', 'UserController@show');
+  // Removed: $router->get('user/{id}', 'UserController@show') — show() does not exist; use GET /extension/{id} instead
 
 
 
@@ -2116,6 +2123,7 @@ $router->post('forgot-password-resend', 'UserController@forgotPasswordMobileRese
 $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.access'], 'prefix' => 'agents'], function () use ($router) {
     $router->get('/',                    'AgentController@index');           // GET  /agents
     $router->get('/roles',               'AgentController@roles');           // GET  /agents/roles
+    $router->get('/all-users',           'AgentController@allUsers');        // GET  /agents/all-users
     $router->post('/',                   'AgentController@store');           // POST /agents
     $router->get('/{id:[0-9]+}',         'AgentController@show');            // GET  /agents/{id}
     $router->put('/{id:[0-9]+}',         'AgentController@update');          // PUT  /agents/{id}

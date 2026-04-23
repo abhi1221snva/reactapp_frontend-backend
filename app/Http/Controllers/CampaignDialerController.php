@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\Http\Controllers\Concerns\TenantAware;
 use App\Jobs\DialNextLeadJob;
 use App\Model\Client\AgentStatus;
+use App\Model\Campaign as CampaignModel;
 use App\Model\Client\Campaign;
 use App\Model\Client\CampaignAgent;
 use App\Model\Client\CampaignLeadQueue;
 use App\Model\Client\ExtensionLive;
+use App\Services\AsteriskAmiService;
 use App\Services\CampaignDialerService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -45,6 +47,7 @@ class CampaignDialerController extends Controller
         $conn     = $this->tenantDb($request);
         $clientId = $this->tenantId($request);
 
+        CampaignModel::authorizeAccess($id, $request);
         Campaign::on($conn)->findOrFail($id);
 
         // Populate queue if this is a fresh start
@@ -75,7 +78,7 @@ class CampaignDialerController extends Controller
         // Reset any stale extension_live entries for this campaign
         ExtensionLive::on($conn)
             ->where('campaign_id', $id)
-            ->update(['status' => 0, 'lead_id' => null, 'call_status' => null, 'channel' => null, 'conf_room' => null]);
+            ->update(['status' => 0, 'lead_id' => null, 'call_status' => null, 'channel' => null, 'conf_room' => null, 'customer_channel' => null]);
 
         // Dispatch first dial immediately
         dispatch((new DialNextLeadJob($id, $clientId, $conn))->onQueue('campaign-dialer'));
@@ -94,6 +97,7 @@ class CampaignDialerController extends Controller
     {
         $conn = $this->tenantDb($request);
 
+        CampaignModel::authorizeAccess($id, $request);
         Campaign::on($conn)->where('id', $id)->update(['dialer_status' => 'paused']);
 
         return response()->json(['message' => 'Campaign paused', 'campaign_id' => $id]);
@@ -107,6 +111,7 @@ class CampaignDialerController extends Controller
     {
         $conn = $this->tenantDb($request);
 
+        CampaignModel::authorizeAccess($id, $request);
         Campaign::on($conn)->findOrFail($id); // 404 guard
 
         $count = CampaignLeadQueue::populateFromCampaign($id, $conn);
@@ -281,6 +286,72 @@ class CampaignDialerController extends Controller
     }
 
     // -------------------------------------------------------------------------
+    // Persistent Conference: hang up customer, dial next lead
+    // -------------------------------------------------------------------------
+
+    /**
+     * Hang up only the customer channel while keeping the agent in the conference.
+     * Immediately dials the next lead into the same conf room.
+     *
+     * POST /dialer/campaign/{id}/next-customer
+     */
+    public function nextCustomer(Request $request, int $id): JsonResponse
+    {
+        $conn     = $this->tenantDb($request);
+        $clientId = $this->tenantId($request);
+
+        CampaignModel::authorizeAccess($id, $request);
+
+        // Resolve agent extension from JWT user
+        $userId = $request->auth->id ?? 0;
+        $user   = DB::connection('master')
+            ->table('users')
+            ->where('id', $userId)
+            ->first(['extension', 'alt_extension']);
+
+        if (!$user) {
+            return response()->json(['error' => 'User not found'], 404);
+        }
+
+        $agentExt = (int) ($user->alt_extension ?: $user->extension);
+        if (!$agentExt) {
+            return response()->json(['error' => 'No extension configured'], 422);
+        }
+
+        try {
+            $ami     = new AsteriskAmiService();
+            $service = new CampaignDialerService($ami);
+            $result  = $service->hangupCustomerAndDialNext($id, $agentExt, $clientId, $conn);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Internal error: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        if ($result['status'] === 'error') {
+            return response()->json(['success' => false, 'message' => $result['message']], 422);
+        }
+
+        if ($result['status'] === 'no_more_leads') {
+            return response()->json([
+                'success'   => true,
+                'status'    => 'no_more_leads',
+                'message'   => 'No more leads in queue',
+                'lead'      => null,
+            ]);
+        }
+
+        $lead = $result['lead'] ?? [];
+
+        return response()->json(array_merge([
+            'success'      => true,
+            'status'       => 'next_lead',
+            'message'      => 'Next customer being dialed',
+        ], $lead));
+    }
+
+    // -------------------------------------------------------------------------
     // Agent assignment
     // -------------------------------------------------------------------------
 
@@ -292,6 +363,7 @@ class CampaignDialerController extends Controller
     {
         $conn = $this->tenantDb($request);
 
+        CampaignModel::authorizeAccess($id, $request);
         Campaign::on($conn)->findOrFail($id);
 
         $assignedUserIds = CampaignAgent::on($conn)
@@ -343,6 +415,7 @@ class CampaignDialerController extends Controller
         $clientId = $this->tenantId($request);
         $userId   = (int) $request->input('user_id');
 
+        CampaignModel::authorizeAccess($id, $request);
         $campaign = Campaign::on($conn)->findOrFail($id);
 
         CampaignAgent::on($conn)->firstOrCreate([

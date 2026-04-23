@@ -129,13 +129,14 @@ class RegistrationController extends Controller
         $email          = strtolower(trim($request->input('email')));
         $registrationId = (int) $request->input('registration_id');
 
-        // Email uniqueness check
-        $existsInUsers    = DB::connection('master')->table('users')->where('email', $email)->exists();
-        $existsInProspect = ProspectInitialData::where('email', $email)
-            ->where('id', '!=', $registrationId)
-            ->exists();
+        // Email uniqueness check — only block if a fully-registered user exists.
+        // Incomplete prospect records should NOT block re-registration attempts.
+        $existingUser = DB::connection('master')->table('users')
+            ->where('email', $email)
+            ->select('is_deleted', 'status')
+            ->first();
 
-        if ($existsInUsers || $existsInProspect) {
+        if ($existingUser) {
             RegistrationLog::log(
                 RegistrationLog::STEP_EMAIL_OTP_SENT,
                 $email, null,
@@ -145,9 +146,26 @@ class RegistrationController extends Controller
                 $registrationId
             );
 
+            if ($existingUser->is_deleted) {
+                return response()->json([
+                    'status'  => false,
+                    'code'    => 'ACCOUNT_DEACTIVATED',
+                    'message' => 'This account has been deactivated. Please contact support.',
+                ], 422);
+            }
+
+            if (isset($existingUser->status) && $existingUser->status == 0) {
+                return response()->json([
+                    'status'  => false,
+                    'code'    => 'ACCOUNT_INACTIVE',
+                    'message' => 'This account is not active. Please contact support.',
+                ], 422);
+            }
+
             return response()->json([
                 'status'  => false,
-                'message' => 'This email is already registered. Please use a different email or log in.',
+                'code'    => 'EMAIL_ALREADY_REGISTERED',
+                'message' => 'An account with this email already exists. Please sign in instead.',
             ], 422);
         }
 
@@ -384,7 +402,8 @@ class RegistrationController extends Controller
 
             return response()->json([
                 'status'  => false,
-                'message' => 'This phone number is already registered.',
+                'code'    => 'PHONE_ALREADY_REGISTERED',
+                'message' => 'An account with this phone number already exists. Please sign in instead.',
             ], 422);
         }
 
@@ -608,6 +627,22 @@ class RegistrationController extends Controller
                 $clientId = $claimed['client_id'];
                 $userId   = $claimed['user_id'];
 
+                // Generate JWT token for immediate auto-login
+                $autoLoginToken = null;
+                try {
+                    $user = User::find($userId);
+                    if ($user) {
+                        $auth = new \App\Model\Authentication();
+                        $tokenResult = $auth->loginByUserId($userId);
+                        $autoLoginToken = $tokenResult['token'] ?? null;
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('RegistrationController: auto-login token generation failed', [
+                        'user_id' => $userId,
+                        'error'   => $e->getMessage(),
+                    ]);
+                }
+
                 RegistrationLog::log(
                     RegistrationLog::STEP_USER_CREATED,
                     $prospect->email, $e164Phone,
@@ -674,15 +709,36 @@ class RegistrationController extends Controller
                     dispatch(new ReplenishPoolJob())->onConnection('database')->onQueue('clients');
                 }
 
+                $responseData = [
+                    'path'      => 'fast',
+                    'user_id'   => $userId,
+                    'client_id' => $clientId,
+                    'ready'     => true,
+                ];
+
+                // Include auto-login token if generated
+                if ($autoLoginToken) {
+                    $responseData['token'] = $autoLoginToken;
+                    // Include user data for frontend store hydration
+                    $freshUser = User::find($userId);
+                    if ($freshUser) {
+                        $responseData['user'] = [
+                            'id'            => $freshUser->id,
+                            'parent_id'     => $freshUser->parent_id,
+                            'first_name'    => $freshUser->first_name,
+                            'last_name'     => $freshUser->last_name,
+                            'email'         => $freshUser->email,
+                            'level'         => $freshUser->level ?? 6,
+                            'extension'     => $freshUser->extension,
+                            'alt_extension' => $freshUser->alt_extension,
+                        ];
+                    }
+                }
+
                 return response()->json([
                     'status'  => true,
-                    'message' => 'Registration complete! You can now log in.',
-                    'data'    => [
-                        'path'      => 'fast',
-                        'user_id'   => $userId,
-                        'client_id' => $clientId,
-                        'ready'     => true,
-                    ],
+                    'message' => 'Registration complete!',
+                    'data'    => $responseData,
                 ]);
             }
 
@@ -860,11 +916,32 @@ class RegistrationController extends Controller
                 ], 400);
             }
 
-            // Email uniqueness check against existing users
-            $existsInUsers = DB::connection('master')->table('users')->where('email', $email)->exists();
-            if ($existsInUsers) {
+            // Email uniqueness check against existing users (with status distinction)
+            $existingUser = DB::connection('master')->table('users')
+                ->where('email', $email)
+                ->select('is_deleted', 'status')
+                ->first();
+
+            if ($existingUser) {
+                if ($existingUser->is_deleted) {
+                    return response()->json([
+                        'status'  => false,
+                        'code'    => 'ACCOUNT_DEACTIVATED',
+                        'message' => 'This account has been deactivated. Please contact support.',
+                    ], 422);
+                }
+
+                if (isset($existingUser->status) && $existingUser->status == 0) {
+                    return response()->json([
+                        'status'  => false,
+                        'code'    => 'ACCOUNT_INACTIVE',
+                        'message' => 'This account is not active. Please contact support.',
+                    ], 422);
+                }
+
                 return response()->json([
                     'status'  => false,
+                    'code'    => 'EMAIL_ALREADY_REGISTERED',
                     'message' => 'An account with this Google email already exists. Please sign in instead.',
                 ], 422);
             }
@@ -877,7 +954,9 @@ class RegistrationController extends Controller
                 $prospect->email        = $email;
             }
             $prospect->company_name = $request->input('business_name');
-            $prospect->password     = Hash::make(\Illuminate\Support\Str::random(32));
+            // Generate a readable temporary password for Google users (they can change later)
+            $tempPassword = \Illuminate\Support\Str::random(12);
+            $prospect->password     = Hash::make($tempPassword);
             $prospect->save();
 
             // Insert a pre-verified EmailOtp so verifyPhoneOtp passes the email-check gate
@@ -916,6 +995,52 @@ class RegistrationController extends Controller
                 'message' => 'Google registration failed. Please try again.',
             ], 500);
         }
+    }
+
+    /**
+     * Quick email existence check — returns whether an email is already registered.
+     * Used by Google sign-up to check before showing the business name form.
+     * POST /register/check-email  { email }
+     */
+    public function checkEmail(Request $request)
+    {
+        $this->validate($request, ['email' => 'required|email']);
+
+        $email = strtolower(trim($request->input('email')));
+
+        $user = DB::connection('master')->table('users')
+            ->where('email', $email)
+            ->select('is_deleted', 'status')
+            ->first();
+
+        if (!$user) {
+            return response()->json([
+                'status'  => true,
+                'message' => 'Email is available.',
+            ]);
+        }
+
+        if ($user->is_deleted) {
+            return response()->json([
+                'status'  => false,
+                'code'    => 'ACCOUNT_DEACTIVATED',
+                'message' => 'This account has been deactivated. Please contact support.',
+            ], 422);
+        }
+
+        if (isset($user->status) && $user->status == 0) {
+            return response()->json([
+                'status'  => false,
+                'code'    => 'ACCOUNT_INACTIVE',
+                'message' => 'This account is not active. Please contact support.',
+            ], 422);
+        }
+
+        return response()->json([
+            'status'  => false,
+            'code'    => 'EMAIL_ALREADY_REGISTERED',
+            'message' => 'An account with this email already exists. Please sign in instead.',
+        ], 422);
     }
 
     // ----------------------------------------------------------------

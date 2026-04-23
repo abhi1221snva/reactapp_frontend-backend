@@ -410,7 +410,7 @@ return response()->json($response, $status);
         {
             $this->validate($this->request, [
                 'title'    => 'required|string|max:255',
-                'file'     => 'required|file', // |mimes:xls,xlsxAccept actual file
+                'file'     => 'required|file|mimes:xls,xlsx,csv,txt|max:20480', // 20MB max
                 'campaign' => 'required|numeric',
             ]);
 
@@ -419,11 +419,13 @@ return response()->json($response, $status);
         // Create upload path if not exists
         $uploadPath = base_path('upload');
         if (!file_exists($uploadPath)) {
-            mkdir($uploadPath, 0777, true);
+            mkdir($uploadPath, 0755, true);
         }
 
-        // Move uploaded file
-        $filename = time() . '_' . $this->request->file('file')->getClientOriginalName();
+        // Sanitize filename — strip path components and non-safe characters
+        $originalName = $this->request->file('file')->getClientOriginalName();
+        $safeName = preg_replace('/[^a-zA-Z0-9_\-.]/', '_', basename($originalName));
+        $filename = time() . '_' . $safeName;
         $this->request->file('file')->move($uploadPath, $filename);
 
          $filePath = $uploadPath . DIRECTORY_SEPARATOR . $filename;
@@ -448,7 +450,7 @@ public function parseListHeaders()
 {
     $this->validate($this->request, [
         'title'    => 'required|string|max:255',
-        'file'     => 'required|file',
+        'file'     => 'required|file|mimes:xls,xlsx,csv,txt|max:20480',
         'campaign' => 'required|numeric',
     ]);
 
@@ -458,11 +460,12 @@ public function parseListHeaders()
 
     $tmpPath = base_path('upload/tmp');
     if (!file_exists($tmpPath)) {
-        mkdir($tmpPath, 0777, true);
+        mkdir($tmpPath, 0755, true);
     }
 
     $originalName = basename($this->request->file('file')->getClientOriginalName());
-    $tempKey      = uniqid('list_', true) . '_' . $originalName;
+    $safeName     = preg_replace('/[^a-zA-Z0-9_\-.]/', '_', $originalName);
+    $tempKey      = uniqid('list_', true) . '_' . $safeName;
     $this->request->file('file')->move($tmpPath, $tempKey);
     $filePath = $tmpPath . DIRECTORY_SEPARATOR . $tempKey;
 
@@ -675,9 +678,10 @@ public function updateListMapping()
     {
 
         $this->validate($this->request, [
-
-            'list_data'    => 'array',
-
+            'list_data'      => 'required|array',
+            'list_data.*'    => 'numeric',
+            'header_column'  => 'required|string|max:30',
+            'header_value'   => 'required|string|max:255',
         ]);
         $response = $this->model->searchLeads($this->request);
         return response()->json($response);

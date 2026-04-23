@@ -140,13 +140,36 @@ class AgentController extends Controller
     // ----------------------------------------------------------------
 
     /**
+     * GET /agents/all-users
+     *
+     * Returns all active users (including admins) for dropdowns.
+     */
+    public function allUsers(Request $request)
+    {
+        $clientId = $request->auth->parent_id;
+
+        $users = User::join('roles', 'users.role', '=', 'roles.id')
+            ->where('users.parent_id', $clientId)
+            ->where('users.is_deleted', 0)
+            ->where('users.status', 1)
+            ->select('users.id', 'users.first_name', 'users.last_name', 'users.email', 'roles.name as role_name', 'roles.level as role_level')
+            ->orderBy('roles.level', 'desc')
+            ->orderBy('users.first_name')
+            ->get();
+
+        return response()->json(['success' => true, 'data' => $users]);
+    }
+
+    /**
      * GET /agents
      *
      * Query params: search, status (0|1), role_id, start, limit
      */
     public function index(Request $request)
     {
-        $clientId = $request->auth->parent_id;
+        $clientId       = $request->auth->parent_id;
+        $requestorLevel = (int) ($request->auth->level ?? 0);
+        $requestorId    = (int) $request->auth->id;
 
         $search  = $request->input('search', '');
         $status  = $request->input('status', null);
@@ -158,7 +181,14 @@ class AgentController extends Controller
         $query = User::join('roles', 'users.role', '=', 'roles.id')
             ->where('users.parent_id', $clientId)
             ->where('roles.level', '<', 7)
-            ->where('users.is_deleted', 0)
+            ->where('users.is_deleted', 0);
+
+        // Low-level agents (level ≤ 2) can only see themselves
+        if ($requestorLevel <= 2) {
+            $query->where('users.id', $requestorId);
+        }
+
+        $query
             ->select(
                 'users.id',
                 'users.first_name',
@@ -215,7 +245,14 @@ class AgentController extends Controller
      */
     public function show(Request $request, int $id)
     {
-        $clientId = $request->auth->parent_id;
+        $clientId       = $request->auth->parent_id;
+        $requestorLevel = (int) ($request->auth->level ?? 0);
+        $requestorId    = (int) $request->auth->id;
+
+        // Low-level agents can only view their own profile
+        if ($requestorLevel <= 2 && $id !== $requestorId) {
+            return $this->failResponse('You can only view your own profile', [], null, 403);
+        }
 
         $agent = User::join('roles', 'users.role', '=', 'roles.id')
             ->where('users.id', $id)
@@ -432,6 +469,11 @@ class AgentController extends Controller
 
         if ($requestorLevel < 7) {
             return $this->failResponse('Unauthorized — admin role required', [], null, 403);
+        }
+
+        // Prevent users from deleting themselves
+        if ((int) $request->auth->id === $id) {
+            return $this->failResponse('You cannot deactivate your own account', [], null, 403);
         }
 
         $agent = User::where('id', $id)->where('parent_id', $clientId)->first();

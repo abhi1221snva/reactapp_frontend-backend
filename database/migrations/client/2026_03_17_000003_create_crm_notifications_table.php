@@ -7,8 +7,10 @@ use Illuminate\Support\Facades\Schema;
 /**
  * In-app notifications for admin/agent users.
  * Created automatically when a merchant updates a lead.
+ *
+ * Uses anonymous class to avoid collision with the 2022 migration's class name.
  */
-class CreateCrmNotificationsTable extends Migration
+return new class extends Migration
 {
     public function up(): void
     {
@@ -35,4 +37,4 @@ class CreateCrmNotificationsTable extends Migration
     {
         Schema::dropIfExists('crm_notifications');
     }
-}
+};

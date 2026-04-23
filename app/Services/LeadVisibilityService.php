@@ -30,7 +30,8 @@ class LeadVisibilityService
     public function hasFullAccess(object $auth, int $clientId): bool
     {
         $settings = $this->getSettings($clientId);
-        return (int) $auth->user_level >= $settings['non_admin_min_level'];
+        $level = (int) ($auth->level ?? $auth->user_level ?? 0);
+        return $level >= $settings['non_admin_min_level'];
     }
 
     /**

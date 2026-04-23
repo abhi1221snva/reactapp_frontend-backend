@@ -30,15 +30,22 @@ class RoutePermissionService
         $path = ltrim($requestPath, '/');
         $path = explode('?', $path)[0];
 
+        // Find the longest matching pattern across all groups so that
+        // more-specific patterns (e.g. "disposition-by-campaign-id") win
+        // over shorter generic prefixes (e.g. "disposition").
+        $bestGroup = null;
+        $bestLen = -1;
+
         foreach ($groups as $groupKey => $patterns) {
             foreach ($patterns as $pattern) {
-                if (str_starts_with($path, $pattern)) {
-                    return $groupKey;
+                if (str_starts_with($path, $pattern) && strlen($pattern) > $bestLen) {
+                    $bestLen = strlen($pattern);
+                    $bestGroup = $groupKey;
                 }
             }
         }
 
-        return null;
+        return $bestGroup;
     }
 
     /**

@@ -9,6 +9,10 @@ class CreateCrmVisibilitySettingsTable extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasTable('crm_visibility_settings')) {
+            return;
+        }
+
         Schema::create('crm_visibility_settings', function (Blueprint $table) {
             $table->increments('id');
             $table->tinyInteger('enable_team_visibility')->default(0);

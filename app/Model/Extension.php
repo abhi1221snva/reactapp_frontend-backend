@@ -383,7 +383,7 @@ if ($request->auth->level > 5) {
     if ($request->has(['start', 'limit'])) {
         $sql .= " LIMIT ?, ?";
         $dataBindings[] = (int) $request->input('start');
-        $dataBindings[] = (int) $request->input('limit');
+        $dataBindings[] = min((int) $request->input('limit'), 100);
     }
 }
     // ================= NON-ADMIN =================
@@ -1699,13 +1699,13 @@ if (!$validateResponse->successful()) {
 
             if (!empty($response)) {
                 return array(
-                    'success' => 'false',
+                    'success' => false,
                     'message' => 'Email Already Exists.',
                     //'data'   => $response
                 );
             }
             return array(
-                'success' => 'true',
+                'success' => true,
                 'message' => 'Email is Available.',
                 //'data'   => array()
             );

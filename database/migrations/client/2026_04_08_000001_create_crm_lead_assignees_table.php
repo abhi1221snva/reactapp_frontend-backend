@@ -8,6 +8,10 @@ class CreateCrmLeadAssigneesTable extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasTable('crm_lead_assignees')) {
+            return;
+        }
+
         Schema::create('crm_lead_assignees', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('lead_id');

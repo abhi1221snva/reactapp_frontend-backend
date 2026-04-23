@@ -101,7 +101,7 @@ class AgentPerformanceController extends Controller
      */
     public function summary(Request $request)
     {
-        if ($request->auth->level < 3) {
+        if ($request->auth->level < 1) {
             return response()->json(['error' => 'Forbidden'], 403);
         }
 
@@ -112,6 +112,11 @@ class AgentPerformanceController extends Controller
 
         $q = DB::connection($conn)->table('crm_funded_deals as d')
             ->leftJoin('crm_agent_commissions as c', 'c.deal_id', '=', 'd.id');
+
+        // Agents (level < 3) only see their own data
+        if ($request->auth->level < 3) {
+            $q->where('d.created_by', (int) $request->auth->id);
+        }
 
         if ($dateFrom) $q->where('d.funding_date', '>=', $dateFrom);
         if ($dateTo)   $q->where('d.funding_date', '<=', $dateTo);
@@ -144,7 +149,7 @@ class AgentPerformanceController extends Controller
      */
     public function leaderboard(Request $request)
     {
-        if ($request->auth->level < 3) {
+        if ($request->auth->level < 1) {
             return response()->json(['error' => 'Forbidden'], 403);
         }
 
@@ -175,6 +180,11 @@ class AgentPerformanceController extends Controller
             ->groupBy('d.created_by')
             ->orderByDesc($metric)
             ->limit($limit);
+
+        // Agents (level < 3) only see their own row
+        if ($request->auth->level < 3) {
+            $query->where('d.created_by', (int) $request->auth->id);
+        }
 
         if ($dateFrom) $query->where('d.funding_date', '>=', $dateFrom);
         if ($dateTo)   $query->where('d.funding_date', '<=', $dateTo);
@@ -217,12 +227,17 @@ class AgentPerformanceController extends Controller
      */
     public function agentDetail(Request $request, $agentId)
     {
-        if ($request->auth->level < 3) {
+        if ($request->auth->level < 1) {
             return response()->json(['error' => 'Forbidden'], 403);
         }
 
         $conn    = $this->tenantDb($request);
         $agentId = (int) $agentId;
+
+        // Agents (level < 3) can only view their own detail
+        if ($request->auth->level < 3 && $agentId !== (int) $request->auth->id) {
+            return response()->json(['error' => 'Forbidden'], 403);
+        }
 
         // Agent name from master
         $user      = DB::connection('master')->table('users')->where('id', $agentId)->first(['name', 'email']);
@@ -435,7 +450,7 @@ class AgentPerformanceController extends Controller
      */
     public function listCommissions(Request $request)
     {
-        if ($request->auth->level < 3) {
+        if ($request->auth->level < 1) {
             return response()->json(['error' => 'Forbidden'], 403);
         }
 
@@ -447,7 +462,10 @@ class AgentPerformanceController extends Controller
 
             $query = CrmAgentCommission::on($conn)->orderByDesc('created_at');
 
-            if ($request->input('agent_id')) {
+            // Agents (level < 3) only see their own commissions
+            if ($request->auth->level < 3) {
+                $query->where('agent_id', (int) $request->auth->id);
+            } elseif ($request->input('agent_id')) {
                 $query->where('agent_id', (int) $request->input('agent_id'));
             }
             if ($request->input('status')) {
@@ -479,7 +497,7 @@ class AgentPerformanceController extends Controller
      */
     public function commissionSummary(Request $request)
     {
-        if ($request->auth->level < 3) {
+        if ($request->auth->level < 1) {
             return response()->json(['error' => 'Forbidden'], 403);
         }
 
@@ -487,8 +505,16 @@ class AgentPerformanceController extends Controller
             $conn = $this->tenantDb($request);
             $this->ensureTables($conn);
 
-            $totals = DB::connection($conn)->table('crm_agent_commissions')
-                ->select(
+            $totalsQuery = DB::connection($conn)->table('crm_agent_commissions');
+            $byAgentQuery = DB::connection($conn)->table('crm_agent_commissions');
+
+            // Agents (level < 3) only see their own commissions
+            if ($request->auth->level < 3) {
+                $totalsQuery->where('agent_id', (int) $request->auth->id);
+                $byAgentQuery->where('agent_id', (int) $request->auth->id);
+            }
+
+            $totals = $totalsQuery->select(
                     DB::raw('SUM(gross_commission) as total_gross'),
                     DB::raw('SUM(agent_commission) as total_agent'),
                     DB::raw('SUM(company_commission) as total_company'),
@@ -496,8 +522,7 @@ class AgentPerformanceController extends Controller
                 )
                 ->first();
 
-            $byAgent = DB::connection($conn)->table('crm_agent_commissions')
-                ->select(
+            $byAgent = $byAgentQuery->select(
                     'agent_id',
                     DB::raw('SUM(gross_commission) as total_gross'),
                     DB::raw('SUM(agent_commission) as total_agent'),
@@ -657,7 +682,7 @@ class AgentPerformanceController extends Controller
      */
     public function renewalPipeline(Request $request)
     {
-        if ($request->auth->level < 3) {
+        if ($request->auth->level < 1) {
             return response()->json(['error' => 'Forbidden'], 403);
         }
 
@@ -680,9 +705,14 @@ class AgentPerformanceController extends Controller
             ->where(function ($q) use ($daysAhead) {
                 $q->whereNotNull('d.renewal_eligible_at')
                   ->where('d.renewal_eligible_at', '<=', now()->addDays($daysAhead));
-            })
-            ->orderBy('d.renewal_eligible_at')
-            ->get();
+            });
+
+        // Agents (level < 3) only see their own deals
+        if ($request->auth->level < 3) {
+            $pipeline->where('d.created_by', (int) $request->auth->id);
+        }
+
+        $pipeline = $pipeline->orderBy('d.renewal_eligible_at')->get();
 
         return $this->successResponse('Renewal pipeline retrieved.', ['pipeline' => $pipeline->toArray()]);
     }

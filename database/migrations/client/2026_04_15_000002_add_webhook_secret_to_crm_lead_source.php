@@ -3,12 +3,17 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class AddWebhookSecretToCrmLeadSource extends Migration
 {
     public function up()
     {
+        if (!Schema::hasTable('crm_lead_source')) {
+            return;
+        }
+
         if (!Schema::hasColumn('crm_lead_source', 'webhook_secret')) {
             Schema::table('crm_lead_source', function (Blueprint $table) {
                 $table->char('webhook_secret', 64)->nullable()->unique()->after('unique_id');
