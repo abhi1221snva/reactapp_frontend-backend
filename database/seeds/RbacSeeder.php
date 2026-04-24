@@ -86,6 +86,7 @@ class RbacSeeder extends Seeder
             ['key' => 'fax',              'name' => 'Fax Settings',         'engine' => 'dialer', 'url_patterns' => json_encode(['fax','send-fax','delete-fax','receive-fax-list'])],
             ['key' => 'email_templates',  'name' => 'Email Templates',      'engine' => 'dialer', 'url_patterns' => json_encode(['email-template','email-templates','status-update-email-template'])],
             ['key' => 'sms_templates',   'name' => 'SMS Templates',        'engine' => 'dialer', 'url_patterns' => json_encode(['sms-templete','add-sms-templete','edit-sms-templete','delete-sms-templete','sms-template','update-sms-templete-status'])],
+            ['key' => 'email_settings',  'name' => 'Email Settings',       'engine' => 'dialer', 'url_patterns' => json_encode(['crm/email-settings','crm-email-setting','update-crm-email-setting'])],
             ['key' => 'billing',          'name' => 'Billing',              'engine' => 'dialer', 'url_patterns' => json_encode(['billing','wallet/','cart','checkout','stripe/','orders','call-billing','billing-charge','active-client-plans','history-client-plans'])],
 
             // ─── CRM ───
@@ -140,6 +141,7 @@ class RbacSeeder extends Seeder
             'crm.email_settings', 'crm.document_types',
             'crm.company', 'crm.affiliate',
             'email_parser',
+            'email_settings',
         ]);
 
         $level7 = array_merge($level5, [ // admin
@@ -193,7 +195,6 @@ class RbacSeeder extends Seeder
 
         // CORE
         $items[] = $this->item('dialer', 'CORE', '/dashboard',      'Dashboard',     'LayoutDashboard', 'core.dashboard', 1, ++$order);
-        $items[] = $this->item('dialer', 'CORE', '/dialer',         'Dialer',        'Phone',           'core.dialer',    1, ++$order);
         $items[] = $this->item('dialer', 'CORE', '/dialer-studio',  'Dialer Studio', 'Sparkles',        'core.dialer',    1, ++$order);
 
         // USER MANAGEMENT
@@ -261,6 +262,7 @@ class RbacSeeder extends Seeder
         $items[] = $this->item('dialer', 'SETTINGS', '/settings/exclude', 'Exclude From List', 'MinusCircle', 'exclude_list', 7, ++$order);
         $items[] = $this->item('dialer', 'SETTINGS', '/settings/email-templates', 'Email Templates', 'Mail', 'email_templates', 7, ++$order);
         $items[] = $this->item('dialer', 'SETTINGS', '/settings/sms-templates', 'SMS Templates', 'MessageSquare', 'sms_templates', 7, ++$order);
+        $items[] = $this->item('dialer', 'SETTINGS', '/settings/email-settings', 'Email Settings', 'Mail', 'email_settings', 5, ++$order);
         $items[] = $this->item('dialer', 'SETTINGS', '/settings/fax',     'Fax Settings',      'FileText',    'fax',          7, ++$order);
         $items[] = $this->item('dialer', 'SETTINGS', '/billing',          'Billing',           'CreditCard',  'billing',      7, ++$order);
 
