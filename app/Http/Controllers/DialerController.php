@@ -599,7 +599,7 @@ class DialerController extends Controller
                     "AGENT_EXT={$extension}",
                     "CUSTOMER_NUM={$phone}",
                     "CALLER_ID_NUM={$resolvedCli}",
-                    "TRUNK={$ami->getTrunk()}",
+                    "TRUNK=" . $this->resolveClientTrunk($clientId, $ami),
                     "CALL_TIMEOUT=60",
                     "CONF_ROOM={$confRoom}",
                 ],
@@ -2731,5 +2731,25 @@ class DialerController extends Controller
         }
 
         return response()->json($response);
+    }
+
+    /**
+     * Resolve the PJSIP trunk name from clients.trunk (master DB).
+     * Falls back to $ami->getTrunk() if clients.trunk is empty.
+     */
+    protected function resolveClientTrunk(int $clientId, AsteriskAmiService $ami): string
+    {
+        $raw = DB::connection('master')
+            ->table('clients')
+            ->where('id', $clientId)
+            ->value('trunk');
+
+        if ($raw && !empty(trim($raw))) {
+            $stripped = preg_replace('#^PJSIP/#i', '', trim($raw));
+            $parts = explode('/', $stripped, 2);
+            return $parts[0];
+        }
+
+        return $ami->getTrunk();
     }
 }

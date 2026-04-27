@@ -999,56 +999,37 @@ class CampaignDialerService
     /**
      * Resolve the outbound SIP trunk configuration for a campaign.
      *
-     * Resolution order:
-     *  1. campaign.voip_configuration_id  → voip_configuration table (trunk name + dial prefix)
-     *  2. Client's sip_gateways entry     → sip_trunk_name + derive prefix from provider
-     *  3. asterisk_server.trunk           → fallback with no prefix
+     * Reads trunk directly from clients.trunk in the master database.
      *
      * @return array{trunk: string, prefix: string}
      */
     protected function resolveTrunkConfig(int $campaignId, int $clientId, string $dbConnection): array
     {
-        // 1) Campaign-specific VoIP configuration
-        $vcId = DB::connection($dbConnection)
-            ->table('campaign')
-            ->where('id', $campaignId)
-            ->value('voip_configuration_id');
+        $clientTrunk = DB::connection('master')
+            ->table('clients')
+            ->where('id', $clientId)
+            ->value('trunk');
 
-        if ($vcId && $vcId > 0) {
-            $vc = DB::connection('master')
-                ->table('voip_configuration')
-                ->where('id', $vcId)
-                ->first();
+        if ($clientTrunk && !empty(trim($clientTrunk))) {
+            $raw = trim($clientTrunk);
 
-            if ($vc && !empty($vc->name)) {
-                Log::debug("CampaignDialer: trunk resolved from voip_configuration id={$vcId} — trunk={$vc->name} prefix=" . ($vc->prefix ?? ''));
-                return [
-                    'trunk'  => $vc->name,
-                    'prefix' => $vc->prefix ?? '',
-                ];
-            }
-        }
+            // clients.trunk may store full channel string like "PJSIP/plivo-rohit-account/+1"
+            // Strip leading "PJSIP/" and extract trunk name + optional dial prefix
+            $stripped = preg_replace('#^PJSIP/#i', '', $raw);
+            $parts = explode('/', $stripped, 2);
+            $trunk  = $parts[0];
+            $prefix = $parts[1] ?? '';
 
-        // 2) Client's SIP gateway
-        $gateway = DB::connection('master')
-            ->table('sip_gateways')
-            ->where('parent_id', $clientId)
-            ->first();
-
-        if ($gateway && !empty($gateway->sip_trunk_name)) {
-            $prefix = $this->defaultPrefixForProvider($gateway->sip_trunk_provider);
-            Log::debug("CampaignDialer: trunk resolved from sip_gateways — trunk={$gateway->sip_trunk_name} provider={$gateway->sip_trunk_provider} prefix={$prefix}");
+            Log::debug("CampaignDialer: trunk resolved from clients.trunk — raw={$raw} trunk={$trunk} prefix={$prefix}");
             return [
-                'trunk'  => $gateway->sip_trunk_name,
+                'trunk'  => $trunk,
                 'prefix' => $prefix,
             ];
         }
 
-        // 3) Fallback to asterisk_server.trunk (AMI connection default)
-        $trunk = $this->ami->getTrunk() ?: 'outbound-trunk';
-        Log::debug("CampaignDialer: trunk fallback to asterisk_server — trunk={$trunk}");
+        Log::error("CampaignDialer: no trunk configured in clients.trunk for client_id={$clientId}");
         return [
-            'trunk'  => $trunk,
+            'trunk'  => '',
             'prefix' => '',
         ];
     }
@@ -1085,7 +1066,9 @@ class CampaignDialerService
             $digits = substr($digits, 1);
         }
 
-        $channel = "PJSIP/{$trunk}/{$prefix}{$digits}";
+        // PJSIP dial syntax: PJSIP/{number}@{endpoint}
+        // The slash syntax (PJSIP/endpoint/uri) requires a full SIP URI which bare numbers are not.
+        $channel = "PJSIP/{$prefix}{$digits}@{$trunk}";
         error_log("buildOutboundChannel: raw_phone={$phone} trunk={$trunk} prefix={$prefix} → {$channel}");
         return $channel;
     }

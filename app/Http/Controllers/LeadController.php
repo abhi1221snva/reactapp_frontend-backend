@@ -2257,12 +2257,21 @@ class LeadController extends Controller
             // Resolves [specialist_name], [specialist_phone], [specialist_email],
             // [company_logo], [company_name] etc. from the agent who created the lead
             $createdById = $data['created_by'] ?? null;
+            $agent = null;
             if ($createdById) {
                 $agent = DB::table('users')
                     ->where('id', (int) $createdById)
                     ->where('parent_id', $auth->parent_id)
                     ->select('first_name','last_name','mobile','email','company_name','logo')
                     ->first();
+            }
+            // Fall back to the currently logged-in user when created_by is missing or not found
+            if (!$agent) {
+                $agent = DB::table('users')
+                    ->where('id', (int) $auth->id)
+                    ->select('first_name','last_name','mobile','email','company_name','logo')
+                    ->first();
+            }
 
                 if ($agent) {
                     $agentFullName = trim($agent->first_name . ' ' . $agent->last_name);
@@ -2279,7 +2288,7 @@ class LeadController extends Controller
 
                     // Company logo — renders as <img> tag (base64 for PDF compatibility)
                     if (!empty($agent->logo)) {
-                        $logoPath = public_path('logo/' . $agent->logo);
+                        $logoPath = base_path('public/logo/' . $agent->logo);
                         if (file_exists($logoPath)) {
                             $mime    = mime_content_type($logoPath) ?: 'image/png';
                             $b64     = base64_encode(file_get_contents($logoPath));
@@ -2292,7 +2301,6 @@ class LeadController extends Controller
                         $data['company_logo'] = '';
                     }
                 }
-            }
             // Ensure these keys exist even when no agent found
             foreach (['specialist_name','specialist_phone','specialist_mobile','specialist_email','specialist_fax','specialist_first_name','specialist_last_name','company_logo','company_name_agent'] as $k) {
                 if (!isset($data[$k])) $data[$k] = '';
@@ -2341,7 +2349,7 @@ class LeadController extends Controller
                         $logoPath = \App\Services\TenantStorageService::getPath($clientId, 'company') . '/' . $logo;
                         if (!file_exists($logoPath)) {
                             // Fall back to legacy public/logo/
-                            $logoPath = public_path('logo/' . $logo);
+                            $logoPath = base_path('public/logo/' . $logo);
                         }
                         if (file_exists($logoPath)) {
                             $mime = mime_content_type($logoPath) ?: 'image/png';
@@ -2765,7 +2773,7 @@ class LeadController extends Controller
             $isHtml = (bool) $request->input('is_html', false);
             $html   = $isHtml ? $body : nl2br(e($body));
 
-            EmailService::forClientAny($clientId)->send(
+            EmailService::forClient($clientId, 'online application')->send(
                 to:      $to,
                 subject: $subject,
                 html:    $html,
