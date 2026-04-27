@@ -12,7 +12,10 @@ class AddAgentAssociateCrmLeadPermissions extends Migration
      */
     public function up()
     {
-        $groups = ['leads', 'crm.lead_fields', 'crm.lead_status', 'lead_activity', 'labels', 'lists'];
+        $groups = [
+            'leads', 'crm.lead_fields', 'crm.lead_status', 'lead_activity',
+            'labels', 'lists', 'lead_sources', 'crm.email_templates', 'crm.sms_templates',
+        ];
 
         foreach ([2, 4] as $roleId) {
             foreach ($groups as $groupKey) {
@@ -34,7 +37,10 @@ class AddAgentAssociateCrmLeadPermissions extends Migration
 
     public function down()
     {
-        $groups = ['leads', 'crm.lead_fields', 'crm.lead_status', 'lead_activity', 'labels', 'lists'];
+        $groups = [
+            'leads', 'crm.lead_fields', 'crm.lead_status', 'lead_activity',
+            'labels', 'lists', 'lead_sources', 'crm.email_templates', 'crm.sms_templates',
+        ];
 
         foreach ([2, 4] as $roleId) {
             DB::connection('master')
