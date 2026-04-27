@@ -502,22 +502,17 @@ class LeadPdfService
                 $currentVal = '';
             }
             if (!empty($currentVal)) {
-                // Already a valid date string — format in agent timezone
+                // Date is already stored in the agent's timezone by updateSignatureDates().
+                // Do NOT apply setTimezone() again — that shifts the date backwards by a day
+                // when the server TZ differs from the agent TZ (e.g. 04/23 00:00 UTC → 04/22 20:00 EST).
                 try {
-                    $data[$dateKey] = Carbon::parse((string) $currentVal)->setTimezone($agentTz)->format('m/d/Y');
+                    $data[$dateKey] = Carbon::parse((string) $currentVal)->format('m/d/Y');
                 } catch (\Throwable $e) {
                     $data[$dateKey] = $currentVal;
                 }
             } elseif (!empty($data[$sigKey]) && str_contains((string) $data[$sigKey], '<img')) {
-                // Signature exists but no date stored — use lead created_at or now in agent tz
-                $fallback = $data['created_at'] ?? null;
-                try {
-                    $data[$dateKey] = $fallback
-                        ? Carbon::parse((string) $fallback)->setTimezone($agentTz)->format('m/d/Y')
-                        : Carbon::now($agentTz)->format('m/d/Y');
-                } catch (\Throwable $e) {
-                    $data[$dateKey] = Carbon::now($agentTz)->format('m/d/Y');
-                }
+                // Signature exists but no date stored — use now in agent tz
+                $data[$dateKey] = Carbon::now($agentTz)->format('m/d/Y');
             } else {
                 $data[$dateKey] = '';
             }
@@ -575,7 +570,7 @@ class LeadPdfService
             $mime = mime_content_type($absPath) ?: 'image/png';
             $b64  = base64_encode(file_get_contents($absPath));
             return '<img src="data:' . $mime . ';base64,' . $b64
-                . '" style="max-height:80px;max-width:300px;display:block;" alt="Signature" />';
+                . '" style="max-height:50px;max-width:160px;display:block;" alt="Signature" />';
         } catch (\Throwable $e) {
             Log::warning("[LeadPdfService] Could not embed signature for lead (client {$clientId}): " . $e->getMessage());
             return '<span style="color:#94a3b8;font-size:12px;font-style:italic;">Signature unavailable</span>';

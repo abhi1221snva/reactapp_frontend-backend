@@ -6,6 +6,7 @@ use App\Model\Client\LeadSource;
 use App\Model\Client\LeadSourceField;
 use App\Model\Master\LeadSourceWebhookToken;
 use App\Models\Client\CrmLeadRecord;
+use App\Services\CrmLeadDuplicateCheckService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -99,6 +100,24 @@ class LeadSourceWebhookController extends Controller
                 'message' => 'Validation failed.',
                 'errors'  => $errors,
             ], 422);
+        }
+
+        // ── 4b. Duplicate lead check (phone, email, business name) ─────────
+        $mappedFields = [];
+        foreach ($configuredFields as $field) {
+            $storageKey = $field->mapped_field_key ?: $field->field_name;
+            $val = $input[$field->field_name] ?? null;
+            if ($val !== null && $val !== '') {
+                $mappedFields[$storageKey] = $val;
+            }
+        }
+        $dupErrors = CrmLeadDuplicateCheckService::forClient((int) $clientId)->check($mappedFields);
+        if (!empty($dupErrors)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Duplicate lead detected.',
+                'errors'  => $dupErrors,
+            ], 409);
         }
 
         // ── 5. Create the lead ────────────────────────────────────────────────

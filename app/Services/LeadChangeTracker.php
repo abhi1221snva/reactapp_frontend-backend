@@ -62,6 +62,9 @@ class LeadChangeTracker
                 ];
             }
 
+            // Resolve user IDs to names for user-reference fields
+            $richChanges = self::resolveUserFields($richChanges);
+
             $summary = self::buildSummary($richChanges, $source);
 
             // Insert into lead_change_logs
@@ -181,6 +184,8 @@ class LeadChangeTracker
                     ];
                 }
 
+                $richChanges = self::resolveUserFields($richChanges);
+
                 $summary = self::buildSummary($richChanges, $source);
 
                 $logRows[] = [
@@ -258,6 +263,57 @@ class LeadChangeTracker
         }
 
         return $result;
+    }
+
+    /** Fields whose values are user IDs that should be displayed as names. */
+    private const USER_ID_FIELDS = ['assigned_to', 'created_by', 'updated_by'];
+
+    /**
+     * Replace raw user IDs with "FirstName LastName" for user-reference fields.
+     */
+    private static function resolveUserFields(array $richChanges): array
+    {
+        // Collect all user IDs that need resolving
+        $ids = [];
+        foreach (self::USER_ID_FIELDS as $field) {
+            if (!isset($richChanges[$field])) continue;
+            foreach (['old', 'new'] as $side) {
+                $val = $richChanges[$field][$side] ?? null;
+                if ($val !== null && $val !== '' && $val !== '0' && is_numeric($val)) {
+                    $ids[] = (int) $val;
+                }
+            }
+        }
+
+        if (empty($ids)) {
+            return $richChanges;
+        }
+
+        try {
+            $users = DB::connection('master')->table('users')
+                ->whereIn('id', array_unique($ids))
+                ->pluck(DB::raw("CONCAT(first_name, ' ', last_name)"), 'id')
+                ->toArray();
+        } catch (\Throwable $e) {
+            return $richChanges; // non-fatal — keep raw IDs
+        }
+
+        foreach (self::USER_ID_FIELDS as $field) {
+            if (!isset($richChanges[$field])) continue;
+            foreach (['old', 'new'] as $side) {
+                $val = $richChanges[$field][$side] ?? null;
+                if ($val !== null && $val !== '' && is_numeric($val)) {
+                    $intVal = (int) $val;
+                    if ($intVal === 0) {
+                        $richChanges[$field][$side] = 'Unassigned';
+                    } elseif (isset($users[$intVal])) {
+                        $richChanges[$field][$side] = trim($users[$intVal]);
+                    }
+                }
+            }
+        }
+
+        return $richChanges;
     }
 
     /**

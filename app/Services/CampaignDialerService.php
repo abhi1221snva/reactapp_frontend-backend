@@ -281,7 +281,10 @@ class CampaignDialerService
         ExtensionLive::on($dbConnection)
             ->where('extension', $agentExt)
             ->where('lead_id', $leadId)
-            ->update(['call_status' => ExtensionLive::CALL_STATUS_BRIDGED]);
+            ->update([
+                'call_status'     => ExtensionLive::CALL_STATUS_BRIDGED,
+                'call_started_at' => now(),
+            ]);
 
         // Push to agent's browser via Pusher so the lead panel appears instantly
         $this->pushToAgent($agentExt, 'call.bridged', [
@@ -323,16 +326,50 @@ class CampaignDialerService
             return;
         }
 
-        // If customer hung up, kick all from conference to tear down the agent leg too
-        if ($who === 'customer' && $confRoom) {
-            try {
-                $this->ami->confbridgeKickAll($confRoom);
-            } catch (\Throwable $e) {
-                Log::warning("CampaignDialer: confbridge kick failed for {$confRoom}: {$e->getMessage()}");
+        if ($who === 'customer') {
+            // ── Persistent conference: customer hung up, agent stays in conf ──
+            // Dedup: if lead_id was already cleared by hangupCustomerOnly(), skip
+            if (!$live->lead_id || (int) $live->lead_id !== $leadId) {
+                Log::debug("CampaignDialer: customer hangup already processed for lead {$leadId} (ext {$agentExt})");
+                return;
             }
+
+            // Write CDR and mark lead completed
+            $this->writeCdr($agentExt, $leadId, $campaignId, $live, $dbConnection);
+
+            CampaignLeadQueue::on($dbConnection)
+                ->where('campaign_id', $campaignId)
+                ->where('lead_id', $leadId)
+                ->where('status', CampaignLeadQueue::STATUS_CALLING)
+                ->update([
+                    'status'       => CampaignLeadQueue::STATUS_COMPLETED,
+                    'completed_at' => now(),
+                ]);
+
+            // Clear customer info but keep agent in conference
+            ExtensionLive::on($dbConnection)
+                ->where('extension', $agentExt)
+                ->update([
+                    'lead_id'          => null,
+                    'customer_channel' => null,
+                    'call_status'      => ExtensionLive::CALL_STATUS_CONNECTED,
+                ]);
+
+            // Push event to agent's browser for disposition
+            $this->pushToAgent($agentExt, 'call.ended', [
+                'lead_id'      => $leadId,
+                'hangup_cause' => $hangupCause,
+                'who'          => $who,
+            ], $clientId);
+
+            Log::info("CampaignDialer: customer hangup — agent {$agentExt} stays in conf, lead {$leadId}");
+
+            // Do NOT mark extension idle, do NOT dispatch next lead
+            // Agent controls the flow via disposition → nextCustomer
+            return;
         }
 
-        // Reset extension to idle
+        // ── Agent hung up (End Session): full teardown ──────────────────────
         ExtensionLive::markIdle($agentExt, $dbConnection);
 
         // Write CDR record
@@ -359,14 +396,7 @@ class CampaignDialerService
             'who'          => $who,
         ], $clientId);
 
-        Log::info("CampaignDialer: hangup — agent {$agentExt}, lead {$leadId}, cause {$hangupCause}, who: {$who}");
-
-        // Dispatch next call after a short grace period
-        dispatch(
-            (new \App\Jobs\DialNextLeadJob($campaignId, $clientId, $dbConnection))
-                ->onQueue('campaign-dialer')
-                ->delay(now()->addSeconds(2))
-        );
+        Log::info("CampaignDialer: agent hangup (end session) — agent {$agentExt}, lead {$leadId}, cause {$hangupCause}");
     }
 
     /**
@@ -399,11 +429,26 @@ class CampaignDialerService
         $leadId     = (int) $live->lead_id;
         $campaignId = (int) $live->campaign_id;
 
-        // Kick everyone from the conference — this triggers agent hangup via h extension
-        try {
-            $this->ami->confbridgeKickAll($confRoom);
-        } catch (\Throwable $e) {
-            Log::warning("CampaignDialer: confbridge kick failed for {$confRoom}: {$e->getMessage()}");
+        // Persistent conference: do NOT kick agent from conf.
+        // Clear customer info so agent can try next lead.
+        ExtensionLive::on($dbConnection)
+            ->where('extension', $agentExt)
+            ->update([
+                'lead_id'          => null,
+                'customer_channel' => null,
+                'call_status'      => ExtensionLive::CALL_STATUS_CONNECTED,
+            ]);
+
+        // Mark lead as failed in queue
+        if ($leadId) {
+            CampaignLeadQueue::on($dbConnection)
+                ->where('campaign_id', $campaignId)
+                ->where('lead_id', $leadId)
+                ->where('status', CampaignLeadQueue::STATUS_CALLING)
+                ->update([
+                    'status'       => CampaignLeadQueue::STATUS_FAILED,
+                    'completed_at' => now(),
+                ]);
         }
 
         // Map AMI reason code to human-readable message
@@ -417,9 +462,7 @@ class CampaignDialerService
             'reason'      => $reason,
         ], $clientId);
 
-        Log::info("CampaignDialer: customer originate failed — agent {$agentExt}, lead {$leadId}, room {$confRoom}, reason: {$reason}");
-
-        // Note: conference teardown triggers agent hangup event → handleCallHangup() runs normal cleanup
+        Log::info("CampaignDialer: customer originate failed — agent {$agentExt} stays in conf, lead {$leadId}, reason: {$reason}");
     }
 
     /**
@@ -487,6 +530,75 @@ class CampaignDialerService
     }
 
     // -------------------------------------------------------------------------
+    // Persistent Conference: hang up customer only (disposition mode)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Hang up only the customer channel — no next lead dial.
+     * Agent stays in conference room for disposition.
+     */
+    public function hangupCustomerOnly(
+        int    $campaignId,
+        int    $agentExt,
+        int    $clientId,
+        string $dbConnection
+    ): array {
+        // status: 1=active, 3=paused — both are "in a call"
+        $live = ExtensionLive::on($dbConnection)
+            ->where('extension', $agentExt)
+            ->whereIn('status', [1, 3])
+            ->first();
+
+        if (!$live) {
+            return ['status' => 'error', 'message' => 'Agent not in an active call'];
+        }
+
+        $previousLeadId = (int) $live->lead_id;
+
+        // Hang up customer channel only
+        try {
+            if (!$this->ami->isConnected()) {
+                $this->ami->connectForClient($clientId);
+            }
+
+            if ($live->customer_channel) {
+                error_log("hangupCustomerOnly: DIRECT hangup customer_channel={$live->customer_channel} agentExt={$agentExt}");
+                $this->ami->hangup($live->customer_channel);
+            } else {
+                // ConfBridge room name = agent extension (Asterisk uses ext as room name)
+                $actualRoom = (string) $agentExt;
+                error_log("hangupCustomerOnly: confbridgeKickNonAgent room={$actualRoom} agentExt={$agentExt}");
+                $this->ami->confbridgeKickNonAgent($actualRoom, $agentExt);
+            }
+        } catch (\Throwable $e) {
+            \Log::warning("CampaignDialer: failed to hangup customer for ext {$agentExt}: {$e->getMessage()}");
+        }
+
+        // Write CDR for completed call
+        $this->writeCdr($agentExt, $previousLeadId, $campaignId, $live, $dbConnection);
+
+        // Mark lead as completed in queue
+        CampaignLeadQueue::on($dbConnection)
+            ->where('campaign_id', $campaignId)
+            ->where('lead_id', $previousLeadId)
+            ->where('status', CampaignLeadQueue::STATUS_CALLING)
+            ->update([
+                'status'       => CampaignLeadQueue::STATUS_COMPLETED,
+                'completed_at' => now(),
+            ]);
+
+        // Clear customer info but keep agent in conference
+        ExtensionLive::on($dbConnection)
+            ->where('extension', $agentExt)
+            ->update([
+                'lead_id'          => null,
+                'customer_channel' => null,
+            ]);
+
+        return ['status' => 'ok', 'previous_lead_id' => $previousLeadId];
+    }
+
+    // -------------------------------------------------------------------------
     // Persistent Conference: hang up customer only, dial next lead
     // -------------------------------------------------------------------------
 
@@ -502,9 +614,10 @@ class CampaignDialerService
         int    $clientId,
         string $dbConnection
     ): array {
+        // status: 1=active, 3=paused — both are "in a call"
         $live = ExtensionLive::on($dbConnection)
             ->where('extension', $agentExt)
-            ->where('status', 1)
+            ->whereIn('status', [1, 3])
             ->first();
 
         if (!$live) {
@@ -514,30 +627,37 @@ class CampaignDialerService
         $previousLeadId = (int) $live->lead_id;
         $confRoom       = $live->conf_room;
 
-        // 1) Hang up the customer channel only (if tracked)
-        if ($live->customer_channel) {
+        // Steps 1-3 only needed if a previous lead is still active
+        // (may already have been handled by hangupCustomerOnly)
+        if ($previousLeadId > 0) {
+            // 1) Hang up the customer channel only
             try {
                 if (!$this->ami->isConnected()) {
                     $this->ami->connectForClient($clientId);
                 }
-                $this->ami->hangup($live->customer_channel);
+
+                if ($live->customer_channel) {
+                    $this->ami->hangup($live->customer_channel);
+                } else {
+                    $this->ami->confbridgeKickNonAgent((string) $agentExt, $agentExt);
+                }
             } catch (\Throwable $e) {
-                Log::warning("CampaignDialer: failed to hangup customer channel {$live->customer_channel}: {$e->getMessage()}");
+                Log::warning("CampaignDialer: failed to hangup customer for ext {$agentExt}: {$e->getMessage()}");
             }
+
+            // 2) Write CDR for completed call
+            $this->writeCdr($agentExt, $previousLeadId, $campaignId, $live, $dbConnection);
+
+            // 3) Mark previous lead as completed in queue
+            CampaignLeadQueue::on($dbConnection)
+                ->where('campaign_id', $campaignId)
+                ->where('lead_id', $previousLeadId)
+                ->where('status', CampaignLeadQueue::STATUS_CALLING)
+                ->update([
+                    'status'       => CampaignLeadQueue::STATUS_COMPLETED,
+                    'completed_at' => now(),
+                ]);
         }
-
-        // 2) Write CDR for completed call
-        $this->writeCdr($agentExt, $previousLeadId, $campaignId, $live, $dbConnection);
-
-        // 3) Mark previous lead as completed in queue
-        CampaignLeadQueue::on($dbConnection)
-            ->where('campaign_id', $campaignId)
-            ->where('lead_id', $previousLeadId)
-            ->where('status', CampaignLeadQueue::STATUS_CALLING)
-            ->update([
-                'status'       => CampaignLeadQueue::STATUS_COMPLETED,
-                'completed_at' => now(),
-            ]);
 
         // 4) Pick next lead from queue
         $entry = DB::connection($dbConnection)->transaction(function () use ($campaignId, $dbConnection) {
@@ -764,26 +884,40 @@ class CampaignDialerService
         }
         $lead = $phone;
 
-        // Calculate duration from extension_live updated_at (set when call was connected)
-        $duration = null;
-        if ($live && !empty($live->updated_at)) {
+        // Calculate duration from extension_live call_started_at
+        $duration  = null;
+        $startTime = now();
+        $endTime   = now();
+        if ($live && !empty($live->call_started_at)) {
             try {
-                $duration = (int) Carbon::parse($live->updated_at)->diffInSeconds(now());
+                $startTime = Carbon::parse($live->call_started_at);
+                $duration  = (int) $startTime->diffInSeconds($endTime);
             } catch (\Throwable $e) {
                 // Non-fatal
             }
         }
 
+        // Derive recording filename matching Asterisk MixMonitor pattern:
+        // {AGENT_EXT}-{CUSTOMER_NUM}-{LEAD_ID}-{YYYYMMDDHHMMSS}.wav
+        $recording = null;
+        if ($startTime && $lead) {
+            $ts = $startTime instanceof Carbon ? $startTime->format('YmdHis') : Carbon::parse($startTime)->format('YmdHis');
+            $cleanNum = preg_replace('/\D/', '', $lead);
+            $recording = "{$agentExt}-{$cleanNum}-{$leadId}-{$ts}.wav";
+        }
+
         DB::connection($dbConnection)->table('cdr')->insert([
-            'extension'   => $agentExt,
-            'route'       => 'OUT',
-            'type'        => 'dialer',
-            'number'      => preg_replace('/\D/', '', $lead ?? '0'),
-            'channel'     => $live->channel ?? '',
-            'duration'    => $duration,
-            'start_time'  => $live->updated_at ?? now(),
-            'campaign_id' => $campaignId,
-            'lead_id'     => $leadId,
+            'extension'      => $agentExt,
+            'route'          => 'OUT',
+            'type'           => 'dialer',
+            'number'         => preg_replace('/\D/', '', $lead ?? '0'),
+            'channel'        => $live->channel ?? '',
+            'duration'       => $duration,
+            'start_time'     => $startTime,
+            'end_time'       => $endTime,
+            'call_recording' => $recording,
+            'campaign_id'    => $campaignId,
+            'lead_id'        => $leadId,
         ]);
     }
 

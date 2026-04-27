@@ -1480,4 +1480,19 @@ public function updateListMapping()
         $history->url_title = "List";
         $history->save();
     }
+
+    /**
+     * Bulk delete multiple lists.
+     * Expects { "ids": [1, 2, 3] }
+     */
+    public function bulkDeleteLists()
+    {
+        $this->validate($this->request, [
+            'ids'   => 'required|array|min:1',
+            'ids.*' => 'integer',
+        ]);
+
+        $response = $this->model->bulkDeleteLists($this->request);
+        return response()->json($response);
+    }
 }

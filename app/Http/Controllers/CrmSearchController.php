@@ -143,20 +143,23 @@ class CrmSearchController extends Controller
                 return $arr;
             });
 
-            // ── Resolve user names for created_by / updated_by ────────────
+            // ── Resolve user names for assigned_to / created_by / updated_by ─
             try {
                 $userIds = collect($records)
-                    ->flatMap(fn($r) => [(int)($r['created_by'] ?? 0), (int)($r['updated_by'] ?? 0)])
+                    ->flatMap(fn($r) => [(int)($r['assigned_to'] ?? 0), (int)($r['created_by'] ?? 0), (int)($r['updated_by'] ?? 0)])
                     ->filter()->unique()->values()->toArray();
 
                 if (!empty($userIds)) {
                     $users = DB::table('users')
                         ->whereIn('id', $userIds)
-                        ->where('parent_id', $request->auth->parent_id)
                         ->select('id', 'first_name', 'last_name')
                         ->get()->keyBy('id');
 
                     $records = $records->map(function ($r) use ($users) {
+                        if (!empty($r['assigned_to']) && isset($users[$r['assigned_to']])) {
+                            $u = $users[$r['assigned_to']];
+                            $r['assigned_name'] = trim($u->first_name . ' ' . $u->last_name);
+                        }
                         if (!empty($r['created_by']) && isset($users[$r['created_by']])) {
                             $u = $users[$r['created_by']];
                             $r['created_by_name'] = trim($u->first_name . ' ' . $u->last_name);

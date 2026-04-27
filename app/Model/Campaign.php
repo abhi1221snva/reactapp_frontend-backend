@@ -280,7 +280,7 @@ usort($campaigns, function ($a, $b) {
             }
 
             /* -------------------------------------------------
-             * 4️⃣ HOPPER COUNT (UNCHANGED)
+             * 4️⃣ HOPPER COUNT (lead_temp + campaign_lead_queue)
              * ------------------------------------------------- */
             $sqlHopper = "
                 SELECT COUNT(1) AS total
@@ -289,7 +289,19 @@ usort($campaigns, function ($a, $b) {
             ";
 
             $hopper = DB::connection($connection)->selectOne($sqlHopper, $params);
-            $id->hopper_count = $hopper->total ?? 0;
+            $hopperLegacy = $hopper->total ?? 0;
+
+            // Also check modern campaign_lead_queue (used by Dialer Studio)
+            $hopperQueue = 0;
+            try {
+                $hopperQueue = (int) DB::connection($connection)
+                    ->table('campaign_lead_queue')
+                    ->where('campaign_id', $id->id)
+                    ->where('status', 'pending')
+                    ->count();
+            } catch (\Throwable $ignored) {}
+
+            $id->hopper_count = max($hopperLegacy, $hopperQueue);
 
             /* -------------------------------------------------
              * 5️⃣ TIMEZONE CONVERSION (RESPONSE ONLY)
@@ -416,10 +428,19 @@ usort($campaigns, function ($a, $b) {
                 $id->total_leads  = 0; // no lists
             }
 
-            // 4. lead_temp count
+            // 4. lead_temp count + campaign_lead_queue pending
             $sql_lead_temp = "SELECT count(1) as rowLeadTemp FROM lead_temp WHERE campaign_id = :campaign_id ";
             $record_rowLeadTemp = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_lead_temp, $data1);
-            $id->hopper_count  = $record_rowLeadTemp->rowLeadTemp ?? 0;
+            $hopperLegacy = $record_rowLeadTemp->rowLeadTemp ?? 0;
+            $hopperQueue = 0;
+            try {
+                $hopperQueue = (int) DB::connection('mysql_' . $request->auth->parent_id)
+                    ->table('campaign_lead_queue')
+                    ->where('campaign_id', $id->id)
+                    ->where('status', 'pending')
+                    ->count();
+            } catch (\Throwable $ignored) {}
+            $id->hopper_count = max($hopperLegacy, $hopperQueue);
             // ✅ Convert timestamps to user timezone (for response only)
             if (!empty($id->created_at)) {
                 $id->created_at = convertToUserTimezone($id->created_at, $userTimezone);
@@ -2239,17 +2260,24 @@ if (!empty($campaign->updated)) {
             $campaign->rowListData = 0;
         }
 
-        // 4. lead_temp count
+        // 4. lead_temp count + campaign_lead_queue pending
         $sql_lead_temp = "SELECT count(1) as rowLeadTemp FROM lead_temp WHERE campaign_id = :campaign_id ";
         $record_rowLeadTemp = DB::connection('mysql_' . $request->auth->parent_id)->selectOne($sql_lead_temp, $data1);
         $campaign->rowLeadTemp = $record_rowLeadTemp->rowLeadTemp ?? 0;
 
-        // Optional: add created_date or hopper_count
-        $campaign->created_date = $campaign->created_at;
-        $campaign->hopper_count = 1; // Replace with real count if needed
+        // Also check modern campaign_lead_queue (used by Dialer Studio)
+        $hopperQueue = 0;
+        try {
+            $hopperQueue = (int) DB::connection('mysql_' . $request->auth->parent_id)
+                ->table('campaign_lead_queue')
+                ->where('campaign_id', $campaign->id)
+                ->where('status', 'pending')
+                ->count();
+        } catch (\Throwable $ignored) {}
 
-        //  $hopper_count=0;
-        $hopper_count = $campaign->rowLeadTemp;
+        $campaign->created_date = $campaign->created_at;
+        $hopper_count = max($campaign->rowLeadTemp, $hopperQueue);
+        $campaign->hopper_count = $hopper_count;
         $userArray = Campaign::on('mysql_' . $request->auth->parent_id)
             ->where('id', $request->campaign_id)
             ->get()

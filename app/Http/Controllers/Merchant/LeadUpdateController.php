@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Merchant;
 
 use App\Http\Controllers\Controller;
 use App\Services\MerchantLeadUpdateService;
+use App\Services\CrmLeadDuplicateCheckService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -102,6 +103,17 @@ class LeadUpdateController extends Controller
             $merchantId = $request->input('merchant_id');
             $ip         = $request->ip() ?? '';
             $payload    = $request->except(['merchant_id', '_token', '_method']);
+
+            // ── Duplicate lead check — only on changed identity fields ────────
+            $dupErrors = CrmLeadDuplicateCheckService::forClient((int) $clientId)
+                ->checkChanged($lead->id, $payload);
+            if (!empty($dupErrors)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Duplicate lead detected.',
+                    'errors'  => $dupErrors,
+                ], 422);
+            }
 
             // ── Apply update ──────────────────────────────────────────────────
             $result = $this->svc->applyUpdate($lead, $clientId, $payload, $merchantId, $ip);

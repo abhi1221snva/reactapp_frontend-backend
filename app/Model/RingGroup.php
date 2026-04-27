@@ -540,7 +540,9 @@ public function ringGroupDetail($request)
             foreach ($request->input('extension') as $value) {
                 ++$count;
 
-                $user = User::where('extension', $value)->first();
+                $user = User::where('extension', $value)
+                    ->where('parent_id', $request->auth->parent_id)
+                    ->first();
 
                 if (!$user) {
                     return [
@@ -564,14 +566,9 @@ public function ringGroupDetail($request)
                 $client = Client::find($request->auth->parent_id);
                 $tech_prefix = $client ? $client->tech_prefix : '';
 
-                // Add phone format
+                // Add phone format (skip if no mobile, matching addRingGroup behavior)
                 if (!empty($user->mobile)) {
                     $ext_phone[] = 'PJSIP/telnyx/' . $tech_prefix . $user->mobile;
-                } else {
-                    return [
-                        'success' => 'false',
-                        'message' => "Mobile number not found for extension {$value}."
-                    ];
                 }
             }
 

@@ -519,6 +519,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->post('copy-campaign', 'CampaignController@copyCampaign');
   $router->post('campaign-by-id', 'CampaignController@campaignById');
   $router->post('delete-campaign', 'CampaignController@deleteCampaign');
+  $router->post('bulk-delete-campaigns', 'CampaignController@bulkDeleteCampaigns');
   $router->post('status-update-campaign', 'CampaignController@updateCampaignStatus');
   $router->post('status-update-hopper', 'CampaignController@updateCampaignHopper');
 
@@ -540,6 +541,8 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->get('dialer/agent/{ext}/current-lead',          'CampaignDialerController@currentLead');
   $router->get('dialer/lead',                              'CampaignDialerController@getLead');
   $router->post('dialer/lead/{leadId}/disposition',        'CampaignDialerController@saveDispo');
+  $router->get('dialer/lead/{leadId}/cdr',                 'CampaignDialerController@getLeadCdr');
+  $router->post('dialer/campaign/{id}/hangup-customer',    'CampaignDialerController@hangupCustomer');
   $router->post('dialer/campaign/{id}/next-customer',      'CampaignDialerController@nextCustomer');
 
 //campaign assign list
@@ -708,6 +711,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->post('edit-recycle-rule', 'RecycleController@editRecycleRule');
   $router->post('add-recycle-rule', 'RecycleController@addRecycleRule');
   $router->post('delete-leads-rule', 'RecycleController@deleteLeadRule');
+  $router->post('bulk-delete-recycle-rules', 'RecycleController@bulkDeleteRecycleRules');
   $router->post('search-recycle-rule', 'RecycleController@searchRecycleRule');
 
 
@@ -719,6 +723,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->post('raw-list', 'ListsController@getListWithoutCampaign'); //done
 
   $router->post('edit-list', 'ListsController@editList');  //done for delete not edit
+  $router->post('bulk-delete-lists', 'ListsController@bulkDeleteLists');
   $router->post('add-list', 'ListsController@addList');
   $router->post('add-list-api',  'ListsController@addListUsingApi');//done
   $router->post('parse-list-headers',       'ListsController@parseListHeaders');
@@ -1999,6 +2004,8 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->delete('admin/user-hierarchy/{id}',       'UserHierarchyController@destroy');
 
   // ── Agent Performance & Commissions ────────────────────────────────────────
+  // Agent Dashboard (single endpoint for agent-level CRM dashboard)
+  $router->get('crm/agent-dashboard',                                    'AgentPerformanceController@agentDashboard');
   // Performance
   $router->get('crm/agent-performance/summary',                          'AgentPerformanceController@summary');
   $router->get('crm/agent-performance/leaderboard',                      'AgentPerformanceController@leaderboard');

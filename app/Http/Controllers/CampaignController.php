@@ -881,6 +881,60 @@ class CampaignController extends Controller
         }
     }
     /**
+     * Bulk-delete campaigns by IDs.
+     * POST /bulk-delete-campaigns  { campaign_ids: [1,2,3] }
+     */
+    function bulkDeleteCampaigns(Request $request)
+    {
+        $this->validate($request, [
+            'campaign_ids'   => 'required|array|min:1',
+            'campaign_ids.*' => 'required|numeric',
+        ]);
+
+        $conn = $this->tenantDb($request);
+        $ids  = $request->campaign_ids;
+        $deleted = 0;
+
+        foreach ($ids as $campaignId) {
+            try {
+                Campaign::authorizeAccess((int) $campaignId, $request);
+
+                $campaign = Campaign::on($conn)->where('id', $campaignId)->where('is_deleted', 0)->first();
+                if (!$campaign) continue;
+
+                $campaign->is_deleted = 1;
+                $campaign->update();
+
+                DB::connection($conn)->table('campaign_list')
+                    ->where('campaign_id', $campaignId)
+                    ->update(['is_deleted' => 1, 'status' => '0']);
+
+                DB::connection($conn)->table('campaign_disposition')
+                    ->where('campaign_id', $campaignId)
+                    ->update(['is_deleted' => 1]);
+
+                DB::connection($conn)->table('campaign_lead_queue')
+                    ->where('campaign_id', $campaignId)->delete();
+
+                DB::connection($conn)->table('campaign_agents')
+                    ->where('campaign_id', $campaignId)->delete();
+
+                DB::connection($conn)->table('campaign_staffing')
+                    ->where('campaign_id', $campaignId)->delete();
+
+                DB::connection($conn)->table('campaign_numbers')
+                    ->where('campaign_id', $campaignId)->delete();
+
+                $deleted++;
+            } catch (\Throwable $e) {
+                continue;
+            }
+        }
+
+        return $this->successResponse("Deleted {$deleted} campaign(s) successfully");
+    }
+
+    /**
      * @OA\Post(
      *     path="/status-update-campaign",
      *     summary="update status a campaign by list ID",

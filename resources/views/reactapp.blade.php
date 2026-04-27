@@ -10,8 +10,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
     <script src="/asset/js/SIPml-api.js"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script type="module" crossorigin src="/assets/index-NDZsAsSj.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-DnF-6Nls.css">
+    <script type="module" crossorigin src="/assets/index-bmzsNn3w.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DuKo6bh_.css">
   </head>
   <body>
     <div id="root"></div>

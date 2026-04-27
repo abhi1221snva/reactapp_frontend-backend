@@ -97,7 +97,7 @@ class AgentPerformanceController extends Controller
 
     /**
      * GET /agent-performance/summary
-     * Aggregate stats per agent: total deals, funded amount, commissions.
+     * Aggregate lead pipeline stats.
      */
     public function summary(Request $request)
     {
@@ -105,41 +105,39 @@ class AgentPerformanceController extends Controller
             return response()->json(['error' => 'Forbidden'], 403);
         }
 
-        $conn = $this->tenantDb($request);
+        $conn     = $this->tenantDb($request);
         $this->ensureTables($conn);
         $dateFrom = $request->input('date_from');
         $dateTo   = $request->input('date_to');
 
-        $q = DB::connection($conn)->table('crm_funded_deals as d')
-            ->leftJoin('crm_agent_commissions as c', 'c.deal_id', '=', 'd.id');
+        $q = DB::connection($conn)->table('crm_leads')
+            ->where('is_deleted', 0);
 
-        // Agents (level < 3) only see their own data
         if ($request->auth->level < 3) {
-            $q->where('d.created_by', (int) $request->auth->id);
+            $q->where('assigned_to', (int) $request->auth->id);
         }
 
-        if ($dateFrom) $q->where('d.funding_date', '>=', $dateFrom);
-        if ($dateTo)   $q->where('d.funding_date', '<=', $dateTo);
+        if ($dateFrom) $q->where('created_at', '>=', $dateFrom);
+        if ($dateTo)   $q->where('created_at', '<=', $dateTo);
 
         $row = (clone $q)->selectRaw("
-            COUNT(d.id)                                       AS total_deals,
-            COALESCE(SUM(d.funded_amount), 0)                 AS total_funded_volume,
-            COALESCE(SUM(c.agent_commission), 0)              AS total_commissions,
-            SUM(CASE WHEN d.status = 'defaulted'  THEN 1 ELSE 0 END) AS default_count
+            COUNT(id)                                                AS total_leads,
+            SUM(CASE WHEN lead_status = 'new_lead'   THEN 1 ELSE 0 END) AS new_leads,
+            SUM(CASE WHEN lead_status = 'submitted'  THEN 1 ELSE 0 END) AS submitted,
+            SUM(CASE WHEN lead_status = 'approved'   THEN 1 ELSE 0 END) AS approved,
+            SUM(CASE WHEN lead_status = 'funded'     THEN 1 ELSE 0 END) AS funded
         ")->first();
 
-        $totalDeals        = (int)   ($row->total_deals      ?? 0);
-        $totalFundedVolume = (float) ($row->total_funded_volume ?? 0);
-        $totalCommissions  = (float) ($row->total_commissions ?? 0);
-        $defaultCount      = (int)   ($row->default_count    ?? 0);
+        $total  = (int) ($row->total_leads ?? 0);
+        $funded = (int) ($row->funded      ?? 0);
 
         return $this->successResponse('Performance summary retrieved.', [
-            'total_funded_volume' => $totalFundedVolume,
-            'total_deals'         => $totalDeals,
-            'total_commissions'   => $totalCommissions,
-            'avg_deal_size'       => $totalDeals > 0 ? round($totalFundedVolume / $totalDeals, 2) : 0,
-            'renewal_rate'        => 0,
-            'default_rate'        => $totalDeals > 0 ? round($defaultCount / $totalDeals * 100, 1) : 0,
+            'total_leads'     => $total,
+            'new_leads'       => (int) ($row->new_leads  ?? 0),
+            'submitted'       => (int) ($row->submitted  ?? 0),
+            'approved'        => (int) ($row->approved   ?? 0),
+            'funded'          => $funded,
+            'conversion_rate' => $total > 0 ? round($funded / $total * 100, 1) : 0,
         ]);
     }
 
@@ -154,40 +152,39 @@ class AgentPerformanceController extends Controller
         }
 
         $conn     = $this->tenantDb($request);
-        $limit    = (int) $request->input('limit', 20);
+        $limit    = (int) $request->input('limit', 50);
         $dateFrom = $request->input('date_from');
         $dateTo   = $request->input('date_to');
 
-        // Map frontend metric names → SQL aggregate aliases
         $metricMap = [
-            'funded_volume' => 'funded_volume',
-            'deals'         => 'deals',
-            'commission'    => 'commission',
+            'total_leads' => 'total_leads',
+            'funded'      => 'funded',
+            'approved'    => 'approved',
+            'submitted'   => 'submitted',
         ];
-        $metric = $metricMap[$request->input('metric', 'funded_volume')] ?? 'funded_volume';
+        $metric = $metricMap[$request->input('metric', 'total_leads')] ?? 'total_leads';
 
-        $query = DB::connection($conn)->table('crm_funded_deals as d')
+        $query = DB::connection($conn)->table('crm_leads')
             ->selectRaw("
-                d.created_by                               AS agent_id,
-                COUNT(d.id)                                AS deals,
-                COALESCE(SUM(d.funded_amount), 0)          AS funded_volume,
-                COALESCE(SUM(c.agent_commission), 0)       AS commission,
-                CASE WHEN COUNT(d.id) > 0
-                     THEN ROUND(SUM(d.funded_amount) / COUNT(d.id), 2)
-                     ELSE 0 END                            AS avg_deal_size
+                assigned_to                                              AS agent_id,
+                COUNT(id)                                                AS total_leads,
+                SUM(CASE WHEN lead_status = 'funded'    THEN 1 ELSE 0 END) AS funded,
+                SUM(CASE WHEN lead_status = 'approved'  THEN 1 ELSE 0 END) AS approved,
+                SUM(CASE WHEN lead_status = 'submitted' THEN 1 ELSE 0 END) AS submitted
             ")
-            ->leftJoin('crm_agent_commissions as c', 'c.deal_id', '=', 'd.id')
-            ->groupBy('d.created_by')
+            ->where('is_deleted', 0)
+            ->whereNotNull('assigned_to')
+            ->where('assigned_to', '>', 0)
+            ->groupBy('assigned_to')
             ->orderByDesc($metric)
             ->limit($limit);
 
-        // Agents (level < 3) only see their own row
         if ($request->auth->level < 3) {
-            $query->where('d.created_by', (int) $request->auth->id);
+            $query->where('assigned_to', (int) $request->auth->id);
         }
 
-        if ($dateFrom) $query->where('d.funding_date', '>=', $dateFrom);
-        if ($dateTo)   $query->where('d.funding_date', '<=', $dateTo);
+        if ($dateFrom) $query->where('created_at', '>=', $dateFrom);
+        if ($dateTo)   $query->where('created_at', '<=', $dateTo);
 
         $rows = $query->get()->toArray();
 
@@ -195,26 +192,27 @@ class AgentPerformanceController extends Controller
         $agentIds = array_column($rows, 'agent_id');
         $names = [];
         if (!empty($agentIds)) {
-            $users = DB::connection('master')->table('users')
+            DB::connection('master')->table('users')
                 ->whereIn('id', $agentIds)
-                ->select('id', 'name', 'email')
+                ->select('id', 'first_name', 'last_name', 'email')
                 ->get()
-                ->keyBy('id');
-            foreach ($agentIds as $id) {
-                $u = $users->get($id);
-                $names[$id] = $u ? ($u->name ?: $u->email) : "Agent #$id";
-            }
+                ->each(function ($u) use (&$names) {
+                    $full = trim(($u->first_name ?? '') . ' ' . ($u->last_name ?? ''));
+                    $names[$u->id] = $full ?: $u->email;
+                });
         }
 
         $leaderboard = array_map(function ($row) use ($names) {
+            $total  = (int) $row->total_leads;
+            $funded = (int) $row->funded;
             return [
-                'agent_id'        => (int)   $row->agent_id,
+                'agent_id'        => (int) $row->agent_id,
                 'agent_name'      => $names[$row->agent_id] ?? "Agent #{$row->agent_id}",
-                'deals'           => (int)   $row->deals,
-                'funded_volume'   => (float) $row->funded_volume,
-                'commission'      => (float) $row->commission,
-                'conversion_rate' => 0,
-                'avg_deal_size'   => (float) $row->avg_deal_size,
+                'total_leads'     => $total,
+                'funded'          => $funded,
+                'approved'        => (int) $row->approved,
+                'submitted'       => (int) $row->submitted,
+                'conversion_rate' => $total > 0 ? round($funded / $total * 100, 1) : 0,
             ];
         }, $rows);
 
@@ -222,8 +220,8 @@ class AgentPerformanceController extends Controller
     }
 
     /**
-     * GET /agent-performance/agents/{agentId}
-     * Single agent's deals, commissions, and monthly trend.
+     * GET /agent-performance/{agentId}
+     * Single agent's lead breakdown, monthly trend, and recent leads.
      */
     public function agentDetail(Request $request, $agentId)
     {
@@ -240,92 +238,77 @@ class AgentPerformanceController extends Controller
         }
 
         // Agent name from master
-        $user      = DB::connection('master')->table('users')->where('id', $agentId)->first(['name', 'email']);
-        $agentName = $user ? ($user->name ?: $user->email) : "Agent #$agentId";
+        $user = DB::connection('master')->table('users')
+            ->where('id', $agentId)
+            ->first(['first_name', 'last_name', 'email']);
+        $agentName = $user
+            ? (trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: $user->email)
+            : "Agent #$agentId";
 
-        // Summary stats
-        $stats = DB::connection($conn)->table('crm_funded_deals as d')
-            ->leftJoin('crm_agent_commissions as c', function ($j) use ($agentId) {
-                $j->on('c.deal_id', '=', 'd.id')->where('c.agent_id', $agentId);
-            })
-            ->where('d.created_by', $agentId)
+        // Summary stats from crm_leads
+        $stats = DB::connection($conn)->table('crm_leads')
+            ->where('assigned_to', $agentId)
+            ->where('is_deleted', 0)
             ->selectRaw("
-                COUNT(d.id)                           AS total_deals,
-                COALESCE(SUM(d.funded_amount), 0)     AS funded_volume,
-                COALESCE(SUM(c.agent_commission), 0)  AS total_commission,
-                CASE WHEN COUNT(d.id) > 0
-                     THEN ROUND(SUM(d.funded_amount) / COUNT(d.id), 2)
-                     ELSE 0 END                       AS avg_deal_size
+                COUNT(id)                                                    AS total_leads,
+                SUM(CASE WHEN lead_status = 'funded'     THEN 1 ELSE 0 END) AS funded,
+                SUM(CASE WHEN lead_status = 'approved'   THEN 1 ELSE 0 END) AS approved,
+                SUM(CASE WHEN lead_status = 'submitted'  THEN 1 ELSE 0 END) AS submitted,
+                SUM(CASE WHEN lead_status = 'docs_in'    THEN 1 ELSE 0 END) AS docs_in,
+                SUM(CASE WHEN lead_status = 'app_out'    THEN 1 ELSE 0 END) AS app_out
             ")
             ->first();
 
-        // Pipeline value: deals not yet defaulted / paid off
-        $pipeline = DB::connection($conn)->table('crm_funded_deals')
-            ->where('created_by', $agentId)
-            ->whereNotIn('status', ['paid_off', 'defaulted'])
-            ->sum('funded_amount');
+        $totalLeads = (int) ($stats->total_leads ?? 0);
+        $funded     = (int) ($stats->funded      ?? 0);
 
-        // Deals list with per-deal commission
-        $deals = DB::connection($conn)->table('crm_funded_deals as d')
-            ->leftJoin('crm_agent_commissions as c', function ($j) use ($agentId) {
-                $j->on('c.deal_id', '=', 'd.id')->where('c.agent_id', $agentId);
-            })
-            ->leftJoin('crm_leads as l', 'l.id', '=', 'd.lead_id')
-            ->where('d.created_by', $agentId)
-            ->selectRaw("
-                d.id           AS deal_id,
-                d.lead_id,
-                d.lender_name,
-                d.funded_amount,
-                d.factor_rate,
-                d.status,
-                d.funding_date,
-                COALESCE(c.agent_commission, 0) AS commission
-            ")
-            ->orderByDesc('d.funding_date')
+        // Recent leads (latest 100)
+        $leads = DB::connection($conn)->table('crm_leads')
+            ->where('assigned_to', $agentId)
+            ->where('is_deleted', 0)
+            ->select('id', 'lead_status', 'lead_type', 'created_at')
+            ->orderByDesc('created_at')
             ->limit(100)
             ->get();
 
-        // Attach company_name from EAV (crm_lead_values.field_key = 'company_name')
-        $leadIds = $deals->pluck('lead_id')->filter()->unique()->values()->toArray();
-        $companyMap = [];
+        // Attach business_name from EAV
+        $leadIds = $leads->pluck('id')->toArray();
+        $bizMap  = [];
         if (!empty($leadIds)) {
             DB::connection($conn)->table('crm_lead_values')
                 ->whereIn('lead_id', $leadIds)
-                ->where('field_key', 'company_name')
+                ->whereIn('field_key', ['business_name', 'company_name'])
                 ->select('lead_id', 'field_value')
                 ->get()
-                ->each(function ($r) use (&$companyMap) {
-                    $companyMap[$r->lead_id] = $r->field_value;
+                ->each(function ($r) use (&$bizMap) {
+                    if (!isset($bizMap[$r->lead_id]) || $r->field_value) {
+                        $bizMap[$r->lead_id] = $r->field_value;
+                    }
                 });
         }
 
-        $dealList = $deals->map(function ($d) use ($companyMap) {
+        $leadList = $leads->map(function ($l) use ($bizMap) {
             return [
-                'deal_id'      => (int)    $d->deal_id,
-                'lead_id'      => (int)    $d->lead_id,
-                'company_name' => $companyMap[$d->lead_id] ?? null,
-                'lender_name'  => $d->lender_name,
-                'funded_amount'=> (float)  $d->funded_amount,
-                'factor_rate'  => $d->factor_rate ? (float) $d->factor_rate : null,
-                'commission'   => (float)  $d->commission,
-                'status'       => $d->status,
-                'funding_date' => $d->funding_date,
+                'lead_id'       => (int) $l->id,
+                'business_name' => $bizMap[$l->id] ?? null,
+                'lead_status'   => $l->lead_status,
+                'lead_type'     => $l->lead_type,
+                'created_at'    => $l->created_at,
             ];
         })->values()->toArray();
 
         // Monthly trend (last 12 months)
-        $monthly = DB::connection($conn)->table('crm_funded_deals')
-            ->selectRaw("DATE_FORMAT(funding_date, '%Y-%m') AS month, COUNT(id) AS deals, COALESCE(SUM(funded_amount), 0) AS funded_volume")
-            ->where('created_by', $agentId)
-            ->where('funding_date', '>=', now()->subMonths(12)->startOfMonth())
-            ->groupByRaw("DATE_FORMAT(funding_date, '%Y-%m')")
+        $monthly = DB::connection($conn)->table('crm_leads')
+            ->selectRaw("DATE_FORMAT(created_at, '%Y-%m') AS month, COUNT(id) AS leads")
+            ->where('assigned_to', $agentId)
+            ->where('is_deleted', 0)
+            ->where('created_at', '>=', now()->subMonths(12)->startOfMonth())
+            ->groupByRaw("DATE_FORMAT(created_at, '%Y-%m')")
             ->orderBy('month')
             ->get()
             ->map(fn ($r) => [
-                'month'         => $r->month,
-                'deals'         => (int)   $r->deals,
-                'funded_volume' => (float) $r->funded_volume,
+                'month' => $r->month,
+                'leads' => (int) $r->leads,
             ])
             ->values()
             ->toArray();
@@ -334,14 +317,15 @@ class AgentPerformanceController extends Controller
             'agent_id'   => $agentId,
             'agent_name' => $agentName,
             'summary'    => [
-                'total_deals'      => (int)   ($stats->total_deals      ?? 0),
-                'funded_volume'    => (float) ($stats->funded_volume    ?? 0),
-                'total_commission' => (float) ($stats->total_commission ?? 0),
-                'avg_deal_size'    => (float) ($stats->avg_deal_size    ?? 0),
-                'pipeline_value'   => (float) ($pipeline                ?? 0),
-                'conversion_rate'  => 0,
+                'total_leads'     => $totalLeads,
+                'funded'          => $funded,
+                'approved'        => (int) ($stats->approved  ?? 0),
+                'submitted'       => (int) ($stats->submitted ?? 0),
+                'docs_in'         => (int) ($stats->docs_in   ?? 0),
+                'app_out'         => (int) ($stats->app_out   ?? 0),
+                'conversion_rate' => $totalLeads > 0 ? round($funded / $totalLeads * 100, 1) : 0,
             ],
-            'deals'         => $dealList,
+            'leads'         => $leadList,
             'monthly_trend' => $monthly,
         ]);
     }
@@ -353,7 +337,7 @@ class AgentPerformanceController extends Controller
      */
     public function listRules(Request $request)
     {
-        if ($request->auth->level < 3) {
+        if ($request->auth->level < 1) {
             return response()->json(['error' => 'Forbidden'], 403);
         }
 
@@ -724,14 +708,17 @@ class AgentPerformanceController extends Controller
      */
     public function listBonuses(Request $request)
     {
-        if ($request->auth->level < 3) {
+        if ($request->auth->level < 1) {
             return response()->json(['error' => 'Forbidden'], 403);
         }
 
         $conn = $this->tenantDb($request);
         $query = CrmAgentBonus::on($conn)->orderByDesc('created_at');
 
-        if ($request->input('agent_id')) {
+        // Agents (level < 3) only see their own bonuses
+        if ($request->auth->level < 3) {
+            $query->where('agent_id', (int) $request->auth->id);
+        } elseif ($request->input('agent_id')) {
             $query->where('agent_id', (int) $request->input('agent_id'));
         }
         if ($request->input('status')) {
@@ -828,5 +815,168 @@ class AgentPerformanceController extends Controller
         $bonus->delete();
 
         return $this->successResponse('Bonus deleted.');
+    }
+
+    // ─── Agent Dashboard ──────────────────────────────────────────────────────────
+
+    /**
+     * GET /crm/agent-dashboard
+     * Single endpoint returning all data for the agent's personal dashboard.
+     */
+    public function agentDashboard(Request $request)
+    {
+        if ($request->auth->level < 1) {
+            return response()->json(['error' => 'Forbidden'], 403);
+        }
+
+        $conn    = $this->tenantDb($request);
+        $agentId = (int) $request->auth->id;
+
+        // ── 1. Summary stats ──────────────────────────────────────────────────
+        $stats = DB::connection($conn)->table('crm_leads')
+            ->where('assigned_to', $agentId)
+            ->where('is_deleted', 0)
+            ->selectRaw("
+                COUNT(id)                                                    AS total_leads,
+                SUM(CASE WHEN DATE(created_at) = CURDATE()          THEN 1 ELSE 0 END) AS new_today,
+                SUM(CASE WHEN lead_status = 'submitted'             THEN 1 ELSE 0 END) AS submitted,
+                SUM(CASE WHEN lead_status = 'approved'              THEN 1 ELSE 0 END) AS approved,
+                SUM(CASE WHEN lead_status = 'funded'                THEN 1 ELSE 0 END) AS funded,
+                SUM(CASE WHEN lead_status = 'docs_in'               THEN 1 ELSE 0 END) AS docs_in,
+                SUM(CASE WHEN lead_status = 'app_out'               THEN 1 ELSE 0 END) AS app_out,
+                SUM(CASE WHEN lead_status = 'new_lead'              THEN 1 ELSE 0 END) AS new_leads
+            ")
+            ->first();
+
+        $total  = (int) ($stats->total_leads ?? 0);
+        $funded = (int) ($stats->funded      ?? 0);
+
+        $summary = [
+            'total_leads'     => $total,
+            'new_today'       => (int) ($stats->new_today  ?? 0),
+            'submitted'       => (int) ($stats->submitted  ?? 0),
+            'approved'        => (int) ($stats->approved   ?? 0),
+            'funded'          => $funded,
+            'conversion_rate' => $total > 0 ? round($funded / $total * 100, 1) : 0,
+        ];
+
+        // ── 2. Recent leads (last 15) ─────────────────────────────────────────
+        $leads = DB::connection($conn)->table('crm_leads')
+            ->where('assigned_to', $agentId)
+            ->where('is_deleted', 0)
+            ->select('id', 'lead_status', 'lead_type', 'created_at')
+            ->orderByDesc('created_at')
+            ->limit(15)
+            ->get();
+
+        $leadIds = $leads->pluck('id')->toArray();
+        $bizMap  = [];
+        if (!empty($leadIds)) {
+            DB::connection($conn)->table('crm_lead_values')
+                ->whereIn('lead_id', $leadIds)
+                ->whereIn('field_key', ['business_name', 'company_name'])
+                ->select('lead_id', 'field_value')
+                ->get()
+                ->each(function ($r) use (&$bizMap) {
+                    if (!isset($bizMap[$r->lead_id]) || $r->field_value) {
+                        $bizMap[$r->lead_id] = $r->field_value;
+                    }
+                });
+        }
+
+        $recentLeads = $leads->map(function ($l) use ($bizMap) {
+            return [
+                'id'            => (int) $l->id,
+                'business_name' => $bizMap[$l->id] ?? null,
+                'lead_status'   => $l->lead_status,
+                'lead_type'     => $l->lead_type,
+                'created_at'    => $l->created_at,
+            ];
+        })->values()->toArray();
+
+        // ── 3. Status breakdown ───────────────────────────────────────────────
+        $statusBreakdown = DB::connection($conn)->table('crm_leads')
+            ->where('assigned_to', $agentId)
+            ->where('is_deleted', 0)
+            ->selectRaw("lead_status AS status, COUNT(id) AS count")
+            ->groupBy('lead_status')
+            ->orderByDesc('count')
+            ->get()
+            ->map(fn ($r) => ['status' => $r->status, 'count' => (int) $r->count])
+            ->values()
+            ->toArray();
+
+        // ── 4. Monthly trend (last 6 months) ─────────────────────────────────
+        $monthlyTrend = DB::connection($conn)->table('crm_leads')
+            ->selectRaw("DATE_FORMAT(created_at, '%Y-%m') AS month, COUNT(id) AS leads")
+            ->where('assigned_to', $agentId)
+            ->where('is_deleted', 0)
+            ->where('created_at', '>=', now()->subMonths(6)->startOfMonth())
+            ->groupByRaw("DATE_FORMAT(created_at, '%Y-%m')")
+            ->orderBy('month')
+            ->get()
+            ->map(fn ($r) => ['month' => $r->month, 'leads' => (int) $r->leads])
+            ->values()
+            ->toArray();
+
+        // ── 5. Recent activity (last 15 by this agent) ───────────────────────
+        $recentActivity = DB::connection($conn)->table('crm_lead_activity')
+            ->where('user_id', $agentId)
+            ->select('id', 'lead_id', 'activity_type', 'subject', 'created_at')
+            ->orderByDesc('created_at')
+            ->limit(15)
+            ->get()
+            ->map(fn ($r) => [
+                'id'            => (int) $r->id,
+                'lead_id'       => (int) $r->lead_id,
+                'activity_type' => $r->activity_type,
+                'subject'       => $r->subject,
+                'created_at'    => $r->created_at,
+            ])
+            ->values()
+            ->toArray();
+
+        // ── 6. Scheduled tasks ───────────────────────────────────────────────
+        $sb = DB::connection($conn)->getSchemaBuilder();
+        $tasks = ['today' => [], 'overdue' => [], 'upcoming' => []];
+
+        if ($sb->hasTable('crm_scheduled_task')) {
+            $allTasks = DB::connection($conn)->table('crm_scheduled_task')
+                ->where('user_id', $agentId)
+                ->where('is_sent', 0)
+                ->where('date', '<=', now()->addDays(7)->toDateString())
+                ->orderBy('date')
+                ->orderBy('time')
+                ->limit(30)
+                ->get();
+
+            $todayStr = now()->toDateString();
+            foreach ($allTasks as $t) {
+                $item = [
+                    'id'        => (int) $t->id,
+                    'lead_id'   => (int) $t->lead_id,
+                    'task_name' => $t->task_name,
+                    'date'      => $t->date,
+                    'time'      => $t->time,
+                    'notes'     => $t->notes,
+                ];
+                if ($t->date < $todayStr) {
+                    $tasks['overdue'][] = $item;
+                } elseif ($t->date === $todayStr) {
+                    $tasks['today'][] = $item;
+                } else {
+                    $tasks['upcoming'][] = $item;
+                }
+            }
+        }
+
+        return $this->successResponse('Agent dashboard data retrieved.', [
+            'summary'          => $summary,
+            'recent_leads'     => $recentLeads,
+            'status_breakdown' => $statusBreakdown,
+            'monthly_trend'    => $monthlyTrend,
+            'recent_activity'  => $recentActivity,
+            'tasks'            => $tasks,
+        ]);
     }
 }

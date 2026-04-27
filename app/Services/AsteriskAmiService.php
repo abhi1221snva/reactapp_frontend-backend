@@ -163,6 +163,106 @@ class AsteriskAmiService
     }
 
     /**
+     * List ConfBridge participants and kick every channel whose name does NOT
+     * contain the agent's extension. This hangs up the customer while keeping
+     * the agent connected.
+     *
+     * Falls back to kickAll if the listing fails.
+     */
+    public function confbridgeKickNonAgent(string $confRoom, int $agentExt): void
+    {
+        $agentStr = (string) $agentExt;
+
+        // Step 1: List ALL active conferences to diagnose naming
+        $aid1 = 'cball_' . uniqid('', true);
+        $this->sendRaw([
+            'Action'   => 'Command',
+            'ActionID' => $aid1,
+            'Command'  => 'confbridge list',
+        ]);
+        $allConfs = $this->readCommandOutput();
+        error_log("confbridgeKickNonAgent: ALL conferences: " . str_replace("\n", ' | ', trim($allConfs)));
+
+        // Step 2: Try to list the specific room
+        $aid2 = 'cbroom_' . uniqid('', true);
+        $this->sendRaw([
+            'Action'   => 'Command',
+            'ActionID' => $aid2,
+            'Command'  => "confbridge list {$confRoom}",
+        ]);
+        $roomOutput = $this->readCommandOutput();
+        error_log("confbridgeKickNonAgent: room={$confRoom} output: " . str_replace("\n", ' | ', trim($roomOutput)));
+
+        // Step 3: Parse channel names and kick non-agent
+        $kicked = false;
+        foreach (explode("\n", $roomOutput) as $line) {
+            $line = trim($line);
+            if (preg_match('/^(PJSIP\/\S+|SIP\/\S+|Local\/\S+|CBAnn\/\S+)/', $line, $m)) {
+                $ch = $m[1];
+                if (!str_contains($ch, $agentStr) && !str_starts_with($ch, 'CBAnn/')) {
+                    error_log("confbridgeKickNonAgent: kicking customer channel={$ch}");
+                    $this->hangup($ch);
+                    $kicked = true;
+                }
+            }
+        }
+
+        // Step 4: If specific room not found, try finding agent channel across all
+        // conferences and kick other participants from same conference
+        if (!$kicked && $allConfs) {
+            error_log("confbridgeKickNonAgent: room not found, scanning all conferences for agent ext {$agentExt}");
+            // Parse conference names from "confbridge list" output
+            if (preg_match_all('/^(\S+)\s+/m', $allConfs, $confNames)) {
+                foreach ($confNames[1] as $name) {
+                    if ($name === 'Conference' || str_starts_with($name, '=')) continue;
+                    $aid = 'cbscan_' . uniqid('', true);
+                    $this->sendRaw([
+                        'Action'   => 'Command',
+                        'ActionID' => $aid,
+                        'Command'  => "confbridge list {$name}",
+                    ]);
+                    $scan = $this->readCommandOutput();
+                    if (str_contains($scan, $agentStr)) {
+                        error_log("confbridgeKickNonAgent: found agent in conference={$name}");
+                        foreach (explode("\n", $scan) as $sline) {
+                            $sline = trim($sline);
+                            if (preg_match('/^(PJSIP\/\S+|SIP\/\S+)/', $sline, $sm)) {
+                                if (!str_contains($sm[1], $agentStr)) {
+                                    error_log("confbridgeKickNonAgent: kicking channel={$sm[1]} from conference={$name}");
+                                    $this->hangup($sm[1]);
+                                    $kicked = true;
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!$kicked) {
+            error_log("confbridgeKickNonAgent: FAILED — could not find customer channel to kick");
+        }
+    }
+
+    /**
+     * Read output from an AMI Command action until --END COMMAND--.
+     */
+    protected function readCommandOutput(): string
+    {
+        $output = '';
+        $deadline = microtime(true) + 3;
+        while (microtime(true) < $deadline) {
+            $line = @fgets($this->socket, 4096);
+            if ($line === false) break;
+            $line = rtrim($line, "\r\n");
+            if ($line === '--END COMMAND--') break;
+            $output .= $line . "\n";
+        }
+        return $output;
+    }
+
+    /**
      * Send a raw AMI action packet.
      * $action is an associative array; duplicate keys are supported by passing
      * an array as value (e.g., 'Variable' => ['K=V', 'K2=V2']).

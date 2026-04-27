@@ -16,7 +16,7 @@ class ExtensionLive extends Model
     public $timestamps = false;
     protected $primaryKey = 'extension';
     public $incrementing = false;
-    protected $keyType = 'int';
+    protected $keyType = 'string';
 
     protected $table = 'extension_live';
 
@@ -30,6 +30,7 @@ class ExtensionLive extends Model
         'transfer_status',
         'conf_room',
         'customer_channel',
+        'call_started_at',
     ];
 
     protected $casts = [
@@ -57,12 +58,13 @@ class ExtensionLive extends Model
         return $query->updateOrCreate(
             ['extension' => $extension],
             [
-                'status'      => 1,
-                'channel'     => $channel,
-                'campaign_id' => $campaignId,
-                'lead_id'     => $leadId,
-                'call_status' => $callStatus,
-                'conf_room'   => $confRoom,
+                'status'          => 1,
+                'channel'         => $channel,
+                'campaign_id'     => $campaignId,
+                'lead_id'         => $leadId,
+                'call_status'     => $callStatus,
+                'conf_room'       => $confRoom,
+                'call_started_at' => null,  // set later when call is actually bridged
             ]
         );
     }
@@ -83,6 +85,7 @@ class ExtensionLive extends Model
             'transfer_status'  => null,
             'conf_room'        => null,
             'customer_channel' => null,
+            'call_started_at'  => null,
         ]);
     }
 }

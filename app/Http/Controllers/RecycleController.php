@@ -397,4 +397,19 @@ class RecycleController extends Controller
         $response = $this->model->getRecycleRule($this->request);
         return response()->json($response);
     }
+
+    /**
+     * Bulk soft-delete recycle rules (set is_deleted = 1).
+     * Expects { "ids": [1, 2, 3] }
+     */
+    public function bulkDeleteRecycleRules()
+    {
+        $this->validate($this->request, [
+            'ids'   => 'required|array|min:1',
+            'ids.*' => 'integer',
+        ]);
+
+        $response = $this->model->bulkDeleteRecycleRules($this->request);
+        return response()->json($response);
+    }
 }

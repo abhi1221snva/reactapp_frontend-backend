@@ -421,6 +421,7 @@ class DialerController extends Controller
      */
     public function campaignDialNext()
     {
+        try {
         $this->validate($this->request, [
             'campaign_id' => 'required|numeric',
         ]);
@@ -619,9 +620,10 @@ class DialerController extends Controller
                 foreach ($headers as $h) {
                     $col = $h->column_name;
                     $fields[] = [
-                        'label'      => $h->display_name ?? $col,
-                        'value'      => $leadRow->$col ?? '',
-                        'is_dialing' => $h->is_dialing ?? 0,
+                        'label'       => $h->header ?? $col,
+                        'value'       => $leadRow->$col ?? '',
+                        'column_name' => $col,
+                        'is_dialing'  => $h->is_dialing ?? 0,
                     ];
                 }
             }
@@ -648,6 +650,14 @@ class DialerController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Originate failed: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        } catch (\Throwable $outerEx) {
+            error_log("campaignDialNext FATAL: " . $outerEx->getMessage() . " in " . $outerEx->getFile() . ":" . $outerEx->getLine() . "\n" . $outerEx->getTraceAsString());
+            return response()->json([
+                'success' => false,
+                'message' => 'Internal error: ' . $outerEx->getMessage(),
             ], 500);
         }
     }

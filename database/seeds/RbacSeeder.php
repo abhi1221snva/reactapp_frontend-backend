@@ -98,6 +98,7 @@ class RbacSeeder extends Seeder
             ['key' => 'crm.email_templates', 'name' => 'Email Templates',   'engine' => 'crm', 'url_patterns' => json_encode(['crm-email-template','crm-add-email-template','crm-change-email-template-status','crm-delete-email-template'])],
             ['key' => 'crm.sms_templates','name' => 'SMS Templates',        'engine' => 'crm', 'url_patterns' => json_encode(['crm-sms-template','crm-add-sms-template','crm-change-sms-template-status','crm-delete-sms-template'])],
             ['key' => 'crm.pdf_templates','name' => 'PDF Templates',        'engine' => 'crm', 'url_patterns' => json_encode(['crm-custom-template','crm-add-custom-template','crm-change-custom-template-status','crm-delete-custom-template','crm/pdf'])],
+            ['key' => 'crm.pdf_reader',  'name' => 'PDF Reader Settings',  'engine' => 'crm', 'url_patterns' => json_encode(['pdf-reader-setting','update-pdf-reader','upload-pdf-reader'])],
             ['key' => 'crm.lenders',      'name' => 'Lenders',              'engine' => 'crm', 'url_patterns' => json_encode(['lenders','lender/','lender','delete-lender','change-lender-status','crm-lender-apis'])],
             ['key' => 'crm.lender_api',   'name' => 'Lender API Logs',      'engine' => 'crm', 'url_patterns' => json_encode(['crm/lender-api'])],
             ['key' => 'crm.email_settings','name' => 'Email Settings',      'engine' => 'crm', 'url_patterns' => json_encode(['crm/email-settings','crm-email-setting','update-crm-email-setting'])],
@@ -131,12 +132,13 @@ class RbacSeeder extends Seeder
             'core.dashboard', 'core.dialer', 'profile', 'chat', 'users',
             'sms',
             'crm.dashboard', 'crm.leads', 'crm.sms_inbox', 'gmail', 'calendar',
+            'crm.pdf_reader',
         ];
 
         $level5 = array_merge($level1, [ // manager
             'leads', 'labels', 'lists', 'lead_activity', 'reports', 'voicemail',
             'crm.lead_fields', 'crm.lead_status',
-            'crm.email_templates', 'crm.sms_templates', 'crm.pdf_templates',
+            'crm.email_templates', 'crm.sms_templates', 'crm.pdf_templates', 'crm.pdf_reader',
             'crm.lenders', 'crm.lender_api',
             'crm.email_settings', 'crm.document_types',
             'crm.company', 'crm.affiliate',
@@ -295,6 +297,7 @@ class RbacSeeder extends Seeder
         $items[] = $this->item('crm', 'TEMPLATE MANAGEMENT', '/crm/email-templates', 'Email Templates', 'Mail',          'crm.email_templates', 5, ++$order);
         $items[] = $this->item('crm', 'TEMPLATE MANAGEMENT', '/crm/sms-templates',   'SMS Templates',   'MessageSquare', 'crm.sms_templates',   5, ++$order);
         $items[] = $this->item('crm', 'TEMPLATE MANAGEMENT', '/crm/pdf-templates',   'PDF Templates',   'FileText',      'crm.pdf_templates',   5, ++$order);
+        $items[] = $this->item('crm', 'TEMPLATE MANAGEMENT', '/crm/pdf-reader-settings', 'PDF Reader Settings', 'ScanSearch', 'crm.pdf_reader', 5, ++$order);
 
         // SETTINGS (CRM)
         $items[] = $this->item('crm', 'SETTINGS', '/crm/email-settings',  'Email Settings',  'Mail', 'crm.email_settings',  5, ++$order);

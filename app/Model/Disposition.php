@@ -443,10 +443,10 @@ public function dispositionUpdate($request)
                     ->exists();
 
                    if ($assigned) {
-                        return [
-                            'success' => 'false',
+                        return response()->json([
+                            'success' => false,
                             'message' => 'Disposition is assigned to a campaign and cannot be deleted.'
-                        ];
+                        ], 422);
                     }
 
                 $isDeleting = true;

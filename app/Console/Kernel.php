@@ -43,6 +43,7 @@ use App\Console\Commands\SendScheduledReminders;
 use App\Console\Commands\MissedCallNotificationCron;
 use App\Console\Commands\AutoClockoutCommand;
 use App\Console\Commands\ProvisionClientCommand;
+use App\Console\Commands\SyncPjsipRealtimeCommand;
 use Illuminate\Console\Scheduling\Schedule;
 use Laravel\Lumen\Console\Kernel as ConsoleKernel;
 
@@ -103,6 +104,8 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\EncryptTotpSecrets::class,
         \App\Console\Commands\CleanAuthEvents::class,
         \App\Console\Commands\CleanExpiredRefreshTokens::class,
+        \App\Console\Commands\RenewGmailWatchesCommand::class,
+        SyncPjsipRealtimeCommand::class,
     ];
 
     /**
@@ -199,6 +202,9 @@ class Kernel extends ConsoleKernel
 
         // Refresh token cleanup
         $schedule->command('auth:clean-refresh-tokens')->dailyAt('03:45')->name('refresh-token-cleanup')->withoutOverlapping();
+
+        // Gmail push-notification watch renewal (watches expire every ~7 days)
+        $schedule->command('gmail:renew-watches')->dailyAt('02:00')->name('gmail-watch-renewal')->withoutOverlapping();
     }
 
 }

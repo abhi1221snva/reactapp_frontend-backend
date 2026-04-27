@@ -52,6 +52,14 @@ class LeadEavService
         'loan_amount', 'temperature',
     ];
 
+    /** System columns stored on crm_leads — must never be saved into crm_lead_values. */
+    private const SYSTEM_COLS = [
+        'lead_status', 'lead_type', 'assigned_to', 'created_by', 'updated_by',
+        'lead_source_id', 'lead_parent_id', 'score', 'is_deleted',
+        'group_id', 'opener_id', 'closer_id', 'is_copied', 'copy_lead_id',
+        'id', 'unique_token', 'lead_token', 'unique_url', 'created_at', 'updated_at', 'deleted_at',
+    ];
+
     /**
      * Upsert dynamic field values and return detected changes.
      *
@@ -73,16 +81,17 @@ class LeadEavService
                 ->pluck('field_key')
                 ->toArray();
 
-            $fieldKeys = array_unique(array_merge(self::CORE_FIELDS, $configuredKeys));
+            $fieldKeys = array_diff(
+                array_unique(array_merge(self::CORE_FIELDS, $configuredKeys)),
+                self::SYSTEM_COLS
+            );
 
             // Load current EAV values for this lead
-            $currentValues = [];
-            $rows = DB::connection($conn)
+            $currentValues = DB::connection($conn)
                 ->table('crm_lead_values')
                 ->where('lead_id', $leadId)
                 ->pluck('field_value', 'field_key')
                 ->toArray();
-            $currentValues = $rows;
 
             $now = Carbon::now();
 
@@ -146,7 +155,11 @@ class LeadEavService
                 ->toArray();
 
             // Always include core fields in addition to configured crm_labels fields
-            $fieldKeys = array_unique(array_merge(self::CORE_FIELDS, $configuredKeys));
+            // Exclude system columns — they live on crm_leads, not in EAV
+            $fieldKeys = array_diff(
+                array_unique(array_merge(self::CORE_FIELDS, $configuredKeys)),
+                self::SYSTEM_COLS
+            );
 
             $now = Carbon::now();
 

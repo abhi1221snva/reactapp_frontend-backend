@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Services\TenantStorageService;
 use App\Services\SystemChannelService;
 use App\Services\LeadChangeTracker;
+use App\Model\Client\CrmMerchantPortal;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -420,6 +421,20 @@ class PublicApplicationService
         DB::connection($conn)->table('crm_leads')
             ->where('id', $leadId)
             ->update(['unique_url' => $merchantUrl]);
+
+        // Create merchant portal record so link is always available in CRM
+        try {
+            $portal = new CrmMerchantPortal();
+            $portal->setConnection($conn);
+            $portal->lead_id   = $leadId;
+            $portal->client_id = $clientId;
+            $portal->token     = $leadToken;
+            $portal->url       = $merchantUrl;
+            $portal->status    = 1;
+            $portal->save();
+        } catch (\Throwable $e) {
+            \Log::warning("[PublicApp createLead] merchant portal record failed: " . $e->getMessage());
+        }
 
         \Log::info('[PublicApp createLead] merchant_url generated', [
             'client_id' => $clientId,

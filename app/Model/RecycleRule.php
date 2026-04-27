@@ -813,6 +813,37 @@ public function editRecycleRule1($request)
         ];
     }
 }
+    /**
+     * Bulk soft-delete recycle rules by an array of IDs.
+     */
+    public function bulkDeleteRecycleRules($request)
+    {
+        try {
+            $ids = $request->input('ids');
+            $parentConn = 'mysql_' . $request->auth->parent_id;
+
+            $affected = DB::connection($parentConn)
+                ->table('recycle_rule')
+                ->whereIn('id', $ids)
+                ->where('is_deleted', 0)
+                ->update([
+                    'is_deleted' => 1,
+                    'updated_at' => Carbon::now(),
+                ]);
+
+            return [
+                'success' => 'true',
+                'message' => $affected . ' recycle rule(s) deleted successfully.',
+                'data'    => $affected,
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'success' => 'false',
+                'message' => 'Error: ' . $e->getMessage(),
+            ];
+        }
+    }
+
     public function deleteLeadRule($request)
     {
         try {

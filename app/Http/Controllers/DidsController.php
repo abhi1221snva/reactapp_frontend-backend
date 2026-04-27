@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Model\Dids;
 use App\Model\Client\Did;
+use App\Services\PjsipRealtimeService;
 use App\Model\Client\UploadHistoryDid;
 use App\Model\Client\CallTimings;
 use App\Model\Client\Departments;
@@ -2190,6 +2191,9 @@ foreach ($local as $list) {
                 webrtc= :webrtc";
 
                     $record_ustextSav = DB::connection('master')->select($insertData, $dt);
+
+                    // Sync DID app extension to PJSIP realtime tables
+                    PjsipRealtimeService::syncExtension($app_extension, $dt['secret'], $dt['context'], $dt['fullname']);
                     //echo "no-".$app_extension.'<br>';
                 }
             }

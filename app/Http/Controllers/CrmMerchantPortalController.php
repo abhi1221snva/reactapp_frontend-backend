@@ -80,7 +80,27 @@ class CrmMerchantPortalController extends Controller
                 ->first();
 
             if (!$portal) {
-                return $this->failResponse("No active merchant portal found for this lead", [], null, 404);
+                // Auto-create from existing crm_leads.lead_token (covers leads created before portal table existed)
+                $lead = CrmLeadRecord::on("mysql_$clientId")->find($id);
+                if (!$lead || empty($lead->lead_token)) {
+                    return $this->failResponse("No active merchant portal found for this lead", [], null, 404);
+                }
+
+                $url = $this->getPortalBaseUrl($clientId) . '/merchant/customer/app/index/' . $clientId . '/' . $id . '/' . $lead->lead_token;
+
+                $portal = new CrmMerchantPortal();
+                $portal->setConnection("mysql_$clientId");
+                $portal->lead_id   = $id;
+                $portal->client_id = $clientId;
+                $portal->token     = $lead->lead_token;
+                $portal->url       = $url;
+                $portal->status    = 1;
+                $portal->save();
+
+                // Sync crm_leads fields
+                $lead->unique_token = $lead->lead_token;
+                $lead->unique_url   = $url;
+                $lead->save();
             }
 
             // Always ensure portal token is indexed in master map (idempotent)

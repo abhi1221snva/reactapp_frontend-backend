@@ -22,6 +22,7 @@ use App\Model\Master\VoiceAi;
 
 use Plivo\RestClient;
 
+use App\Services\PjsipRealtimeService;
 use App\Services\RolesService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
@@ -2594,6 +2595,13 @@ public function assignableRolesNew(Request $request)
             ->where('name', $altExtension)
             ->update(['secret' => $newPassword]);
 
+        // Sync PJSIP realtime passwords
+        if ($extension) {
+            PjsipRealtimeService::syncPassword($extension, $newPassword);
+        }
+        if ($altExtension) {
+            PjsipRealtimeService::syncPassword($altExtension, $newPassword);
+        }
 
         // Password updated successfully
         return response()->json(['message' => 'Password updated successfully']);
@@ -2845,6 +2853,13 @@ public function assignableRolesNew(Request $request)
             ->where('name', $altExtension)
             ->update(['secret' => $newPassword]);
 
+        // Sync PJSIP realtime passwords
+        if ($extension) {
+            PjsipRealtimeService::syncPassword($extension, $newPassword);
+        }
+        if ($altExtension) {
+            PjsipRealtimeService::syncPassword($altExtension, $newPassword);
+        }
 
         // Password updated successfully
         return response()->json(['message' => 'Password updated successfully']);

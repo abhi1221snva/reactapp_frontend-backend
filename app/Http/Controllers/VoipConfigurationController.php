@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Model\Master\VoipConfiguration;
+use App\Services\PjsipRealtimeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -200,6 +201,9 @@ class VoipConfigurationController extends Controller
         $insertData = "INSERT INTO user_extensions SET  disallow=:disallow, allow=:allow, context= :context, username=:username, host=:host, name= :name, nat= :nat , secret= :secret, fullname= :fullname";
         $record_ustextSav = DB::connection('master')->select($insertData, $dt);
 
+        // Sync PJSIP realtime after VoIP extension create
+        PjsipRealtimeService::syncExtension($dt['username'], $dt['secret'], $dt['context'], $dt['fullname']);
+
         $lastInsertId = DB::connection('master')->selectOne("SELECT * FROM user_extensions ORDER BY id DESC");
         $lastId = $lastInsertId->id;
 
@@ -394,6 +398,11 @@ class VoipConfigurationController extends Controller
 
             $insertData = "UPDATE user_extensions SET username= :username , host= :host,name=:name, secret=:secret,fullname=:fullname WHERE id= :id ";
             $record_ustext = DB::connection('master')->select($insertData, $dt);
+
+            // Sync PJSIP realtime after VoIP extension update
+            if (!empty($dt['secret'])) {
+                PjsipRealtimeService::syncPassword($dt['username'], $dt['secret']);
+            }
 
             $voip_configuration = VoipConfiguration::on("master")->findOrFail($id);
             $voip_configuration->name = $name . '_' . $request->auth->parent_id . '_' . $dt['id'];

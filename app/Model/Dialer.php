@@ -1001,6 +1001,14 @@ class Dialer extends Model
                             $dialer_mode
                         );
                        if ($response["status"] === false) {
+                        // No leads in hopper is not a login failure — agent is registered, just no lead to assign yet
+                        if (($response["code"] ?? '') === 'NO_LEADS') {
+                            return response()->json([
+                                'success' => true,
+                                'message' => 'You are logged in successfully. No leads available in hopper — waiting for leads.',
+                                'warning' => 'NO_LEADS',
+                            ], 200);
+                        }
                         return response()->json([
                             'success' => false,
                             'message' => $response["message"]
@@ -1042,6 +1050,13 @@ class Dialer extends Model
                         $dialer_mode
                     );
                     if ($response["status"] === false) {
+                        if (($response["code"] ?? '') === 'NO_LEADS') {
+                            return response()->json([
+                                'success' => true,
+                                'message' => 'You are logged in successfully. No leads available in hopper — waiting for leads.',
+                                'warning' => 'NO_LEADS',
+                            ], 200);
+                        }
                         return response()->json([
                             'success' => false,
                             'message' => $response["message"]
@@ -1057,9 +1072,37 @@ class Dialer extends Model
                         'message' => 'You are already in call. Lead Id: ' . $getExtensionLive['lead_id']
                     );
                 } else {
+                    // Inconsistent state: non-idle status but no lead_id — treat as idle and allow re-login
+                    Log::warning("extensionLogin: stale extension_live row (status={$getExtensionLive['status']}, no lead_id) for ext={$extension}, resetting to idle");
+                    $sql = "UPDATE extension_live SET status = :status, lead_id = null, campaign_id = :campaign_id WHERE extension = :extension";
+                    DB::connection('mysql_' . $request->auth->parent_id)->update($sql, array('extension' => $extension, 'status' => '0', 'campaign_id' => $request->input('campaign_id')));
+                    $this->getLeadCountInTemp($request->input('campaign_id'), $request->auth->parent_id);
+                    $modeType = $this->getHopperModeInCampaign($request->input('campaign_id'), $request->auth->parent_id);
+                    $response = $this->addLeadToExtensionLive(
+                        $request->input('campaign_id'),
+                        $modeType['hopper_mode'],
+                        $extension,
+                        $request->auth->asterisk_server_id,
+                        $request->auth->parent_id,
+                        $request->auth->id,
+                        $dialer_mode
+                    );
+                    if ($response["status"] === false) {
+                        if (($response["code"] ?? '') === 'NO_LEADS') {
+                            return response()->json([
+                                'success' => true,
+                                'message' => 'You are logged in successfully. No leads available in hopper — waiting for leads.',
+                                'warning' => 'NO_LEADS',
+                            ], 200);
+                        }
+                        return response()->json([
+                            'success' => false,
+                            'message' => $response["message"]
+                        ], 402);
+                    }
                     return array(
-                        'success' => false,
-                        'message' => 'You are already in call'
+                        'success' => $response["status"],
+                        'message' => 'You are logged in successfully. ' . $response["message"]
                     );
                 }
             }
@@ -1245,9 +1288,60 @@ class Dialer extends Model
 
         /*close new code implement*/
 
-        // WebRTC mode (dialer_mode=2): the browser SIP stack already terminated the call.
-        // No Asterisk AMI hangup is needed — return success immediately.
+        // WebRTC mode (dialer_mode=2): the browser SIP stack handles its own leg.
+        // We still need AMI to tear down the ConfBridge / customer channel.
         if ($dialer_mode == 2) {
+            $clientId = $request->auth->parent_id;
+            $db       = "mysql_{$clientId}";
+            $campaignId = (int) $request->input('id');
+
+            try {
+                // status: 1=active, 3=paused — both are "in a call"
+                $live = ExtensionLive::on($db)
+                    ->where('extension', $extension)
+                    ->whereIn('status', [1, 3])
+                    ->first();
+
+                // Kick the entire conference (End Session = tear down everything)
+                if ($live && $live->conf_room) {
+                    try {
+                        $ami = new \App\Services\AsteriskAmiService();
+                        $ami->connectForClient($clientId);
+                        $ami->confbridgeKickAll($live->conf_room);
+                        $ami->disconnect();
+                    } catch (\Throwable $e) {
+                        Log::warning('AMI confbridge kickall failed during WebRTC hang-up: ' . $e->getMessage());
+                    }
+                }
+
+                // Dispatch CDR write + extension_live cleanup to queue
+                // so the HTTP response returns immediately.
+                if ($live && $live->lead_id) {
+                    dispatch(new \App\Jobs\WriteHangupCdrJob(
+                        $clientId,
+                        $extension,
+                        $campaignId,
+                        (int) $live->lead_id,
+                        $live->conf_room ?? '',
+                        $live->call_started_at
+                    ));
+                } else {
+                    // No lead — just clear extension_live inline (fast single update)
+                    ExtensionLive::on($db)
+                        ->where('extension', $extension)
+                        ->update([
+                            'status'           => 0,
+                            'lead_id'          => null,
+                            'customer_channel' => null,
+                        ]);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('CDR write failed during WebRTC hang-up: ' . $e->getMessage(), [
+                    'extension' => $extension,
+                    'client_id' => $clientId,
+                ]);
+            }
+
             return array(
                 'success' => true,
                 'message' => 'Hang up successful (WebRTC)',
@@ -1704,6 +1798,7 @@ public function getLead(int $parentId, int $extension)
             $data[] = [
                 "label" => $title,
                 "value" => $listData[$header->column_name] ?? null,
+                "column_name" => $header->column_name,
                 "is_dialing" => $header->is_dialing,
                 "is_visible" => $header->is_visible,
                 "is_editable" => $header->is_editable,

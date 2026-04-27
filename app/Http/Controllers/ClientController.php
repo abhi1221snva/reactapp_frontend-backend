@@ -36,6 +36,7 @@ use App\Services\SmsService;
 use App\Services\MailService;
 use App\Model\Client\SmtpSetting;
 use App\Model\Client\SmsProviders;
+use App\Services\PjsipRealtimeService;
 use Illuminate\Support\Facades\DB;
 use App\Mail\SystemNotificationMail;
 use Twilio\Rest\Client as TwilioClient;
@@ -878,6 +879,11 @@ class ClientController extends Controller
 
                 $insertData = "UPDATE user_extensions SET username= :username , host= :host,name=:name, secret=:secret,fullname=:fullname WHERE id= :id ";
                 $record_ustext = DB::connection('master')->select($insertData, $dt);
+
+                // Sync PJSIP realtime after client extension update
+                if (!empty($dt['secret'])) {
+                    PjsipRealtimeService::syncPassword($dt['username'], $dt['secret']);
+                }
             } else {
                 $dt['disallow'] = 'all';
                 $dt['allow'] = 'ulaw;alaw;gsm;g729';
@@ -899,6 +905,9 @@ class ClientController extends Controller
 
                 $insertData = "INSERT INTO user_extensions SET  disallow=:disallow, allow=:allow, context= :context, username=:username, host=:host, name= :name, nat= :nat , secret= :secret, fullname= :fullname";
                 $record_ustextSav = DB::connection('master')->select($insertData, $dt);
+
+                // Sync PJSIP realtime after client extension create
+                PjsipRealtimeService::syncExtension($dt['username'], $dt['secret'], $dt['context'], $dt['fullname']);
 
                 $lastInsertId = DB::connection('master')->selectOne("SELECT * FROM user_extensions ORDER BY id DESC");
                 $lastId = $lastInsertId->id;
@@ -982,6 +991,9 @@ class ClientController extends Controller
 
             $insertData = "INSERT INTO user_extensions SET  disallow=:disallow, allow=:allow, context= :context, username=:username, host=:host, name= :name, nat= :nat , secret= :secret, fullname= :fullname";
             $record_ustextSav = DB::connection('master')->select($insertData, $dt);
+
+            // Sync PJSIP realtime after new provider extension create
+            PjsipRealtimeService::syncExtension($dt['username'], $dt['secret'], $dt['context'], $dt['fullname']);
 
             $lastInsertId = DB::connection('master')->selectOne("SELECT * FROM user_extensions ORDER BY id DESC");
             $lastId = $lastInsertId->id;

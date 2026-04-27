@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Jobs\MerchantNotificationJob;
 use App\Services\PublicApplicationService;
 use App\Services\LeadPdfService;
+use App\Services\ActivityService;
 use App\Services\FieldValidationService;
 use App\Services\LeadValidationService;
+use App\Services\CrmLeadDuplicateCheckService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -166,8 +168,30 @@ class PublicApplicationController extends Controller
                 ], 422);
             }
 
+            // Duplicate lead check (phone, email, business name)
+            $dupErrors = CrmLeadDuplicateCheckService::forClient($clientId)->check($request->all());
+            if (!empty($dupErrors)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Duplicate lead detected.',
+                    'errors'  => $dupErrors,
+                ], 422);
+            }
+
             $formData = $request->except(['_token', '_method']);
             $result   = $this->svc->createLead($clientId, $user, $formData);
+
+            // Log affiliate submission activity
+            try {
+                ActivityService::log(
+                    (string) $clientId, $result['lead_id'],
+                    'lead_created',
+                    'New application submitted via affiliate link',
+                    null,
+                    ['source' => 'affiliate_portal', 'affiliate_code' => $code],
+                    $user->id ?? 0, 'api'
+                );
+            } catch (\Throwable $ignored) {}
 
             return response()->json([
                 'success'       => true,
@@ -203,7 +227,8 @@ class PublicApplicationController extends Controller
 
             return response($html, 200)
                 ->header('Content-Type', 'text/html; charset=UTF-8')
-                ->header('X-Frame-Options', 'SAMEORIGIN');
+                ->header('X-Frame-Options', 'SAMEORIGIN')
+                ->header('Cache-Control', 'no-store');
         } catch (\RuntimeException $e) {
             return response('<h1>Not Found</h1><p>' . htmlspecialchars($e->getMessage()) . '</p>', 404)
                 ->header('Content-Type', 'text/html');
@@ -258,7 +283,8 @@ class PublicApplicationController extends Controller
 
             return response($result['html'], 200)
                 ->header('Content-Type', 'text/html; charset=UTF-8')
-                ->header('X-Frame-Options', 'SAMEORIGIN');
+                ->header('X-Frame-Options', 'SAMEORIGIN')
+                ->header('Cache-Control', 'no-store');
         } catch (\RuntimeException $e) {
             $code = $e->getCode() ?: 400;
             return response('<h1>' . ($code === 404 ? 'Not Found' : 'Error') . '</h1><p>' . htmlspecialchars($e->getMessage()) . '</p>', $code)
@@ -288,7 +314,29 @@ class PublicApplicationController extends Controller
                 ], 422);
             }
 
+            // Duplicate lead check — only on changed identity fields
+            $dupErrors = CrmLeadDuplicateCheckService::forClient($clientId)->checkChanged($lead->id, $request->all());
+            if (!empty($dupErrors)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Duplicate lead detected.',
+                    'errors'  => $dupErrors,
+                ], 422);
+            }
+
             $this->svc->updateMerchantLead($lead, $clientId, $request->all());
+
+            // Log summary activity for merchant form save
+            try {
+                ActivityService::log(
+                    (string) $clientId, $lead->id,
+                    'field_update',
+                    'Merchant updated application fields via portal',
+                    null,
+                    ['source' => 'merchant_portal'],
+                    0, 'api'
+                );
+            } catch (\Throwable $ignored) {}
 
             // Re-generate the application PDF if a signature already exists
             try {
@@ -506,12 +554,15 @@ class PublicApplicationController extends Controller
                 ? "{$base}/public/lead/{$token2}/signature2"
                 : "{$base}/public/lead/{$token2}/signature";
 
+            // Update signature date to current timestamp in agent's timezone
+            // (outside PDF try-catch so date always updates even if PDF generation fails)
+            try {
+                $this->updateSignatureDates("mysql_{$clientId}", $lead->id, $clientId);
+            } catch (\Throwable $ignored) {}
+
             // Auto-generate the application PDF and register it as a CRM document
             $pdfUrl = null;
             try {
-                // Update signature date to current timestamp in agent's timezone
-                $this->updateSignatureDates("mysql_{$clientId}", $lead->id, $clientId);
-
                 $pdfResult = $this->pdfSvc->renderPdfBinary($clientId, $lead->id);
                 $pdfBinary = $pdfResult['pdf'];
                 $pdfFileName = $pdfResult['filename'];
@@ -569,6 +620,20 @@ class PublicApplicationController extends Controller
                     'error'     => $pdfErr->getMessage(),
                 ]);
             }
+
+            // Log signature save activity
+            try {
+                ActivityService::log(
+                    (string) $clientId, $lead->id,
+                    'system',
+                    $field === 'owner_2_signature_image'
+                        ? 'Co-applicant signature saved via merchant portal'
+                        : 'Applicant signature saved via merchant portal',
+                    null,
+                    ['source' => 'merchant_portal', 'field' => $field],
+                    0, 'api'
+                );
+            } catch (\Throwable $ignored) {}
 
             // Dispatch merchant notification (non-blocking — failure won't affect response)
             try {
@@ -688,7 +753,25 @@ class PublicApplicationController extends Controller
     {
         try {
             [$lead, $clientId] = $this->svc->resolveLeadToken($token);
+
+            // Fetch doc info before deleting for activity log
+            $conn = "mysql_{$clientId}";
+            $doc  = DB::connection($conn)->table('crm_documents')
+                ->where('id', $docId)->where('lead_id', $lead->id)->first();
+
             $this->svc->deleteLeadDocument($lead, $clientId, $docId);
+
+            // Log document deletion activity
+            try {
+                ActivityService::log(
+                    (string) $clientId, $lead->id,
+                    'system',
+                    'Document deleted via merchant portal: ' . ($doc->file_name ?? "Document #{$docId}"),
+                    null,
+                    ['source' => 'merchant_portal', 'doc_id' => $docId, 'filename' => $doc->file_name ?? null],
+                    0, 'api'
+                );
+            } catch (\Throwable $ignored) {}
 
             return response()->json(['success' => true, 'message' => 'Document deleted.']);
         } catch (\RuntimeException $e) {
@@ -740,6 +823,18 @@ class PublicApplicationController extends Controller
             $file   = $request->file('document');
             $result = $this->svc->storeDocument($lead, $clientId, $file, $request->input('document_type', 'general'));
 
+            // Log document upload activity
+            try {
+                ActivityService::log(
+                    (string) $clientId, $lead->id,
+                    'document_uploaded',
+                    'Document uploaded via merchant portal: ' . $file->getClientOriginalName(),
+                    null,
+                    ['source' => 'merchant_portal', 'doc_type' => $request->input('document_type', 'general'), 'filename' => $file->getClientOriginalName()],
+                    0, 'api'
+                );
+            } catch (\Throwable $ignored) {}
+
             // Dispatch merchant notification (non-blocking)
             try {
                 dispatch(new MerchantNotificationJob($clientId, $lead->id, 'document_upload', [
@@ -765,20 +860,15 @@ class PublicApplicationController extends Controller
             [$lead, $clientId] = $this->svc->resolveLeadToken($token);
 
             // Log activity
-            $conn = "mysql_{$clientId}";
-            $now  = now();
-
-            // Check if crm_lead_activity table exists before inserting
             try {
-                if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_activity')) {
-                    DB::connection($conn)->table('crm_lead_activity')->insert([
-                        'lead_id'     => $lead->id,
-                        'activity'    => 'Merchant submitted the application via portal.',
-                        'performed_by' => null,
-                        'created_at'  => $now,
-                        'updated_at'  => $now,
-                    ]);
-                }
+                ActivityService::log(
+                    (string) $clientId, $lead->id,
+                    'system',
+                    'Merchant submitted the application via portal',
+                    null,
+                    ['source' => 'merchant_portal'],
+                    0, 'api'
+                );
             } catch (\Throwable $ignored) {}
 
             // Dispatch notification

@@ -3141,4 +3141,59 @@ usort($finalLeadArr, function ($a, $b) {
 
         return $list_id;
     }
+
+    /**
+     * Bulk delete multiple lists by array of IDs.
+     * Reuses the same cascading delete logic as the single-list delete in editList().
+     */
+    public function bulkDeleteLists($request)
+    {
+        $ids = $request->input('ids');
+        $parentConn = 'mysql_' . $request->auth->parent_id;
+        $conn = DB::connection($parentConn);
+
+        $deleted = 0;
+        $failed = [];
+
+        foreach ($ids as $listId) {
+            $listId = (int) $listId;
+
+            $listRecord = $conn->selectOne(
+                "SELECT id, title FROM `list` WHERE id = ? LIMIT 1",
+                [$listId]
+            );
+
+            if (!$listRecord) continue;
+
+            $conn->beginTransaction();
+            try {
+                $conn->delete("DELETE FROM campaign_list WHERE list_id = ?", [$listId]);
+                $conn->delete("DELETE FROM list_data WHERE list_id = ?", [$listId]);
+                $conn->delete("DELETE FROM lead_report WHERE list_id = ?", [$listId]);
+                $conn->delete("DELETE FROM lead_temp WHERE list_id = ?", [$listId]);
+                $conn->update("UPDATE list_header SET is_deleted = 1 WHERE list_id = ?", [$listId]);
+
+                $listModel = Lists::on($parentConn)->find($listId);
+                if ($listModel) $listModel->delete();
+
+                $conn->commit();
+                $deleted++;
+            } catch (\Throwable $e) {
+                $conn->rollBack();
+                $failed[] = $listRecord->title ?? "#{$listId}";
+                Log::error("Bulk delete list #{$listId} failed: " . $e->getMessage());
+            }
+        }
+
+        $message = "{$deleted} list(s) deleted successfully.";
+        if (!empty($failed)) {
+            $message .= ' Failed: ' . implode(', ', $failed) . '.';
+        }
+
+        return [
+            'success' => 'true',
+            'message' => $message,
+            'data'    => ['deleted' => $deleted, 'failed' => $failed],
+        ];
+    }
 }

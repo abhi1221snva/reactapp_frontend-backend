@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 
 use App\Model\Master\UserExtension;
 use App\Model\Master\RvmDomainList;
+use App\Services\PjsipRealtimeService;
 use App\Model\Client\Ringless\RinglessCampaign;
 
 
@@ -174,6 +175,9 @@ class SipGatewaysController extends Controller
         $SipGateways->parent_id = $request->auth->parent_id;
         $SipGateways->save();
         $addUserExtension = UserExtension::create($dt);
+
+        // Sync SIP gateway extension to PJSIP realtime tables
+        PjsipRealtimeService::syncExtension($dt['username'], $dt['secret'], $dt['context'], $dt['fullname']);
 
         $rvm_domain['folder_link'] = env('API_URL') . '/upload/ringless_files/'; //3_ivr_1725792548.wav
 
@@ -422,6 +426,8 @@ class SipGatewaysController extends Controller
         try {
             $userExtension = UserExtension::where('name', $gateway->sip_trunk_name)->first();
             if ($userExtension) {
+                // Remove PJSIP realtime records before deleting user_extension
+                PjsipRealtimeService::deleteExtension($userExtension->username ?? $userExtension->name);
                 $userExtension->delete();
             }
 

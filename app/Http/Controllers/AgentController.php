@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 use App\Services\CacheService;
+use App\Services\PjsipRealtimeService;
 
 /**
  * Agent management for client admins.
@@ -575,11 +576,13 @@ class AgentController extends Controller
             DB::connection('master')->table('user_extensions')
                 ->where('username', $agent->extension)
                 ->update(['secret' => $plainPassword, 'updated_at' => Carbon::now()]);
+            PjsipRealtimeService::syncPassword($agent->extension, $plainPassword);
         }
         if ($agent->alt_extension) {
             DB::connection('master')->table('user_extensions')
                 ->where('username', $agent->alt_extension)
                 ->update(['secret' => $plainPassword, 'updated_at' => Carbon::now()]);
+            PjsipRealtimeService::syncPassword($agent->alt_extension, $plainPassword);
         }
 
         // Optionally email the agent their new password

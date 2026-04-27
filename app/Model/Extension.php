@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Hash;
 use App\Model\Master\Client;
+use App\Services\PjsipRealtimeService;
 use Illuminate\Support\Facades\Http;
 
 
@@ -321,18 +322,31 @@ if ($request->auth->level > 5) {
         $orderBy = 'users.extension';
     }
 
+    // Hierarchy-based visibility: each role sees users below their own level.
+    // Level 11 (System Admin)  → sees level < 11 (all except other sysadmins)
+    // Level 9  (Super Admin)   → sees level < 9  (admin, manager, associate, agent)
+    // Level 7  (Admin)         → sees level < 7  (manager, associate, agent)
+    // Level 5  (Manager)       → sees level < 5  (associate, agent)
+    $levelThreshold = (int) $request->auth->level;
+
+    // Optional status filter from frontend (''=all, '0'=inactive, '1'=active)
+    $statusFilter = $request->input('status', '');
+    $statusSql = '';
+    $statusBindings = [];
+    if ($statusFilter !== '' && $statusFilter !== null) {
+        $statusSql = ' AND users.status = ?';
+        $statusBindings = [(int) $statusFilter];
+    }
+
     // ---------- COUNT ----------
     $countSql = "
         SELECT COUNT(*) AS total
         FROM users
         WHERE users.base_parent_id = ?
         AND users.is_deleted = 0
+        $statusSql
         AND (
-            users.status = 0
-            OR users.id = ?
-        )
-        AND (
-            users.user_level < 9
+            users.user_level < ?
             OR users.id = ?
         )
         $searchSql
@@ -340,9 +354,10 @@ if ($request->auth->level > 5) {
 
     $countBindings = [
         $baseParentId,
-        $request->auth->id,
-        $request->auth->id
     ];
+    $countBindings = array_merge($countBindings, $statusBindings);
+    $countBindings[] = $levelThreshold;
+    $countBindings[] = $request->auth->id;
 
     $countBindings = array_merge($countBindings, $searchBindings);
 
@@ -360,12 +375,9 @@ if ($request->auth->level > 5) {
         LEFT JOIN user_extensions ON user_extensions.name = users.extension
         WHERE users.base_parent_id = ?
         AND users.is_deleted = 0
+        $statusSql
         AND (
-            users.status = 0
-            OR users.id = ?
-        )
-        AND (
-            users.user_level < 9
+            users.user_level < ?
             OR users.id = ?
         )
         $searchSql
@@ -374,9 +386,10 @@ if ($request->auth->level > 5) {
 
     $dataBindings = [
         $baseParentId,
-        $request->auth->id,
-        $request->auth->id
     ];
+    $dataBindings = array_merge($dataBindings, $statusBindings);
+    $dataBindings[] = $levelThreshold;
+    $dataBindings[] = $request->auth->id;
 
     $dataBindings = array_merge($dataBindings, $searchBindings);
 
@@ -1155,6 +1168,12 @@ public function extensionDetailList(Request $request, int $extension_id = null)
                         //remove from user_extensions:
                         $query = "DELETE FROM user_extensions WHERE name = :name";
                         DB::connection('master')->delete($query, ["name" => $extension]);
+
+                        // Remove PJSIP realtime records for this extension (+ alt)
+                        PjsipRealtimeService::deleteExtension($extension);
+                        if (!empty($server['alt_extension'])) {
+                            PjsipRealtimeService::deleteExtension($server['alt_extension']);
+                        }
 
                         //remove from permissions:
                         $query = "DELETE FROM permissions WHERE user_id = :id";
@@ -2100,6 +2119,9 @@ public function checkExtension($request)
                 $insertData = "INSERT INTO user_extensions SET fullname= :fullname, context= :context, name= :name, type= :type , qualify= :qualify , nat= :nat , host= :host, secret= :secret,username= :username";
                 $record_ustextSav = DB::connection('master')->select($insertData, $dt);
 
+                // Sync primary extension to PJSIP realtime tables
+                PjsipRealtimeService::syncExtension($extension, $dt['secret'], $dt['context'], $dt['fullname']);
+
                 $data['alt_extension'] = $request->auth->parent_id . $intGeneratedAltExtension;
 
 
@@ -2138,6 +2160,9 @@ public function checkExtension($request)
                     $insertData = "INSERT INTO user_extensions SET fullname= :fullname, context= :context, name= :name, type= :type , qualify= :qualify , nat= :nat , host= :host, secret= :secret,username= :username, rtptimeout= :rtptimeout, rtpholdtimeout= :rtpholdtimeout,sendrpid= :sendrpid,subscribemwi= :subscribemwi,t38pt_udptl= :t38pt_udptl,transport= :transport,trustrpid= :trustrpid,useclientcode= :useclientcode,usereqphone= :usereqphone,videosupport= :videosupport,icesupport= :icesupport,force_avp =:force_avp,dtlsenable=:dtlsenable,dtlsverify=:dtlsverify,dtlscertfile= :dtlscertfile,dtlssetup= :dtlssetup,rtcp_mux= :rtcp_mux,avpf= :avpf,
                 webrtc= :webrtc";
                     $record_ustextSav = DB::connection('master')->select($insertData, $dt);
+
+                    // Sync alt extension to PJSIP realtime tables
+                    PjsipRealtimeService::syncExtension($data['alt_extension'], $dt['secret'], $dt['context'], $dt['fullname']);
                 }
 
                 $data['app_extension'] = $request->auth->parent_id . $intGeneratedAppExtension;
@@ -2178,6 +2203,9 @@ public function checkExtension($request)
                     $insertData = "INSERT INTO user_extensions SET fullname= :fullname, context= :context, name= :name, type= :type , qualify= :qualify , nat= :nat , host= :host, secret= :secret,username= :username, rtptimeout= :rtptimeout, rtpholdtimeout= :rtpholdtimeout,sendrpid= :sendrpid,subscribemwi= :subscribemwi,t38pt_udptl= :t38pt_udptl,transport= :transport,trustrpid= :trustrpid,useclientcode= :useclientcode,usereqphone= :usereqphone,videosupport= :videosupport,icesupport= :icesupport,force_avp =:force_avp,dtlsenable=:dtlsenable,dtlsverify=:dtlsverify,dtlscertfile= :dtlscertfile,dtlssetup= :dtlssetup,rtcp_mux= :rtcp_mux,avpf= :avpf,
                 webrtc= :webrtc";
                     $record_ustextSav = DB::connection('master')->select($insertData, $dt);
+
+                    // Sync app extension to PJSIP realtime tables
+                    PjsipRealtimeService::syncExtension($data['app_extension'], $dt['secret'], $dt['context'], $dt['fullname']);
                 }
             } else {
                 $dt['name'] = $extension;

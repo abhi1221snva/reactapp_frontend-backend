@@ -268,7 +268,7 @@ class CrmDocumentController extends Controller
                 return $this->failResponse("Document not found", [], null, 404);
             }
 
-            $absPath = $this->resolveStoragePath($doc->file_path ?? '');
+            $absPath = $this->resolveStoragePath($doc->file_path ?? '', $clientId, $id, $doc->file_name ?? '');
             if (!$absPath) {
                 return $this->failResponse("File not found on server", [], null, 404);
             }
@@ -324,11 +324,11 @@ class CrmDocumentController extends Controller
             $clean     = fn(string $s): string => preg_replace('/[^a-z0-9]+/', '_', strtolower(trim($s)));
             $nameParts = array_filter([$clean($firstName), $clean($lastName)]);
             $docType   = $clean($doc->document_type ?? 'document');
-            $ext       = strtolower(pathinfo($doc->file_path ?? '', PATHINFO_EXTENSION)) ?: 'pdf';
+            $ext       = strtolower(pathinfo($doc->file_path ?: ($doc->file_name ?? ''), PATHINFO_EXTENSION)) ?: 'pdf';
             $baseName  = (empty($nameParts) ? "lead_{$id}" : implode('_', $nameParts))
                          . '_' . $docType . '.' . $ext;
 
-            $absPath = $this->resolveStoragePath($doc->file_path ?? '');
+            $absPath = $this->resolveStoragePath($doc->file_path ?? '', $clientId, $id, $doc->file_name ?? '');
             if (!$absPath) {
                 return $this->failResponse("File not found on server", [], null, 404);
             }
@@ -345,25 +345,34 @@ class CrmDocumentController extends Controller
     /**
      * Resolve a stored file_path (public URL) to an absolute filesystem path.
      * Stored format: APP_URL/storage/relative/path/file.pdf
+     *
+     * Falls back to convention-based path when file_path is empty:
+     *   crm_documents/client_{clientId}/lead_{leadId}/{file_name}
      */
-    private function resolveStoragePath(string $fileUrl): ?string
+    private function resolveStoragePath(string $fileUrl, int $clientId = 0, int $leadId = 0, string $fileName = ''): ?string
     {
-        if (empty($fileUrl)) return null;
+        // 1. Try URL-based resolution
+        if (!empty($fileUrl)) {
+            $appUrl = rtrim(config('app.url'), '/');
+            $prefix = $appUrl . '/storage/';
 
-        $appUrl = rtrim(config('app.url'), '/');
-        $prefix = $appUrl . '/storage/';
-
-        if (!str_starts_with($fileUrl, $prefix)) {
-            return null; // External URL — cannot serve directly
+            if (str_starts_with($fileUrl, $prefix)) {
+                $relative = substr($fileUrl, strlen($prefix));
+                if (Storage::disk('public')->exists($relative)) {
+                    return Storage::disk('public')->path($relative);
+                }
+            }
         }
 
-        $relative = substr($fileUrl, strlen($prefix));
-
-        if (!Storage::disk('public')->exists($relative)) {
-            return null;
+        // 2. Fallback: build path from client/lead/filename convention
+        if ($clientId && $leadId && $fileName) {
+            $relative = "crm_documents/client_{$clientId}/lead_{$leadId}/{$fileName}";
+            if (Storage::disk('public')->exists($relative)) {
+                return Storage::disk('public')->path($relative);
+            }
         }
 
-        return Storage::disk('public')->path($relative);
+        return null;
     }
 
     /**

@@ -40,6 +40,8 @@ use App\Services\LeadQueryService;
 use App\Services\LeadTaskService;
 use App\Services\EmailService;
 use App\Services\LeadChangeTracker;
+use App\Services\CrmLeadDuplicateCheckService;
+use App\Model\Client\CrmMerchantPortal;
 
 
 class LeadController extends Controller
@@ -129,7 +131,25 @@ class LeadController extends Controller
                         }
                     }
                 }
-                Log::info('reached', ['recordCount' => $result['count']]);
+
+                // Resolve assigned_to user IDs to display names
+                $userIds = [];
+                foreach ($result['records'] as $row) {
+                    if (!empty($row->assigned_to)) {
+                        $userIds[] = (int) $row->assigned_to;
+                    }
+                }
+                $userIds = array_unique(array_filter($userIds));
+                if (!empty($userIds)) {
+                    $userNames = DB::connection('master')->table('users')
+                        ->whereIn('id', $userIds)
+                        ->pluck(DB::raw("CONCAT(first_name, ' ', last_name)"), 'id')
+                        ->toArray();
+                    foreach ($result['records'] as $row) {
+                        $uid = (int) ($row->assigned_to ?? 0);
+                        $row->assigned_name = isset($userNames[$uid]) ? trim($userNames[$uid]) : null;
+                    }
+                }
 
                 return [
                     'success'      => 'true',
@@ -581,6 +601,7 @@ class LeadController extends Controller
             $lead = Lead::on("mysql_$clientId")->findorfail($lastId);
             $lead->unique_url   = $merchant_url;
             $lead->unique_token = $unique_token;
+            $lead->lead_token   = $unique_token;
             $lead->lead_status = 'new_lead';
             $lead->phone_number = $phone_new;
             $lead->created_by = $request->auth->id;
@@ -593,6 +614,27 @@ class LeadController extends Controller
             $lead->copy_lead_id = $request->copy_lead_id;
 
             $lead->save();
+
+            // Create merchant portal record
+            try {
+                $portal = new CrmMerchantPortal();
+                $portal->setConnection("mysql_$clientId");
+                $portal->lead_id   = $lastId;
+                $portal->client_id = $clientId;
+                $portal->token     = $unique_token;
+                $portal->url       = $merchant_url;
+                $portal->status    = 1;
+                $portal->save();
+
+                DB::table('lead_token_map')->insertOrIgnore([
+                    'lead_token' => $unique_token,
+                    'client_id'  => $clientId,
+                    'lead_id'    => $lastId,
+                    'created_at' => now(),
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning("[LeadController::createLead] merchant portal record failed: " . $e->getMessage());
+            }
             Log::info('reached', ['lead' => $lead]);
             // Save documents
             if (!empty($request->documents)) {
@@ -697,6 +739,16 @@ class LeadController extends Controller
             ], 422);
         }
 
+        // ── Duplicate lead check (phone, email, business name) ───────────
+        $dupErrors = CrmLeadDuplicateCheckService::forClient($clientId)->check($input);
+        if (!empty($dupErrors)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Duplicate lead detected.',
+                'errors'  => $dupErrors,
+            ], 422);
+        }
+
         try {
             // Build system-column payload for crm_leads
             $systemData = $this->eavService->formatLeadFields($input, $clientId);
@@ -734,6 +786,27 @@ class LeadController extends Controller
             $objLead->unique_token = $unique_token;
             $objLead->lead_token   = $unique_token;
             $objLead->save();
+
+            // Create merchant portal record so it's always available on lead view
+            try {
+                $portal = new CrmMerchantPortal();
+                $portal->setConnection("mysql_$clientId");
+                $portal->lead_id   = $lastId;
+                $portal->client_id = $clientId;
+                $portal->token     = $unique_token;
+                $portal->url       = $merchant_url;
+                $portal->status    = 1;
+                $portal->save();
+
+                DB::table('lead_token_map')->insertOrIgnore([
+                    'lead_token' => $unique_token,
+                    'client_id'  => $clientId,
+                    'lead_id'    => $lastId,
+                    'created_at' => now(),
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning("[LeadController::create] merchant portal record failed: " . $e->getMessage());
+            }
 
             // Save all dynamic fields (EAV) into crm_lead_values (use sanitized $input)
             $this->eavService->save($clientId, $lastId, $input);
@@ -836,6 +909,16 @@ class LeadController extends Controller
                 'success' => false,
                 'message' => 'Validation failed.',
                 'errors'  => $eavErrors,
+            ], 422);
+        }
+
+        // ── Duplicate lead check — only on changed identity fields ────────
+        $dupErrors = CrmLeadDuplicateCheckService::forClient($clientId)->checkChanged((int) $id, $input);
+        if (!empty($dupErrors)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Duplicate lead detected.',
+                'errors'  => $dupErrors,
             ], 422);
         }
 
@@ -1178,9 +1261,10 @@ class LeadController extends Controller
             if ($err = $this->assertLeadAccess($request, $lead)) return $err;
             $arrLead = $lead->toArray();
             // Merge EAV dynamic field values from crm_lead_values
+            // EAV goes first so system columns on crm_leads take precedence
             $eavMap = $this->eavService->load($clientId, [$id]);
             if (isset($eavMap[$id])) {
-                $arrLead = array_merge($arrLead, $eavMap[$id]);
+                $arrLead = array_merge($eavMap[$id], $arrLead);
             }
             // Resolve assigned_to / created_by / updated_by display names
             try {
@@ -1454,41 +1538,36 @@ class LeadController extends Controller
         //Validation
         $arrValidationRules = $this->validateLeadInfo($clientId);
 
+        // ── Duplicate lead check (phone, email, business name) ───────────
+        $dupErrors = CrmLeadDuplicateCheckService::forClient($clientId)->check($request->all());
+        if (!empty($dupErrors)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Duplicate lead detected.',
+                'errors'  => $dupErrors,
+            ], 422);
+        }
+
         try {
+            $objLead = new Lead($request->all());
+            if (isset($objLead->dob))
+                $objLead->dob = \Carbon\Carbon::parse($objLead->dob)->format('Y-m-d');
+            $objLead->setConnection("mysql_$clientId");
+            $objLead->saveOrFail();
+            $lastId = $objLead->id;
+            $unique_token = $this->generateCode();
+            $objLeadUpdate = Lead::on("mysql_$clientId")->findOrFail($lastId);
 
-            if (isset($request->phone_number) && isset($request->email)) {
-                $checkObjLead = Lead::on("mysql_$clientId")->where('phone_number', $request->phone_number)->orWhere('email', $request->email)->get()->first();
-            } else
-            if (isset($request->phone_number)) {
-                $checkObjLead = Lead::on("mysql_$clientId")->where('phone_number', $request->phone_number)->get()->first();
-            } else
-            if (isset($request->email)) {
-                $checkObjLead = Lead::on("mysql_$clientId")->where('email', $request->email)->get()->first();
-            }
+            $merchant_url = $this->getPortalBaseUrl($clientId) . '/merchant/customer/app/index/' . $clientId . '/' . $lastId . '/' . $unique_token;
 
-            if (empty($checkObjLead)) {
-                $objLead = new Lead($request->all());
-                if (isset($objLead->dob))
-                    $objLead->dob = \Carbon\Carbon::parse($objLead->dob)->format('Y-m-d');
-                $objLead->setConnection("mysql_$clientId");
-                $objLead->saveOrFail();
-                $lastId = $objLead->id;
-                $unique_token = $this->generateCode();
-                $objLeadUpdate = Lead::on("mysql_$clientId")->findOrFail($lastId);
+            $objLeadUpdate->unique_url   = $merchant_url;
+            $objLeadUpdate->unique_token = $unique_token;
+            $objLeadUpdate->created_by = $request->auth->id;
+            $objLeadUpdate->assigned_to = $request->auth->id;
 
-                $merchant_url = $this->getPortalBaseUrl($clientId) . '/merchant/customer/app/index/' . $clientId . '/' . $lastId . '/' . $unique_token;
+            $objLeadUpdate->save();
 
-                $objLeadUpdate->unique_url   = $merchant_url;
-                $objLeadUpdate->unique_token = $unique_token;
-                $objLeadUpdate->created_by = $request->auth->id;
-                $objLeadUpdate->assigned_to = $request->auth->id;
-
-                $objLeadUpdate->save();
-
-                return $this->successResponse("Lead Added Successfully", $objLead->toArray());
-            } else {
-                return $this->failResponse("Lead already Added", $checkObjLead->toArray());
-            }
+            return $this->successResponse("Lead Added Successfully", $objLead->toArray());
         } catch (\Exception $exception) {
             return $this->failResponse("Failed to create Lead ", [
                 $exception->getMessage()

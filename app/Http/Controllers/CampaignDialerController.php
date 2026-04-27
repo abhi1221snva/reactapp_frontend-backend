@@ -286,6 +286,96 @@ class CampaignDialerController extends Controller
     }
 
     // -------------------------------------------------------------------------
+    // Lead CDR / activity timeline
+    // -------------------------------------------------------------------------
+
+    /**
+     * Return CDR records for a specific lead.
+     * GET /dialer/lead/{leadId}/cdr
+     */
+    public function getLeadCdr(Request $request, int $leadId): JsonResponse
+    {
+        $conn = $this->tenantDb($request);
+
+        $records = DB::connection($conn)
+            ->table('cdr')
+            ->leftJoin('disposition', 'cdr.disposition_id', '=', 'disposition.id')
+            ->where('cdr.lead_id', $leadId)
+            ->orderByDesc('cdr.start_time')
+            ->limit(50)
+            ->get([
+                'cdr.id',
+                'cdr.extension',
+                'cdr.route',
+                'cdr.type',
+                'cdr.number',
+                'cdr.duration',
+                'cdr.start_time',
+                'cdr.end_time',
+                'cdr.call_recording',
+                'cdr.campaign_id',
+                'cdr.disposition_id',
+                'cdr.lead_id',
+                'disposition.title as disposition_title',
+            ]);
+
+        return response()->json(['data' => $records]);
+    }
+
+    // -------------------------------------------------------------------------
+    // Persistent Conference: hang up customer only (disposition mode)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Hang up only the customer channel — agent stays in conference for disposition.
+     *
+     * POST /dialer/campaign/{id}/hangup-customer
+     */
+    public function hangupCustomer(Request $request, int $id): JsonResponse
+    {
+        $conn     = $this->tenantDb($request);
+        $clientId = $this->tenantId($request);
+
+        CampaignModel::authorizeAccess($id, $request);
+
+        $userId = $request->auth->id ?? 0;
+        $user   = DB::connection('master')
+            ->table('users')
+            ->where('id', $userId)
+            ->first(['extension', 'alt_extension']);
+
+        if (!$user) {
+            return response()->json(['error' => 'User not found'], 404);
+        }
+
+        $agentExt = (int) ($user->alt_extension ?: $user->extension);
+        if (!$agentExt) {
+            return response()->json(['error' => 'No extension configured'], 422);
+        }
+
+        try {
+            $ami     = new AsteriskAmiService();
+            $service = new CampaignDialerService($ami);
+            $result  = $service->hangupCustomerOnly($id, $agentExt, $clientId, $conn);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Internal error: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        if ($result['status'] === 'error') {
+            return response()->json(['success' => false, 'message' => $result['message']], 422);
+        }
+
+        return response()->json([
+            'success'          => true,
+            'message'          => 'Customer channel disconnected — ready for disposition',
+            'previous_lead_id' => $result['previous_lead_id'] ?? null,
+        ]);
+    }
+
+    // -------------------------------------------------------------------------
     // Persistent Conference: hang up customer, dial next lead
     // -------------------------------------------------------------------------
 
@@ -318,6 +408,12 @@ class CampaignDialerController extends Controller
             return response()->json(['error' => 'No extension configured'], 422);
         }
 
+        // Debug: log extension_live state before attempting
+        $liveRow = \App\Model\Client\ExtensionLive::on($conn)
+            ->where('extension', $agentExt)
+            ->first();
+        \Log::info("nextCustomer: ext={$agentExt} conn={$conn} live=" . json_encode($liveRow));
+
         try {
             $ami     = new AsteriskAmiService();
             $service = new CampaignDialerService($ami);
@@ -330,6 +426,7 @@ class CampaignDialerController extends Controller
         }
 
         if ($result['status'] === 'error') {
+            \Log::warning("nextCustomer: error for ext={$agentExt}: {$result['message']}");
             return response()->json(['success' => false, 'message' => $result['message']], 422);
         }
 
