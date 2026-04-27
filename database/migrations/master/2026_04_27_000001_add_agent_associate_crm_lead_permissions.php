@@ -16,6 +16,7 @@ class AddAgentAssociateCrmLeadPermissions extends Migration
             'leads', 'crm.lead_fields', 'crm.lead_status', 'lead_activity',
             'labels', 'lists', 'lead_sources', 'crm.email_templates', 'crm.sms_templates',
             'crm.lenders', 'crm.lender_api',
+            'crm.affiliate', 'crm.company',
         ];
 
         foreach ([2, 4] as $roleId) {
@@ -42,6 +43,7 @@ class AddAgentAssociateCrmLeadPermissions extends Migration
             'leads', 'crm.lead_fields', 'crm.lead_status', 'lead_activity',
             'labels', 'lists', 'lead_sources', 'crm.email_templates', 'crm.sms_templates',
             'crm.lenders', 'crm.lender_api',
+            'crm.affiliate', 'crm.company',
         ];
 
         foreach ([2, 4] as $roleId) {
