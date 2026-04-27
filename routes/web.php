@@ -544,6 +544,8 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->get('dialer/lead/{leadId}/cdr',                 'CampaignDialerController@getLeadCdr');
   $router->post('dialer/campaign/{id}/hangup-customer',    'CampaignDialerController@hangupCustomer');
   $router->post('dialer/campaign/{id}/next-customer',      'CampaignDialerController@nextCustomer');
+  $router->get('dialer/campaign/{id}/queue-summary',       'CampaignDialerController@queueSummary');
+  $router->post('dialer/campaign/{id}/requeue',            'CampaignDialerController@requeueLeads');
 
 //campaign assign list
 

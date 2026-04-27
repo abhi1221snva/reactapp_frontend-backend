@@ -106,6 +106,7 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\CleanExpiredRefreshTokens::class,
         \App\Console\Commands\RenewGmailWatchesCommand::class,
         SyncPjsipRealtimeCommand::class,
+        \App\Console\Commands\RecycleQueueLeadsCommand::class,
     ];
 
     /**
@@ -205,6 +206,9 @@ class Kernel extends ConsoleKernel
 
         // Gmail push-notification watch renewal (watches expire every ~7 days)
         $schedule->command('gmail:renew-watches')->dailyAt('02:00')->name('gmail-watch-renewal')->withoutOverlapping();
+
+        // Campaign lead queue recycle: re-queue completed/failed leads per recycle rules
+        $schedule->command('dialer:recycle-queue')->everyFifteenMinutes()->name('recycle-queue-leads')->withoutOverlapping();
     }
 
 }

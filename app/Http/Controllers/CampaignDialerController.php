@@ -273,16 +273,90 @@ class CampaignDialerController extends Controller
             ]);
 
         if ($request->has('campaign_id')) {
+            $campaignId = (int) $request->input('campaign_id');
+
             DB::connection($conn)
                 ->table('cdr')
                 ->where('lead_id', $leadId)
-                ->where('campaign_id', $request->input('campaign_id'))
+                ->where('campaign_id', $campaignId)
                 ->orderByDesc('id')
                 ->limit(1)
+                ->update(['disposition_id' => $request->input('disposition_id')]);
+
+            // Also stamp disposition on the campaign_lead_queue entry
+            CampaignLeadQueue::on($conn)
+                ->where('campaign_id', $campaignId)
+                ->where('lead_id', $leadId)
+                ->whereIn('status', [CampaignLeadQueue::STATUS_COMPLETED, CampaignLeadQueue::STATUS_CALLING])
                 ->update(['disposition_id' => $request->input('disposition_id')]);
         }
 
         return response()->json(['message' => 'Disposition saved']);
+    }
+
+    // -------------------------------------------------------------------------
+    // Queue disposition summary + re-queue
+    // -------------------------------------------------------------------------
+
+    /**
+     * Return disposition-grouped counts for a campaign's lead queue.
+     * GET /dialer/campaign/{id}/queue-summary
+     */
+    public function queueSummary(Request $request, int $id): JsonResponse
+    {
+        $conn = $this->tenantDb($request);
+
+        CampaignModel::authorizeAccess($id, $request);
+
+        $rows = DB::connection($conn)
+            ->table('campaign_lead_queue as q')
+            ->leftJoin('disposition as d', 'q.disposition_id', '=', 'd.id')
+            ->where('q.campaign_id', $id)
+            ->selectRaw('q.disposition_id, d.title as disposition_title, q.status, COUNT(*) as count')
+            ->groupBy('q.disposition_id', 'd.title', 'q.status')
+            ->orderBy('q.disposition_id')
+            ->get();
+
+        return response()->json(['data' => $rows]);
+    }
+
+    /**
+     * Re-queue completed/failed leads back to pending, filtered by disposition.
+     * POST /dialer/campaign/{id}/requeue
+     * Body: { disposition_ids: [1,2,...], statuses: ['completed','failed'] }
+     */
+    public function requeueLeads(Request $request, int $id): JsonResponse
+    {
+        $this->validate($request, [
+            'disposition_ids'   => 'required|array|min:1',
+            'disposition_ids.*' => 'integer',
+            'statuses'          => 'required|array|min:1',
+            'statuses.*'        => 'in:completed,failed',
+        ]);
+
+        $conn = $this->tenantDb($request);
+
+        CampaignModel::authorizeAccess($id, $request);
+
+        $requeued = DB::connection($conn)
+            ->table('campaign_lead_queue')
+            ->where('campaign_id', $id)
+            ->whereIn('status', $request->input('statuses'))
+            ->whereIn('disposition_id', $request->input('disposition_ids'))
+            ->update([
+                'status'          => CampaignLeadQueue::STATUS_PENDING,
+                'attempts'        => 0,
+                'disposition_id'  => null,
+                'next_attempt_at' => null,
+                'called_at'       => null,
+                'completed_at'    => null,
+                'updated_at'      => now(),
+            ]);
+
+        return response()->json([
+            'message'  => "{$requeued} lead(s) re-queued",
+            'requeued' => $requeued,
+        ]);
     }
 
     // -------------------------------------------------------------------------

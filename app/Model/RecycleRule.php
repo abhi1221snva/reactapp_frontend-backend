@@ -40,14 +40,16 @@ class RecycleRule extends Model
                 $day = $request->input('day');
                 $data['time'] = $request->input('time');
                 $data['call_time'] = $request->input('call_time');
+                $data['target_system'] = $request->input('target_system', 'legacy');
+                $data['max_attempts'] = $request->input('max_attempts', 3);
                 foreach ($disposition as $key => $value) {
                     foreach ($day as $item => $itemValue) {
                         $itemValue = strtolower($itemValue);
                         if (in_array($itemValue, $dayArray)) {
                             $data['disposition_id'] = $value;
                             $data['day']            = $itemValue;
-                            $query = "INSERT INTO " . $this->table . " (campaign_id, list_id, disposition_id, day, time, call_time)
-                                            VALUE (:campaign_id, :list_id, :disposition_id, :day, :time, :call_time)";
+                            $query = "INSERT INTO " . $this->table . " (campaign_id, list_id, disposition_id, day, time, call_time, target_system, max_attempts)
+                                            VALUE (:campaign_id, :list_id, :disposition_id, :day, :time, :call_time, :target_system, :max_attempts)";
                             $add =  DB::connection('mysql_' . $request->auth->parent_id)->insert($query, $data);
                         }
                     }

@@ -16,6 +16,7 @@ class CampaignLeadQueue extends Model
         'campaign_id',
         'lead_id',
         'status',
+        'disposition_id',
         'attempts',
         'sort_order',
         'next_attempt_at',
@@ -24,6 +25,7 @@ class CampaignLeadQueue extends Model
     ];
 
     protected $casts = [
+        'disposition_id'  => 'integer',
         'next_attempt_at' => 'datetime',
         'called_at'       => 'datetime',
         'completed_at'    => 'datetime',
