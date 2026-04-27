@@ -163,6 +163,14 @@ class CampaignDialerService
             $lead->phone_number
         ) ?? '0000000000';
 
+        // Resolve the outbound SIP trunk and dial prefix for this client/campaign
+        $trunkConfig = $this->resolveTrunkConfig($campaignId, $clientId, $dbConnection);
+        $trunk       = $trunkConfig['trunk'];
+        $dialPrefix  = $trunkConfig['prefix'];
+
+        // Sanitise the customer phone number (strip non-digit chars)
+        $cleanPhone = $this->sanitizePhone($lead->phone_number);
+
         // Ensure AMI is connected for this client
         if (!$this->ami->isConnected()) {
             $this->ami->connectForClient($clientId);
@@ -185,9 +193,10 @@ class CampaignDialerService
                 "CLIENT_ID={$clientId}",
                 "DB_CONN={$dbConnection}",
                 "AGENT_EXT={$agentExt}",
-                "CUSTOMER_NUM={$lead->phone_number}",
+                "CUSTOMER_NUM={$cleanPhone}",
                 "CALLER_ID_NUM={$resolvedCli}",
-                "TRUNK={$this->ami->getTrunk()}",
+                "TRUNK={$trunk}",
+                "DIAL_PREFIX={$dialPrefix}",
                 "CALL_TIMEOUT=60",
                 "CONF_ROOM={$confRoom}",
             ],
@@ -214,13 +223,21 @@ class CampaignDialerService
         $confRoom    = $event['ConfRoom'] ?? null;
         $customerNum = $event['CustomerNum'] ?? null;
         $callerIdNum = $event['CallerIdNum'] ?? null;
-        $trunk       = $event['Trunk'] ?? 'outbound-trunk-endpoint';
+        $trunk       = $event['Trunk'] ?? '';
+        $dialPrefix  = $event['DialPrefix'] ?? '';
         $callTimeout = (int) ($event['CallTimeout'] ?? 60);
         $campaignId  = (int) ($event['CampaignID'] ?? 0);
 
         if (!$leadId || !$agentExt || !$confRoom || !$customerNum) {
             Log::warning("CampaignDialer: AgentAnswered missing required fields", $event);
             return;
+        }
+
+        // If trunk wasn't passed in the event, re-resolve from DB
+        if (empty($trunk)) {
+            $trunkConfig = $this->resolveTrunkConfig($campaignId, $clientId, $dbConnection);
+            $trunk      = $trunkConfig['trunk'];
+            $dialPrefix = $trunkConfig['prefix'];
         }
 
         // Update extension_live: agent is connected, waiting for customer
@@ -239,11 +256,14 @@ class CampaignDialerService
             $this->ami->connectForClient($clientId);
         }
 
+        // Build outbound channel with correct trunk and prefix
+        $outboundChannel = $this->buildOutboundChannel($customerNum, $trunk, $dialPrefix);
+
         // Second originate: dial the customer into the same conference room
         $custActionId = "cust_{$confRoom}_" . time();
 
         $this->ami->originate([
-            'Channel'  => "PJSIP/{$customerNum}@{$trunk}",
+            'Channel'  => $outboundChannel,
             'Context'  => 'campaign-conf-customer-join',
             'Exten'    => 's',
             'Priority' => '1',
@@ -261,7 +281,7 @@ class CampaignDialerService
             ],
         ]);
 
-        Log::info("CampaignDialer: agent {$agentExt} answered, lead {$leadId} — originating customer call to {$customerNum} (room: {$confRoom})");
+        Log::info("CampaignDialer: agent {$agentExt} answered, lead {$leadId} — originating customer call to {$customerNum} via {$outboundChannel} (room: {$confRoom})");
     }
 
     /**
@@ -554,24 +574,40 @@ class CampaignDialerService
         }
 
         $previousLeadId = (int) $live->lead_id;
+        $confRoom       = $live->conf_room;
+
+        error_log("hangupCustomerOnly: agentExt={$agentExt} customer_channel=" . ($live->customer_channel ?: 'NULL')
+            . " conf_room=" . ($confRoom ?: 'NULL') . " lead_id={$previousLeadId} status={$live->status}");
 
         // Hang up customer channel only
         try {
             if (!$this->ami->isConnected()) {
-                $this->ami->connectForClient($clientId);
+                error_log("hangupCustomerOnly: AMI not connected, connecting for client {$clientId}...");
+                if (!$this->ami->connectForClient($clientId)) {
+                    throw new \RuntimeException("AMI connection failed for client {$clientId}");
+                }
+                error_log("hangupCustomerOnly: AMI connected OK");
             }
 
             if ($live->customer_channel) {
-                error_log("hangupCustomerOnly: DIRECT hangup customer_channel={$live->customer_channel} agentExt={$agentExt}");
+                // Direct hangup — we know the exact channel name
+                error_log("hangupCustomerOnly: PATH=direct_hangup customer_channel={$live->customer_channel}");
                 $this->ami->hangup($live->customer_channel);
             } else {
-                // ConfBridge room name = agent extension (Asterisk uses ext as room name)
-                $actualRoom = (string) $agentExt;
-                error_log("hangupCustomerOnly: confbridgeKickNonAgent room={$actualRoom} agentExt={$agentExt}");
-                $this->ami->confbridgeKickNonAgent($actualRoom, $agentExt);
+                // Use ConfBridge kick — try stored conf_room, then agent ext as fallback
+                $room = $confRoom ?: (string) $agentExt;
+                error_log("hangupCustomerOnly: PATH=confbridge_kick room={$room} agentExt={$agentExt}");
+                $this->ami->confbridgeKickNonAgent($room, $agentExt);
             }
+            error_log("hangupCustomerOnly: AMI hangup command sent successfully");
         } catch (\Throwable $e) {
-            \Log::warning("CampaignDialer: failed to hangup customer for ext {$agentExt}: {$e->getMessage()}");
+            error_log("hangupCustomerOnly: EXCEPTION — " . $e->getMessage());
+            \Log::error("CampaignDialer: failed to hangup customer for ext {$agentExt}: {$e->getMessage()}");
+            return [
+                'status'          => 'error',
+                'message'         => 'AMI hangup failed — call may still be active: ' . $e->getMessage(),
+                'previous_lead_id' => $previousLeadId,
+            ];
         }
 
         // Write CDR for completed call
@@ -633,16 +669,25 @@ class CampaignDialerService
             // 1) Hang up the customer channel only
             try {
                 if (!$this->ami->isConnected()) {
-                    $this->ami->connectForClient($clientId);
+                    if (!$this->ami->connectForClient($clientId)) {
+                        throw new \RuntimeException("AMI connection failed for client {$clientId}");
+                    }
                 }
 
                 if ($live->customer_channel) {
+                    error_log("hangupCustomerAndDialNext: PATH=direct_hangup customer_channel={$live->customer_channel}");
                     $this->ami->hangup($live->customer_channel);
                 } else {
-                    $this->ami->confbridgeKickNonAgent((string) $agentExt, $agentExt);
+                    $room = $confRoom ?: (string) $agentExt;
+                    error_log("hangupCustomerAndDialNext: PATH=confbridge_kick room={$room} agentExt={$agentExt}");
+                    $this->ami->confbridgeKickNonAgent($room, $agentExt);
                 }
             } catch (\Throwable $e) {
-                Log::warning("CampaignDialer: failed to hangup customer for ext {$agentExt}: {$e->getMessage()}");
+                Log::error("CampaignDialer: failed to hangup customer for ext {$agentExt}: {$e->getMessage()}");
+                return [
+                    'status'  => 'error',
+                    'message' => 'AMI hangup failed — call may still be active: ' . $e->getMessage(),
+                ];
             }
 
             // 2) Write CDR for completed call
@@ -724,15 +769,22 @@ class CampaignDialerService
             $phone
         ) ?? '0000000000';
 
+        // Resolve the outbound SIP trunk and dial prefix
+        $trunkConfig = $this->resolveTrunkConfig($campaignId, $clientId, $dbConnection);
+        $trunk       = $trunkConfig['trunk'];
+        $dialPrefix  = $trunkConfig['prefix'];
+
         if (!$this->ami->isConnected()) {
             $this->ami->connectForClient($clientId);
         }
 
-        $trunk       = $this->ami->getTrunk();
-        $custActionId = "cust_{$confRoom}_" . time();
+        // Build outbound channel with correct trunk and prefix
+        $outboundChannel = $this->buildOutboundChannel($phone, $trunk, $dialPrefix);
+        $cleanPhone      = $this->sanitizePhone($phone);
+        $custActionId    = "cust_{$confRoom}_" . time();
 
         $this->ami->originate([
-            'Channel'  => "PJSIP/{$phone}@{$trunk}",
+            'Channel'  => $outboundChannel,
             'Context'  => 'campaign-conf-customer-join',
             'Exten'    => 's',
             'Priority' => '1',
@@ -745,12 +797,12 @@ class CampaignDialerService
                 "CLIENT_ID={$clientId}",
                 "DB_CONN={$dbConnection}",
                 "AGENT_EXT={$agentExt}",
-                "CUSTOMER_NUM={$phone}",
+                "CUSTOMER_NUM={$cleanPhone}",
                 "CONF_ROOM={$confRoom}",
             ],
         ]);
 
-        Log::info("CampaignDialer: next-customer — agent {$agentExt} stays in conf, dialing lead {$entry->lead_id} ({$phone})");
+        Log::info("CampaignDialer: next-customer — agent {$agentExt} stays in conf, dialing lead {$entry->lead_id} ({$phone}) via {$outboundChannel}");
 
         // 9) Build lead response for frontend
         $leadData = [
@@ -938,6 +990,112 @@ class CampaignDialerService
 
             Log::info("CampaignDialer: campaign {$campaignId} completed — no more leads");
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // VoIP Provider / Trunk resolution
+    // -------------------------------------------------------------------------
+
+    /**
+     * Resolve the outbound SIP trunk configuration for a campaign.
+     *
+     * Resolution order:
+     *  1. campaign.voip_configuration_id  → voip_configuration table (trunk name + dial prefix)
+     *  2. Client's sip_gateways entry     → sip_trunk_name + derive prefix from provider
+     *  3. asterisk_server.trunk           → fallback with no prefix
+     *
+     * @return array{trunk: string, prefix: string}
+     */
+    protected function resolveTrunkConfig(int $campaignId, int $clientId, string $dbConnection): array
+    {
+        // 1) Campaign-specific VoIP configuration
+        $vcId = DB::connection($dbConnection)
+            ->table('campaign')
+            ->where('id', $campaignId)
+            ->value('voip_configuration_id');
+
+        if ($vcId && $vcId > 0) {
+            $vc = DB::connection('master')
+                ->table('voip_configuration')
+                ->where('id', $vcId)
+                ->first();
+
+            if ($vc && !empty($vc->name)) {
+                Log::debug("CampaignDialer: trunk resolved from voip_configuration id={$vcId} — trunk={$vc->name} prefix=" . ($vc->prefix ?? ''));
+                return [
+                    'trunk'  => $vc->name,
+                    'prefix' => $vc->prefix ?? '',
+                ];
+            }
+        }
+
+        // 2) Client's SIP gateway
+        $gateway = DB::connection('master')
+            ->table('sip_gateways')
+            ->where('parent_id', $clientId)
+            ->first();
+
+        if ($gateway && !empty($gateway->sip_trunk_name)) {
+            $prefix = $this->defaultPrefixForProvider($gateway->sip_trunk_provider);
+            Log::debug("CampaignDialer: trunk resolved from sip_gateways — trunk={$gateway->sip_trunk_name} provider={$gateway->sip_trunk_provider} prefix={$prefix}");
+            return [
+                'trunk'  => $gateway->sip_trunk_name,
+                'prefix' => $prefix,
+            ];
+        }
+
+        // 3) Fallback to asterisk_server.trunk (AMI connection default)
+        $trunk = $this->ami->getTrunk() ?: 'outbound-trunk';
+        Log::debug("CampaignDialer: trunk fallback to asterisk_server — trunk={$trunk}");
+        return [
+            'trunk'  => $trunk,
+            'prefix' => '',
+        ];
+    }
+
+    /**
+     * Default dial prefix for well-known VoIP providers.
+     * For US dialing, Plivo and Twilio require E.164 format (+1XXXXXXXXXX).
+     */
+    protected function defaultPrefixForProvider(?string $provider): string
+    {
+        return match (strtolower(trim($provider ?? ''))) {
+            'plivo'  => '+1',
+            'twilio' => '+1',
+            default  => '',
+        };
+    }
+
+    /**
+     * Build the outbound PJSIP channel string.
+     *
+     * Sanitises the phone number (digits only), applies the dial prefix,
+     * and formats as "PJSIP/{trunk}/{prefix}{phone}".
+     *
+     * @param  string  $phone   Raw phone number (may contain non-digit chars)
+     * @param  string  $trunk   PJSIP endpoint name (e.g. "pilivo", "Airespring1")
+     * @param  string  $prefix  Dial prefix (e.g. "+1", "#13517131", "")
+     */
+    protected function buildOutboundChannel(string $phone, string $trunk, string $prefix = ''): string
+    {
+        $digits = preg_replace('/\D/', '', $phone);
+
+        // Avoid double country-code: if prefix is +1 and phone already starts with 1 + 10 digits, strip the leading 1
+        if ($prefix === '+1' && strlen($digits) === 11 && str_starts_with($digits, '1')) {
+            $digits = substr($digits, 1);
+        }
+
+        $channel = "PJSIP/{$trunk}/{$prefix}{$digits}";
+        error_log("buildOutboundChannel: raw_phone={$phone} trunk={$trunk} prefix={$prefix} → {$channel}");
+        return $channel;
+    }
+
+    /**
+     * Sanitise a phone number for AMI Variable values (digits only).
+     */
+    protected function sanitizePhone(string $phone): string
+    {
+        return preg_replace('/\D/', '', $phone);
     }
 
     /**

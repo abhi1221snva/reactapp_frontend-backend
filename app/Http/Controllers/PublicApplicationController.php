@@ -557,8 +557,10 @@ class PublicApplicationController extends Controller
             // Update signature date to current timestamp in agent's timezone
             // (outside PDF try-catch so date always updates even if PDF generation fails)
             try {
-                $this->updateSignatureDates("mysql_{$clientId}", $lead->id, $clientId);
-            } catch (\Throwable $ignored) {}
+                $this->updateSignatureDates($conn, $lead->id, $clientId);
+            } catch (\Throwable $dateErr) {
+                error_log("[saveMerchantSignature] updateSignatureDates failed: client={$clientId} lead={$lead->id} error={$dateErr->getMessage()}");
+            }
 
             // Auto-generate the application PDF and register it as a CRM document
             $pdfUrl = null;
@@ -608,17 +610,9 @@ class PublicApplicationController extends Controller
                 }
 
                 $pdfUrl = "{$base}/public/merchant/{$token2}/download";
-                \Log::info('[saveMerchantSignature] PDF auto-generated & registered', [
-                    'client_id' => $clientId,
-                    'lead_id'   => $lead->id,
-                    'file_path' => $publicUrl,
-                ]);
+                error_log("[saveMerchantSignature] PDF OK: client={$clientId} lead={$lead->id} path={$publicUrl}");
             } catch (\Throwable $pdfErr) {
-                \Log::warning('[saveMerchantSignature] PDF generation failed (non-blocking)', [
-                    'client_id' => $clientId,
-                    'lead_id'   => $lead->id,
-                    'error'     => $pdfErr->getMessage(),
-                ]);
+                error_log("[saveMerchantSignature] PDF FAILED: client={$clientId} lead={$lead->id} error={$pdfErr->getMessage()} trace={$pdfErr->getTraceAsString()}");
             }
 
             // Log signature save activity

@@ -144,7 +144,7 @@ class CrmMailService
             $message = (new \Swift_Message($this->data_array['subject']))
                 ->setFrom([$this->smtpSetting->sender_email => $this->smtpSetting->sender_name])
                 ->setBody(view($this->mailable, $this->data_array)->render(), 'text/html');
-    
+
             // Attach files
             foreach ($attachments as $attachment) {
                 $message->attach($attachment);

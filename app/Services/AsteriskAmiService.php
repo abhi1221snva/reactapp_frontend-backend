@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Log;
  *   $ami->disconnect();
  *
  * Usage (persistent event loop — in AmiListenCommand):
- *   $ami->connectForClient($clientId);
+ *   $ami->connectForClient($clientId, withEvents: true);
  *   $ami->listen(function(array $event) { ... return true; });
  */
 class AsteriskAmiService
@@ -41,8 +41,12 @@ class AsteriskAmiService
 
     /**
      * Load AMI credentials from master DB for the given client and connect.
+     *
+     * @param bool $withEvents  Pass true for long-running listeners that need AMI events.
+     *                          Defaults to false (action-only mode) so that readPacket()
+     *                          and readCommandOutput() receive clean responses.
      */
-    public function connectForClient(int $clientId): bool
+    public function connectForClient(int $clientId, bool $withEvents = false): bool
     {
         $server = $this->resolveServer($clientId);
 
@@ -56,13 +60,17 @@ class AsteriskAmiService
         $this->secret   = $server->secret;
         $this->trunk    = $server->trunk ?? 'outbound-trunk';
 
-        return $this->connect();
+        return $this->connect($withEvents);
     }
 
     /**
      * Connect using current host/username/secret.
+     *
+     * @param bool $withEvents  When false (default), events are disabled so the socket
+     *                          only receives direct responses to actions we send.
+     *                          When true, Asterisk streams events (for ami:listen).
      */
-    public function connect(): bool
+    public function connect(bool $withEvents = false): bool
     {
         $this->socket = @fsockopen($this->host, $this->port, $errno, $errstr, 10);
 
@@ -76,12 +84,12 @@ class AsteriskAmiService
         // Consume banner line: "Asterisk Call Manager/x.x"
         fgets($this->socket, 512);
 
-        // Login
+        // Login — events off by default so responses are clean for action-only connections
         $this->sendRaw([
             'Action'   => 'Login',
             'Username' => $this->username,
             'Secret'   => $this->secret,
-            'Events'   => 'on',
+            'Events'   => $withEvents ? 'on' : 'off',
         ]);
 
         $response = $this->readPacket();
@@ -93,7 +101,7 @@ class AsteriskAmiService
         }
 
         $this->connected = true;
-        Log::info("AsteriskAmiService: connected to {$this->host}");
+        Log::info("AsteriskAmiService: connected to {$this->host}" . ($withEvents ? ' (events on)' : ''));
         return true;
     }
 
@@ -140,15 +148,21 @@ class AsteriskAmiService
     }
 
     /**
-     * Hangup a channel by name.
+     * Hangup a channel by name (fire-and-forget).
+     *
+     * AMI Hangup is async — Asterisk processes it immediately. We don't read
+     * the response because even with Events:off, reading can block or pick up
+     * stale data that interferes with subsequent commands.
      */
     public function hangup(string $channel, int $cause = 16): void
     {
+        error_log("AMI >> Hangup Channel={$channel} Cause={$cause}");
         $this->sendRaw([
             'Action'  => 'Hangup',
             'Channel' => $channel,
             'Cause'   => (string) $cause,
         ]);
+        error_log("AMI >> Hangup sent OK for {$channel}");
     }
 
     /**
@@ -167,99 +181,91 @@ class AsteriskAmiService
      * contain the agent's extension. This hangs up the customer while keeping
      * the agent connected.
      *
-     * Falls back to kickAll if the listing fails.
+     * Tries the given $confRoom first, then falls back to the agent extension
+     * as room name (Asterisk often names rooms by the marked user's extension).
      */
     public function confbridgeKickNonAgent(string $confRoom, int $agentExt): void
     {
         $agentStr = (string) $agentExt;
 
-        // Step 1: List ALL active conferences to diagnose naming
-        $aid1 = 'cball_' . uniqid('', true);
-        $this->sendRaw([
-            'Action'   => 'Command',
-            'ActionID' => $aid1,
-            'Command'  => 'confbridge list',
-        ]);
-        $allConfs = $this->readCommandOutput();
-        error_log("confbridgeKickNonAgent: ALL conferences: " . str_replace("\n", ' | ', trim($allConfs)));
+        // Try the given room name first, then fall back to agent extension
+        $roomsToTry = [$confRoom];
+        if ($confRoom !== $agentStr) {
+            $roomsToTry[] = $agentStr;
+        }
 
-        // Step 2: Try to list the specific room
-        $aid2 = 'cbroom_' . uniqid('', true);
-        $this->sendRaw([
-            'Action'   => 'Command',
-            'ActionID' => $aid2,
-            'Command'  => "confbridge list {$confRoom}",
-        ]);
-        $roomOutput = $this->readCommandOutput();
-        error_log("confbridgeKickNonAgent: room={$confRoom} output: " . str_replace("\n", ' | ', trim($roomOutput)));
+        foreach ($roomsToTry as $room) {
+            $channels = $this->confbridgeListChannels($room);
+            error_log("confbridgeKickNonAgent: room={$room} channels=" . json_encode($channels));
 
-        // Step 3: Parse channel names and kick non-agent
-        $kicked = false;
-        foreach (explode("\n", $roomOutput) as $line) {
-            $line = trim($line);
-            if (preg_match('/^(PJSIP\/\S+|SIP\/\S+|Local\/\S+|CBAnn\/\S+)/', $line, $m)) {
-                $ch = $m[1];
+            if (empty($channels)) {
+                error_log("confbridgeKickNonAgent: room={$room} not found or empty, trying next");
+                continue;
+            }
+
+            // Kick every channel that does NOT contain the agent extension
+            foreach ($channels as $ch) {
                 if (!str_contains($ch, $agentStr) && !str_starts_with($ch, 'CBAnn/')) {
-                    error_log("confbridgeKickNonAgent: kicking customer channel={$ch}");
+                    error_log("confbridgeKickNonAgent: kicking customer channel={$ch} from room={$room}");
                     $this->hangup($ch);
-                    $kicked = true;
+                    return; // success
                 }
             }
+
+            error_log("confbridgeKickNonAgent: room={$room} has no non-agent channels to kick");
         }
 
-        // Step 4: If specific room not found, try finding agent channel across all
-        // conferences and kick other participants from same conference
-        if (!$kicked && $allConfs) {
-            error_log("confbridgeKickNonAgent: room not found, scanning all conferences for agent ext {$agentExt}");
-            // Parse conference names from "confbridge list" output
-            if (preg_match_all('/^(\S+)\s+/m', $allConfs, $confNames)) {
-                foreach ($confNames[1] as $name) {
-                    if ($name === 'Conference' || str_starts_with($name, '=')) continue;
-                    $aid = 'cbscan_' . uniqid('', true);
-                    $this->sendRaw([
-                        'Action'   => 'Command',
-                        'ActionID' => $aid,
-                        'Command'  => "confbridge list {$name}",
-                    ]);
-                    $scan = $this->readCommandOutput();
-                    if (str_contains($scan, $agentStr)) {
-                        error_log("confbridgeKickNonAgent: found agent in conference={$name}");
-                        foreach (explode("\n", $scan) as $sline) {
-                            $sline = trim($sline);
-                            if (preg_match('/^(PJSIP\/\S+|SIP\/\S+)/', $sline, $sm)) {
-                                if (!str_contains($sm[1], $agentStr)) {
-                                    error_log("confbridgeKickNonAgent: kicking channel={$sm[1]} from conference={$name}");
-                                    $this->hangup($sm[1]);
-                                    $kicked = true;
-                                }
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (!$kicked) {
-            error_log("confbridgeKickNonAgent: FAILED — could not find customer channel to kick");
-        }
+        error_log("confbridgeKickNonAgent: FAILED — could not find customer channel in any room");
     }
 
     /**
-     * Read output from an AMI Command action until --END COMMAND--.
+     * List channel names in a ConfBridge room via AMI Command.
+     * Handles both modern (Output: prefix) and legacy (--END COMMAND--) AMI formats.
+     *
+     * @return string[] Channel names (e.g. ['PJSIP/1001-00000001', 'PJSIP/plivo-00000002'])
+     */
+    protected function confbridgeListChannels(string $room): array
+    {
+        $this->sendRaw([
+            'Action'  => 'Command',
+            'Command' => "confbridge list {$room}",
+        ]);
+
+        // Read the AMI response packet — with Events:off this is the only response
+        $response = $this->readPacket();
+        if (!$response) {
+            return [];
+        }
+
+        // Check for "not found" error in the response
+        $message = $response['Message'] ?? $response['Output'] ?? '';
+        if (str_contains($message, 'No conference bridge named') || str_contains($message, 'not found')) {
+            return [];
+        }
+
+        // Modern Asterisk (16+): output is in multiple Output: headers merged by readPacket.
+        // Legacy Asterisk: output is raw lines between Response: Follows and --END COMMAND--.
+        // Either way, look for PJSIP/SIP/Local channel patterns.
+        $channels = [];
+        $raw = implode("\n", array_values($response));
+        if (preg_match_all('/(PJSIP\/\S+|SIP\/\S+|Local\/\S+|CBAnn\/\S+)/', $raw, $matches)) {
+            $channels = array_unique($matches[1]);
+        }
+
+        return array_values($channels);
+    }
+
+    /**
+     * Read one AMI response packet for a Command action.
+     * Handles both modern format (Output: headers) and legacy (--END COMMAND--).
      */
     protected function readCommandOutput(): string
     {
-        $output = '';
-        $deadline = microtime(true) + 3;
-        while (microtime(true) < $deadline) {
-            $line = @fgets($this->socket, 4096);
-            if ($line === false) break;
-            $line = rtrim($line, "\r\n");
-            if ($line === '--END COMMAND--') break;
-            $output .= $line . "\n";
+        $response = $this->readPacket();
+        if (!$response) {
+            return '';
         }
-        return $output;
+        return implode("\n", array_values($response));
     }
 
     /**
@@ -331,7 +337,14 @@ class AsteriskAmiService
 
             $colon = strpos($line, ': ');
             if ($colon !== false) {
-                $fields[substr($line, 0, $colon)] = substr($line, $colon + 2);
+                $key = substr($line, 0, $colon);
+                $val = substr($line, $colon + 2);
+                // AMI Command responses have multiple Output: lines — concatenate them
+                if (isset($fields[$key])) {
+                    $fields[$key] .= "\n" . $val;
+                } else {
+                    $fields[$key] = $val;
+                }
             }
         }
 

@@ -62,7 +62,7 @@ class AmiListenCommand extends Command
             $service = new CampaignDialerService($ami);
 
             try {
-                if (!$ami->connectForClient($clientId)) {
+                if (!$ami->connectForClient($clientId, withEvents: true)) {
                     $this->error("AMI connection failed — retrying in 5s");
                     sleep(5);
                     continue;

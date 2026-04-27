@@ -415,7 +415,7 @@ class PublicApplicationService
 
         // ── Merchant URL ──────────────────────────────────────────────────────
         $portalBase  = $this->resolvePortalBase($clientId);
-        $merchantUrl = $portalBase . '/merchant/customer/app/index/' . $clientId . '/' . $leadId . '/' . $leadToken;
+        $merchantUrl = $portalBase . '/merchant/' . $leadToken;
 
         // Persist the generated merchant URL on the lead record
         DB::connection($conn)->table('crm_leads')

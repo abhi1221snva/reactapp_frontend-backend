@@ -21,7 +21,7 @@ class CrmMerchantPortalController extends Controller
             $lead = CrmLeadRecord::on("mysql_$clientId")->findOrFail($id);
 
             $token = Str::random(40);
-            $url   = $this->getPortalBaseUrl($clientId) . '/merchant/customer/app/index/' . $clientId . '/' . $id . '/' . $token;
+            $url   = $this->getPortalBaseUrl($clientId) . '/merchant/' . $token;
 
             // Create new portal record
             $portal = new CrmMerchantPortal();
@@ -86,7 +86,7 @@ class CrmMerchantPortalController extends Controller
                     return $this->failResponse("No active merchant portal found for this lead", [], null, 404);
                 }
 
-                $url = $this->getPortalBaseUrl($clientId) . '/merchant/customer/app/index/' . $clientId . '/' . $id . '/' . $lead->lead_token;
+                $url = $this->getPortalBaseUrl($clientId) . '/merchant/' . $lead->lead_token;
 
                 $portal = new CrmMerchantPortal();
                 $portal->setConnection("mysql_$clientId");
@@ -116,7 +116,7 @@ class CrmMerchantPortalController extends Controller
             // Rebuild URL from current company_domain — this fixes stale/legacy URLs
             // that may contain an old domain (e.g. portal.voiptella.com) or HTML anchor wrapping.
             $currentBase = $this->getPortalBaseUrl($clientId);
-            $freshUrl    = $currentBase . '/merchant/customer/app/index/' . $clientId . '/' . $id . '/' . $portal->token;
+            $freshUrl    = $currentBase . '/merchant/' . $portal->token;
 
             // Strip HTML anchor wrapping from the stored URL for comparison
             $storedRaw = strip_tags($portal->url ?? '');

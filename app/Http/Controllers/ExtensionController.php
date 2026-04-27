@@ -406,7 +406,6 @@ class ExtensionController extends Controller
     public function getExtensionListCRMNew(Request $request)
     {
         $clientId      = $request->auth->parent_id;
-        $baseParentId  = $request->auth->base_parent_id ?? $clientId;
         $search    = $request->input('search', '');
         $start     = (int) $request->input('start', 0);
         $limit     = (int) $request->input('limit', 25);
@@ -414,10 +413,9 @@ class ExtensionController extends Controller
         $userLevel = (int) ($request->auth->level ?? 1);
         $userId    = (int) ($request->auth->id ?? 0);
 
-        // Base query: users within the same tenant only (use base_parent_id
-        // so sub-account users with different parent_id are still included)
+        // Base query: users within the same client only (parent_id match)
         $query = User::join('roles', 'users.role', '=', 'roles.id')
-            ->where('users.base_parent_id', $baseParentId)
+            ->where('users.parent_id', $clientId)
             ->where('users.is_deleted', 0)
             ->orderBy('users.first_name', 'ASC')
             ->select('users.*', 'roles.name as role_name', 'roles.level');

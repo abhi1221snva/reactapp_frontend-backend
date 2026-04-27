@@ -542,6 +542,7 @@ public function ringGroupDetail($request)
 
                 $user = User::where('extension', $value)
                     ->where('parent_id', $request->auth->parent_id)
+                    ->where('is_deleted', 0)
                     ->first();
 
                 if (!$user) {
@@ -686,11 +687,11 @@ public function ringGroupDetail($request)
 
                 $client = Client::where('id', $request->auth->parent_id)->first();
                 $tech_prefix = !empty($client) ? $client->tech_prefix : '';
-
                 foreach ($request->input('extension') as $value)
                 {
                     $user = User::where('extension', $value)
                         ->where('parent_id', $request->auth->parent_id)
+                        ->where('is_deleted', 0)
                         ->first();
 
                     if (!$user) {

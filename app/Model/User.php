@@ -275,7 +275,7 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
             ];
             $permissions[$permission->client_id] = $nameRole;
         }
-        Cache::forever("user.permissions." . $this->id, $permissions);
+        Cache::put("user.permissions." . $this->id, $permissions, 1800); // 30 min TTL
         return $permissions;
     }
 

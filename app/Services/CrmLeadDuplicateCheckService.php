@@ -88,12 +88,14 @@ class CrmLeadDuplicateCheckService
      */
     public function checkChanged(int $leadId, array $fields): array
     {
-        // Load current EAV values for identity fields
+        // Load current EAV values for identity fields (only from active leads)
         $identityKeys = ['phone_number', 'mobile', 'phone', 'cell_phone', 'email', 'email_address', 'business_name', 'company_name', 'legal_name', 'dba'];
         $current = DB::connection($this->conn)->table('crm_lead_values')
-            ->where('lead_id', $leadId)
-            ->whereIn('field_key', $identityKeys)
-            ->pluck('field_value', 'field_key')
+            ->join('crm_leads', 'crm_leads.id', '=', 'crm_lead_values.lead_id')
+            ->whereNull('crm_leads.deleted_at')
+            ->where('crm_lead_values.lead_id', $leadId)
+            ->whereIn('crm_lead_values.field_key', $identityKeys)
+            ->pluck('crm_lead_values.field_value', 'crm_lead_values.field_key')
             ->toArray();
 
         // Build a filtered array containing only fields whose normalized value actually changed
@@ -153,16 +155,18 @@ class CrmLeadDuplicateCheckService
             return $this->findBusinessMatch($normalizedValue, $fieldKeys);
         }
 
-        // Email — exact match on lowercased/trimmed
+        // Email — exact match on lowercased/trimmed, excluding soft-deleted leads
         $query = DB::connection($this->conn)->table('crm_lead_values')
-            ->whereIn('field_key', $fieldKeys)
-            ->whereRaw('LOWER(TRIM(field_value)) = ?', [$normalizedValue]);
+            ->join('crm_leads', 'crm_leads.id', '=', 'crm_lead_values.lead_id')
+            ->whereNull('crm_leads.deleted_at')
+            ->whereIn('crm_lead_values.field_key', $fieldKeys)
+            ->whereRaw('LOWER(TRIM(crm_lead_values.field_value)) = ?', [$normalizedValue]);
 
         if ($this->excludeLeadId) {
-            $query->where('lead_id', '!=', $this->excludeLeadId);
+            $query->where('crm_lead_values.lead_id', '!=', $this->excludeLeadId);
         }
 
-        return $query->select('lead_id', 'field_key', 'field_value')->first();
+        return $query->select('crm_lead_values.lead_id', 'crm_lead_values.field_key', 'crm_lead_values.field_value')->first();
     }
 
     /**
@@ -171,20 +175,22 @@ class CrmLeadDuplicateCheckService
     protected function findPhoneMatch(string $normalizedDigits, array $fieldKeys): ?object
     {
         $query = DB::connection($this->conn)->table('crm_lead_values')
-            ->whereIn('field_key', $fieldKeys)
-            ->where('field_value', '!=', '')
-            ->whereNotNull('field_value')
-            ->whereRaw('LENGTH(field_value) >= 7');
+            ->join('crm_leads', 'crm_leads.id', '=', 'crm_lead_values.lead_id')
+            ->whereNull('crm_leads.deleted_at')
+            ->whereIn('crm_lead_values.field_key', $fieldKeys)
+            ->where('crm_lead_values.field_value', '!=', '')
+            ->whereNotNull('crm_lead_values.field_value')
+            ->whereRaw('LENGTH(crm_lead_values.field_value) >= 7');
 
         if ($this->excludeLeadId) {
-            $query->where('lead_id', '!=', $this->excludeLeadId);
+            $query->where('crm_lead_values.lead_id', '!=', $this->excludeLeadId);
         }
 
         // Narrow down candidates using last 7 digits (covers most formats)
         $last7 = substr($normalizedDigits, -7);
-        $query->whereRaw('field_value LIKE ?', ['%' . $last7 . '%']);
+        $query->whereRaw('crm_lead_values.field_value LIKE ?', ['%' . $last7 . '%']);
 
-        $candidates = $query->select('lead_id', 'field_key', 'field_value')->limit(50)->get();
+        $candidates = $query->select('crm_lead_values.lead_id', 'crm_lead_values.field_key', 'crm_lead_values.field_value')->limit(50)->get();
 
         foreach ($candidates as $row) {
             if ($this->normalizePhone($row->field_value) === $normalizedDigits) {
@@ -201,15 +207,17 @@ class CrmLeadDuplicateCheckService
     protected function findBusinessMatch(string $normalizedName, array $fieldKeys): ?object
     {
         $query = DB::connection($this->conn)->table('crm_lead_values')
-            ->whereIn('field_key', $fieldKeys)
-            ->where('field_value', '!=', '')
-            ->whereNotNull('field_value');
+            ->join('crm_leads', 'crm_leads.id', '=', 'crm_lead_values.lead_id')
+            ->whereNull('crm_leads.deleted_at')
+            ->whereIn('crm_lead_values.field_key', $fieldKeys)
+            ->where('crm_lead_values.field_value', '!=', '')
+            ->whereNotNull('crm_lead_values.field_value');
 
         if ($this->excludeLeadId) {
-            $query->where('lead_id', '!=', $this->excludeLeadId);
+            $query->where('crm_lead_values.lead_id', '!=', $this->excludeLeadId);
         }
 
-        $candidates = $query->select('lead_id', 'field_key', 'field_value')->limit(500)->get();
+        $candidates = $query->select('crm_lead_values.lead_id', 'crm_lead_values.field_key', 'crm_lead_values.field_value')->limit(500)->get();
 
         foreach ($candidates as $row) {
             if ($this->normalizeBusiness($row->field_value) === $normalizedName) {

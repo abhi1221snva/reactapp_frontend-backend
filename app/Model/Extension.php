@@ -227,10 +227,8 @@ public function extensionDetailold(Request $request, int $extension_id = null)
 public function extensionDetail(Request $request, int $extension_id = null)
 {
     $parentId = $request->auth->parent_id;
-    // Users are stored in the master DB keyed by base_parent_id (the root account).
-    // A sub-account user has parent_id=11 but base_parent_id=3, so agents live
-    // under base_parent_id=3, not base_parent_id=11.
-    $baseParentId = $request->auth->base_parent_id ?? $parentId;
+    // Each client should only see their own users (parent_id match).
+    $baseParentId = $parentId;
 
     // ----------------- DID LIST -----------------
     $didList = Dids::on('mysql_' . $parentId)
@@ -342,7 +340,7 @@ if ($request->auth->level > 5) {
     $countSql = "
         SELECT COUNT(*) AS total
         FROM users
-        WHERE users.base_parent_id = ?
+        WHERE users.parent_id = ?
         AND users.is_deleted = 0
         $statusSql
         AND (
@@ -373,7 +371,7 @@ if ($request->auth->level > 5) {
         SELECT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
         FROM users
         LEFT JOIN user_extensions ON user_extensions.name = users.extension
-        WHERE users.base_parent_id = ?
+        WHERE users.parent_id = ?
         AND users.is_deleted = 0
         $statusSql
         AND (
@@ -408,14 +406,14 @@ if ($request->auth->level > 5) {
             SELECT users.*, user_extensions.ipaddr, user_extensions.fullcontact, user_extensions.secret
             FROM users
             LEFT JOIN user_extensions ON user_extensions.name = users.extension
-            WHERE users.base_parent_id = ?
+            WHERE users.parent_id = ?
               AND users.id = ?
               AND users.is_deleted = ?
               AND (
                     users.status = ?
                     OR users.id = ?
                 )
-              AND users.base_parent_id = ?
+              AND users.parent_id = ?
                 AND (
                     users.user_level < 9
                     OR users.id = ?

@@ -654,7 +654,7 @@ public function getListwithoutCampaign($request)
                         cl.campaign_id,
                         (SELECT c2.title FROM campaign c2 WHERE c2.id = cl.campaign_id LIMIT 1) AS campaign
                     FROM list l
-                    INNER JOIN campaign_list cl ON cl.list_id = l.id AND cl.is_deleted = 0 AND cl.status = '1' AND cl.campaign_id = :campaign_id
+                    INNER JOIN campaign_list cl ON cl.list_id = l.id AND cl.is_deleted = 0 AND cl.campaign_id = :campaign_id
                     WHERE 1=1";
 
             $params = ['campaign_id' => $request->input('campaign_id')];

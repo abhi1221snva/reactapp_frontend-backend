@@ -104,7 +104,7 @@ class CompanyDetailController extends Controller
                     ? rtrim($websiteUrl, '/') . '/apply/{your_code}'
                     : null,
                 'merchant_url_example' => $websiteUrl
-                    ? rtrim($websiteUrl, '/') . '/merchant/customer/app/index/{client_id}/{lead_id}/{lead_token}'
+                    ? rtrim($websiteUrl, '/') . '/merchant/{lead_token}'
                     : null,
             ]);
         } catch (\Throwable $e) {
@@ -372,7 +372,7 @@ class CompanyDetailController extends Controller
 
             $setting     = $this->getSystemSetting($clientId);
             $portalBase  = $this->getPortalBaseUrl($clientId);
-            $merchantUrl = $portalBase . '/merchant/customer/app/index/' . $clientId . '/' . $id . '/' . $lead->lead_token;
+            $merchantUrl = $portalBase . '/merchant/' . $lead->lead_token;
 
             // Persist generated URL on the lead
             DB::connection($conn)->table('crm_leads')

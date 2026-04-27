@@ -382,6 +382,24 @@ class CrmEmailTemplateController extends Controller
                     $subject_content = str_replace($replace_subject_key, $vl1, $subject_content);
                 }
 
+                // Inject specialist placeholders from the assigned agent (not the logged-in user)
+                $specialist = !empty($lead_record->assigned_to)
+                    ? User::find($lead_record->assigned_to)
+                    : null;
+                $specialistArr = $specialist ? $specialist->toArray() : $user_detail;
+                $specialistMap = [
+                    '[[specialist_email]]'      => $specialistArr['email'] ?? '',
+                    '[[specialist_name]]'       => trim(($specialistArr['first_name'] ?? '') . ' ' . ($specialistArr['last_name'] ?? '')),
+                    '[[specialist_first_name]]' => $specialistArr['first_name'] ?? '',
+                    '[[specialist_last_name]]'  => $specialistArr['last_name'] ?? '',
+                    '[[specialist_phone]]'      => $specialistArr['mobile'] ?? '',
+                    '[[specialist_mobile]]'     => $specialistArr['mobile'] ?? '',
+                ];
+                foreach ($specialistMap as $placeholder => $value) {
+                    $email_content = str_replace($placeholder, (string) $value, $email_content);
+                    $subject_content = str_replace($placeholder, (string) $value, $subject_content);
+                }
+
                 //$subject_content = str_replace('[[', '', $subject_content);
                 //$subject_content = str_replace(']]', '', $subject_content);
 

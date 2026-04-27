@@ -463,8 +463,7 @@ class LeadPdfService
         } else {
             $token = $data['unique_token'] ?? $data['lead_token'] ?? null;
             if ($token) {
-                $plainUrl = $this->getPortalBaseUrl($clientId)
-                    . '/merchant/customer/app/index/' . $clientId . '/' . $leadId . '/' . $token;
+                $plainUrl = $this->getPortalBaseUrl($clientId) . '/merchant/' . $token;
                 $data['unique_url'] = '<a href="' . $plainUrl . '">Click Here</a>';
                 try {
                     DB::connection($conn)->table('crm_leads')->where('id', $leadId)

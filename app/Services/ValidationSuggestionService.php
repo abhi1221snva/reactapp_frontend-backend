@@ -39,12 +39,14 @@ class ValidationSuggestionService
         'ssn'                    => [['rule' => 'digits', 'value' => 9]],
 
         // ── Phone / Mobile ───────────────────────────────────────────────────
-        'phone_number'           => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 10]],
-        'mobile_number'          => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 10]],
-        'phone'                  => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 10]],
-        'mobile'                 => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 10]],
-        'cell'                   => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 10]],
-        'fax'                    => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 10]],
+        // Only digits:10 — no 'numeric' rule because the UI may format with parens/dashes
+        // and the sanitizer strips non-digit chars before validation.
+        'phone_number'           => [['rule' => 'digits', 'value' => 10]],
+        'mobile_number'          => [['rule' => 'digits', 'value' => 10]],
+        'phone'                  => [['rule' => 'digits', 'value' => 10]],
+        'mobile'                 => [['rule' => 'digits', 'value' => 10]],
+        'cell'                   => [['rule' => 'digits', 'value' => 10]],
+        'fax'                    => [['rule' => 'digits', 'value' => 10]],
 
         // ── Email ────────────────────────────────────────────────────────────
         'email_address'          => [['rule' => 'email'], ['rule' => 'max', 'value' => 100]],
@@ -158,7 +160,7 @@ class ValidationSuggestionService
     {
         return match (strtolower($fieldType)) {
             'email'        => [['rule' => 'email'], ['rule' => 'max', 'value' => 255]],
-            'phone_number' => [['rule' => 'numeric'], ['rule' => 'digits', 'value' => 10]],
+            'phone_number' => [['rule' => 'digits', 'value' => 10]],
             'number'       => [['rule' => 'numeric']],
             'date'         => [['rule' => 'date']],
             'url'          => [['rule' => 'url']],

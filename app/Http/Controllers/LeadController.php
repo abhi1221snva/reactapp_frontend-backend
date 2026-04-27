@@ -516,7 +516,7 @@ class LeadController extends Controller
                                     $list_data['created_at'] = date('y-m-d h:i:s');
                                     $list_data['updated_at'] = date('y-m-d h:i:s');
                                     $list_data['unique_token'] = $this->generateCode();
-                                    $url = $domain_list . '/merchant/customer/app/index/' . $request->auth->parent_id . '/' . $r . '/' . $list_data['unique_token'];
+                                    $url = $domain_list . '/merchant/' . $list_data['unique_token'];
                                     $list_data['unique_url'] = $url;
 
                                     $list_data['lead_status'] = 'new_lead';
@@ -597,7 +597,7 @@ class LeadController extends Controller
             $phone = $objLead->phone_number;
             $phone_new = str_replace(array('(', ')', '_', '-', ' '), array(''), $phone);
             $unique_token = $this->generateCode();
-            $merchant_url = $this->getPortalBaseUrl($clientId) . '/merchant/customer/app/index/' . $clientId . '/' . $lastId . '/' . $unique_token;
+            $merchant_url = $this->getPortalBaseUrl($clientId) . '/merchant/' . $unique_token;
             $lead = Lead::on("mysql_$clientId")->findorfail($lastId);
             $lead->unique_url   = $merchant_url;
             $lead->unique_token = $unique_token;
@@ -781,7 +781,7 @@ class LeadController extends Controller
 
             $lastId       = $objLead->id;
             $unique_token = $this->generateCode();
-            $merchant_url = $this->getPortalBaseUrl($clientId) . '/merchant/customer/app/index/' . $clientId . '/' . $lastId . '/' . $unique_token;
+            $merchant_url = $this->getPortalBaseUrl($clientId) . '/merchant/' . $unique_token;
             $objLead->unique_url   = $merchant_url;
             $objLead->unique_token = $unique_token;
             $objLead->lead_token   = $unique_token;
@@ -1558,7 +1558,7 @@ class LeadController extends Controller
             $unique_token = $this->generateCode();
             $objLeadUpdate = Lead::on("mysql_$clientId")->findOrFail($lastId);
 
-            $merchant_url = $this->getPortalBaseUrl($clientId) . '/merchant/customer/app/index/' . $clientId . '/' . $lastId . '/' . $unique_token;
+            $merchant_url = $this->getPortalBaseUrl($clientId) . '/merchant/' . $unique_token;
 
             $objLeadUpdate->unique_url   = $merchant_url;
             $objLeadUpdate->unique_token = $unique_token;
@@ -2391,8 +2391,7 @@ class LeadController extends Controller
                 // Only reaches here when the lead was never assigned a portal link.
                 $token = $data['unique_token'] ?? $data['lead_token'] ?? null;
                 if ($token) {
-                    $plainUrl = $this->getPortalBaseUrl($clientId)
-                        . '/merchant/customer/app/index/' . $clientId . '/' . $leadId . '/' . $token;
+                    $plainUrl = $this->getPortalBaseUrl($clientId) . '/merchant/' . $token;
                     $data['unique_url'] = '<a href="' . $plainUrl . '">Click Here</a>';
                     // Persist so this is never regenerated again.
                     try {

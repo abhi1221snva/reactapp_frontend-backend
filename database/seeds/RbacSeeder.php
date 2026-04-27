@@ -232,7 +232,6 @@ class RbacSeeder extends Seeder
         $items[] = $this->item('dialer', 'VOICE', '/ivr',               'IVR Menus',       'PhoneCall',    'ivr',         7, ++$order);
         $items[] = $this->item('dialer', 'VOICE', '/voicemail',         'Voicemail Drops', 'Voicemail',    'voicemail',   7, ++$order);
         $items[] = $this->item('dialer', 'VOICE', '/voicemail/mailbox', 'Mailbox',         'Inbox',        'voicemail',   5, ++$order);
-        $items[] = $this->item('dialer', 'VOICE', '/call-times',        'Call Times',      'Clock',        'call_times',  7, ++$order);
         $items[] = $this->item('dialer', 'VOICE', '/call-timers',       'Call Timers',     'Clock',        'call_timers', 7, ++$order);
         $items[] = $this->item('dialer', 'VOICE', '/holidays',          'Holidays',        'CalendarDays', 'holidays',    7, ++$order);
 

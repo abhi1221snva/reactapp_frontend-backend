@@ -342,7 +342,7 @@ class AffiliateController extends Controller
                                     $list_data['created_at'] = date('y-m-d h:i:s');
                                     $list_data['updated_at'] = date('y-m-d h:i:s');
                                     $list_data['unique_token'] = $this->generateCode();
-                                    $url = $domain_list . '/merchant/customer/app/index/' . $request->auth->parent_id . '/' . $r . '/' . $list_data['unique_token'];
+                                    $url = $domain_list . '/merchant/' . $list_data['unique_token'];
                                     $list_data['unique_url'] = $url;
 
                                     $list_data['lead_status'] = 'new_lead';
@@ -484,7 +484,7 @@ Log::info('reached',[$request->all()]);
             $phone = $objLead->phone_number;
             $phone_new = str_replace(array('(',')', '_', '-',' '), array(''), $phone);
             $unique_token = $this->generateCode();
-            $merchant_url = $domain_list . '/merchant/customer/app/index/' . $clientId . '/' . $lastId . '/' . $unique_token;
+            $merchant_url = $domain_list . '/merchant/' . $unique_token;
             $lead = Lead::on("mysql_$clientId")->findorfail($lastId);
             $lead->unique_url   = $merchant_url;
             $lead->unique_token = $unique_token;
@@ -846,7 +846,7 @@ Log::info('reached',[$request->all()]);
                 $unique_token = $this->generateCode();
                 $objLeadUpdate = Lead::on("mysql_$clientId")->findOrFail($lastId);
 
-                $merchant_url = $domain_list . '/merchant/customer/app/index/' . $clientId . '/' . $lastId . '/' . $unique_token;
+                $merchant_url = $domain_list . '/merchant/' . $unique_token;
 
                 $objLeadUpdate->unique_url   = $merchant_url;
                 $objLeadUpdate->unique_token = $unique_token;

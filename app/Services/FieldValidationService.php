@@ -28,7 +28,11 @@ class FieldValidationService
      */
     public function sanitize(mixed $raw, string $type, array &$input, string $key): mixed
     {
-        if (in_array($type, ['phone_number', 'phone'], true)) {
+        // Strip non-numeric chars from phone fields — match by type OR by key
+        if (
+            in_array($type, ['phone_number', 'phone'], true)
+            || preg_match('/\b(phone|mobile|cell|fax)\b/i', $key)
+        ) {
             $clean       = preg_replace('/[^0-9]/', '', (string) $raw);
             $input[$key] = $clean;
             return $clean;
