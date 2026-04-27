@@ -882,23 +882,25 @@ HTML;
         // the EAV rows are deleted — but the legacy table still holds stale values.
         // Strip those legacy Owner 2 fields so they don't reappear.
         if (!empty($eavData)) {
-            $owner2Prefixes = ['owner_2_', 'option_734', 'option_735', 'option_736',
-                'option_737', 'option_738', 'option_739', 'option_740', 'option_741',
-                'option_742', 'option_743', 'option_744', 'option_745'];
+            // Dynamically resolve Owner 2 field keys from crm_labels (section=second_owner)
+            $owner2FieldKeys = DB::connection($conn)->table('crm_labels')
+                ->where('section', 'second_owner')
+                ->pluck('field_key')
+                ->toArray();
+            // Also include the generic owner_2_ prefix for any non-label-based fields
+            $owner2ExactKeys = array_flip($owner2FieldKeys);
+
             $hasOwner2InEav = false;
             foreach ($eavData as $k => $v) {
-                if (str_starts_with($k, 'owner_2_') && $v !== '' && $v !== null) {
+                if ($v !== '' && $v !== null && (str_starts_with($k, 'owner_2_') || isset($owner2ExactKeys[$k]))) {
                     $hasOwner2InEav = true;
                     break;
                 }
             }
             if (!$hasOwner2InEav) {
                 foreach (array_keys($merged) as $k) {
-                    foreach ($owner2Prefixes as $prefix) {
-                        if (str_starts_with($k, $prefix)) {
-                            unset($merged[$k]);
-                            break;
-                        }
+                    if (str_starts_with($k, 'owner_2_') || isset($owner2ExactKeys[$k])) {
+                        unset($merged[$k]);
                     }
                 }
             }
