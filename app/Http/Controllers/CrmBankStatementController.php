@@ -185,14 +185,14 @@ class CrmBankStatementController extends Controller
             return response()->json(['success' => false, 'message' => 'Document not found.'], 404);
         }
 
-        // Verify it's a PDF
-        $ext = strtolower(pathinfo($doc->file_path ?? '', PATHINFO_EXTENSION));
+        // Verify it's a PDF — check file_path first, fall back to file_name
+        $ext = strtolower(pathinfo($doc->file_path ?: ($doc->file_name ?? ''), PATHINFO_EXTENSION));
         if ($ext !== 'pdf') {
             return response()->json(['success' => false, 'message' => 'Only PDF documents can be analyzed.'], 422);
         }
 
         // Resolve file to absolute path
-        $absPath = $this->resolveStoragePath($doc->file_path ?? '');
+        $absPath = $this->resolveStoragePath($doc->file_path ?? '', $clientId, (int) $id, $doc->file_name ?? '');
         if (!$absPath || !file_exists($absPath)) {
             return response()->json(['success' => false, 'message' => 'File not found on server.'], 404);
         }
@@ -577,21 +577,33 @@ class CrmBankStatementController extends Controller
 
     /**
      * Resolve a stored file_path (public URL) to an absolute filesystem path.
+     * Falls back to convention-based path when file_path is empty:
+     *   crm_documents/client_{clientId}/lead_{leadId}/{file_name}
      */
-    private function resolveStoragePath(string $fileUrl): ?string
+    private function resolveStoragePath(string $fileUrl, int $clientId = 0, int $leadId = 0, string $fileName = ''): ?string
     {
-        if (empty($fileUrl)) return null;
+        // 1. Try URL-based resolution
+        if (!empty($fileUrl)) {
+            $appUrl = rtrim(config('app.url'), '/');
+            $prefix = $appUrl . '/storage/';
 
-        $appUrl = rtrim(config('app.url'), '/');
-        $prefix = $appUrl . '/storage/';
+            if (str_starts_with($fileUrl, $prefix)) {
+                $relative = substr($fileUrl, strlen($prefix));
+                if (Storage::disk('public')->exists($relative)) {
+                    return Storage::disk('public')->path($relative);
+                }
+            }
+        }
 
-        if (!str_starts_with($fileUrl, $prefix)) return null;
+        // 2. Fallback: build path from client/lead/filename convention
+        if ($clientId && $leadId && $fileName) {
+            $relative = "crm_documents/client_{$clientId}/lead_{$leadId}/{$fileName}";
+            if (Storage::disk('public')->exists($relative)) {
+                return Storage::disk('public')->path($relative);
+            }
+        }
 
-        $relative = substr($fileUrl, strlen($prefix));
-
-        if (!Storage::disk('public')->exists($relative)) return null;
-
-        return Storage::disk('public')->path($relative);
+        return null;
     }
 
     public function summary(Request $request, $id, $sessionId): JsonResponse
