@@ -621,9 +621,8 @@ class LeadLenderService
                     }
                 );
 
-                // ── Dispatch based on route (AFTER transaction commits) ────────────
+                // ── Dispatch API job (AFTER transaction commits) ─────────────────────
                 if ($apiConfig) {
-                    // API submission — job handles actual HTTP call + final status update
                     dispatch(new DispatchLenderApiJob($clientId, $leadId, $lenderId, $userId, $documentIds))
                         ->onConnection('redis')
                         ->onQueue('default');

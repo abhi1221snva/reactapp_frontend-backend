@@ -166,16 +166,8 @@ class MerchantNotificationService
             Log::warning("[MerchantNotification] Email failed: " . $e->getMessage());
         }
 
-        // ── Channel 4: SMS chat note ─────────────────────────────────────────
-        try {
-            $smsService = new SmsInboxService();
-            $smsService->addSystemMessage(
-                $clientId,
-                $leadId,
-                "[{$event['title']}] {$event['description']} ({$timestamp})",
-            );
-        } catch (\Throwable $e) {
-            Log::warning("[MerchantNotification] SMS system message failed: " . $e->getMessage());
-        }
+        // Channel 4 (SMS chat note) removed — these system events should not
+        // appear in the SMS Inbox. The other 3 channels (in-app, push, email)
+        // already notify the agent.
     }
 }

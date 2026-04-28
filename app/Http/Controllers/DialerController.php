@@ -29,6 +29,7 @@ use App\Model\Client\Campaign;
 use App\Model\Client\CampaignLeadQueue;
 use App\Model\Client\AgentStatus;
 use App\Services\AsteriskAmiService;
+use App\Services\CampaignDialerService;
 use App\Services\CallerIdResolverService;
 
 class DialerController extends Controller
@@ -449,6 +450,48 @@ class DialerController extends Controller
                 'success' => false,
                 'message' => 'No extension configured for your account',
             ], 400);
+        }
+
+        // Guard: if agent is already in an active ConfBridge call, use the persistent
+        // conference flow (hangupCustomerAndDialNext) instead of originating a fresh
+        // call to the agent.  This prevents the double-ring bug where the agent gets
+        // a second SIP INVITE while already in the conference room.
+        $existingLive = ExtensionLive::on($dbConnection)
+            ->where('extension', $extension)
+            ->whereIn('status', [1, 3])
+            ->whereNotNull('conf_room')
+            ->first();
+
+        if ($existingLive) {
+            Log::info("campaignDialNext: agent {$extension} already in conf (room={$existingLive->conf_room}), redirecting to nextCustomer flow");
+            try {
+                $ami     = new AsteriskAmiService();
+                $service = new CampaignDialerService($ami);
+                $result  = $service->hangupCustomerAndDialNext($campaignId, (int) $extension, $clientId, $dbConnection);
+            } catch (\Throwable $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Internal error: ' . $e->getMessage(),
+                ], 500);
+            }
+
+            if ($result['status'] === 'error') {
+                return response()->json(['success' => false, 'message' => $result['message']], 422);
+            }
+
+            if ($result['status'] === 'no_more_leads') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No leads available in this campaign',
+                ], 404);
+            }
+
+            $lead = $result['lead'] ?? [];
+            return response()->json(array_merge([
+                'success'   => true,
+                'message'   => 'Next customer being dialed (persistent conference)',
+                'dial_mode' => 'persistent_conference',
+            ], $lead));
         }
 
         // Validate campaign exists

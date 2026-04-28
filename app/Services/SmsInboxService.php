@@ -125,6 +125,7 @@ class SmsInboxService
     {
         $rows = CrmSmsMessage::on("mysql_{$clientId}")
             ->where('conversation_id', $conversationId)
+            ->where('direction', '!=', 'system')
             ->orderBy('created_at', 'asc')
             ->get()
             ->toArray();
