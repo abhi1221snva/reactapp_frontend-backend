@@ -567,7 +567,22 @@ class PublicApplicationService
         // Build sections using HTML tables (dompdf does NOT support CSS Grid/Flexbox reliably)
         $sectionsHtml = '';
         foreach ($sections as $section) {
-            $title      = htmlspecialchars($section['title'] ?? '');
+            $title = $section['title'] ?? '';
+
+            // Skip Owner 2 section when no Owner 2 fields have values
+            $isOwner2Sec = stripos($title, 'owner 2') !== false;
+            if ($isOwner2Sec) {
+                $hasAnyO2Value = false;
+                foreach ($section['fields'] as $field) {
+                    if (!empty(trim((string) ($fields[$field['key'] ?? ''] ?? '')))) {
+                        $hasAnyO2Value = true;
+                        break;
+                    }
+                }
+                if (!$hasAnyO2Value) continue;
+            }
+
+            $titleEsc   = htmlspecialchars($title);
             $fieldCells = [];
             foreach ($section['fields'] as $field) {
                 $key   = $field['key'] ?? '';
@@ -587,27 +602,33 @@ class PublicApplicationService
             foreach (array_chunk($fieldCells, 3) as $row) {
                 $rows .= '<tr>' . implode('', $row) . '</tr>';
             }
-            $sectionsHtml .= "<div class='section'><div class='section-title'>{$title}</div>"
+            $sectionsHtml .= "<div class='section'><div class='section-title'>{$titleEsc}</div>"
                 . "<table class='fields' width='100%' cellpadding='0' cellspacing='2'>{$rows}</table></div>";
         }
 
-        // Render both signatures side-by-side (show section only if at least one exists)
+        // Render signatures — only include co-applicant column when a sig2 exists
         $sigHtml = '';
         if ($sigInline || $sig2Inline) {
             $sig1Date = htmlspecialchars($fields['signature_date'] ?? $date);
-            $sig2Date = htmlspecialchars($fields['owner_2_signature_date'] ?? $date);
             $sig1Cell = $sigInline
                 ? "<img src='" . $sigInline . "' class='sig-img' /><div class='sig-date'>Date: {$sig1Date}</div>"
                 : "<span class='sig-empty'>Not provided</span>";
-            $sig2Cell = $sig2Inline
-                ? "<img src='" . $sig2Inline . "' class='sig-img' /><div class='sig-date'>Date: {$sig2Date}</div>"
-                : "<span class='sig-empty'>Not provided</span>";
-            $sigHtml = "<div class='section'><div class='section-title'>Digital Signatures</div>"
-                . "<table width='100%' cellpadding='0' cellspacing='6'><tr>"
-                . "<td width='50%' valign='top'><div class='sig-label'>Applicant Signature</div>{$sig1Cell}</td>"
-                . "<td width='2%'></td>"
-                . "<td width='48%' valign='top'><div class='sig-label'>Co-Applicant Signature</div>{$sig2Cell}</td>"
-                . "</tr></table></div>";
+
+            if ($sig2Inline) {
+                // Both signatures — side by side
+                $sig2Date = htmlspecialchars($fields['owner_2_signature_date'] ?? $date);
+                $sig2Cell = "<img src='" . $sig2Inline . "' class='sig-img' /><div class='sig-date'>Date: {$sig2Date}</div>";
+                $sigHtml = "<div class='section'><div class='section-title'>Digital Signatures</div>"
+                    . "<table width='100%' cellpadding='0' cellspacing='6'><tr>"
+                    . "<td width='50%' valign='top'><div class='sig-label'>Applicant Signature</div>{$sig1Cell}</td>"
+                    . "<td width='2%'></td>"
+                    . "<td width='48%' valign='top'><div class='sig-label'>Co-Applicant Signature</div>{$sig2Cell}</td>"
+                    . "</tr></table></div>";
+            } else {
+                // Only applicant signature — full width
+                $sigHtml = "<div class='section'><div class='section-title'>Digital Signature</div>"
+                    . "<div style='padding:2px 0;'><div class='sig-label'>Applicant Signature</div>{$sig1Cell}</div></div>";
+            }
         }
 
         $docsHtml = '';
@@ -936,6 +957,47 @@ HTML;
         $conn   = "mysql_{$clientId}";
         $leadId = $lead->id;
         $now    = now();
+
+        // ── 0. Clear Owner 2 data when the merchant unchecked "Second Owner" ──
+        $clearOwner2 = !empty($formData['_clear_owner_2']);
+        unset($formData['_clear_owner_2']);
+
+        if ($clearOwner2) {
+            // Delete all owner_2_* EAV rows (fields, signature, date)
+            if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_values')) {
+                DB::connection($conn)->table('crm_lead_values')
+                    ->where('lead_id', $leadId)
+                    ->where(function ($q) {
+                        $q->where('field_key', 'like', 'owner_2_%')
+                          ->orWhereIn('field_key', ['owner_2_signature_image', 'owner_2_signature_date']);
+                    })
+                    ->delete();
+            }
+            // Also clear in legacy table
+            if (DB::connection($conn)->getSchemaBuilder()->hasTable('crm_lead_data')) {
+                try {
+                    DB::connection($conn)->table('crm_lead_data')
+                        ->where('id', $leadId)
+                        ->update([
+                            'owner_2_signature_image' => null,
+                            'updated_at'              => $now,
+                        ]);
+                } catch (\Throwable $ignored) {}
+            }
+            // Delete the owner 2 signature file from storage
+            $sigPath = DB::connection($conn)->table('crm_lead_values')
+                ->where('lead_id', $leadId)
+                ->where('field_key', 'owner_2_signature_image')
+                ->value('field_value');
+            // (already deleted above, but keep for clarity — no-op)
+
+            // Remove owner_2_* keys from formData so they aren't re-inserted below
+            foreach (array_keys($formData) as $k) {
+                if (str_starts_with($k, 'owner_2_')) {
+                    unset($formData[$k]);
+                }
+            }
+        }
 
         // ── 1. Load current values for diff (legacy + EAV, same as display) ──
         // Must mirror getMerchantLeadData() merge so we compare what the

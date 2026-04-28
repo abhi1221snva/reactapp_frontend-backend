@@ -54,6 +54,22 @@ class LeadPdfService
 
         $html = $this->applyPlaceholders($template->template_html ?? '', $data);
 
+        // Strip the "Second Owner" section from the rendered HTML when no Owner 2
+        // data exists.  The CRM template contains hardcoded table structure (headers,
+        // labels, rows) that remains even after empty [[owner_2_*]] placeholders are
+        // removed.  We detect this by checking whether any owner_2_ key carried a
+        // non-empty value in the data map.
+        $hasOwner2Data = false;
+        foreach ($data as $k => $v) {
+            if (str_starts_with((string) $k, 'owner_2_') && $v !== '' && $v !== null) {
+                $hasOwner2Data = true;
+                break;
+            }
+        }
+        if (!$hasOwner2Data) {
+            $html = $this->stripOwner2Sections($html);
+        }
+
         return [
             'html'          => $html,
             'lead_name'     => $leadName,
@@ -596,6 +612,68 @@ class LeadPdfService
         $text = preg_replace('/\[\[[^\]]*\]\]/', '', $text);
         $text = preg_replace('/\[[a-z0-9_]+\]/i', '', $text);
         return $text;
+    }
+
+    // ── Remove Owner 2 / Second Owner sections from rendered template HTML ────
+
+    /**
+     * Strip "Second Owner" information and co-applicant signature columns from
+     * the rendered CRM template HTML.  Called when no owner_2_* data exists so
+     * the PDF does not display an empty Second Owner block.
+     */
+    private function stripOwner2Sections(string $html): string
+    {
+        // 1. Remove the "Second Owner" <thead> + following <tbody> block.
+        //    Pattern: <thead>..Second Owner..</thead> <tbody>...</tbody>
+        $html = preg_replace(
+            '#<thead>\s*<tr>\s*<th[^>]*>[^<]*(?:Second\s+Owner|Owner\s*2)[^<]*</th>\s*</tr>\s*</thead>\s*<tbody>.*?</tbody>#is',
+            '',
+            $html
+        );
+
+        // 2. Remove co-applicant signature columns from the signature table.
+        //    The template renders a 4-column row: [sig1] [date1] [sig2] [date2]
+        //    followed by a label row:              [Owner's sig] [Date] [Second Owner's sig] [Date]
+        //    Remove the last two <td>s in each row that reference "Second Owner" or "owner_2".
+
+        // Remove <td> cells containing "Second Owner" label text,
+        // plus the adjacent "Date" <td> that follows it in the label row.
+        $html = preg_replace(
+            '#<td[^>]*>[^<]*(?:Second\s+Owner|Co-?Applicant)[^<]*</td>\s*<td[^>]*>\s*Date\s*</td>#is',
+            '',
+            $html
+        );
+        // Fallback: if the "Date" cell didn't immediately follow, remove the cell alone
+        $html = preg_replace(
+            '#<td[^>]*>[^<]*(?:Second\s+Owner|Co-?Applicant)[^<]*</td>#is',
+            '',
+            $html
+        );
+
+        // Remove <td> cells that had owner_2_signature_image / owner_2_signature_date
+        // (now empty after placeholder substitution)
+        // These cells contained [[owner_2_signature_image]] / [[owner_2_signature_date]]
+        // which are now empty strings — detect them as empty <td> siblings after the
+        // primary signature cells in the signature table.
+        // Match pattern: two consecutive empty <td>s at the end of a row that follow
+        // the primary signature cells (which have content).
+        // Simpler approach: widen the primary sig cells from 25% to 50%.
+        $html = preg_replace(
+            '#(<td\s+style="[^"]*width\s*:\s*)25(%[^"]*">\s*\[\[signature_image\]\])#i',
+            '$1 50$2',
+            $html
+        );
+
+        // At this point the owner_2 <td>s are empty (no text, no img). Remove any
+        // <td> in the signature table that is completely empty (only whitespace/&nbsp;).
+        // We specifically target <td style="width:25%"> cells that are empty.
+        $html = preg_replace(
+            '#<td\s+style="[^"]*width\s*:\s*25%[^"]*">\s*(?:&nbsp;)*\s*</td>#i',
+            '',
+            $html
+        );
+
+        return $html;
     }
 
     // ── Resolve portal base URL (mirrors Controller::getPortalBaseUrl) ────────
