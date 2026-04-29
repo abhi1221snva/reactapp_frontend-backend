@@ -374,6 +374,25 @@ class ErrorParserService
         return implode(' ', $labels) ?: 'This field';
     }
 
+    // ── Generic Error Detection ─────────────────────────────────────────────
+
+    /**
+     * Returns true when all parsed errors are vague/unactionable (fix_type = unknown).
+     * This signals that local payload validation should supplement the errors.
+     */
+    public function isGenericError(array $parsedErrors): bool
+    {
+        if (empty($parsedErrors)) {
+            return true;
+        }
+        foreach ($parsedErrors as $err) {
+            if (($err['fix_type'] ?? 'unknown') !== 'unknown') {
+                return false;
+            }
+        }
+        return true;
+    }
+
     // ── Utilities ─────────────────────────────────────────────────────────────
 
     private function isAssoc(array $arr): bool

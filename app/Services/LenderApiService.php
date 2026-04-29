@@ -168,6 +168,15 @@ class LenderApiService
                     $parser       = new ErrorParserService();
                     $suggester    = new FixSuggestionService();
                     $parsedErrors = $parser->parse($code, $body);
+
+                    // When lender returns a generic error, supplement with local payload validation
+                    if ($parser->isGenericError($parsedErrors)) {
+                        $payloadErrors = $this->validatePayloadStructure($payload, $config);
+                        if (!empty($payloadErrors)) {
+                            $parsedErrors = $payloadErrors;
+                        }
+                    }
+
                     $suggestions  = $suggester->suggest($parsedErrors, $leadData);
                     $isFixable    = !empty(array_filter($suggestions, fn ($e) => !in_array($e['fix_type'] ?? '', ['unknown'], true)));
                     $errorJson    = json_encode($parsedErrors, JSON_UNESCAPED_UNICODE);
@@ -427,6 +436,239 @@ class LenderApiService
         }
 
         return $missing;
+    }
+
+    // ── Local Payload Validation ────────────────────────────────────────────────
+
+    /**
+     * Inspect the built payload and generate specific errors for structural
+     * issues the lender API won't explain well (generic "Request is not valid").
+     *
+     * Returns errors in the same format as ErrorParserService::parse().
+     */
+    private function validatePayloadStructure(array $payload, Lender $config): array
+    {
+        $lenderType = strtolower(trim($config->lender_api_type ?? ''));
+        $errors = [];
+
+        // ── Generic checks (all lenders) ─────────────────────────────────────
+
+        // Check numeric fields that are strings
+        $numericPaths = [
+            'selfReported.revenue'              => 'Revenue',
+            'selfReported.averageBalance'        => 'Average Balance',
+            'selfReported.desiredLoanAmount'     => 'Desired Loan Amount',
+            'selfReported.desiredLoanTerm'       => 'Desired Loan Term',
+            'selfReported.mcaBalance'            => 'MCA Balance',
+            'selfReported.averageCCvolume'       => 'Average CC Volume',
+        ];
+        foreach ($numericPaths as $path => $label) {
+            $val = $this->getNestedValue($payload, $path);
+            if ($val !== null && is_string($val) && $val !== '') {
+                $errors[] = $this->makeError(
+                    $path, "numeric",
+                    "{$label} must be a number, got text \"{$val}\"",
+                    "Provide a numeric value (e.g. 50000)"
+                );
+            }
+        }
+
+        // Check owner-level numeric fields
+        $owners = $payload['owners'] ?? [];
+        foreach ($owners as $i => $owner) {
+            if (isset($owner['ownershipPercentage']) && is_string($owner['ownershipPercentage'])) {
+                $errors[] = $this->makeError(
+                    "owners.{$i}.ownershipPercentage", "numeric",
+                    "Ownership Percentage must be a number, got text \"{$owner['ownershipPercentage']}\"",
+                    "Provide a whole number (e.g. 100)"
+                );
+            }
+        }
+
+        // ── OnDeck-specific checks ───────────────────────────────────────────
+        if ($lenderType === 'ondeck' || str_contains(strtolower($config->lender_name ?? ''), 'ondeck')) {
+            $errors = array_merge($errors, $this->validateOnDeckPayload($payload));
+        }
+
+        // ── Lendini / other lender checks can be added here ─────────────────
+
+        return $errors;
+    }
+
+    /**
+     * OnDeck-specific payload validation rules.
+     */
+    private function validateOnDeckPayload(array $payload): array
+    {
+        $errors = [];
+
+        // business.address must be an object, not a string
+        $bizAddr = $payload['business']['address'] ?? null;
+        if ($bizAddr !== null && !is_array($bizAddr)) {
+            $errors[] = $this->makeError(
+                'business.address', 'required',
+                "Business Address must include addressLine1, city, state, and zipCode — got a plain text value \"{$bizAddr}\"",
+                "Set separate address fields: street address, city, state (2-letter), ZIP code"
+            );
+        } elseif (is_array($bizAddr)) {
+            foreach (['addressLine1', 'city', 'state', 'zipCode'] as $key) {
+                if (empty($bizAddr[$key])) {
+                    $label = ucwords(preg_replace('/([A-Z])/', ' $1', $key));
+                    $errors[] = $this->makeError(
+                        "business.address.{$key}", 'required',
+                        "Business {$label} is required",
+                        "Provide the business {$label}"
+                    );
+                }
+            }
+            if (!empty($bizAddr['state']) && strlen($bizAddr['state']) !== 2) {
+                $errors[] = $this->makeError(
+                    'business.address.state', 'state_code',
+                    "Business State must be a 2-letter code, got \"{$bizAddr['state']}\"",
+                    "2-letter US state code (e.g. NY, CA, TX)"
+                );
+            }
+            if (!empty($bizAddr['zipCode']) && !preg_match('/^\d{5}$/', $bizAddr['zipCode'])) {
+                $errors[] = $this->makeError(
+                    'business.address.zipCode', 'zip',
+                    "Business ZIP must be exactly 5 digits, got \"{$bizAddr['zipCode']}\"",
+                    "5-digit ZIP code (e.g. 10001)"
+                );
+            }
+        }
+
+        // business.taxID must be exactly 9 digits
+        $taxId = $payload['business']['taxID'] ?? null;
+        if ($taxId !== null && $taxId !== '') {
+            $digits = preg_replace('/\D/', '', $taxId);
+            if (strlen($digits) !== 9) {
+                $errors[] = $this->makeError(
+                    'business.taxID', 'ein',
+                    "Tax ID / EIN must be exactly 9 digits, got " . strlen($digits) . " digits (\"{$taxId}\")",
+                    "9-digit EIN (e.g. 123456789)"
+                );
+            }
+        }
+
+        // business.phone must be 10 digits
+        $bizPhone = $payload['business']['phone'] ?? null;
+        if ($bizPhone !== null && $bizPhone !== '') {
+            $digits = preg_replace('/\D/', '', $bizPhone);
+            if (strlen($digits) !== 10) {
+                $errors[] = $this->makeError(
+                    'business.phone', 'phone',
+                    "Business Phone must be 10 digits, got " . strlen($digits) . " digits",
+                    "10-digit US phone number (e.g. 2125551234)"
+                );
+            }
+        }
+
+        // business.name required
+        if (empty($payload['business']['name'])) {
+            $errors[] = $this->makeError(
+                'business.name', 'required',
+                "Business Name is required",
+                "Provide the legal business name"
+            );
+        }
+
+        // Owner checks
+        $owners = $payload['owners'] ?? [];
+        if (empty($owners)) {
+            $errors[] = $this->makeError(
+                'owners', 'required',
+                "At least one business owner is required",
+                "Provide owner name, email, SSN, and date of birth"
+            );
+        }
+        foreach ($owners as $i => $owner) {
+            if (empty($owner['name'])) {
+                $errors[] = $this->makeError(
+                    "owners.{$i}.name", 'required',
+                    "Owner name is required",
+                    "Provide the owner's full name"
+                );
+            }
+            if (empty($owner['email'])) {
+                $errors[] = $this->makeError(
+                    "owners.{$i}.email", 'required',
+                    "Owner email is required",
+                    "Provide a valid email address"
+                );
+            }
+            $ssn = $owner['ssn'] ?? '';
+            if ($ssn !== '') {
+                $digits = preg_replace('/\D/', '', $ssn);
+                if (strlen($digits) !== 9) {
+                    $errors[] = $this->makeError(
+                        "owners.{$i}.ssn", 'ein',
+                        "SSN must be exactly 9 digits, got " . strlen($digits) . " digits",
+                        "9-digit SSN (e.g. 123456789)"
+                    );
+                }
+            }
+
+            // Owner home address
+            $homeAddr = $owner['homeAddress'] ?? null;
+            if (is_array($homeAddr)) {
+                if (!empty($homeAddr['state']) && strlen($homeAddr['state']) !== 2) {
+                    $errors[] = $this->makeError(
+                        "owners.{$i}.homeAddress.state", 'state_code',
+                        "Owner Home State must be a 2-letter code, got \"{$homeAddr['state']}\"",
+                        "2-letter US state code (e.g. NY, CA, TX)"
+                    );
+                }
+                if (!empty($homeAddr['zipCode']) && !preg_match('/^\d{5}$/', $homeAddr['zipCode'])) {
+                    $errors[] = $this->makeError(
+                        "owners.{$i}.homeAddress.zipCode", 'zip',
+                        "Owner Home ZIP must be exactly 5 digits",
+                        "5-digit ZIP code (e.g. 10001)"
+                    );
+                }
+            }
+        }
+
+        // externalCustomerId required
+        if (empty($payload['externalCustomerId'])) {
+            $errors[] = $this->makeError(
+                'externalCustomerId', 'required',
+                "External Customer ID is missing (should be the lead ID)",
+                "This is set automatically — contact support if this persists"
+            );
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Build a structured error array matching ErrorParserService output format.
+     */
+    private function makeError(string $field, string $fixType, string $message, string $expected): array
+    {
+        return [
+            'field'       => $field,
+            'raw_message' => $message,
+            'message'     => $message,
+            'fix_type'    => $fixType,
+            'expected'    => $expected,
+            'path_parts'  => $field !== '' ? explode('.', $field) : [],
+        ];
+    }
+
+    /**
+     * Get a value from a nested array using dot-notation path.
+     */
+    private function getNestedValue(array $data, string $path): mixed
+    {
+        $keys = explode('.', $path);
+        $current = $data;
+        foreach ($keys as $key) {
+            if (!is_array($current) || !array_key_exists($key, $current)) {
+                return null;
+            }
+            $current = $current[$key];
+        }
+        return $current;
     }
 
     // ── Submission status resolution ───────────────────────────────────────────

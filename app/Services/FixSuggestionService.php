@@ -170,14 +170,21 @@ class FixSuggestionService
             'ein'             => 'ein',
             'fein'            => 'ein',
             'taxId'           => 'ein',
+            'taxID'           => 'tax_id',
             'dob'             => 'date_of_birth',
             'dateOfBirth'     => 'date_of_birth',
             'businessName'    => 'business_name',
             'legalName'       => 'legal_name',
             'address'         => 'address',
+            'addressLine1'    => 'address',
             'streetAddress'   => 'address',
             'city'            => 'city',
             'businessCity'    => 'business_city',
+            'ownershipPercentage' => 'ownership_percentage',
+            'revenue'         => 'annual_revenue',
+            'averageBalance'  => 'average_balance',
+            'homePhone'       => 'phone_number',
+            'externalCustomerId' => '_system_lead_id',
         ];
 
         if (isset($map[$last])) {
