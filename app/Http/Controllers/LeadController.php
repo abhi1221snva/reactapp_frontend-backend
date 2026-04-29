@@ -132,6 +132,20 @@ class LeadController extends Controller
                     }
                 }
 
+                // Resolve lead_source_id to source names
+                $sourceIds = array_unique(array_filter(array_column($result['records'], 'lead_source_id')));
+                $sourceNames = [];
+                if (!empty($sourceIds)) {
+                    $sourceNames = DB::connection($conn)->table('crm_lead_source')
+                        ->whereIn('id', $sourceIds)
+                        ->pluck('source_title', 'id')
+                        ->toArray();
+                }
+                foreach ($result['records'] as $row) {
+                    $srcId = (int) ($row->lead_source_id ?? 0);
+                    $row->lead_source_name = $sourceNames[$srcId] ?? null;
+                }
+
                 // Resolve assigned_to user IDs to display names
                 $userIds = [];
                 foreach ($result['records'] as $row) {

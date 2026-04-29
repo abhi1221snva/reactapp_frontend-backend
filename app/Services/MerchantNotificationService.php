@@ -142,7 +142,8 @@ class MerchantNotificationService
         // ── Channel 3: Email ─────────────────────────────────────────────────
         try {
             try {
-                $emailSvc = EmailService::forClient($clientId, 'online application');
+                $smtpType = $clientId === 11 ? 'notification' : 'online application';
+                $emailSvc = EmailService::forClient($clientId, $smtpType);
             } catch (\Throwable $_) {
                 $emailSvc = EmailService::forClientAny($clientId);
             }

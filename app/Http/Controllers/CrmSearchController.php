@@ -65,6 +65,9 @@ class CrmSearchController extends Controller
             if (!empty($filters['lead_type'])) {
                 $query->where('cl.lead_type', $filters['lead_type']);
             }
+            if (!empty($filters['lead_source_id'])) {
+                $query->whereIn('cl.lead_source_id', (array)$filters['lead_source_id']);
+            }
             if (!empty($filters['created_from'])) {
                 $query->whereDate('cl.created_at', '>=', $filters['created_from']);
             }
@@ -142,6 +145,27 @@ class CrmSearchController extends Controller
                 }
                 return $arr;
             });
+
+            // ── Resolve lead source names ─────────────────────────────────────
+            try {
+                $sourceIds = collect($records)
+                    ->pluck('lead_source_id')
+                    ->filter()->unique()->values()->toArray();
+
+                $sourceNames = [];
+                if (!empty($sourceIds)) {
+                    $sourceNames = $conn->table('crm_lead_source')
+                        ->whereIn('id', $sourceIds)
+                        ->pluck('source_title', 'id')
+                        ->toArray();
+                }
+
+                $records = $records->map(function ($r) use ($sourceNames) {
+                    $srcId = (int)($r['lead_source_id'] ?? 0);
+                    $r['lead_source_name'] = $sourceNames[$srcId] ?? null;
+                    return $r;
+                });
+            } catch (\Throwable $e) {}
 
             // ── Resolve user names for assigned_to / created_by / updated_by ─
             try {
