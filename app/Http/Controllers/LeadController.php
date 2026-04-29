@@ -2463,6 +2463,40 @@ class LeadController extends Controller
         }
     }
 
+    /**
+     * GET /crm/lead/{id}/download-pdf
+     * Generate and download the lead application as a binary PDF file.
+     * Always renders with the latest lead data (no caching).
+     */
+    public function downloadPdf(Request $request, $id)
+    {
+        try {
+            $clientId = $request->auth->parent_id;
+            $leadId   = (int) $id;
+
+            $lead = CrmLeadRecord::on("mysql_$clientId")->find($leadId);
+            if (!$lead) {
+                return $this->failResponse("Lead not found", [], null, 404);
+            }
+            if ($err = $this->assertLeadAccess($request, $lead)) return $err;
+
+            $result   = app(\App\Services\LeadPdfService::class)->renderPdfBinary($clientId, $leadId);
+            $binary   = $result['pdf'];
+            $filename = $result['filename'];
+
+            return response($binary, 200, [
+                'Content-Type'        => 'application/pdf',
+                'Content-Disposition' => 'attachment; filename="' . addslashes($filename) . '"',
+                'Content-Length'      => strlen($binary),
+                'Cache-Control'       => 'no-store',
+            ]);
+        } catch (\RuntimeException $e) {
+            return $this->failResponse($e->getMessage(), [], null, $e->getCode() ?: 404);
+        } catch (\Throwable $e) {
+            return $this->failResponse('Failed to generate PDF', [$e->getMessage()], $e, 500);
+        }
+    }
+
     public function resolveEmailTemplate(Request $request, $id, $templateId)
     {
         try {

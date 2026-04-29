@@ -1912,6 +1912,7 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
 
   // PDF Application Generator
   $router->get('crm/lead/{id}/render-pdf',                                'LeadController@renderPdf');
+  $router->get('crm/lead/{id}/download-pdf',                              'LeadController@downloadPdf');
   $router->post('crm/lead/{id}/send-merchant-email',                      'LeadController@sendMerchantEmail');
   $router->post('crm/lead/{id}/send-sms',                                'LeadController@sendLeadSms');
   $router->get('crm/lead/{id}/resolve-email-template/{templateId}',       'LeadController@resolveEmailTemplate');
