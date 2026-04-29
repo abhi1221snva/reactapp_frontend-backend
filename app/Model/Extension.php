@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Hash;
 use App\Model\Master\Client;
 use App\Services\PjsipRealtimeService;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Cache;
 
 
 class Extension extends Model
@@ -1119,6 +1120,23 @@ public function extensionDetailList(Request $request, int $extension_id = null)
                 if ($request->has('user_level') && is_numeric($request->input('user_level'))) {
                     array_push($updateString, 'user_level = :user_level');
                     $data['user_level'] = $request->input('user_level');
+
+                    // Sync permissions.role so JwtMiddleware sees the new level
+                    $newLevel = (int) $request->input('user_level');
+                    $roleRow = \App\Model\Role::where('level', $newLevel)->first();
+                    if ($roleRow) {
+                        $targetUserId = (int) $request->input('extension_id');
+                        $clientId     = (int) $request->auth->parent_id;
+                        DB::connection('master')->update(
+                            'UPDATE permissions SET role = :role WHERE user_id = :uid AND client_id = :cid',
+                            ['role' => $roleRow->id, 'uid' => $targetUserId, 'cid' => $clientId]
+                        );
+                        // Also update users.role to stay in sync
+                        array_push($updateString, 'role = :role');
+                        $data['role'] = $roleRow->id;
+                        // Clear cached permissions so the change takes effect immediately
+                        Cache::forget("user.permissions." . $targetUserId);
+                    }
                 }
                 if ($request->has('status') && is_numeric($request->input('status'))) {
                     array_push($updateString, 'status = :status');
