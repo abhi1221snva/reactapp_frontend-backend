@@ -2929,7 +2929,7 @@ class LeadController extends Controller
     {
         $this->validate($request, [
             'lender_id'     => 'required|integer',
-            'field_updates' => 'required|array|min:1',
+            'field_updates' => 'present|array',
         ]);
 
         try {
@@ -2975,14 +2975,20 @@ class LeadController extends Controller
                     'updated_at'        => now(),
                 ]);
 
-            // ── Activity log ─────────────────────────────────────────────────
+            // ─�� Activity log ────────────────────────────────��────────────────
             $fieldList = implode(', ', array_keys($updated));
+            $subject   = empty($updated)
+                ? "Resubmitted to: {$lender->lender_name} (auto-fix)"
+                : "Fields fixed and resubmitted to: {$lender->lender_name}";
+            $body      = empty($updated)
+                ? "Resubmitted with backend auto-fixes (numeric casting, system fields)"
+                : "Updated fields: {$fieldList}";
             DB::connection($conn)->table('crm_lead_activity')->insert([
                 'lead_id'       => $leadId,
                 'user_id'       => $userId,
                 'activity_type' => 'lender_fix_resubmit',
-                'subject'       => "Fields fixed and resubmitted to: {$lender->lender_name}",
-                'body'          => "Updated fields: {$fieldList}",
+                'subject'       => $subject,
+                'body'          => $body,
                 'created_at'    => now(),
                 'updated_at'    => now(),
             ]);

@@ -660,6 +660,11 @@ class DispatchLenderApiJob extends Job
     private function addLegacyStaticFields(string $type, array &$mapping, Lender $config): void
     {
         switch ($type) {
+            case 'ondeck':
+                // OnDeck requires externalCustomerId = lead ID (system column 'id')
+                $mapping['id'] = 'externalCustomerId';
+                break;
+
             case 'credibly':
                 $mapping['=ach']    = 'application_info.product_requested';
                 $mapping['=123456'] = 'business_overview.naics';

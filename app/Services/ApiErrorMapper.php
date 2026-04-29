@@ -58,14 +58,16 @@ class ApiErrorMapper
         'tax_id'            => 'Tax ID',
 
         // Financial
-        'amount_requested'  => 'Amount Requested',
-        'monthly_revenue'   => 'Monthly Revenue',
-        'annual_revenue'    => 'Annual Revenue',
-        'avg_monthly_sales' => 'Avg. Monthly Sales',
-        'credit_score'      => 'Credit Score',
-        'bank_name'         => 'Bank Name',
-        'routing_number'    => 'Routing Number',
-        'account_number'    => 'Account Number',
+        'amount_requested'      => 'Amount Requested',
+        'monthly_revenue'       => 'Monthly Revenue',
+        'annual_revenue'        => 'Annual Revenue',
+        'avg_monthly_sales'     => 'Avg. Monthly Sales',
+        'self_reported_revenue' => 'Monthly Revenue',
+        'average_balance'       => 'Avg. Bank Balance',
+        'credit_score'          => 'Credit Score',
+        'bank_name'             => 'Bank Name',
+        'routing_number'        => 'Routing Number',
+        'account_number'        => 'Account Number',
 
         // Business details
         'business_start_date'   => 'Business Start Date',
@@ -273,53 +275,92 @@ class ApiErrorMapper
             return $path;
         }
 
+        // Full-path map (context-aware — checks parent.child)
+        $fullPath = implode('.', $parts);
+        static $fullPathMap = [
+            'business.phone'                => 'business_phone',
+            'business.address'              => 'business_address',
+            'business.taxID'                => 'ein',
+            'business.taxId'                => 'ein',
+            'business.businessInceptionDate'=> 'business_start_date',
+            'business.name'                 => 'company_name',
+            'business.city'                 => 'business_city',
+            'business.state'                => 'business_state',
+            'business.zip'                  => 'business_zip',
+            'business.zipCode'              => 'business_zip',
+            'business.email'                => 'business_email',
+            'business.address.addressLine1' => 'business_address',
+            'business.address.city'         => 'business_city',
+            'business.address.state'        => 'business_state',
+            'business.address.zipCode'      => 'business_zip',
+            'owners.homeAddress'            => 'home_address',
+            'owners.homeAddress.state'      => 'home_state',
+            'owners.homeAddress.city'       => 'home_city',
+            'owners.homeAddress.zipCode'    => 'home_zip',
+            'owners.homeAddress.addressLine1' => 'home_address',
+            'owners.dateOfBirth'            => 'date_of_birth',
+            'owners.ssn'                    => 'ssn',
+            'owners.ownershipPercentage'    => 'ownership_percentage',
+            'owners.email'                  => 'email',
+            'owners.phone'                  => 'phone',
+            'owners.name'                   => 'full_name',
+            'owners.firstName'              => 'first_name',
+            'owners.lastName'               => 'last_name',
+            'selfReported.revenue'          => 'monthly_revenue',
+            'selfReported.averageBalance'   => 'average_balance',
+        ];
+
+        if (isset($fullPathMap[$fullPath])) {
+            return $fullPathMap[$fullPath];
+        }
+
         $last = end($parts);
 
         static $map = [
-            'state'           => 'home_state',
-            'homeState'       => 'home_state',
-            'businessState'   => 'business_state',
-            'zipCode'         => 'zip_code',
-            'zip'             => 'zip_code',
-            'postalCode'      => 'zip_code',
-            'phone'           => 'phone',
-            'phoneNumber'     => 'phone',
-            'businessPhone'   => 'business_phone',
-            'cellPhone'       => 'cell_phone',
-            'mobilePhone'     => 'cell_phone',
-            'email'           => 'email',
-            'emailAddress'    => 'email',
-            'businessEmail'   => 'business_email',
-            'firstName'       => 'first_name',
-            'lastName'        => 'last_name',
-            'ssn'             => 'ssn',
-            'socialSecurity'  => 'ssn',
-            'ein'             => 'ein',
-            'fein'            => 'ein',
-            'taxId'           => 'ein',
-            'dob'             => 'date_of_birth',
-            'dateOfBirth'     => 'date_of_birth',
-            'businessName'    => 'business_name',
-            'legalName'       => 'legal_name',
-            'address'         => 'address',
-            'streetAddress'   => 'address',
-            'city'            => 'city',
-            'businessCity'    => 'business_city',
-            'taxID'           => 'ein',
-            'taxId'           => 'ein',
-            'federalId'       => 'ein',
-            'businessInceptionDate'   => 'business_start_date',
-            'businessStartDate'      => 'business_start_date',
-            'bizStartDate'           => 'business_start_date',
-            'dateEstablished'        => 'business_start_date',
-            'startDate'              => 'business_start_date',
-            'homeAddress'     => 'home_address',
-            'homePhone'       => 'phone_number',
-            'name'            => 'company_name',
-            'addressLine1'    => 'address',
-            'revenue'             => 'monthly_revenue',
-            'selfReported'        => 'monthly_revenue',
-            'averageBalance'  => 'avg_monthly_sales',
+            'state'                    => 'home_state',
+            'homeState'                => 'home_state',
+            'businessState'            => 'business_state',
+            'zipCode'                  => 'zip_code',
+            'zip'                      => 'zip_code',
+            'postalCode'               => 'zip_code',
+            'phone'                    => 'phone',
+            'phoneNumber'              => 'phone',
+            'businessPhone'            => 'business_phone',
+            'cellPhone'                => 'cell_phone',
+            'mobilePhone'              => 'cell_phone',
+            'email'                    => 'email',
+            'emailAddress'             => 'email',
+            'businessEmail'            => 'business_email',
+            'firstName'                => 'first_name',
+            'lastName'                 => 'last_name',
+            'ssn'                      => 'ssn',
+            'socialSecurity'           => 'ssn',
+            'ein'                      => 'ein',
+            'fein'                     => 'ein',
+            'taxId'                    => 'ein',
+            'taxID'                    => 'ein',
+            'federalId'                => 'ein',
+            'dob'                      => 'date_of_birth',
+            'dateOfBirth'              => 'date_of_birth',
+            'businessName'             => 'business_name',
+            'legalName'                => 'legal_name',
+            'address'                  => 'address',
+            'streetAddress'            => 'address',
+            'addressLine1'             => 'address',
+            'homeAddress'              => 'home_address',
+            'city'                     => 'city',
+            'businessCity'             => 'business_city',
+            'businessInceptionDate'    => 'business_start_date',
+            'businessStartDate'        => 'business_start_date',
+            'bizStartDate'             => 'business_start_date',
+            'dateEstablished'          => 'business_start_date',
+            'startDate'                => 'business_start_date',
+            'homePhone'                => 'phone_number',
+            'name'                     => 'company_name',
+            'revenue'                  => 'monthly_revenue',
+            'selfReported'             => 'monthly_revenue',
+            'selfReportedRevenue'      => 'monthly_revenue',
+            'averageBalance'           => 'avg_monthly_sales',
             'ownershipPercentage'      => 'ownership_percentage',
             'totalOwnershipPercentage' => 'ownership_percentage',
             'socialSecurityNumber'     => 'ssn',
@@ -327,6 +368,15 @@ class ApiErrorMapper
 
         if (isset($map[$last])) {
             return $map[$last];
+        }
+
+        // Context-aware fallback: if parent is "business", prefix with "business_"
+        if (count($parts) >= 2) {
+            $parent = $parts[count($parts) - 2];
+            if ($parent === 'business') {
+                $snake = strtolower(preg_replace('/([A-Z])/', '_$1', $last) ?? $last);
+                return 'business_' . ltrim($snake, '_');
+            }
         }
 
         // camelCase → snake_case

@@ -1143,6 +1143,7 @@ class LenderApiService
      * Build the outbound payload from EAV lead data using payload_mapping.
      * Supports dot-notation paths and array indices (e.g. "owners.0.firstName").
      * Normalises US state values to 2-letter abbreviations where path ends in .state.
+     * Auto-casts numeric strings to int/float for paths that lender APIs expect as numbers.
      */
     public function buildPayload(Lender $config, array $leadData): array
     {
@@ -1173,11 +1174,53 @@ class LenderApiService
                 if (self::isDatePath($path) && is_string($mapped) && $mapped !== '') {
                     $mapped = self::normalizeDateToYmd($mapped) ?? $mapped;
                 }
+                // Auto-cast numeric strings to int/float for paths that expect numbers
+                if (is_string($mapped) && $mapped !== '' && self::isNumericPath($path)) {
+                    $mapped = self::castNumeric($mapped);
+                }
                 $this->setNestedValue($payload, $path, $mapped);
             }
         }
 
         return $payload;
+    }
+
+    /**
+     * Check if a lender payload path expects a numeric value.
+     * Matches known numeric field names at any nesting depth.
+     */
+    private static function isNumericPath(string $path): bool
+    {
+        $lower = strtolower($path);
+        $numericSuffixes = [
+            'revenue', 'averagebalance', 'desiredloanamount', 'desiredloanterm',
+            'mcabalance', 'averageccvolume', 'ownershippercentage', 'amount',
+            'balance', 'income', 'salary', 'price', 'rate', 'term', 'score',
+            'years', 'months', 'creditlimit', 'monthlypayment', 'annualrevenue',
+            'monthlyrevenue', 'requestedamount', 'cashadvanceamount',
+        ];
+        // Get the last segment of the dot-path (e.g. "owners.0.ownershipPercentage" → "ownershippercentage")
+        $parts   = explode('.', $lower);
+        $lastKey = end($parts);
+        foreach ($numericSuffixes as $suffix) {
+            if ($lastKey === $suffix) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Cast a numeric string to int or float.
+     * Returns the original string if it's not a valid number.
+     */
+    private static function castNumeric(string $value): int|float|string
+    {
+        if (!is_numeric($value)) {
+            return $value;
+        }
+        // Use int when no decimal point, float otherwise
+        return str_contains($value, '.') ? (float) $value : (int) $value;
     }
 
     /**

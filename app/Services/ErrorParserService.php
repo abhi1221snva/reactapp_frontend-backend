@@ -168,6 +168,12 @@ class ErrorParserService
         $message     = $this->humanise($field, $raw);
         [$fixType, $expected] = $this->classifyError($raw);
 
+        // Clear fake field names extracted from generic server error phrases
+        $genericPhrases = ['Internal', 'For', 'Error', 'Bad', 'Not', 'Service', 'Request', 'Unauthorized', 'Forbidden'];
+        if (in_array($field, $genericPhrases, true)) {
+            $field = '';
+        }
+
         return [
             'field'       => $field,
             'raw_message' => $raw,
@@ -233,9 +239,10 @@ class ErrorParserService
             return ['state_code', '2-letter US state code (e.g. NY, CA, TX)'];
         }
 
-        // ── Phone number ──────────────────────────────────────────────────────
+        // ── Phone number (format-only — null/required handled below) ─────────
         if (str_contains($lower, 'phone') &&
-            (str_contains($lower, 'invalid') || str_contains($lower, 'format') || str_contains($lower, 'must be'))
+            (str_contains($lower, 'invalid') || str_contains($lower, 'format')) &&
+            !str_contains($lower, 'null') && !str_contains($lower, 'required')
         ) {
             return ['phone', 'Phone in +1XXXXXXXXXX format (e.g. +12125551234)'];
         }
@@ -248,16 +255,50 @@ class ErrorParserService
             return ['zip', '5-digit ZIP code (e.g. 10001)'];
         }
 
-        // ── Required / empty ──────────────────────────────────────────────────
+        // ── EIN / SSN / Tax ID (check before "required" to get specific hint) ─
+        if (
+            str_contains($lower, 'ssn') ||
+            str_contains($lower, 'social security') ||
+            str_contains($lower, 'taxid') ||
+            str_contains($lower, 'tax id') ||
+            str_contains($lower, 'tax_id') ||
+            str_contains($lower, '.ein') ||
+            str_contains($lower, ' ein') ||
+            str_contains($lower, 'fein')
+        ) {
+            return ['ein', '9-digit EIN or SSN (e.g. 123456789 or 12-3456789)'];
+        }
+
+        // ── Date (check before "required" for dateOfBirth, businessInceptionDate) ─
+        if (
+            (str_contains($lower, 'date') || str_contains($lower, 'dob') || str_contains($lower, 'inception')) &&
+            (str_contains($lower, 'invalid') || str_contains($lower, 'format') || str_contains($lower, 'must be') || str_contains($lower, 'must not be null') || str_contains($lower, 'required'))
+        ) {
+            return ['date', 'Date in YYYY-MM-DD format (e.g. 1985-06-15)'];
+        }
+
+        // ── Phone (check before "required" for business.phone) ────────────────
+        if (
+            str_contains($lower, 'phone') &&
+            (str_contains($lower, 'invalid') || str_contains($lower, 'format') || str_contains($lower, 'must be') || str_contains($lower, 'must not be null') || str_contains($lower, 'required'))
+        ) {
+            return ['phone', '10-digit phone number (e.g. 2125551234)'];
+        }
+
+        // ── Required / empty / null (generic catch-all) ──────────────────────
         if (
             str_contains($lower, 'required') ||
             str_contains($lower, 'must not be empty') ||
+            str_contains($lower, 'must not be null') ||
+            str_contains($lower, 'cannot be null') ||
             str_contains($lower, 'cannot be empty') ||
             str_contains($lower, 'is missing') ||
             str_contains($lower, 'is blank') ||
-            str_contains($lower, 'must be present')
+            str_contains($lower, 'must be present') ||
+            str_contains($lower, 'may not be null') ||
+            str_contains($lower, 'should not be null')
         ) {
-            return ['required', 'This field is required — please provide a value'];
+            return ['required', 'This field is required'];
         }
 
         // ── Email ─────────────────────────────────────────────────────────────
@@ -267,30 +308,13 @@ class ErrorParserService
             return ['email', 'Valid email address (e.g. name@example.com)'];
         }
 
-        // ── Date ─────────────────────────────────────────────────────────────
-        if (str_contains($lower, 'date') &&
-            (str_contains($lower, 'invalid') || str_contains($lower, 'format') || str_contains($lower, 'must be'))
-        ) {
-            return ['date', 'Date in YYYY-MM-DD format (e.g. 1985-06-15)'];
-        }
-
-        // ── EIN / SSN / Tax ID ────────────────────────────────────────────────
-        if (
-            str_contains($lower, 'ssn') ||
-            str_contains($lower, 'social security') ||
-            str_contains($lower, 'tax id') ||
-            str_contains($lower, ' ein') ||
-            str_contains($lower, 'fein')
-        ) {
-            return ['ein', '9-digit EIN or SSN (e.g. 123456789 or 12-3456789)'];
-        }
-
         // ── Numeric ───────────────────────────────────────────────────────────
         if (
             str_contains($lower, 'must be numeric') ||
             str_contains($lower, 'must be a number') ||
             str_contains($lower, 'invalid number') ||
-            str_contains($lower, 'not a valid number')
+            str_contains($lower, 'not a valid number') ||
+            str_contains($lower, 'for input string')  // Java NumberFormatException
         ) {
             return ['numeric', 'Numeric value only (digits, no letters or symbols)'];
         }
@@ -325,7 +349,7 @@ class ErrorParserService
         if ((str_contains($lower, 'zip') || str_contains($lower, 'postal')) && str_contains($lower, 'digit')) {
             return "{$label} must be exactly 5 digits";
         }
-        if (str_contains($lower, 'required') || str_contains($lower, 'must not be empty')) {
+        if (str_contains($lower, 'required') || str_contains($lower, 'must not be empty') || str_contains($lower, 'must not be null') || str_contains($lower, 'cannot be null')) {
             return "{$label} is required and cannot be left empty";
         }
         if (str_contains($lower, 'email') && str_contains($lower, 'invalid')) {
