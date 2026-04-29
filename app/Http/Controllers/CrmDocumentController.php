@@ -81,14 +81,28 @@ class CrmDocumentController extends Controller
                     ->toArray();
             }
 
-            $result = $docs->map(function ($doc) use ($uploaders) {
+            $result = $docs->map(function ($doc) use ($uploaders, $clientId, $id) {
                 $d = (array) $doc;
                 $uid = $d['uploaded_by'] ?? null;
                 if ($uid && isset($uploaders[$uid])) {
                     $u = $uploaders[$uid];
                     $d['uploaded_by_name'] = trim(($u['first_name'] ?? '') . ' ' . ($u['last_name'] ?? ''));
                 }
-                $d['file_name']  = !empty($d['file_name']) ? $d['file_name'] : (!empty($d['file_path']) ? basename($d['file_path']) : '');
+                $d['file_name'] = !empty($d['file_name']) ? $d['file_name'] : (!empty($d['file_path']) ? basename($d['file_path']) : '');
+
+                // Backfill file_path for legacy docs that have file_name but no file_path
+                if (empty($d['file_path']) && !empty($d['file_name'])) {
+                    $relative = "crm_documents/client_{$clientId}/lead_{$id}/{$d['file_name']}";
+                    if (\Storage::disk('public')->exists($relative)) {
+                        $d['file_path'] = \Storage::disk('public')->url($relative);
+                        // Persist the fix so future requests don't re-check
+                        DB::connection("mysql_$clientId")
+                            ->table('crm_documents')
+                            ->where('id', $d['id'])
+                            ->update(['file_path' => $d['file_path']]);
+                    }
+                }
+
                 $d['attachable'] = !empty($d['file_path']);
                 return $d;
             })->values();
