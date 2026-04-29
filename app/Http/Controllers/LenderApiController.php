@@ -468,6 +468,9 @@ class LenderApiController extends Controller
                 ->when($request->filled('lender_type'), fn ($q) =>
                     $q->where('l.lender_api_type', $request->input('lender_type'))
                 )
+                ->when($request->filled('fixable'), fn ($q) =>
+                    $q->where('lg.is_fixable', 1)
+                )
                 ->when($request->filled('search'), function ($q) use ($request) {
                     $term = '%' . $request->input('search') . '%';
                     $q->where(function ($inner) use ($term) {
