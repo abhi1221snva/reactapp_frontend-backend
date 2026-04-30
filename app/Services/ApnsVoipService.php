@@ -102,22 +102,122 @@ class ApnsVoipService
 
     /**
      * Build a CallKit-compatible VoIP push payload.
+     *
+     * If caller_name is missing or identical to caller_number, the method
+     * tries to resolve a human-readable name from:
+     *   1. CRM leads (crm_lead_values phone fields) on the user's tenant DB
+     *   2. Internal team users (mobile, phone, extension)
+     * Falls back to the raw number if nothing is found.
      */
     public static function buildCallPayload(
-        string $callerNumber,
-        string $callerName,
-        string $callUuid = null
+        string  $callerNumber,
+        string  $callerName,
+        ?string $callUuid = null,
+        ?int    $userId = null
     ): array {
+        // If caller_name is empty or just the number, try to enrich it
+        if (!$callerName || $callerName === $callerNumber) {
+            $resolved = self::resolveCallerName($callerNumber, $userId);
+            if ($resolved) {
+                $callerName = $resolved;
+            }
+        }
+
         return [
             'aps' => [
                 'content-available' => 1,
             ],
             'uuid'          => $callUuid ?: self::generateUuid(),
             'caller_id'     => $callerNumber,
-            'caller_name'   => $callerName,
+            'caller_name'   => $callerName ?: $callerNumber,
             'handle'        => $callerNumber,
             'type'          => 'incoming_call',
         ];
+    }
+
+    /**
+     * Try to resolve a caller name from CRM leads or internal users.
+     *
+     * @param string   $number  The caller's phone number
+     * @param int|null $userId  The target user — used to determine the tenant DB
+     * @return string|null      A human-readable name, or null
+     */
+    public static function resolveCallerName(string $number, ?int $userId = null): ?string
+    {
+        $digits = preg_replace('/\D/', '', $number);
+        $last10 = strlen($digits) >= 10 ? substr($digits, -10) : $digits;
+
+        try {
+            // Determine tenant (parent_id) for this user
+            $parentId = null;
+            if ($userId) {
+                $user = \Illuminate\Support\Facades\DB::connection('master')
+                    ->table('users')
+                    ->where('id', $userId)
+                    ->select('parent_id')
+                    ->first();
+                $parentId = $user->parent_id ?? null;
+            }
+
+            // 1. Search CRM leads on tenant DB
+            if ($parentId) {
+                $tenantConn = 'mysql_' . $parentId;
+                try {
+                    // Look in crm_lead_values for phone-related fields
+                    $leadId = \Illuminate\Support\Facades\DB::connection($tenantConn)
+                        ->table('crm_lead_values')
+                        ->whereIn('field_key', ['phone', 'phone_number', 'mobile', 'cell_phone', 'work_phone', 'home_phone'])
+                        ->where(function ($q) use ($number, $last10) {
+                            $q->where('field_value', $number)
+                              ->orWhere('field_value', $last10)
+                              ->orWhere(\Illuminate\Support\Facades\DB::raw("RIGHT(REPLACE(REPLACE(REPLACE(field_value, '-', ''), '(', ''), ')', ''), 10)"), $last10);
+                        })
+                        ->value('lead_id');
+
+                    if ($leadId) {
+                        // Get first_name + last_name from EAV
+                        $names = \Illuminate\Support\Facades\DB::connection($tenantConn)
+                            ->table('crm_lead_values')
+                            ->where('lead_id', $leadId)
+                            ->whereIn('field_key', ['first_name', 'last_name'])
+                            ->pluck('field_value', 'field_key');
+
+                        $fullName = trim(($names['first_name'] ?? '') . ' ' . ($names['last_name'] ?? ''));
+                        if ($fullName) {
+                            return $fullName;
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    Log::debug('resolveCallerName: CRM lookup failed', ['error' => $e->getMessage()]);
+                }
+            }
+
+            // 2. Search internal users by phone/mobile/extension
+            $internalUser = \Illuminate\Support\Facades\DB::connection('master')
+                ->table('users')
+                ->where(function ($q) use ($number, $last10) {
+                    $q->where('mobile', $number)
+                      ->orWhere('mobile', $last10)
+                      ->orWhere('phone', $number)
+                      ->orWhere('phone', $last10)
+                      ->orWhere('extension', $last10)
+                      ->orWhere('alt_extension', $last10)
+                      ->orWhere('app_extension', $last10);
+                })
+                ->select('first_name', 'last_name')
+                ->first();
+
+            if ($internalUser) {
+                $name = trim(($internalUser->first_name ?? '') . ' ' . ($internalUser->last_name ?? ''));
+                if ($name) {
+                    return $name;
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::debug('resolveCallerName: lookup failed', ['error' => $e->getMessage()]);
+        }
+
+        return null;
     }
 
     /**

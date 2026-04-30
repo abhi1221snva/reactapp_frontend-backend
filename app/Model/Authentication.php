@@ -160,21 +160,22 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
     }
 /**
      * Enrich a login response array with the Asterisk server address and SIP
-     * extension secret required by the frontend WebRTC webphone.
+     * extension secrets required by the frontend WebRTC webphone and mobile app.
      *
-     * - `server`  → asterisk_server.host   (IP/hostname for WSS cert URL)
-     * - `domain`  → asterisk_server.domain (SIP realm / domain)
-     * - `secret`  → user_extensions.secret (plain-text SIP password for the
-     *               alt_extension; falls back to extension if alt is empty)
+     * - `server`      → asterisk_server.host   (IP/hostname for WSS cert URL)
+     * - `domain`      → asterisk_server.domain (SIP realm / domain)
+     * - `secret`      → user_extensions.secret for alt_extension (WebRTC webphone)
+     * - `app_secret`  → user_extensions.secret for app_extension (mobile app SIP)
      *
      * The frontend's decodeSipSecret() already handles plain-text passwords
      * gracefully (atob throws on non-base64 input → catch → returns raw value).
      */
     private function enrichWithSipConfig(array &$data, User $user): void
     {
-        $data['server'] = null;
-        $data['domain'] = null;
-        $data['secret'] = null;
+        $data['server']     = null;
+        $data['domain']     = null;
+        $data['secret']     = null;
+        $data['app_secret'] = null;
 
         try {
             // Asterisk server address
@@ -188,7 +189,7 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
                 $data['domain'] = $asterisk->domain ?? null;
             }
 
-            // SIP secret — prefer alt_extension (WebRTC), fall back to extension
+            // SIP secret for WebRTC — prefer alt_extension, fall back to extension
             $sipExt = $user->alt_extension ?: (string) $user->extension;
             if ($sipExt) {
                 $extRow = DB::table('user_extensions')
@@ -196,6 +197,15 @@ class Authentication extends Model implements AuthenticatableContract, Authoriza
                     ->select('secret')
                     ->first();
                 $data['secret'] = $extRow->secret ?? null;
+            }
+
+            // SIP secret for mobile app — app_extension
+            if ($user->app_extension) {
+                $appExtRow = DB::table('user_extensions')
+                    ->where('username', (string) $user->app_extension)
+                    ->select('secret')
+                    ->first();
+                $data['app_secret'] = $appExtRow->secret ?? null;
             }
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning('enrichWithSipConfig: failed for user ' . $user->id, [

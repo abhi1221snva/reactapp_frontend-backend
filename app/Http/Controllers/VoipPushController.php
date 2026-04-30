@@ -46,13 +46,13 @@ class VoipPushController extends Controller
         $this->validate($request, [
             'user_id'       => 'required|integer|exists:master.users,id',
             'caller_number' => 'required|string|max:30',
-            'caller_name'   => 'required|string|max:100',
+            'caller_name'   => 'nullable|string|max:100',
             'call_uuid'     => 'nullable|string|max:64',
         ]);
 
         $userId       = (int) $request->input('user_id');
         $callerNumber = $request->input('caller_number');
-        $callerName   = $request->input('caller_name');
+        $callerName   = $request->input('caller_name', $callerNumber);
         $callUuid     = $request->input('call_uuid');
 
         // Look up the user's VoIP device token
@@ -71,8 +71,8 @@ class VoipPushController extends Controller
 
         $deviceToken = $tokenRow->device_token;
 
-        // Build the CallKit payload
-        $payload = ApnsVoipService::buildCallPayload($callerNumber, $callerName, $callUuid);
+        // Build the CallKit payload (resolves caller name from CRM if needed)
+        $payload = ApnsVoipService::buildCallPayload($callerNumber, $callerName, $callUuid, $userId);
 
         Log::info('VoIP push trigger', [
             'user_id'      => $userId,
@@ -148,7 +148,7 @@ class VoipPushController extends Controller
             ], 404);
         }
 
-        $payload = ApnsVoipService::buildCallPayload($callerNumber, $callerName);
+        $payload = ApnsVoipService::buildCallPayload($callerNumber, $callerName, null, $user->id);
         $result  = ApnsVoipService::send($tokenRow->device_token, $payload);
 
         if ($result['success']) {
