@@ -56,6 +56,9 @@ class CrmSearchController extends Controller
             (new LeadVisibilityService())->applyVisibilityScope($query, $request->auth, (int) $clientId, 'cl');
 
             // System column filters
+            if (!empty($filters['lead_id'])) {
+                $query->where('cl.id', (int)$filters['lead_id']);
+            }
             if (!empty($filters['lead_status'])) {
                 $query->whereIn('cl.lead_status', (array)$filters['lead_status']);
             }
