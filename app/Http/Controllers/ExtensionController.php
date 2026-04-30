@@ -421,11 +421,11 @@ class ExtensionController extends Controller
             ->select('users.*', 'roles.name as role_name', 'roles.level');
 
         // Dynamic visibility rule (driven by `roles.level` — no hardcoded
-        // role numbers). A user may only see other users whose role level is
-        // strictly below their own, plus their own record. Re-level or add
-        // roles in the `roles` table and this query updates automatically.
+        // role numbers). A user may see other users whose role level is at
+        // or below their own, plus their own record. Using <= so that
+        // admins can still see users they promoted to the same level.
         $query->where(function ($q) use ($userLevel, $userId) {
-            $q->where('roles.level', '<', $userLevel)
+            $q->where('roles.level', '<=', $userLevel)
               ->orWhere('users.id', $userId);
         });
 

@@ -137,14 +137,14 @@ public function extensionDetailold(Request $request, int $extension_id = null)
             $orderBy = $request->get('orderBy', 'users.extension');
 
             // Count query
-            $countSql = "SELECT COUNT(*) as total FROM users 
+            $countSql = "SELECT COUNT(*) as total FROM users
                          WHERE id IN (
                              SELECT user_id FROM permissions WHERE client_id = ?
-                         ) 
-                         AND is_deleted = ? 
-                         AND status = ? 
+                         )
+                         AND is_deleted = ?
+                         AND status = ?
                          AND base_parent_id = ?
-                         AND user_level < 9
+                         AND user_level <= 9
                          $searchSql";
 
             $countResult = DB::connection('master')->selectOne($countSql, $bindings);
@@ -160,7 +160,7 @@ public function extensionDetailold(Request $request, int $extension_id = null)
                     AND users.is_deleted = ?
                     AND users.status = ?
                     AND users.base_parent_id = ?
-                    AND users.user_level < 9
+                    AND users.user_level <= 9
                     $searchSql
                     ORDER BY $orderBy";
 
@@ -184,7 +184,7 @@ public function extensionDetailold(Request $request, int $extension_id = null)
                     AND users.is_deleted = ?
                     AND users.status = ?
                     AND users.base_parent_id = ?
-                    AND users.user_level < 9
+                    AND users.user_level <= 9
                     $searchSql
                     ORDER BY users.extension";
 
@@ -321,11 +321,11 @@ if ($request->auth->level > 5) {
         $orderBy = 'users.extension';
     }
 
-    // Hierarchy-based visibility: each role sees users below their own level.
-    // Level 11 (System Admin)  → sees level < 11 (all except other sysadmins)
-    // Level 9  (Super Admin)   → sees level < 9  (admin, manager, associate, agent)
-    // Level 7  (Admin)         → sees level < 7  (manager, associate, agent)
-    // Level 5  (Manager)       → sees level < 5  (associate, agent)
+    // Hierarchy-based visibility: each role sees users at or below their own level.
+    // Level 11 (System Admin)  → sees level <= 11 (all users)
+    // Level 9  (Super Admin)   → sees level <= 9  (admin, manager, associate, agent, other super admins)
+    // Level 7  (Admin)         → sees level <= 7  (manager, associate, agent, other admins)
+    // Level 5  (Manager)       → sees level <= 5  (associate, agent, other managers)
     $levelThreshold = (int) $request->auth->level;
 
     // Optional status filter from frontend (''=all, '0'=inactive, '1'=active)
@@ -345,7 +345,7 @@ if ($request->auth->level > 5) {
         AND users.is_deleted = 0
         $statusSql
         AND (
-            users.user_level < ?
+            users.user_level <= ?
             OR users.id = ?
         )
         $searchSql
@@ -376,7 +376,7 @@ if ($request->auth->level > 5) {
         AND users.is_deleted = 0
         $statusSql
         AND (
-            users.user_level < ?
+            users.user_level <= ?
             OR users.id = ?
         )
         $searchSql
@@ -416,7 +416,7 @@ if ($request->auth->level > 5) {
                 )
               AND users.parent_id = ?
                 AND (
-                    users.user_level < 9
+                    users.user_level <= 9
                     OR users.id = ?
                 )
               $searchSql
@@ -1171,7 +1171,7 @@ public function extensionDetailList(Request $request, int $extension_id = null)
                         $extension = $server['extension'];
                     }
 
-                    $this->configUpdate($request->input('id'));
+                    $this->configUpdate($request->input('extension_id'));
 
                     if ($isDeleteAction) {
                         //remove extension group map:
@@ -1263,6 +1263,10 @@ public function extensionDetailList(Request $request, int $extension_id = null)
                 "file" => $e->getFile(),
                 "line" => $e->getLine()
             ]);
+            return [
+                'success' => 'false',
+                'message' => 'An error occurred while updating the extension.',
+            ];
         }
     }
 
@@ -1709,13 +1713,21 @@ if (!$validateResponse->successful()) {
         $connection = ssh2_connect($hostname, 22);
         ssh2_auth_password($connection, $username, $password);
         ssh2_scp_send($connection, $sourceFile, $targetFile, 0777);*/
-        $ftp = Storage::createSftpDriver([
-            'host' => $hostname,
-            'username' => $username,
-            'password' => $password,
-            'timeout' => '30',
-        ]);
-        $ftp->put($filePath, $str, 'public');
+        try {
+            $ftp = Storage::createSftpDriver([
+                'host' => $hostname,
+                'username' => $username,
+                'password' => $password,
+                'timeout' => '30',
+            ]);
+            $ftp->put($filePath, $str, 'public');
+        } catch (\Throwable $e) {
+            // SFTP config push is best-effort; don't break the edit flow
+            Log::warning("Extension.configUpdate($id) SFTP push failed", [
+                'error' => $e->getMessage(),
+                'server' => $hostname,
+            ]);
+        }
         return;
     }
 
