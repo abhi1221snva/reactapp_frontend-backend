@@ -15,6 +15,8 @@ use DateTime;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 use App\Model\Cron;
+use App\Model\UserFcmToken;
+use App\Services\ApnsVoipService;
 use App\Services\PusherService;
 
 class InboundCallPopUpController extends Controller
@@ -73,7 +75,32 @@ class InboundCallPopUpController extends Controller
                         $InboundCallPopup->parent_id = $clientId;
                         $InboundCallPopup->extension = $extension;
                         $InboundCallPopup->save();
-                        $inbound_calls[] =$InboundCallPopup; 
+                        $inbound_calls[] =$InboundCallPopup;
+
+                        // Send VoIP push to mobile app if agent has a token
+                        try {
+                            $voipToken = UserFcmToken::where('user_id', $user->id)
+                                ->where('device_type', 'ios-voip')
+                                ->first();
+                            if ($voipToken) {
+                                $callerName = $inbound_number; // will be updated with lead name below if found
+                                $payload = ApnsVoipService::buildCallPayload(
+                                    (string) $inbound_number,
+                                    $callerName
+                                );
+                                ApnsVoipService::send($voipToken->device_token, $payload);
+                                Log::info('VoIP push sent for inbound call', [
+                                    'user_id' => $user->id,
+                                    'extension' => $extension,
+                                    'inbound_number' => $inbound_number,
+                                ]);
+                            }
+                        } catch (\Exception $e) {
+                            Log::error('VoIP push failed for inbound call', [
+                                'user_id' => $user->id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
 
                     }
                 }

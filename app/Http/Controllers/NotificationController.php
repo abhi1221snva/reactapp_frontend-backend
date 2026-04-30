@@ -969,7 +969,7 @@ class NotificationController extends Controller
     {
         $this->validate($request, [
             'device_token' => 'required|string',
-            'device_type' => 'nullable|in:web,android,ios'
+            'device_type' => 'nullable|in:web,android,ios,ios-voip'
         ]);
 
         try {

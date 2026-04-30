@@ -6,6 +6,9 @@ use App\Model\Client\PlivoCall;
 use App\Model\Client\PlivoSms;
 use App\Model\Client\PlivoRecording;
 use App\Model\Client\PlivoNumber;
+use App\Model\User;
+use App\Model\UserFcmToken;
+use App\Services\ApnsVoipService;
 use App\Services\PlivoService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -71,6 +74,29 @@ class PlivoWebhookController extends Controller
                     'started_at'  => \Carbon\Carbon::now(),
                 ]
             );
+        }
+
+        // Send VoIP push to all agents in this client with a registered VoIP token
+        if ($clientId) {
+            try {
+                $voipTokens = UserFcmToken::whereIn('user_id',
+                        User::where('base_parent_id', $clientId)
+                            ->where('is_deleted', 0)
+                            ->pluck('id')
+                    )
+                    ->where('device_type', 'ios-voip')
+                    ->get();
+
+                foreach ($voipTokens as $vt) {
+                    $payload = ApnsVoipService::buildCallPayload($from, $from, $callUuid);
+                    ApnsVoipService::send($vt->device_token, $payload);
+                    Log::info('VoIP push sent for Plivo inbound', [
+                        'user_id' => $vt->user_id, 'from' => $from,
+                    ]);
+                }
+            } catch (\Exception $e) {
+                Log::error('VoIP push failed for Plivo inbound', ['error' => $e->getMessage()]);
+            }
         }
 
         // Build Plivo XML response — route call to agent queue or announce hold

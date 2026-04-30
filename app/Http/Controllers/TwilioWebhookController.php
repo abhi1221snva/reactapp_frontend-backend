@@ -8,6 +8,9 @@ use App\Model\Client\TwilioRecording;
 use App\Model\Client\TwilioNumber;
 use App\Services\TwilioService;
 use App\Jobs\TwilioIngestCallJob;
+use App\Model\User;
+use App\Model\UserFcmToken;
+use App\Services\ApnsVoipService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
@@ -72,6 +75,29 @@ class TwilioWebhookController extends Controller
                     'started_at'  => \Carbon\Carbon::now(),
                 ]
             );
+        }
+
+        // Send VoIP push to all agents in this client with a registered VoIP token
+        if ($clientId) {
+            try {
+                $voipTokens = UserFcmToken::whereIn('user_id',
+                        User::where('base_parent_id', $clientId)
+                            ->where('is_deleted', 0)
+                            ->pluck('id')
+                    )
+                    ->where('device_type', 'ios-voip')
+                    ->get();
+
+                foreach ($voipTokens as $vt) {
+                    $payload = ApnsVoipService::buildCallPayload($from, $from, $callSid);
+                    ApnsVoipService::send($vt->device_token, $payload);
+                    Log::info('VoIP push sent for Twilio inbound', [
+                        'user_id' => $vt->user_id, 'from' => $from,
+                    ]);
+                }
+            } catch (\Exception $e) {
+                Log::error('VoIP push failed for Twilio inbound', ['error' => $e->getMessage()]);
+            }
         }
 
         // Return TwiML -- route to agent queue or IVR

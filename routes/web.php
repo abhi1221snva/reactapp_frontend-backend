@@ -1087,6 +1087,9 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
   $router->post("device/token", "NotificationController@saveDeviceToken");
   $router->post("notifications/send-direct", "NotificationController@sendDirectNotification");
 
+  #VoIP Push (APNs CallKit)
+  $router->post("voip-push/trigger", "VoipPushController@trigger");
+
   #CDR
   $router->post("active-extension-group-list", "ReportController@getActiveExtensionByGroup");
   $router->post("extension-group-list", "ReportController@getExtensionByGroup");
@@ -2110,6 +2113,7 @@ $router->get('predictive-dial-call', "CallPredictiveDialController@index");
 
 $router->get('predictive-dial-call-all-client', "CallPredictiveDialAllClientController@index");
 $router->get('inbound-call-popup-notification', "InboundCallPopUpController@index");
+$router->get('voip-push/dial', "VoipPushController@dial");
 $router->get('inbound-call-popup-received', "InboundCallPopUpController@receivedInboundCallPopUp");
 $router->get('inbound-call-popup-completed', "InboundCallPopUpController@completedInboundCallPopUp");
 $router->post('inbound-call-popup', "InboundCallPopUpController@inboundCallPopup");
