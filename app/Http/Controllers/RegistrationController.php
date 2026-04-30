@@ -51,12 +51,12 @@ class RegistrationController extends Controller
         $validator = Validator::make($request->all(), [
             'name'                  => 'required|string|max:255',
             'business_name'         => 'required|string|max:255',
-            'password'              => 'required|string|min:8|max:64',
+            'password'              => 'required|string|min:10|max:64',
             'password_confirmation' => 'required|same:password',
         ], [
             'name.required'                  => 'Full name is required.',
             'business_name.required'         => 'Business name is required.',
-            'password.min'                   => 'Password must be at least 8 characters.',
+            'password.min'                   => 'Password must be at least 10 characters.',
             'password_confirmation.required' => 'Please confirm your password.',
             'password_confirmation.same'     => 'Password confirmation does not match.',
         ]);
