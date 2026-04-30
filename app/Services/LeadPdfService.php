@@ -183,12 +183,14 @@ class LeadPdfService
      */
     public function htmlToPdfBytes(string $html): string
     {
-        // Prepend compact overrides — forces small fonts, tight page margins,
+        // Compact CSS overrides — forces small fonts, tight page margins,
         // and full-width layout on every template.
         // !important wins over inline styles and template CSS.
         $compact = '<style>'
             . '@page { size: A4 portrait; margin: 8mm 10mm; }'
-            . 'body { width: 100% !important; margin: 0 !important; padding: 0 !important; font-size: 8px !important; line-height: 1.3 !important; }'
+            . '* { box-sizing: border-box; }'
+            . 'html, body { width: 100% !important; margin: 0 !important; padding: 0 !important; }'
+            . 'body { font-size: 8px !important; line-height: 1.3 !important; }'
             . '.container { width: 100% !important; max-width: none !important; margin: 0 !important; padding: 0 !important; }'
             . 'table { width: 100% !important; font-size: 8px !important; border-collapse: collapse; }'
             . 'th, td { font-size: 8px !important; padding: 2px 4px !important; line-height: 1.3 !important; }'
@@ -196,7 +198,40 @@ class LeadPdfService
             . 'p, div, span { line-height: 1.3 !important; }'
             . 'p { margin: 1px 0 !important; }'
             . '</style>';
-        $html = $compact . $html;
+
+        // Late override — placed AFTER template CSS so it wins by source order.
+        // Neutralises the old seeder template's blanket "th, td { width: 50%; }"
+        // which forces every cell to half-width.  Uses normal specificity (no
+        // !important) so inline style="width:25%" on specific cells still works.
+        $lateOverride = '<style>th, td { width: auto; }</style>';
+
+        // Ensure proper HTML document structure for DOMPDF.
+        // Without <!DOCTYPE html> and <html><body>, DOMPDF enters quirks mode
+        // and may restrict content to partial page width.
+        if (stripos($html, '<html') === false) {
+            // Template is a bare HTML fragment — wrap in full document structure.
+            // Compact CSS goes in <head> (processed first), template content in
+            // <body>, late override at end of body (wins by source order).
+            $html = '<!DOCTYPE html><html><head><meta charset="UTF-8">'
+                . $compact
+                . '</head><body>'
+                . $html
+                . $lateOverride
+                . '</body></html>';
+        } else {
+            // Template already has HTML structure — inject CSS into it.
+            if (preg_match('#<head[^>]*>#i', $html)) {
+                $html = preg_replace('#(<head[^>]*>)#i', '$1' . $compact, $html);
+            } else {
+                $html = preg_replace('#(<html[^>]*>)#i', '$1<head>' . $compact . '</head>', $html);
+            }
+            // Inject late override before </body> (or append if no closing tag)
+            if (stripos($html, '</body>') !== false) {
+                $html = str_ireplace('</body>', $lateOverride . '</body>', $html);
+            } else {
+                $html .= $lateOverride;
+            }
+        }
 
         $opts = new Options();
         $opts->set('isRemoteEnabled', false);    // no external HTTP — all images are data URIs
