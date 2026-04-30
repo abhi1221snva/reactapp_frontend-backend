@@ -193,10 +193,10 @@ class LeadPdfService
     public function htmlToPdfBytes(string $html): string
     {
         // Layout-only CSS overrides — forces full-width rendering and proper
-        // page setup.  Does NOT override font-size, padding, or line-height
-        // so each template controls its own appearance and fills the page.
+        // page setup.  Tight margins (5mm top/bottom, 8mm sides) maximise
+        // usable area so two-owner forms fit on a single A4 page.
         $compact = '<style>'
-            . '@page { size: A4 portrait; margin: 10mm; }'
+            . '@page { size: A4 portrait; margin: 5mm 8mm; }'
             . '* { box-sizing: border-box; }'
             . 'html, body { width: 100% !important; margin: 0 !important; padding: 0 !important; }'
             . '.container { width: 100% !important; max-width: none !important; margin: 0 !important; padding: 0 !important; }'
@@ -204,10 +204,18 @@ class LeadPdfService
             . '</style>';
 
         // Late override — placed AFTER template CSS so it wins by source order.
-        // Neutralises the old seeder template's blanket "th, td { width: 50%; }"
-        // which forces every cell to half-width.  Uses normal specificity (no
-        // !important) so inline style="width:25%" on specific cells still works.
-        $lateOverride = '<style>th, td { width: auto; }</style>';
+        // 1. Neutralises old blanket "th, td { width: 50%; }".
+        // 2. Applies moderate size reduction so two-owner + disclaimer +
+        //    signatures fit on one A4 page without spilling to page 2.
+        $lateOverride = '<style>'
+            . 'th, td { width: auto; }'
+            . 'body { font-size: 12px !important; }'
+            . 'table { font-size: 12px !important; }'
+            . 'th, td { padding: 3px 6px !important; }'
+            . 'h3 { margin: 4px 0 !important; font-size: 15px !important; }'
+            . '.label { font-size: 11px !important; }'
+            . 'div[style*="font-size:10px"], div[style*="font-size: 10px"] { font-size: 9px !important; line-height: 1.3 !important; }'
+            . '</style>';
 
         // Ensure proper HTML document structure for DOMPDF.
         // Without <!DOCTYPE html> and <html><body>, DOMPDF enters quirks mode
@@ -671,24 +679,44 @@ class LeadPdfService
      */
     private function wrapHtmlDocument(string $html): string
     {
-        if (stripos($html, '<html') !== false) {
-            return $html; // already wrapped
-        }
-
-        $headCss = '<style>'
-            . '* { box-sizing: border-box; }'
-            . 'html, body { width: 100%; margin: 0; padding: 10px 15px; font-family: Arial, Helvetica, sans-serif; }'
-            . 'table { width: 100%; border-collapse: collapse; }'
+        // Late override — must come AFTER the template's own <style> blocks
+        // so it wins by source order.  Neutralises old templates' blanket
+        // "th, td { width: 50%; }" and applies moderate size reduction for
+        // browser print-to-PDF flow.
+        $lateOverride = '<style>'
+            . 'th, td { width: auto; }'
+            . 'body { font-size: 12px !important; }'
+            . 'table { font-size: 12px !important; }'
+            . 'th, td { padding: 3px 6px !important; }'
+            . 'h3 { margin: 4px 0 !important; font-size: 15px !important; }'
+            . '.label { font-size: 11px !important; }'
             . '@media print {'
-            .   '@page { size: A4 portrait; margin: 10mm; }'
+            .   '@page { size: A4 portrait; margin: 5mm 8mm; }'
             .   'html, body { width: 100%; padding: 0; }'
             . '}'
             . '</style>';
 
-        // Late override — must come AFTER the template's own <style> blocks
-        // so it wins by source order.  Neutralises old templates' blanket
-        // "th, td { width: 50%; }" without affecting inline style="width:25%".
-        $lateOverride = '<style>th, td { width: auto; }</style>';
+        if (stripos($html, '<html') !== false) {
+            // Template already has HTML structure — inject late override only.
+            if (stripos($html, '</body>') !== false) {
+                return str_ireplace('</body>', $lateOverride . '</body>', $html);
+            }
+            if (stripos($html, '</html>') !== false) {
+                return str_ireplace('</html>', $lateOverride . '</html>', $html);
+            }
+            return $html . $lateOverride;
+        }
+
+        $headCss = '<style>'
+            . '* { box-sizing: border-box; }'
+            . 'html, body { width: 100%; margin: 0; padding: 10px 15px; font-family: Arial, Helvetica, sans-serif; font-size: 12px; }'
+            . 'table { width: 100%; border-collapse: collapse; font-size: 12px; }'
+            . 'th, td { padding: 3px 6px; }'
+            . '@media print {'
+            .   '@page { size: A4 portrait; margin: 5mm 8mm; }'
+            .   'html, body { width: 100%; padding: 0; }'
+            . '}'
+            . '</style>';
 
         return '<!DOCTYPE html><html><head><meta charset="UTF-8">'
             . $headCss
