@@ -228,10 +228,19 @@ class CrmBulkController extends Controller
             foreach ($leadIds as $leadId) {
                 try {
                     DB::connection("mysql_$clientId")
-                        ->table('crm_lead_data')
+                        ->table('crm_leads')
                         ->where('id', $leadId)
                         ->where('is_deleted', 0)
                         ->update(['is_deleted' => 1, 'deleted_at' => \Carbon\Carbon::now()]);
+
+                    // Also soft-delete in legacy table if it exists
+                    try {
+                        DB::connection("mysql_$clientId")
+                            ->table('crm_lead_data')
+                            ->where('id', $leadId)
+                            ->where('is_deleted', 0)
+                            ->update(['is_deleted' => 1, 'deleted_at' => \Carbon\Carbon::now()]);
+                    } catch (\Throwable $e) {}
 
                     $this->logActivity($clientId, $leadId, $request->auth->id,
                         'system',
@@ -297,7 +306,7 @@ class CrmBulkController extends Controller
             }
 
             $leads = DB::connection("mysql_$clientId")
-                ->table('crm_lead_data')
+                ->table('crm_leads')
                 ->whereIn('id', $leadIds)
                 ->where('is_deleted', 0)
                 ->select($safeColumns)
@@ -329,7 +338,7 @@ class CrmBulkController extends Controller
         }
 
         $conn = "mysql_{$clientId}";
-        $query = DB::connection($conn)->table('crm_lead_data')
+        $query = DB::connection($conn)->table('crm_leads')
             ->whereIn('id', $leadIds)
             ->where('is_deleted', 0)
             ->whereRaw($scope['condition'], $scope['bindings']);
