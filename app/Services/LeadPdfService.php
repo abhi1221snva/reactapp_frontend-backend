@@ -192,20 +192,15 @@ class LeadPdfService
      */
     public function htmlToPdfBytes(string $html): string
     {
-        // Compact CSS overrides — forces small fonts, tight page margins,
-        // and full-width layout on every template.
-        // !important wins over inline styles and template CSS.
+        // Layout-only CSS overrides — forces full-width rendering and proper
+        // page setup.  Does NOT override font-size, padding, or line-height
+        // so each template controls its own appearance and fills the page.
         $compact = '<style>'
-            . '@page { size: A4 portrait; margin: 8mm 10mm; }'
+            . '@page { size: A4 portrait; margin: 10mm; }'
             . '* { box-sizing: border-box; }'
             . 'html, body { width: 100% !important; margin: 0 !important; padding: 0 !important; }'
-            . 'body { font-size: 8px !important; line-height: 1.3 !important; }'
             . '.container { width: 100% !important; max-width: none !important; margin: 0 !important; padding: 0 !important; }'
-            . 'table { width: 100% !important; font-size: 8px !important; border-collapse: collapse; }'
-            . 'th, td { font-size: 8px !important; padding: 2px 4px !important; line-height: 1.3 !important; }'
-            . 'h1, h2, h3, h4 { font-size: 10px !important; margin: 2px 0 !important; padding: 2px 0 !important; }'
-            . 'p, div, span { line-height: 1.3 !important; }'
-            . 'p { margin: 1px 0 !important; }'
+            . 'table { width: 100% !important; border-collapse: collapse; }'
             . '</style>';
 
         // Late override — placed AFTER template CSS so it wins by source order.
