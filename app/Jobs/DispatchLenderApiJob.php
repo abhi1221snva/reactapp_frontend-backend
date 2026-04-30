@@ -124,10 +124,11 @@ class DispatchLenderApiJob extends Job
 
             try { Redis::del($lockKey); } catch (\Throwable) {}
 
-            dispatch(new self(
+            $retryJob = (new self(
                 $this->clientId, $this->leadId, $this->lenderId,
                 $this->userId, $this->documentIds, $nextAttempt
             ))->onConnection('redis')->onQueue('default')->delay($delaySecs);
+            dispatch($retryJob);
 
             Log::info("DispatchLenderApiJob: retry scheduled", [
                 'lead_id'      => $this->leadId,

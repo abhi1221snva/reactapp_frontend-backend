@@ -183,12 +183,14 @@ class LeadPdfService
      */
     public function htmlToPdfBytes(string $html): string
     {
-        // Prepend compact overrides — forces small fonts & tight page margins
-        // on every template. !important wins over inline styles and template CSS.
+        // Prepend compact overrides — forces small fonts, tight page margins,
+        // and full-width layout on every template.
+        // !important wins over inline styles and template CSS.
         $compact = '<style>'
             . '@page { size: A4 portrait; margin: 8mm 10mm; }'
-            . 'body { font-size: 8px !important; line-height: 1.3 !important; }'
-            . 'table { font-size: 8px !important; border-collapse: collapse; }'
+            . 'body { width: 100% !important; margin: 0 !important; padding: 0 !important; font-size: 8px !important; line-height: 1.3 !important; }'
+            . '.container { width: 100% !important; max-width: none !important; margin: 0 !important; padding: 0 !important; }'
+            . 'table { width: 100% !important; font-size: 8px !important; border-collapse: collapse; }'
             . 'th, td { font-size: 8px !important; padding: 2px 4px !important; line-height: 1.3 !important; }'
             . 'h1, h2, h3, h4 { font-size: 10px !important; margin: 2px 0 !important; padding: 2px 0 !important; }'
             . 'p, div, span { line-height: 1.3 !important; }'
@@ -623,53 +625,65 @@ class LeadPdfService
      */
     private function stripOwner2Sections(string $html): string
     {
-        // 1. Remove the "Second Owner" <thead> + following <tbody> block.
-        //    Pattern: <thead>..Second Owner..</thead> <tbody>...</tbody>
+        // 1. Remove "Second Owner" / "Owner 2" <thead> + following <tbody> blocks.
+        //    Handles both old-style (inline in main table) and new-style (nested in
+        //    owner-2-col) templates.
         $html = preg_replace(
             '#<thead>\s*<tr>\s*<th[^>]*>[^<]*(?:Second\s+Owner|Owner\s*2)[^<]*</th>\s*</tr>\s*</thead>\s*<tbody>.*?</tbody>#is',
             '',
             $html
         );
 
-        // 2. Remove co-applicant signature columns from the signature table.
-        //    The template renders a 4-column row: [sig1] [date1] [sig2] [date2]
-        //    followed by a label row:              [Owner's sig] [Date] [Second Owner's sig] [Date]
-        //    Remove the last two <td>s in each row that reference "Second Owner" or "owner_2".
+        // 2. Remove the owner-2-col <td> from the side-by-side owner layout.
+        //    The cell contains a nested <table> with Owner 2 fields.
+        $html = preg_replace(
+            '#<td[^>]*class=["\']owner-2-col["\'][^>]*>.*?</table>\s*</td>#is',
+            '',
+            $html
+        );
 
-        // Remove <td> cells containing "Second Owner" label text,
-        // plus the adjacent "Date" <td> that follows it in the label row.
+        // 3. Expand owner-1-col from 50% to 100% width when Owner 2 is removed,
+        //    so the single owner section fills the full page width.
+        $html = preg_replace(
+            '#(<td[^>]*class=["\']owner-1-col["\'][^>]*style="[^"]*?)width\s*:\s*50%#is',
+            '$1width:100%',
+            $html
+        );
+        $html = preg_replace(
+            '#(<td[^>]*class=["\']owner-1-col["\'][^>]*style="[^"]*?)padding-right\s*:\s*\d+px#is',
+            '$1padding-right:0',
+            $html
+        );
+
+        // 4. Remove co-applicant signature label cells from the signature table.
+        //    Removes the "Second Owner" label <td> plus the adjacent "Date" <td>.
         $html = preg_replace(
             '#<td[^>]*>[^<]*(?:Second\s+Owner|Co-?Applicant)[^<]*</td>\s*<td[^>]*>\s*Date\s*</td>#is',
             '',
             $html
         );
-        // Fallback: if the "Date" cell didn't immediately follow, remove the cell alone
+        // Fallback: remove the label cell alone if "Date" didn't immediately follow
         $html = preg_replace(
             '#<td[^>]*>[^<]*(?:Second\s+Owner|Co-?Applicant)[^<]*</td>#is',
             '',
             $html
         );
 
-        // Remove <td> cells that had owner_2_signature_image / owner_2_signature_date
-        // (now empty after placeholder substitution)
-        // These cells contained [[owner_2_signature_image]] / [[owner_2_signature_date]]
-        // which are now empty strings — detect them as empty <td> siblings after the
-        // primary signature cells in the signature table.
-        // Match pattern: two consecutive empty <td>s at the end of a row that follow
-        // the primary signature cells (which have content).
-        // Simpler approach: widen the primary sig cells from 25% to 50%.
+        // 5. Remove empty <td> cells that held owner_2 signature/date values
+        //    (now empty after placeholder substitution). Handles both width:25%
+        //    (new template) and width:25px (legacy template).
         $html = preg_replace(
-            '#(<td\s+style="[^"]*width\s*:\s*)25(%[^"]*">\s*\[\[signature_image\]\])#i',
-            '$1 50$2',
+            '#<td[^>]*style="[^"]*width\s*:\s*25(?:%|px)[^"]*">\s*(?:&nbsp;|\s)*</td>#i',
+            '',
             $html
         );
 
-        // At this point the owner_2 <td>s are empty (no text, no img). Remove any
-        // <td> in the signature table that is completely empty (only whitespace/&nbsp;).
-        // We specifically target <td style="width:25%"> cells that are empty.
+        // 6. Expand remaining primary signature cells from 25% to 50% width.
+        //    After removing the owner_2 cells, the owner_1 signature and date cells
+        //    should each take half the page width.
         $html = preg_replace(
-            '#<td\s+style="[^"]*width\s*:\s*25%[^"]*">\s*(?:&nbsp;)*\s*</td>#i',
-            '',
+            '#(<td[^>]*style="[^"]*?)width\s*:\s*25(?:%|px)#i',
+            '$1width:50%',
             $html
         );
 

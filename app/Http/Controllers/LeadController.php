@@ -728,14 +728,7 @@ class LeadController extends Controller
 
         $clientId = $request->auth->parent_id;
 
-        // ── Lead source is required ────────────────────────────────────────
-        if (empty($request->input('lead_source_id'))) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed.',
-                'errors'  => ['lead_source_id' => ['Lead Source is required.']],
-            ], 422);
-        }
+        // ── Lead source is optional (only webhook-imported leads need one) ──
 
         // ── Dynamic EAV field validation ─────────────────────────────────────
         $input     = $request->all();
