@@ -70,6 +70,15 @@ class LeadPdfService
             $html = $this->stripOwner2Sections($html);
         }
 
+        // Wrap bare HTML fragments in a proper document structure.
+        // The returned HTML is used for:
+        //   1) Browser iframe preview (PdfPreviewModal)
+        //   2) Browser "Print / Save as PDF" (window.print())
+        //   3) DOMPDF rendering via htmlToPdfBytes()
+        // Without <!DOCTYPE html>, <html>, <body> tags the browser and DOMPDF
+        // both enter quirks mode and may render at partial page width.
+        $html = $this->wrapHtmlDocument($html);
+
         return [
             'html'          => $html,
             'lead_name'     => $leadName,
@@ -649,6 +658,49 @@ class LeadPdfService
         $text = preg_replace('/\[\[[^\]]*\]\]/', '', $text);
         $text = preg_replace('/\[[a-z0-9_]+\]/i', '', $text);
         return $text;
+    }
+
+    // ── Wrap bare HTML in a proper document structure ──────────────────────────
+
+    /**
+     * Ensure the HTML has <!DOCTYPE html>, <html>, <head>, and <body> tags.
+     *
+     * Adds baseline CSS that:
+     *  - Forces full page-width rendering (body, table width: 100%)
+     *  - Provides @media print rules for browser print-to-PDF
+     *  - Neutralises old templates' "th, td { width: 50%; }" via a late
+     *    override that comes after the template's own <style> blocks
+     *
+     * Templates that already have <html> structure are returned as-is
+     * (htmlToPdfBytes() handles injecting DOMPDF-specific compact CSS).
+     */
+    private function wrapHtmlDocument(string $html): string
+    {
+        if (stripos($html, '<html') !== false) {
+            return $html; // already wrapped
+        }
+
+        $headCss = '<style>'
+            . '* { box-sizing: border-box; }'
+            . 'html, body { width: 100%; margin: 0; padding: 10px 15px; font-family: Arial, Helvetica, sans-serif; }'
+            . 'table { width: 100%; border-collapse: collapse; }'
+            . '@media print {'
+            .   '@page { size: A4 portrait; margin: 10mm; }'
+            .   'html, body { width: 100%; padding: 0; }'
+            . '}'
+            . '</style>';
+
+        // Late override — must come AFTER the template's own <style> blocks
+        // so it wins by source order.  Neutralises old templates' blanket
+        // "th, td { width: 50%; }" without affecting inline style="width:25%".
+        $lateOverride = '<style>th, td { width: auto; }</style>';
+
+        return '<!DOCTYPE html><html><head><meta charset="UTF-8">'
+            . $headCss
+            . '</head><body>'
+            . $html
+            . $lateOverride
+            . '</body></html>';
     }
 
     // ── Remove Owner 2 / Second Owner sections from rendered template HTML ────
