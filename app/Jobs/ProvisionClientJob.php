@@ -26,6 +26,9 @@ use Illuminate\Support\Str;
  * so the frontend can show real-time progress.
  *
  * Dispatched on the 'clients' connection (database driver).
+ *
+ * IMPORTANT: All master-DB queries MUST use DB::connection('master') explicitly,
+ * because Artisan::call('migrate') can change the default DB connection.
  */
 class ProvisionClientJob extends Job
 {
@@ -66,8 +69,12 @@ class ProvisionClientJob extends Job
             return;
         }
 
+        // Use explicit master connection for all master-DB queries
+        $master = DB::connection('master');
+
         try {
             // ── Stage 1: Create client + user records ────────────────────────
+            // Idempotent: if a previous attempt already created records, reuse them.
             $progress->advanceTo(RegistrationProgress::STAGE_CREATING_RECORD);
 
             $now = Carbon::now();
@@ -80,41 +87,53 @@ class ProvisionClientJob extends Job
                 $mobileOnly = substr($mobileOnly, -10);
             }
 
-            // Create client record
-            $clientId = DB::table('clients')->insertGetId([
-                'company_name' => $this->companyName,
-                'reserved'     => 0,
-                'stage'        => Client::RECORD_SAVED,
-                'is_deleted'   => 0,
-                'created_at'   => $now,
-                'updated_at'   => $now,
-            ]);
+            // Check if user already exists from a previous attempt
+            $existingUser = $master->table('users')->where('email', $this->email)->first();
 
-            // Create user record
-            $userId = DB::table('users')->insertGetId([
-                'parent_id'          => $clientId,
-                'base_parent_id'     => $clientId,
-                'first_name'         => $firstName,
-                'last_name'          => $lastName,
-                'email'              => $this->email,
-                'mobile'             => $mobileOnly,
-                'company_name'       => $this->companyName,
-                'password'           => $this->hashedPassword,
-                'role'               => 6,
-                'user_level'         => 6,
-                'reserved'           => 0,
-                'is_deleted'         => 0,
-                'pusher_uuid'        => (string) Str::uuid(),
-                'extension'          => '',
-                'asterisk_server_id' => 0,
-                'phone_verified_at'  => $now,
-                'email_verified_at'  => $now,
-                'created_at'         => $now,
-                'updated_at'         => $now,
-            ]);
+            if ($existingUser) {
+                $clientId = $existingUser->base_parent_id;
+                $userId   = $existingUser->id;
+                Log::info('ProvisionClientJob: resuming with existing records', [
+                    'client_id' => $clientId, 'user_id' => $userId,
+                ]);
+            } else {
+                // Create client record
+                $clientId = $master->table('clients')->insertGetId([
+                    'company_name' => $this->companyName,
+                    'reserved'     => 0,
+                    'stage'        => Client::RECORD_SAVED,
+                    'is_deleted'   => 0,
+                    'created_at'   => $now,
+                    'updated_at'   => $now,
+                ]);
 
-            // Create permissions row
-            DB::table('permissions')->upsert([
+                // Create user record
+                $userId = $master->table('users')->insertGetId([
+                    'parent_id'          => $clientId,
+                    'base_parent_id'     => $clientId,
+                    'first_name'         => $firstName,
+                    'last_name'          => $lastName,
+                    'email'              => $this->email,
+                    'mobile'             => $mobileOnly,
+                    'company_name'       => $this->companyName,
+                    'password'           => $this->hashedPassword,
+                    'role'               => 6,
+                    'user_level'         => 6,
+                    'status'             => 1,
+                    'reserved'           => 0,
+                    'is_deleted'         => 0,
+                    'pusher_uuid'        => (string) Str::uuid(),
+                    'extension'          => '',
+                    'asterisk_server_id' => 0,
+                    'phone_verified_at'  => $now,
+                    'email_verified_at'  => $now,
+                    'created_at'         => $now,
+                    'updated_at'         => $now,
+                ]);
+            }
+
+            // Create permissions row (upsert is already idempotent)
+            $master->table('permissions')->upsert([
                 'user_id'    => $userId,
                 'client_id'  => $clientId,
                 'role'       => 6,
@@ -122,16 +141,19 @@ class ProvisionClientJob extends Job
                 'updated_at' => $now,
             ], ['user_id', 'client_id'], ['role', 'updated_at']);
 
-            // Create mysql_connection record
-            DB::table('mysql_connection')->insert([
-                'client_id' => $clientId,
-                'db_name'   => 'client_' . $clientId,
-                'db_user'   => env('NEW_CLIENT_USERNAME', env('DB_USERNAME', 'root')),
-                'password'  => env('NEW_CLIENT_PASSWORD', env('DB_PASSWORD', '')),
-                'ip'        => env('NEW_CLIENT_HOST', '127.0.0.1'),
-            ]);
+            // Create mysql_connection record (idempotent — skip if exists)
+            $existingConn = $master->table('mysql_connection')->where('client_id', $clientId)->exists();
+            if (!$existingConn) {
+                $master->table('mysql_connection')->insert([
+                    'client_id' => $clientId,
+                    'db_name'   => 'client_' . $clientId,
+                    'db_user'   => env('NEW_CLIENT_USERNAME', env('DB_USERNAME', 'root')),
+                    'password'  => env('NEW_CLIENT_PASSWORD', env('DB_PASSWORD', '')),
+                    'ip'        => env('NEW_CLIENT_HOST', '127.0.0.1'),
+                ]);
+            }
 
-            DB::table('clients')->where('id', $clientId)->update([
+            $master->table('clients')->where('id', $clientId)->update([
                 'stage' => Client::SAVE_CONNECTION,
             ]);
 
@@ -151,14 +173,14 @@ class ProvisionClientJob extends Job
             $dbUser = env('NEW_CLIENT_USERNAME', env('DB_USERNAME', 'root'));
             $dbHost = env('NEW_CLIENT_HOST', '127.0.0.1');
 
-            DB::connection('master')->statement("CREATE DATABASE IF NOT EXISTS `{$dbName}`");
+            $master->statement("CREATE DATABASE IF NOT EXISTS `{$dbName}`");
 
             // Only GRANT if using a non-root DB user (root already has full access)
             if ($dbUser !== 'root') {
-                DB::connection('master')->statement(
+                $master->statement(
                     "GRANT ALL PRIVILEGES ON `{$dbName}`.* TO '{$dbUser}'@'{$dbHost}'"
                 );
-                DB::connection('master')->statement("FLUSH PRIVILEGES");
+                $master->statement("FLUSH PRIVILEGES");
             }
 
             Artisan::call('make:database:config');
@@ -168,16 +190,10 @@ class ProvisionClientJob extends Job
                 '--force'    => true,
             ]);
 
-            // Run legacy seeders on the new client database
-            $seederDb = ['--database' => "mysql_{$clientId}"];
-            Artisan::call('db:seed', ['--class' => 'NotificationSeeder'] + $seederDb);
-            Artisan::call('db:seed', ['--class' => 'CrmLabels'] + $seederDb);
-            Artisan::call('db:seed', ['--class' => 'LabelTableSeeder'] + $seederDb);
-            Artisan::call('db:seed', ['--class' => 'DispositionTableSeeder'] + $seederDb);
-            Artisan::call('db:seed', ['--class' => 'DefaultApiTableSeeder'] + $seederDb);
-            Artisan::call('db:seed', ['--class' => 'CampaignTypesSeeder'] + $seederDb);
+            // Seeding is handled by TenantProvisionService::provisionDefaultCrmData()
+            // (legacy batch seeders iterate ALL clients and break per-client provisioning)
 
-            DB::table('clients')->where('id', $clientId)->update([
+            $master->table('clients')->where('id', $clientId)->update([
                 'stage' => Client::MIGRATE_SEED,
             ]);
 
@@ -198,7 +214,7 @@ class ProvisionClientJob extends Job
             $provisionSvc->provisionDefaultSettings($clientId, $this->companyName);
             $provisionSvc->provisionDefaultCrmData($clientId);
 
-            DB::table('clients')->where('id', $clientId)->update([
+            $master->table('clients')->where('id', $clientId)->update([
                 'stage' => Client::FULLY_PROVISIONED,
             ]);
 

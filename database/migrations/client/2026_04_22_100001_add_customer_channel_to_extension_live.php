@@ -12,7 +12,7 @@ return new class extends Migration
 
         if (!Schema::connection($conn)->hasColumn('extension_live', 'customer_channel')) {
             Schema::connection($conn)->table('extension_live', function (Blueprint $table) {
-                $table->string('customer_channel', 255)->nullable()->after('conf_room');
+                $table->string('customer_channel', 255)->nullable();
             });
         }
     }

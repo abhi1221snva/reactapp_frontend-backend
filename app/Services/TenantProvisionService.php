@@ -202,16 +202,22 @@ class TenantProvisionService
      */
     public function provisionDefaultCrmData(int $clientId): void
     {
-        try {
-            $this->seedCrmLabels($clientId);
-            $this->seedCrmLeadStatuses($clientId);
-            $this->seedDispositions($clientId);
-            Log::info("TenantProvisionService: default CRM data seeded for client_{$clientId}");
-        } catch (\Throwable $e) {
-            Log::error("TenantProvisionService: CRM data seed error for client_{$clientId}", [
-                'error' => $e->getMessage(),
-            ]);
+        $seeders = [
+            'seedCrmLabels', 'seedCrmLeadStatuses', 'seedDispositions',
+            'seedNotifications', 'seedLabels', 'seedDefaultApi', 'seedCampaignTypes',
+        ];
+
+        foreach ($seeders as $method) {
+            try {
+                $this->{$method}($clientId);
+            } catch (\Throwable $e) {
+                Log::warning("TenantProvisionService::{$method} failed for client_{$clientId}", [
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
+
+        Log::info("TenantProvisionService: default CRM data seeded for client_{$clientId}");
     }
 
     /**
@@ -269,12 +275,12 @@ class TenantProvisionService
         }
 
         $statuses = [
-            ['status_name' => 'New Lead',     'color' => '#3B82F6', 'display_order' => 1],
-            ['status_name' => 'In Review',    'color' => '#F59E0B', 'display_order' => 2],
-            ['status_name' => 'Approved',     'color' => '#10B981', 'display_order' => 3],
-            ['status_name' => 'Declined',     'color' => '#EF4444', 'display_order' => 4],
-            ['status_name' => 'Funded',       'color' => '#8B5CF6', 'display_order' => 5],
-            ['status_name' => 'Closed',       'color' => '#6B7280', 'display_order' => 6],
+            ['title' => 'New Lead',     'color_code' => '#3B82F6', 'display_order' => 1, 'status' => 1],
+            ['title' => 'In Review',    'color_code' => '#F59E0B', 'display_order' => 2, 'status' => 1],
+            ['title' => 'Approved',     'color_code' => '#10B981', 'display_order' => 3, 'status' => 1],
+            ['title' => 'Declined',     'color_code' => '#EF4444', 'display_order' => 4, 'status' => 1],
+            ['title' => 'Funded',       'color_code' => '#8B5CF6', 'display_order' => 5, 'status' => 1],
+            ['title' => 'Closed',       'color_code' => '#6B7280', 'display_order' => 6, 'status' => 1],
         ];
 
         $now = now();
@@ -301,21 +307,129 @@ class TenantProvisionService
         }
 
         $dispositions = [
-            ['title' => 'No Answer',       'category' => 'system', 'status' => 1],
-            ['title' => 'Busy',            'category' => 'system', 'status' => 1],
-            ['title' => 'Callback',        'category' => 'system', 'status' => 1],
-            ['title' => 'Not Interested',  'category' => 'system', 'status' => 1],
-            ['title' => 'DNC',             'category' => 'system', 'status' => 1],
-            ['title' => 'Qualified',       'category' => 'system', 'status' => 1],
+            ['title' => 'No Answer',       'd_type' => 'system', 'status' => 1],
+            ['title' => 'Busy',            'd_type' => 'system', 'status' => 1],
+            ['title' => 'Callback',        'd_type' => 'system', 'status' => 1],
+            ['title' => 'Not Interested',  'd_type' => 'system', 'status' => 1],
+            ['title' => 'DNC',             'd_type' => 'system', 'status' => 1],
+            ['title' => 'Qualified',       'd_type' => 'system', 'status' => 1],
         ];
 
-        $now = now();
-        foreach ($dispositions as &$row) {
-            $row['created_at'] = $now;
-            $row['updated_at'] = $now;
+        DB::connection($conn)->table('disposition')->insert($dispositions);
+    }
+
+    /**
+     * Seed system notification subscriptions for a single client.
+     */
+    private function seedNotifications(int $clientId): void
+    {
+        $conn = "mysql_{$clientId}";
+
+        if (!DB::connection($conn)->getSchemaBuilder()->hasTable('system_notifications')) {
+            return;
+        }
+        if (DB::connection($conn)->table('system_notifications')->exists()) {
+            return;
         }
 
-        DB::connection($conn)->table('disposition')->insert($dispositions);
+        $types = [
+            'list_add_delete', 'extension_add_delete', 'campaign_low_lead',
+            'daily_call_report', 'recycle_delete', 'ip_whitelist',
+            'send_fax_email', 'send_callback',
+        ];
+
+        $rows = [];
+        foreach ($types as $typeId) {
+            $rows[] = [
+                'notification_id' => $typeId,
+                'active'          => 0,
+                'active_sms'      => 0,
+                'subscribers'     => '[]',
+            ];
+        }
+
+        DB::connection($conn)->table('system_notifications')->insert($rows);
+    }
+
+    /**
+     * Seed default label rows for a single client.
+     */
+    private function seedLabels(int $clientId): void
+    {
+        $conn = "mysql_{$clientId}";
+
+        if (!DB::connection($conn)->getSchemaBuilder()->hasTable('label')) {
+            return;
+        }
+        if (DB::connection($conn)->table('label')->exists()) {
+            return;
+        }
+
+        $labels = [
+            ['id' => 1,  'title' => 'First Name'],
+            ['id' => 2,  'title' => 'Last Name'],
+            ['id' => 3,  'title' => 'Legal Company Name'],
+            ['id' => 4,  'title' => 'Address'],
+            ['id' => 5,  'title' => 'Work Phone'],
+            ['id' => 6,  'title' => 'Mobile'],
+            ['id' => 7,  'title' => 'City'],
+            ['id' => 8,  'title' => 'State'],
+            ['id' => 9,  'title' => 'Zip'],
+            ['id' => 10, 'title' => 'Funding Amount'],
+            ['id' => 11, 'title' => 'Email'],
+            ['id' => 12, 'title' => 'Business Type'],
+            ['id' => 13, 'title' => 'Monthly Revenue'],
+            ['id' => 14, 'title' => 'Lead Source'],
+            ['id' => 15, 'title' => 'Credit Score'],
+            ['id' => 16, 'title' => 'Business Age'],
+            ['id' => 17, 'title' => 'Annual Revenue'],
+            ['id' => 18, 'title' => 'Factor Rate'],
+        ];
+
+        DB::connection($conn)->table('label')->insert($labels);
+    }
+
+    /**
+     * Seed default API row for a single client.
+     */
+    private function seedDefaultApi(int $clientId): void
+    {
+        $conn = "mysql_{$clientId}";
+
+        if (!DB::connection($conn)->getSchemaBuilder()->hasTable('api')) {
+            return;
+        }
+        if (DB::connection($conn)->table('api')->where('campaign_id', '0')->exists()) {
+            return;
+        }
+
+        DB::connection($conn)->table('api')->insert([
+            'title'       => 'API',
+            'url'         => 'https://www.test.com/',
+            'campaign_id' => '0',
+            'is_default'  => '1',
+        ]);
+    }
+
+    /**
+     * Seed default campaign types for a single client.
+     */
+    private function seedCampaignTypes(int $clientId): void
+    {
+        $conn = "mysql_{$clientId}";
+
+        if (!DB::connection($conn)->getSchemaBuilder()->hasTable('campaign_types')) {
+            return;
+        }
+        if (DB::connection($conn)->table('campaign_types')->exists()) {
+            return;
+        }
+
+        DB::connection($conn)->table('campaign_types')->insert([
+            ['title' => 'Super Power Dial', 'title_url' => 'super_power_dial', 'status' => '1'],
+            ['title' => 'Predictive Dial',  'title_url' => 'predictive_dial',  'status' => '0'],
+            ['title' => 'Outbound AI',      'title_url' => 'outbound_ai',      'status' => '0'],
+        ]);
     }
 
     // ── Bulk re-provisioning (storage only) ───────────────────────────────────

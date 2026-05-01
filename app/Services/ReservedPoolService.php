@@ -200,16 +200,7 @@ class ReservedPoolService
             '--force'    => true,
         ]);
 
-        // 5. Run legacy seeders on the new client database
-        $seederDb = ['--database' => "mysql_{$clientId}"];
-        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--class' => 'NotificationSeeder'] + $seederDb);
-        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--class' => 'CrmLabels'] + $seederDb);
-        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--class' => 'LabelTableSeeder'] + $seederDb);
-        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--class' => 'DispositionTableSeeder'] + $seederDb);
-        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--class' => 'DefaultApiTableSeeder'] + $seederDb);
-        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--class' => 'CampaignTypesSeeder'] + $seederDb);
-
-        // 6. Provision storage, settings, CRM data
+        // 5. Provision storage, settings, CRM data (includes all seeding)
         $provisionSvc = new TenantProvisionService();
         $provisionSvc->provisionStorage($clientId);
         $provisionSvc->provisionDefaultSettings($clientId, 'Reserved Client');

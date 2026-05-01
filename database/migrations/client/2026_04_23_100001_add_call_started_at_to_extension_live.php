@@ -9,7 +9,7 @@ class AddCallStartedAtToExtensionLive extends Migration
     public function up()
     {
         Schema::table('extension_live', function (Blueprint $table) {
-            $table->timestamp('call_started_at')->nullable()->after('conf_room');
+            $table->timestamp('call_started_at')->nullable();
         });
     }
 
