@@ -1104,27 +1104,44 @@ class SignupController extends Controller
             $smtpSetting->from_email      = env('PORTAL_MAIL_SENDER_EMAIL');
             $smtpSetting->mail_encryption = env('PORTAL_MAIL_ENCRYPTION');
 
-            $from = [
-                'address' => empty($smtpSetting->from_email) ? env('DEFAULT_EMAIL') : $smtpSetting->from_email,
-                'name'    => empty($smtpSetting->from_name)  ? env('DEFAULT_NAME')  : $smtpSetting->from_name,
-            ];
+            $fromAddress = empty($smtpSetting->from_email) ? env('DEFAULT_EMAIL') : $smtpSetting->from_email;
+            $fromName    = empty($smtpSetting->from_name)  ? env('DEFAULT_NAME')  : $smtpSetting->from_name;
 
-            $subject  = 'Verify your email — ' . env('SITE_NAME', 'Dialer');
-            $mailable = new SystemNotificationMail(
-                $from,
-                'emails.email-verification-otp',
-                $subject,
-                ['name' => $email, 'code' => $otp]
+            $subject = 'Verify your email — ' . env('SITE_NAME', 'Dialer');
+
+            // Render template directly and send via Symfony mailer
+            // (bypasses SystemNotificationMail::build() double-call issue)
+            $html = view('emails.email-verification-otp', [
+                'subject' => $subject,
+                'data'    => ['name' => $email, 'code' => $otp],
+            ])->render();
+
+            $dsn = sprintf(
+                'smtp://%s:%s@%s:%d?encryption=%s',
+                urlencode($smtpSetting->mail_username),
+                urlencode($smtpSetting->mail_password),
+                $smtpSetting->mail_host,
+                $smtpSetting->mail_port,
+                $smtpSetting->mail_encryption ?? 'tls'
             );
 
-            $mailService = new MailService(0, $mailable, $smtpSetting);
-            $mailService->sendEmail($email);
+            $transport = \Symfony\Component\Mailer\Transport::fromDsn($dsn);
+            $mailer    = new \Symfony\Component\Mailer\Mailer($transport);
+
+            $message = (new \Symfony\Component\Mime\Email())
+                ->from(sprintf('%s <%s>', $fromName, $fromAddress))
+                ->to($email)
+                ->subject($subject)
+                ->html($html);
+
+            $mailer->send($message);
 
             Log::info('SignupController: verification email sent', ['email' => $email]);
         } catch (\Throwable $e) {
             Log::error('SignupController: verification email failed', [
                 'email' => $email,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
         }
     }
