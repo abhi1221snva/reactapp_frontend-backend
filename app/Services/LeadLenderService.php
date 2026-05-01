@@ -860,6 +860,150 @@ class LeadLenderService
                 ]);
         }
 
+        // ── Email notification to admin, assigned_to, created_by ─────────────
+        try {
+            $this->notifyLenderResponseChange(
+                (int) $clientId,
+                $leadId,
+                $lenderName,
+                $responseStatus,
+                $responseNote,
+                $userId
+            );
+        } catch (\Throwable $e) {
+            Log::warning("[LenderResponse] Email notification failed: " . $e->getMessage());
+        }
+
         return array_merge((array) $row, $update);
+    }
+
+    /**
+     * Send email notifications when a lender response status changes.
+     * Recipients: admin (role=6), assigned_to user, created_by user (deduplicated).
+     */
+    private function notifyLenderResponseChange(
+        int     $clientId,
+        int     $leadId,
+        string  $lenderName,
+        string  $responseStatus,
+        ?string $responseNote,
+        int     $actingUserId
+    ): void {
+        $conn = "mysql_{$clientId}";
+
+        // ── 1. Resolve lead info ──────────────────────────────────────────────
+        $lead = DB::connection($conn)->table('crm_leads')
+            ->where('id', $leadId)
+            ->first(['assigned_to', 'created_by']);
+
+        if (!$lead) {
+            return;
+        }
+
+        // ── 2. Resolve merchant info from EAV ─────────────────────────────────
+        $eav = DB::connection($conn)->table('crm_lead_values')
+            ->where('lead_id', $leadId)
+            ->whereIn('field_key', ['first_name', 'last_name', 'company_name'])
+            ->pluck('field_value', 'field_key')
+            ->toArray();
+
+        $merchantName = trim(($eav['first_name'] ?? '') . ' ' . ($eav['last_name'] ?? '')) ?: '';
+        $businessName = $eav['company_name'] ?? '';
+
+        // ── 3. Resolve tenant company name & URL ──────────────────────────────
+        $client      = DB::connection('master')->table('clients')->where('id', $clientId)->first(['company_name', 'website_url']);
+        $companyName = $client->company_name ?? 'Rocket Dialer';
+        $websiteUrl  = $client->website_url ?? '';
+        $baseUrl     = rtrim($websiteUrl, '/') ?: rtrim(env('FRONTEND_URL', env('APP_URL', '')), '/');
+        $leadUrl     = $baseUrl ? "{$baseUrl}/crm/leads/{$leadId}" : '';
+
+        // ── 4. Resolve acting user name ───────────────────────────────────────
+        $actingUser   = $actingUserId ? DB::connection('master')->table('users')->where('id', $actingUserId)->first(['first_name', 'last_name']) : null;
+        $updatedByName = $actingUser ? trim("{$actingUser->first_name} {$actingUser->last_name}") : 'System';
+
+        // ── 5. Collect unique recipient user IDs ──────────────────────────────
+        $recipientIds = [];
+
+        // Admin users (role=1) for this client
+        $admins = DB::connection('master')->table('users')
+            ->where('parent_id', $clientId)
+            ->where('role', 1)
+            ->where('is_deleted', 0)
+            ->get(['id', 'email', 'first_name', 'last_name', 'timezone']);
+
+        foreach ($admins as $admin) {
+            $recipientIds[$admin->id] = $admin;
+        }
+
+        // assigned_to user
+        if ($lead->assigned_to && !isset($recipientIds[$lead->assigned_to])) {
+            $assignedUser = DB::connection('master')->table('users')
+                ->where('id', $lead->assigned_to)
+                ->where('is_deleted', 0)
+                ->first(['id', 'email', 'first_name', 'last_name', 'timezone']);
+            if ($assignedUser) {
+                $recipientIds[$assignedUser->id] = $assignedUser;
+            }
+        }
+
+        // created_by user
+        if ($lead->created_by && !isset($recipientIds[$lead->created_by])) {
+            $createdUser = DB::connection('master')->table('users')
+                ->where('id', $lead->created_by)
+                ->where('is_deleted', 0)
+                ->first(['id', 'email', 'first_name', 'last_name', 'timezone']);
+            if ($createdUser) {
+                $recipientIds[$createdUser->id] = $createdUser;
+            }
+        }
+
+        if (empty($recipientIds)) {
+            Log::warning("[LenderResponse] No recipients found for lead {$leadId} on client {$clientId}");
+            return;
+        }
+
+        // ── 6. Resolve email service ──────────────────────────────────────────
+        try {
+            $emailSvc = EmailService::forClient($clientId, 'notification');
+        } catch (\Throwable $_) {
+            try {
+                $emailSvc = EmailService::forClientAny($clientId);
+            } catch (\Throwable $e) {
+                Log::warning("[LenderResponse] No email config for client {$clientId}: " . $e->getMessage());
+                return;
+            }
+        }
+
+        // ── 7. Send email to each recipient ───────────────────────────────────
+        $statusLabel = ucwords(str_replace('_', ' ', $responseStatus));
+        $subject     = "Lender Response: {$lenderName} — {$statusLabel} (Lead #{$leadId})";
+
+        foreach ($recipientIds as $user) {
+            try {
+                $userTz    = $user->timezone ?: 'America/New_York';
+                $timestamp = Carbon::now($userTz)->format('M j, Y g:i A T');
+                $userName  = trim("{$user->first_name} {$user->last_name}") ?: 'Team Member';
+
+                $html = view('emails.lender-response-notification', [
+                    'companyName'    => $companyName,
+                    'recipientName'  => $userName,
+                    'leadId'         => $leadId,
+                    'lenderName'     => $lenderName,
+                    'merchantName'   => $merchantName,
+                    'businessName'   => $businessName,
+                    'responseStatus' => $responseStatus,
+                    'responseNote'   => $responseNote,
+                    'updatedByName'  => $updatedByName,
+                    'leadUrl'        => $leadUrl,
+                    'timestamp'      => $timestamp,
+                ])->render();
+
+                $emailSvc->send($user->email, $subject, $html);
+
+                Log::info("[LenderResponse] Email sent to {$user->email} for lead {$leadId}, response: {$responseStatus}");
+            } catch (\Throwable $e) {
+                Log::warning("[LenderResponse] Email to {$user->email} failed: " . $e->getMessage());
+            }
+        }
     }
 }

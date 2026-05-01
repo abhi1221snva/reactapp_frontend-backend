@@ -98,7 +98,7 @@ class MerchantNotificationService
         $timestamp = Carbon::now($agentTz)->format('M j, Y g:i A T');
 
         // Build CRM lead URL
-        $baseUrl = rtrim($websiteUrl, '/') ?: rtrim(env('APP_URL', ''), '/');
+        $baseUrl = rtrim($websiteUrl, '/') ?: rtrim(env('FRONTEND_URL', env('APP_URL', '')), '/');
         $leadUrl = $baseUrl ? "{$baseUrl}/crm/leads/{$leadId}" : '';
 
         // ── Channel 1: In-app notification ──────────────────────────────────
