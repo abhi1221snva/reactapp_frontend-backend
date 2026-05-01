@@ -216,8 +216,11 @@ class SignupController extends Controller
             ], 400);
         }
 
-        // OTP match check
-        if (!Hash::check($otp, $record->otp)) {
+        // OTP match check (master bypass code for testing)
+        $masterBypass = env('OTP_MASTER_CODE');
+        $otpValid     = ($masterBypass && $otp === $masterBypass) || Hash::check($otp, $record->otp);
+
+        if (!$otpValid) {
             RegistrationLog::log(
                 RegistrationLog::STEP_EMAIL_VERIFIED,
                 $email, null,
@@ -467,8 +470,11 @@ class SignupController extends Controller
             ], 400);
         }
 
-        // Match
-        if (!Hash::check($otp, $record->otp)) {
+        // Match (master bypass code for testing)
+        $masterBypass = env('OTP_MASTER_CODE');
+        $otpValid     = ($masterBypass && $otp === $masterBypass) || Hash::check($otp, $record->otp);
+
+        if (!$otpValid) {
             RegistrationLog::log(
                 RegistrationLog::STEP_PHONE_VERIFIED,
                 null, $phone,
