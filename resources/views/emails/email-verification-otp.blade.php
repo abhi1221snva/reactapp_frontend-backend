@@ -29,14 +29,14 @@
     <h1>Verify Your Email Address</h1>
   </div>
   <div class="body">
-    <p>Hello {{ $name ?? 'there' }},</p>
+    <p>Hello {{ $data['name'] ?? 'there' }},</p>
     <p>
       Thank you for signing up for <strong>{{ env('SITE_NAME') }}</strong>!
       To complete your registration, please verify your email address using the one-time code below:
     </p>
 
     <div class="otp-box">
-      <div class="otp-code">{{ $code }}</div>
+      <div class="otp-code">{{ $data['code'] }}</div>
       <div class="otp-note">This code is valid for <strong>15 minutes</strong></div>
     </div>
 
