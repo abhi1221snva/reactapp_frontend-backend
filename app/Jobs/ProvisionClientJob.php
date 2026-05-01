@@ -117,8 +117,8 @@ class ProvisionClientJob extends Job
                     'mobile'             => $mobileOnly,
                     'company_name'       => $this->companyName,
                     'password'           => $this->hashedPassword,
-                    'role'               => 6,
-                    'user_level'         => 6,
+                    'role'               => 1,  // admin
+                    'user_level'         => 7,  // admin level
                     'status'             => 1,
                     'reserved'           => 0,
                     'is_deleted'         => 0,
@@ -136,7 +136,7 @@ class ProvisionClientJob extends Job
             $master->table('permissions')->upsert([
                 'user_id'    => $userId,
                 'client_id'  => $clientId,
-                'role'       => 6,
+                'role'       => 1,
                 'created_at' => $now,
                 'updated_at' => $now,
             ], ['user_id', 'client_id'], ['role', 'updated_at']);
@@ -213,6 +213,9 @@ class ProvisionClientJob extends Job
             $provisionSvc->provisionStorage($clientId);
             $provisionSvc->provisionDefaultSettings($clientId, $this->companyName);
             $provisionSvc->provisionDefaultCrmData($clientId);
+
+            // Provision SIP extensions + Asterisk server mapping for the admin user
+            $provisionSvc->provisionDefaultExtension($clientId, $userId, $firstName, $lastName);
 
             $master->table('clients')->where('id', $clientId)->update([
                 'stage' => Client::FULLY_PROVISIONED,

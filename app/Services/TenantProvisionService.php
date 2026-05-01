@@ -432,6 +432,195 @@ class TenantProvisionService
         ]);
     }
 
+    // ── Step 6 — Default SIP extension ──────────────────────────────────────
+
+    /**
+     * Auto-provision Asterisk server mapping + SIP extensions for a new user.
+     *
+     * Creates:
+     *  - client_server mapping (client → default Asterisk server)
+     *  - 3 user_extensions rows (primary, alt/WebRTC, app/mobile)
+     *  - 3 PJSIP realtime rows (ps_endpoints, ps_auths, ps_aors)
+     *  - Updates users.extension / alt_extension / app_extension / asterisk_server_id
+     *
+     * Uses a random SIP secret (independent of login password) for security.
+     * Non-fatal — if Asterisk provisioning fails, the user can still log in.
+     */
+    public function provisionDefaultExtension(int $clientId, int $userId, string $firstName, string $lastName): void
+    {
+        $master = DB::connection('master');
+
+        try {
+            // 1. Find the default active Asterisk server
+            $server = $master->table('asterisk_server')->where('status', 1)->orderBy('id', 'asc')->first();
+            if (!$server) {
+                Log::warning("TenantProvisionService: no active Asterisk server found — skipping extension provisioning for client_{$clientId}");
+                return;
+            }
+
+            // 2. Create client_server mapping (idempotent)
+            $hasMapping = $master->table('client_server')
+                ->where('client_id', $clientId)
+                ->exists();
+
+            if (!$hasMapping) {
+                $master->table('client_server')->insert([
+                    'client_id'  => $clientId,
+                    'ip_address' => $server->id,
+                    'server_id'  => $server->id,
+                    'detail'     => '',
+                ]);
+            }
+
+            // 3. Check if user already has extensions (idempotent)
+            $user = $master->table('users')->where('id', $userId)->first();
+            if ($user && $user->asterisk_server_id > 0 && !empty($user->extension) && $user->extension !== '0') {
+                Log::info("TenantProvisionService: user {$userId} already has extensions — skipping");
+                return;
+            }
+
+            // 4. Generate unique extension numbers (4-digit, prefixed with clientId)
+            $primaryExtNum = $this->generateUniqueExtension($clientId, $master);
+            $altExtNum     = $this->generateUniqueExtension($clientId, $master);
+            $appExtNum     = $this->generateUniqueExtension($clientId, $master);
+
+            $primaryExt = $clientId . $primaryExtNum;
+            $altExt     = $clientId . $altExtNum;
+            $appExt     = $clientId . $appExtNum;
+
+            // 5. Generate random SIP secret (plaintext for Asterisk digest auth)
+            $sipSecret = Str::random(16);
+            $fullname  = trim("{$firstName} {$lastName}");
+
+            // 6. Insert user_extensions — primary (basic SIP)
+            $master->table('user_extensions')->insert([
+                'name'     => $primaryExt,
+                'username' => $primaryExt,
+                'secret'   => $sipSecret,
+                'context'  => 'user-extensions-phones',
+                'host'     => 'dynamic',
+                'nat'      => 'force_rport,comedia',
+                'qualify'  => 'no',
+                'type'     => 'friend',
+                'fullname' => $fullname,
+            ]);
+
+            // 7. Insert user_extensions — alt (WebRTC-enabled)
+            $master->table('user_extensions')->insert([
+                'name'           => $altExt,
+                'username'       => $altExt,
+                'secret'         => $sipSecret,
+                'context'        => 'user-extensions-phones',
+                'host'           => 'dynamic',
+                'nat'            => 'force_rport,comedia',
+                'qualify'        => 'no',
+                'type'           => 'friend',
+                'fullname'       => $fullname,
+                'rtptimeout'     => '7200',
+                'rtpholdtimeout' => '7200',
+                'sendrpid'       => 'yes',
+                'subscribemwi'   => 'yes',
+                't38pt_udptl'    => 'no',
+                'transport'      => 'UDP,WS,WSS',
+                'trustrpid'      => 'no',
+                'useclientcode'  => 'no',
+                'usereqphone'    => 'no',
+                'videosupport'   => 'no',
+                'icesupport'     => 'yes',
+                'force_avp'      => 'yes',
+                'dtlsenable'     => 'yes',
+                'dtlsverify'     => 'fingerprint',
+                'dtlscertfile'   => '/etc/asterisk/asterisk.pem',
+                'dtlssetup'     => 'actpass',
+                'rtcp_mux'       => 'yes',
+                'avpf'           => 'yes',
+                'webrtc'         => 'yes',
+            ]);
+
+            // 8. Insert user_extensions — app (mobile SIP)
+            $master->table('user_extensions')->insert([
+                'name'           => $appExt,
+                'username'       => $appExt,
+                'secret'         => $sipSecret,
+                'context'        => 'user-extensions-phones',
+                'host'           => 'dynamic',
+                'nat'            => 'force_rport,comedia',
+                'qualify'        => 'no',
+                'type'           => 'friend',
+                'fullname'       => $fullname,
+                'rtptimeout'     => '7200',
+                'rtpholdtimeout' => '7200',
+                'sendrpid'       => 'yes',
+                'subscribemwi'   => 'yes',
+                't38pt_udptl'    => 'no',
+                'transport'      => 'TLS,WS,WSS,TCP,UDP',
+                'trustrpid'      => 'no',
+                'useclientcode'  => 'no',
+                'usereqphone'    => 'no',
+                'videosupport'   => 'yes',
+                'icesupport'     => 'yes',
+                'force_avp'      => 'no',
+                'dtlsenable'     => 'yes',
+                'dtlsverify'     => 'fingerprint',
+                'dtlscertfile'   => '/etc/asterisk/asterisk.pem',
+                'dtlssetup'     => 'actpass',
+                'rtcp_mux'       => 'no',
+                'avpf'           => 'no',
+                'webrtc'         => 'no',
+            ]);
+
+            // 9. Sync all 3 to PJSIP realtime tables
+            PjsipRealtimeService::syncExtension($primaryExt, $sipSecret, 'user-extensions-phones', $fullname);
+            PjsipRealtimeService::syncExtension($altExt, $sipSecret, 'user-extensions-phones', $fullname);
+            PjsipRealtimeService::syncExtension($appExt, $sipSecret, 'user-extensions-phones', $fullname);
+
+            // 10. Update user record with extension info
+            $master->table('users')->where('id', $userId)->update([
+                'extension'          => $primaryExt,
+                'alt_extension'      => $altExt,
+                'app_extension'      => $appExt,
+                'asterisk_server_id' => $server->id,
+            ]);
+
+            Log::info("TenantProvisionService: SIP extensions provisioned for user {$userId}", [
+                'client_id'   => $clientId,
+                'primary_ext' => $primaryExt,
+                'alt_ext'     => $altExt,
+                'app_ext'     => $appExt,
+                'server_id'   => $server->id,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error("TenantProvisionService: extension provisioning failed for user {$userId}", [
+                'client_id' => $clientId,
+                'error'     => $e->getMessage(),
+            ]);
+            // Non-fatal — user can still log in without SIP
+        }
+    }
+
+    /**
+     * Generate a random 4-digit extension number not already used in user_extensions.
+     */
+    private function generateUniqueExtension(int $clientId, $db, int $maxAttempts = 50): int
+    {
+        for ($i = 0; $i < $maxAttempts; $i++) {
+            $ext = mt_rand(1000, 9999);
+            $fullExt = $clientId . $ext;
+
+            // Check global uniqueness in user_extensions
+            $exists = $db->table('user_extensions')
+                ->where('name', $fullExt)
+                ->exists();
+
+            if (!$exists) {
+                return $ext;
+            }
+        }
+
+        // Fallback: use timestamp-based to avoid collision
+        return (int) substr(time(), -4);
+    }
+
     // ── Bulk re-provisioning (storage only) ───────────────────────────────────
 
     /**

@@ -11,6 +11,7 @@ use App\Model\Master\RegistrationLog;
 use App\Model\Master\RegistrationProgress;
 use App\Services\ReservedPoolService;
 use App\Services\SmsGatewayService;
+use App\Services\TenantProvisionService;
 use App\Services\TrialPackageService;
 use App\Services\WelcomeEmailService;
 use App\Services\MailService;
@@ -669,6 +670,22 @@ class RegistrationController extends Controller
                     Log::error('RegistrationController: trial assignment failed (fast path)', [
                         'client_id' => $clientId,
                         'error'     => $e->getMessage(),
+                    ]);
+                }
+
+                // SIP extension provisioning (non-blocking)
+                try {
+                    $nameParts = explode(' ', trim($prospect->name ?? ''), 2);
+                    $provisionSvc = new TenantProvisionService();
+                    $provisionSvc->provisionDefaultExtension(
+                        $clientId,
+                        $userId,
+                        $nameParts[0] ?? '',
+                        $nameParts[1] ?? ''
+                    );
+                } catch (\Throwable $e) {
+                    Log::error('RegistrationController: SIP extension provisioning failed', [
+                        'client_id' => $clientId, 'error' => $e->getMessage(),
                     ]);
                 }
 

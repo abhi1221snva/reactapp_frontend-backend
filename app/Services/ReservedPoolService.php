@@ -94,8 +94,8 @@ class ReservedPoolService
                     'mobile'            => $mobileOnly,
                     'company_name'      => $prospect->company_name,
                     'password'          => $prospect->password, // already bcrypt-hashed
-                    'role'              => 6,  // Owner role
-                    'user_level'        => 6,  // Owner level
+                    'role'              => 1,  // admin role
+                    'user_level'        => 7,  // admin level
                     'reserved'          => 0,
                     'phone_verified_at' => $now,
                     'email_verified_at' => $now,
@@ -106,7 +106,7 @@ class ReservedPoolService
                 DB::table('permissions')->upsert([
                     'user_id'    => $reservedUser->id,
                     'client_id'  => $reservedClient->id,
-                    'role'       => 6,
+                    'role'       => 1,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ], ['user_id', 'client_id'], ['role', 'updated_at']);

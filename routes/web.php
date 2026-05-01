@@ -254,7 +254,10 @@ $router->group(['middleware' => ['throttle:10,1']], function () use ($router) {
     // Email availability check
     $router->post('signup/check-email', 'SignupController@checkEmail');
 
-    // Slow-path provisioning status polling
+});
+
+// Status polling — higher rate limit (30/min) since frontend polls every 2.5s
+$router->group(['middleware' => ['throttle:30,1']], function () use ($router) {
     $router->get('signup/status/{id}', 'SignupController@registrationStatus');
 });
 
