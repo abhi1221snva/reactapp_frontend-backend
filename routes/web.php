@@ -230,6 +230,34 @@ $router->group(['middleware' => ['throttle:10,1']], function () use ($router) {
     $router->get('register/status/{id}', 'RegistrationController@registrationStatus');
 });
 
+// ─── Signup V3 (Streamlined modal flow) ─────────────────────────────────────
+// Rate-limited: 10 requests per minute per IP
+$router->group(['middleware' => ['throttle:10,1']], function () use ($router) {
+    // Step 1 — Email + password + auto-send email OTP
+    $router->post('signup/init', 'SignupController@init');
+
+    // Step 2 — Verify email OTP
+    $router->post('signup/verify-email-otp', 'SignupController@verifyEmailOtp');
+
+    // Step 3 — Profile completion + auto-send phone OTP
+    $router->post('signup/complete-profile', 'SignupController@completeProfile');
+
+    // Step 4 — Verify phone OTP + complete registration
+    $router->post('signup/verify-phone-otp', 'SignupController@verifyPhoneOtp');
+
+    // Unified resend (type: 'email' | 'phone')
+    $router->post('signup/resend-otp', 'SignupController@resendOtp');
+
+    // Google OAuth signup
+    $router->post('signup/google', 'SignupController@googleSignup');
+
+    // Email availability check
+    $router->post('signup/check-email', 'SignupController@checkEmail');
+
+    // Slow-path provisioning status polling
+    $router->get('signup/status/{id}', 'SignupController@registrationStatus');
+});
+
 
 #Routes with super admin rights should be added here
 $router->group(['middleware' => ['jwt.auth', 'auth.superadmin', 'audit.log', 'route.access']], function () use ($router) {
