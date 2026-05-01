@@ -94,6 +94,8 @@ class ReservedPoolService
                     'mobile'            => $mobileOnly,
                     'company_name'      => $prospect->company_name,
                     'password'          => $prospect->password, // already bcrypt-hashed
+                    'role'              => 6,  // Owner role
+                    'user_level'        => 6,  // Owner level
                     'reserved'          => 0,
                     'phone_verified_at' => $now,
                     'email_verified_at' => $now,
@@ -181,10 +183,14 @@ class ReservedPoolService
         $dbHost = env('NEW_CLIENT_HOST', '127.0.0.1');
 
         DB::connection('master')->statement("CREATE DATABASE IF NOT EXISTS `{$dbName}`");
-        DB::connection('master')->statement(
-            "GRANT ALL PRIVILEGES ON `{$dbName}`.* TO '{$dbUser}'@'{$dbHost}'"
-        );
-        DB::connection('master')->statement("FLUSH PRIVILEGES");
+
+        // Only GRANT if using a non-root DB user (root already has full access)
+        if ($dbUser !== 'root') {
+            DB::connection('master')->statement(
+                "GRANT ALL PRIVILEGES ON `{$dbName}`.* TO '{$dbUser}'@'{$dbHost}'"
+            );
+            DB::connection('master')->statement("FLUSH PRIVILEGES");
+        }
 
         // 4. Refresh DB config and run migrations
         \Illuminate\Support\Facades\Artisan::call('make:database:config');
@@ -194,13 +200,14 @@ class ReservedPoolService
             '--force'    => true,
         ]);
 
-        // 5. Run legacy seeders
-        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--class' => 'NotificationSeeder']);
-        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--class' => 'CrmLabels']);
-        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--class' => 'LabelTableSeeder']);
-        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--class' => 'DispositionTableSeeder']);
-        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--class' => 'DefaultApiTableSeeder']);
-        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--class' => 'CampaignTypesSeeder']);
+        // 5. Run legacy seeders on the new client database
+        $seederDb = ['--database' => "mysql_{$clientId}"];
+        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--class' => 'NotificationSeeder'] + $seederDb);
+        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--class' => 'CrmLabels'] + $seederDb);
+        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--class' => 'LabelTableSeeder'] + $seederDb);
+        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--class' => 'DispositionTableSeeder'] + $seederDb);
+        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--class' => 'DefaultApiTableSeeder'] + $seederDb);
+        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--class' => 'CampaignTypesSeeder'] + $seederDb);
 
         // 6. Provision storage, settings, CRM data
         $provisionSvc = new TenantProvisionService();

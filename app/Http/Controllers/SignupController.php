@@ -359,7 +359,7 @@ class SignupController extends Controller
             $prospect->first_name   = $firstName;
             $prospect->last_name    = $lastName;
             $prospect->name         = $firstName . ' ' . $lastName;
-            $prospect->company_name = $prospect->company_name ?: ($firstName . "'s Business");
+            $prospect->company_name = $prospect->company_name ?: ($firstName . "'s Business " . \Illuminate\Support\Str::random(4));
             $prospect->phone_number = $localPhone;
             $prospect->country_code = '+' . $countryCode;
             $prospect->save();
@@ -833,6 +833,31 @@ class SignupController extends Controller
         if ($progress->stage === RegistrationProgress::STAGE_COMPLETED) {
             $data['client_id'] = $progress->client_id;
             $data['user_id']   = $progress->user_id;
+
+            // Auto-login: generate JWT so frontend can skip the login page
+            try {
+                $user = User::find($progress->user_id);
+                if ($user) {
+                    $auth        = new \App\Model\Authentication();
+                    $tokenResult = $auth->loginByUserId($progress->user_id);
+                    $data['token'] = $tokenResult['token'] ?? null;
+                    $data['user']  = [
+                        'id'            => $user->id,
+                        'parent_id'     => $user->parent_id,
+                        'first_name'    => $user->first_name,
+                        'last_name'     => $user->last_name,
+                        'email'         => $user->email,
+                        'level'         => $user->user_level ?? 6,
+                        'extension'     => $user->extension,
+                        'alt_extension' => $user->alt_extension,
+                    ];
+                }
+            } catch (\Throwable $e) {
+                Log::warning('SignupController: slow-path auto-login failed', [
+                    'user_id' => $progress->user_id,
+                    'error'   => $e->getMessage(),
+                ]);
+            }
         }
 
         if ($progress->stage === RegistrationProgress::STAGE_FAILED) {

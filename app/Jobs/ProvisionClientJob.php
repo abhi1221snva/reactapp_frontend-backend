@@ -152,10 +152,14 @@ class ProvisionClientJob extends Job
             $dbHost = env('NEW_CLIENT_HOST', '127.0.0.1');
 
             DB::connection('master')->statement("CREATE DATABASE IF NOT EXISTS `{$dbName}`");
-            DB::connection('master')->statement(
-                "GRANT ALL PRIVILEGES ON `{$dbName}`.* TO '{$dbUser}'@'{$dbHost}'"
-            );
-            DB::connection('master')->statement("FLUSH PRIVILEGES");
+
+            // Only GRANT if using a non-root DB user (root already has full access)
+            if ($dbUser !== 'root') {
+                DB::connection('master')->statement(
+                    "GRANT ALL PRIVILEGES ON `{$dbName}`.* TO '{$dbUser}'@'{$dbHost}'"
+                );
+                DB::connection('master')->statement("FLUSH PRIVILEGES");
+            }
 
             Artisan::call('make:database:config');
             Artisan::call('migrate', [
@@ -164,13 +168,14 @@ class ProvisionClientJob extends Job
                 '--force'    => true,
             ]);
 
-            // Run legacy seeders
-            Artisan::call('db:seed', ['--class' => 'NotificationSeeder']);
-            Artisan::call('db:seed', ['--class' => 'CrmLabels']);
-            Artisan::call('db:seed', ['--class' => 'LabelTableSeeder']);
-            Artisan::call('db:seed', ['--class' => 'DispositionTableSeeder']);
-            Artisan::call('db:seed', ['--class' => 'DefaultApiTableSeeder']);
-            Artisan::call('db:seed', ['--class' => 'CampaignTypesSeeder']);
+            // Run legacy seeders on the new client database
+            $seederDb = ['--database' => "mysql_{$clientId}"];
+            Artisan::call('db:seed', ['--class' => 'NotificationSeeder'] + $seederDb);
+            Artisan::call('db:seed', ['--class' => 'CrmLabels'] + $seederDb);
+            Artisan::call('db:seed', ['--class' => 'LabelTableSeeder'] + $seederDb);
+            Artisan::call('db:seed', ['--class' => 'DispositionTableSeeder'] + $seederDb);
+            Artisan::call('db:seed', ['--class' => 'DefaultApiTableSeeder'] + $seederDb);
+            Artisan::call('db:seed', ['--class' => 'CampaignTypesSeeder'] + $seederDb);
 
             DB::table('clients')->where('id', $clientId)->update([
                 'stage' => Client::MIGRATE_SEED,
