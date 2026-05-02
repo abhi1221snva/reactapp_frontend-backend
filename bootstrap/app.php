@@ -4,6 +4,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 /* CORS — restrict to known frontend origins */
 $allowedOrigins = [
     'https://dial.linkswitchcommunications.com',
+    'https://phonify.linkswitchcommunications.com',
     'https://app.businessfundusa.com',
     'https://dialer.phonify.app',
     'http://localhost:3000',

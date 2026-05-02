@@ -95,13 +95,9 @@ class GoogleController extends Controller
                     ], 403);
                 }
 
-                // Require password verification before linking Google ID
-                return response()->json([
-                    'success' => false,
-                    'code'    => 'GOOGLE_LINK_REQUIRED',
-                    'message' => 'Enter your account password to link Google login.',
-                    'data'    => ['email' => $email, 'credential' => $credential],
-                ], 200);
+                // Auto-link Google ID when email matches an existing account
+                $user->google_id = $googleId;
+                $user->save();
             }
 
             if ($user->is_deleted) {
