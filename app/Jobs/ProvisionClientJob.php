@@ -304,6 +304,7 @@ class ProvisionClientJob extends Job
             }
 
             // Re-write step data after cache:clear so polling can still read it
+            SetupStepTracker::init($this->progressId);
             SetupStepTracker::finalize($this->progressId);
             $progress->markCompleted($clientId, $userId);
 
