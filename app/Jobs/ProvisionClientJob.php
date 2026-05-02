@@ -44,6 +44,18 @@ class ProvisionClientJob extends Job
     private string $hashedPassword;
     private string $e164Phone;
 
+    /**
+     * Safe log wrapper — logging must NEVER crash provisioning.
+     */
+    private function safeLog(string $level, string $message, array $context = []): void
+    {
+        try {
+            Log::{$level}($message, $context);
+        } catch (\Throwable $e) {
+            // Silently ignore — provisioning is more important than logging
+        }
+    }
+
     public function __construct(
         int    $progressId,
         int    $registrationId,
@@ -66,7 +78,7 @@ class ProvisionClientJob extends Job
     {
         $progress = RegistrationProgress::find($this->progressId);
         if (!$progress) {
-            Log::error('ProvisionClientJob: progress record not found', ['id' => $this->progressId]);
+            $this->safeLog('error', 'ProvisionClientJob: progress record not found', ['id' => $this->progressId]);
             return;
         }
 
@@ -98,7 +110,7 @@ class ProvisionClientJob extends Job
             if ($existingUser) {
                 $clientId = $existingUser->base_parent_id;
                 $userId   = $existingUser->id;
-                Log::info('ProvisionClientJob: resuming with existing records', [
+                $this->safeLog('info', 'ProvisionClientJob: resuming with existing records', [
                     'client_id' => $clientId, 'user_id' => $userId,
                 ]);
             } else {
@@ -263,7 +275,7 @@ class ProvisionClientJob extends Job
                     password: null
                 );
             } catch (\Throwable $e) {
-                Log::error('ProvisionClientJob: welcome email failed', [
+                $this->safeLog('error', 'ProvisionClientJob: welcome email failed', [
                     'email' => $this->email,
                     'error' => $e->getMessage(),
                 ]);
@@ -280,15 +292,18 @@ class ProvisionClientJob extends Job
 
             ClientService::clearCache();
 
+            SetupStepTracker::complete($this->progressId, 'final_initialization');
+
+            // ── Done ─────────────────────────────────────────────────────────
+            SetupStepTracker::finalize($this->progressId);
+
             try {
                 Artisan::call('cache:clear');
             } catch (\Throwable $e) {
                 // Non-fatal
             }
 
-            SetupStepTracker::complete($this->progressId, 'final_initialization');
-
-            // ── Done ─────────────────────────────────────────────────────────
+            // Re-write step data after cache:clear so polling can still read it
             SetupStepTracker::finalize($this->progressId);
             $progress->markCompleted($clientId, $userId);
 
@@ -301,13 +316,13 @@ class ProvisionClientJob extends Job
                 $this->registrationId
             );
 
-            Log::info('ProvisionClientJob: completed successfully', [
+            $this->safeLog('info', 'ProvisionClientJob: completed successfully', [
                 'client_id' => $clientId,
                 'user_id'   => $userId,
             ]);
 
         } catch (\Throwable $e) {
-            Log::error('ProvisionClientJob: failed', [
+            $this->safeLog('error', 'ProvisionClientJob: failed', [
                 'progress_id' => $this->progressId,
                 'error'       => $e->getMessage(),
                 'trace'       => $e->getTraceAsString(),
