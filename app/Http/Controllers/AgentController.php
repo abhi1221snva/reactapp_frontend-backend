@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 use App\Services\CacheService;
+use App\Services\PlanService;
 use App\Services\PjsipRealtimeService;
 
 /**
@@ -317,6 +318,17 @@ class AgentController extends Controller
             return $this->failResponse('You cannot assign a role equal to or higher than your own.', [], null, 403);
         }
 
+        // ── Seat limit check ────────────────────────────────────────────
+        $seatCheck = PlanService::checkSeatLimit($clientId);
+        if (!$seatCheck['allowed']) {
+            return response()->json([
+                'success' => false,
+                'message' => "Agent seat limit reached ({$seatCheck['current']}/{$seatCheck['max']}). Upgrade your plan to add more agents.",
+                'code'    => 'SEAT_LIMIT_REACHED',
+                'data'    => ['current' => $seatCheck['current'], 'max' => $seatCheck['max']],
+            ], 402);
+        }
+
         try {
             DB::beginTransaction();
 
@@ -514,6 +526,17 @@ class AgentController extends Controller
         $agent = User::where('id', $id)->where('parent_id', $clientId)->first();
         if (!$agent) {
             return $this->failResponse('Agent not found', [], null, 404);
+        }
+
+        // ── Seat limit check before reactivation ────────────────────────
+        $seatCheck = PlanService::checkSeatLimit($clientId);
+        if (!$seatCheck['allowed']) {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot reactivate — agent seat limit reached ({$seatCheck['current']}/{$seatCheck['max']}). Upgrade your plan.",
+                'code'    => 'SEAT_LIMIT_REACHED',
+                'data'    => ['current' => $seatCheck['current'], 'max' => $seatCheck['max']],
+            ], 402);
         }
 
         $agent->is_deleted = 0;

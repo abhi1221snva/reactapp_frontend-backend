@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Model\Client\PlivoSms;
 use App\Services\PlivoService;
+use App\Services\PlanService;
 use App\Jobs\PlivoBulkSmsJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -76,6 +77,17 @@ class PlivoSmsController extends Controller
             return $this->failResponse('to, from, and body are required.', [], null, 422);
         }
 
+        // ── Monthly SMS limit check ─────────────────────────────────────
+        $smsCheck = PlanService::checkSmsLimit($clientId);
+        if (!$smsCheck['allowed']) {
+            return response()->json([
+                'success' => false,
+                'message' => "Monthly SMS limit reached ({$smsCheck['current']}/{$smsCheck['max']}). Upgrade your plan to send more messages.",
+                'code'    => 'SMS_LIMIT_REACHED',
+                'data'    => ['current' => $smsCheck['current'], 'max' => $smsCheck['max']],
+            ], 402);
+        }
+
         try {
             $service = PlivoService::forClient($clientId);
             $data    = $service->sendSms($to, $from, $body);
@@ -91,6 +103,8 @@ class PlivoSmsController extends Controller
                 'agent_id'     => $agentId,
                 'sent_at'      => \Carbon\Carbon::now(),
             ]);
+
+            PlanService::incrementSmsUsage($clientId);
 
             return $this->successResponse('SMS sent.', ['sms' => $data]);
 
@@ -117,6 +131,17 @@ class PlivoSmsController extends Controller
 
         if (count($recipients) > 1000) {
             return $this->failResponse('Maximum 1000 recipients per bulk request.', [], null, 422);
+        }
+
+        // ── Monthly SMS limit check (bulk) ──────────────────────────────
+        $smsCheck = PlanService::checkSmsLimit($clientId);
+        if (!$smsCheck['allowed']) {
+            return response()->json([
+                'success' => false,
+                'message' => "Monthly SMS limit reached ({$smsCheck['current']}/{$smsCheck['max']}). Upgrade your plan to send more messages.",
+                'code'    => 'SMS_LIMIT_REACHED',
+                'data'    => ['current' => $smsCheck['current'], 'max' => $smsCheck['max']],
+            ], 402);
         }
 
         dispatch(new PlivoBulkSmsJob($clientId, $agentId, $recipients, $from, $body, $campaignId));

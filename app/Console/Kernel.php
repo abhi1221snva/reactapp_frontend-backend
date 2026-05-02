@@ -44,6 +44,10 @@ use App\Console\Commands\MissedCallNotificationCron;
 use App\Console\Commands\AutoClockoutCommand;
 use App\Console\Commands\ProvisionClientCommand;
 use App\Console\Commands\SyncPjsipRealtimeCommand;
+use App\Console\Commands\FlushUsageCounters;
+use App\Console\Commands\CheckExpiredSubscriptions;
+use App\Console\Commands\AssignDefaultPlans;
+use App\Console\Commands\StripeSyncPlans;
 use Illuminate\Console\Scheduling\Schedule;
 use Laravel\Lumen\Console\Kernel as ConsoleKernel;
 
@@ -107,6 +111,10 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\RenewGmailWatchesCommand::class,
         SyncPjsipRealtimeCommand::class,
         \App\Console\Commands\RecycleQueueLeadsCommand::class,
+        FlushUsageCounters::class,
+        CheckExpiredSubscriptions::class,
+        AssignDefaultPlans::class,
+        StripeSyncPlans::class,
     ];
 
     /**
@@ -209,6 +217,12 @@ class Kernel extends ConsoleKernel
 
         // Campaign lead queue recycle: re-queue completed/failed leads per recycle rules
         $schedule->command('dialer:recycle-queue')->everyFifteenMinutes()->name('recycle-queue-leads')->withoutOverlapping();
+
+        // Subscription usage: flush Redis counters to DB every 5 minutes
+        $schedule->command('subscription:flush-usage')->everyFiveMinutes()->name('subscription-flush-usage')->withoutOverlapping();
+
+        // Subscription expiry: check and mark expired subscriptions daily
+        $schedule->command('subscription:check-expired')->dailyAt('00:15')->name('subscription-check-expired')->withoutOverlapping();
     }
 
 }

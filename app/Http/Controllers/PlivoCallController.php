@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Model\Client\PlivoCall;
 use App\Model\Client\PlivoRecording;
+use App\Services\PlanService;
 use App\Services\PlivoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -80,6 +81,18 @@ class PlivoCallController extends Controller
         $clientId   = $request->auth->parent_id ?: $request->auth->id;
         $agentId    = $request->auth->id;
         $conn       = "mysql_{$clientId}";
+
+        // ── Monthly call limit check ────────────────────────────────────
+        $callCheck = PlanService::checkCallLimit($clientId);
+        if (!$callCheck['allowed']) {
+            return response()->json([
+                'success' => false,
+                'message' => "Monthly call limit reached ({$callCheck['current']}/{$callCheck['max']}). Upgrade your plan to make more calls.",
+                'code'    => 'CALL_LIMIT_REACHED',
+                'data'    => ['current' => $callCheck['current'], 'max' => $callCheck['max']],
+            ], 402);
+        }
+
         $to         = $request->input('to');
         $from       = $request->input('from');
         $campaignId = $request->input('campaign_id');
@@ -117,6 +130,8 @@ class PlivoCallController extends Controller
                 'agent_id'    => $agentId,
                 'started_at'  => \Carbon\Carbon::now(),
             ]);
+
+            PlanService::incrementCallUsage($clientId);
 
             return $this->successResponse('Call initiated.', ['call' => $callData]);
 

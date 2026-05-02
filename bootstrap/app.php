@@ -163,7 +163,9 @@ $app->routeMiddleware([
     'auth.sysadmin'   => App\Http\Middleware\SystemAdminAuth::class,
     'route.access'    => App\Http\Middleware\CheckRouteAccess::class,
     'rvm.apikey'      => App\Http\Middleware\RvmApiKeyAuthMiddleware::class,
-    'merchant.jwt'    => App\Http\Middleware\MerchantJwtMiddleware::class,
+    'merchant.jwt'         => App\Http\Middleware\MerchantJwtMiddleware::class,
+    'plan.feature'         => App\Http\Middleware\PlanFeatureMiddleware::class,
+    'subscription.active'  => App\Http\Middleware\SubscriptionActiveMiddleware::class,
 ]);
 
 if (!class_exists('Redis')) {
