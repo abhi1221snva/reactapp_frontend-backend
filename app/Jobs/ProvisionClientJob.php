@@ -8,6 +8,7 @@ use App\Model\Master\RegistrationProgress;
 use App\Model\User;
 use App\Services\ClientService;
 use App\Services\ReservedPoolService;
+use App\Services\SetupStepTracker;
 use App\Services\TenantProvisionService;
 use App\Services\TrialPackageService;
 use App\Services\WelcomeEmailService;
@@ -72,10 +73,14 @@ class ProvisionClientJob extends Job
         // Use explicit master connection for all master-DB queries
         $master = DB::connection('master');
 
+        // Initialize fine-grained step tracking (non-blocking, cache-based)
+        SetupStepTracker::init($this->progressId);
+
         try {
             // ── Stage 1: Create client + user records ────────────────────────
             // Idempotent: if a previous attempt already created records, reuse them.
             $progress->advanceTo(RegistrationProgress::STAGE_CREATING_RECORD);
+            SetupStepTracker::start($this->progressId, 'profile_setup');
 
             $now = Carbon::now();
             $nameParts = explode(' ', trim($this->name), 2);
@@ -166,8 +171,11 @@ class ProvisionClientJob extends Job
                 $this->registrationId
             );
 
+            SetupStepTracker::complete($this->progressId, 'profile_setup');
+
             // ── Stage 2: Create database + run migrations ────────────────────
             $progress->advanceTo(RegistrationProgress::STAGE_CREATING_DATABASE);
+            SetupStepTracker::start($this->progressId, 'campaign_menu_setup');
 
             $dbName = 'client_' . $clientId;
             $dbUser = env('NEW_CLIENT_USERNAME', env('DB_USERNAME', 'root'));
@@ -206,16 +214,28 @@ class ProvisionClientJob extends Job
                 $this->registrationId
             );
 
+            SetupStepTracker::complete($this->progressId, 'campaign_menu_setup');
+
             // ── Stage 3: Seed default data + provision storage ───────────────
             $progress->advanceTo(RegistrationProgress::STAGE_SEEDING_DATA);
+            SetupStepTracker::start($this->progressId, 'lead_menu_setup');
 
             $provisionSvc = new TenantProvisionService();
             $provisionSvc->provisionStorage($clientId);
             $provisionSvc->provisionDefaultSettings($clientId, $this->companyName);
+
+            SetupStepTracker::complete($this->progressId, 'lead_menu_setup');
+            SetupStepTracker::start($this->progressId, 'did_setup');
+
             $provisionSvc->provisionDefaultCrmData($clientId);
+
+            SetupStepTracker::complete($this->progressId, 'did_setup');
+            SetupStepTracker::start($this->progressId, 'email_template_setup');
 
             // Provision SIP extensions + Asterisk server mapping for the admin user
             $provisionSvc->provisionDefaultExtension($clientId, $userId, $firstName, $lastName);
+
+            SetupStepTracker::complete($this->progressId, 'email_template_setup');
 
             $master->table('clients')->where('id', $clientId)->update([
                 'stage' => Client::FULLY_PROVISIONED,
@@ -223,12 +243,16 @@ class ProvisionClientJob extends Job
 
             // ── Stage 4: Assign trial package ────────────────────────────────
             $progress->advanceTo(RegistrationProgress::STAGE_ASSIGNING_TRIAL);
+            SetupStepTracker::start($this->progressId, 'sms_template_setup');
 
             $trialSvc = new TrialPackageService();
             $trialSvc->assignTrial($clientId, $userId);
 
+            SetupStepTracker::complete($this->progressId, 'sms_template_setup');
+
             // ── Stage 5: Send welcome email ──────────────────────────────────
             $progress->advanceTo(RegistrationProgress::STAGE_SENDING_WELCOME);
+            SetupStepTracker::start($this->progressId, 'final_initialization');
 
             try {
                 $welcomeService = new WelcomeEmailService();
@@ -262,7 +286,10 @@ class ProvisionClientJob extends Job
                 // Non-fatal
             }
 
+            SetupStepTracker::complete($this->progressId, 'final_initialization');
+
             // ── Done ─────────────────────────────────────────────────────────
+            SetupStepTracker::finalize($this->progressId);
             $progress->markCompleted($clientId, $userId);
 
             RegistrationLog::log(
@@ -288,6 +315,7 @@ class ProvisionClientJob extends Job
 
             $progress->retry_count = ($progress->retry_count ?? 0) + 1;
             $progress->markFailed($e->getMessage());
+            SetupStepTracker::fail($this->progressId);
 
             RegistrationLog::log(
                 RegistrationLog::STEP_COMPLETED,
