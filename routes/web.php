@@ -287,6 +287,11 @@ $router->group(['middleware' => ['jwt.auth', 'auth.superadmin', 'audit.log', 'ro
   $router->post('admin/clients/{id}/subscription/resume',  'PlanController@adminResumeSubscription');
   $router->post('admin/subscription-plans/sync-stripe',    'PlanController@syncToStripe');
 
+  // ── Admin Billing Dashboard ───────────────────────────────────────────
+  $router->get('admin/billing/dashboard',                   'AdminBillingController@dashboard');
+  $router->get('admin/billing/clients',                     'AdminBillingController@clients');
+  $router->post('admin/billing/clients/{id}/credit-wallet', 'AdminBillingController@creditWallet');
+
   // ── RVM v2 Cutover Dashboard ──────────────────────────────────────────
   // Operator tooling for the shadow → dry_run → live migration. Read
   // surfaces rvm_shadow_log aggregates; write surfaces flip tenants
@@ -2219,6 +2224,8 @@ $router->group(['middleware' => ['jwt.auth', 'tenant'], 'prefix' => 'billing'], 
     $router->get('payment-methods',      'BillingController@listPaymentMethods');
     $router->post('payment-methods',     'BillingController@addPaymentMethod');
     $router->delete('payment-methods/{id}', 'BillingController@removePaymentMethod');
+    $router->get('events',               'BillingController@events');
+    $router->put('wallet/threshold',     'BillingController@updateWalletThreshold');
 });
 
 // ─── Stripe Webhook (public, no auth — signature-validated in controller) ────

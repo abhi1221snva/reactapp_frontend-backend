@@ -95,8 +95,13 @@ class WalletTopUpService
             'payment_intent_id' => $paymentIntent->id,
         ]);
 
-        // 6. Get updated balance
+        // 6. Get updated balance and sync to master
         $newBalance = self::getBalance($clientId);
+
+        Client::where('id', $clientId)->update([
+            'wallet_balance_cents' => (int) round($newBalance * 100),
+            'wallet_low_notified'  => false, // reset so notification can re-fire if needed
+        ]);
 
         return [
             'success'              => true,

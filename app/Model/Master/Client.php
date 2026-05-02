@@ -22,6 +22,10 @@ class Client extends Model
         'custom_max_agents', 'custom_max_calls_monthly', 'custom_max_sms_monthly',
         // Stripe billing fields
         'stripe_customer_id', 'stripe_subscription_id', 'stripe_price_id',
+        // Wallet config
+        'wallet_balance_cents', 'wallet_low_threshold_cents', 'wallet_low_notified',
+        // Grace period
+        'grace_period_ends_at',
     ];
 
     const RECORD_SAVED          = 1;

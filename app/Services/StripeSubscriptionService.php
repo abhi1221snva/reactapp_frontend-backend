@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Model\Master\Client;
+use App\Model\Master\ClientPackage;
 use App\Model\Master\Invoice;
+use App\Model\Master\Package;
 use App\Model\Master\SubscriptionPlan;
 use App\Model\User;
 use Carbon\Carbon;
@@ -50,7 +52,7 @@ class StripeSubscriptionService
 
         // Find the admin user (role 6) for the client
         $adminUser = User::where('parent_id', $clientId)
-            ->where('level', 6)
+            ->where('user_level', 6)
             ->where('is_deleted', 0)
             ->first();
 
@@ -228,13 +230,8 @@ class StripeSubscriptionService
             'expand'                 => ['latest_invoice.payment_intent'],
         ];
 
-        // Carry over remaining trial if client is currently on trial
-        if ($client->subscription_status === 'trial' && $client->subscription_ends_at) {
-            $trialEnd = Carbon::parse($client->subscription_ends_at);
-            if ($trialEnd->isFuture()) {
-                $subParams['trial_end'] = $trialEnd->timestamp;
-            }
-        }
+        // No trial carryover: when a user subscribes, billing starts immediately.
+        // The user is upgrading because they see value — don't delay revenue.
 
         $subscription = $stripe->subscriptions->create($subParams);
 
@@ -249,8 +246,23 @@ class StripeSubscriptionService
             'subscription_ends_at'    => Carbon::createFromTimestamp($subscription->current_period_end),
         ]);
 
+        // Expire the trial client_package so the trial banner stops showing
+        ClientPackage::where('client_id', $clientId)
+            ->where('package_key', Package::TRIAL_PACKAGE_KEY)
+            ->where('expiry_time', '>', Carbon::now())
+            ->update([
+                'end_time'    => Carbon::now(),
+                'expiry_time' => Carbon::now(),
+            ]);
+
         PlanService::invalidateClientPlan($clientId);
         PlanService::syncFeatureFlagsToClient($clientId);
+
+        // Log subscription event
+        self::logEvent($clientId, 'subscribed', $client->subscription_status ?? 'trial', 'active', $plan->id, [
+            'billing_cycle'   => $billingCycle,
+            'subscription_id' => $subscription->id,
+        ]);
 
         Log::info('StripeSubscriptionService: subscription created', [
             'client_id'       => $clientId,
@@ -321,6 +333,11 @@ class StripeSubscriptionService
         PlanService::invalidateClientPlan($clientId);
         PlanService::syncFeatureFlagsToClient($clientId);
 
+        self::logEvent($clientId, 'upgraded', $client->subscription_status, 'active', $newPlan->id, [
+            'previous_plan_id' => $client->subscription_plan_id,
+            'billing_cycle'    => $cycle,
+        ]);
+
         Log::info('StripeSubscriptionService: subscription upgraded', [
             'client_id' => $clientId,
             'new_plan'  => $newPlan->slug,
@@ -354,6 +371,10 @@ class StripeSubscriptionService
 
         $client->update(['subscription_status' => 'cancelled']);
         PlanService::invalidateClientPlan($clientId);
+
+        self::logEvent($clientId, 'cancelled', 'active', 'cancelled', $client->subscription_plan_id, [
+            'cancel_at' => $updated->cancel_at,
+        ]);
 
         Log::info('StripeSubscriptionService: subscription cancelled', [
             'client_id' => $clientId,
@@ -630,5 +651,38 @@ class StripeSubscriptionService
             'unpaid', 'incomplete', 'incomplete_expired' => 'expired',
             default => 'active',
         };
+    }
+
+    /**
+     * Log a subscription lifecycle event to the subscription_events table.
+     */
+    public static function logEvent(
+        int     $clientId,
+        string  $eventType,
+        ?string $fromStatus,
+        string  $toStatus,
+        ?int    $planId = null,
+        array   $metadata = [],
+        string  $triggeredBy = 'system'
+    ): void {
+        try {
+            DB::connection('master')->table('subscription_events')->insert([
+                'client_id'    => $clientId,
+                'event_type'   => $eventType,
+                'from_status'  => $fromStatus,
+                'to_status'    => $toStatus,
+                'plan_id'      => $planId,
+                'metadata'     => !empty($metadata) ? json_encode($metadata) : null,
+                'triggered_by' => $triggeredBy,
+                'created_at'   => Carbon::now(),
+            ]);
+        } catch (\Throwable $e) {
+            // Don't fail the operation if event logging fails
+            Log::warning('StripeSubscriptionService: event logging failed', [
+                'client_id'  => $clientId,
+                'event_type' => $eventType,
+                'error'      => $e->getMessage(),
+            ]);
+        }
     }
 }

@@ -8,6 +8,7 @@ use App\Services\PlanService;
 use App\Services\StripeSubscriptionService;
 use App\Services\WalletTopUpService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
@@ -39,14 +40,15 @@ class BillingController extends Controller
         $upcoming  = StripeSubscriptionService::getUpcomingInvoice($clientId);
 
         return $this->successResponse('OK', [
-            'plan'                    => $planData ? $planData['plan'] : null,
-            'billing_cycle'           => $client->billing_cycle ?? 'monthly',
-            'subscription_status'     => $client->subscription_status ?? null,
-            'subscription_started_at' => $client->subscription_started_at,
-            'subscription_ends_at'    => $client->subscription_ends_at,
-            'usage'                   => $usage,
-            'wallet_balance'          => $balance,
-            'upcoming_invoice'        => $upcoming,
+            'plan'                      => $planData ? $planData['plan'] : null,
+            'billing_cycle'             => $client->billing_cycle ?? 'monthly',
+            'subscription_status'       => $client->subscription_status ?? null,
+            'subscription_started_at'   => $client->subscription_started_at,
+            'subscription_ends_at'      => $client->subscription_ends_at,
+            'usage'                     => $usage,
+            'wallet_balance'            => $balance,
+            'wallet_low_threshold_cents' => $client->wallet_low_threshold_cents ?? 200,
+            'upcoming_invoice'          => $upcoming,
         ]);
     }
 
@@ -411,5 +413,78 @@ class BillingController extends Controller
         } catch (\Throwable $e) {
             return $this->failResponse('Failed to remove payment method: ' . $e->getMessage(), [], null, 400);
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Subscription Events
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * GET /billing/events
+     *
+     * Returns subscription lifecycle events for this client.
+     */
+    public function events(Request $request)
+    {
+        $clientId = $this->tenantId($request);
+        $page     = max(1, (int) $request->input('page', 1));
+        $perPage  = min(50, max(1, (int) $request->input('per_page', 25)));
+        $offset   = ($page - 1) * $perPage;
+
+        $query = DB::connection('master')
+            ->table('subscription_events')
+            ->where('client_id', $clientId);
+
+        $total = $query->count();
+
+        $events = $query
+            ->orderBy('created_at', 'desc')
+            ->offset($offset)
+            ->limit($perPage)
+            ->get();
+
+        return $this->successResponse('OK', [
+            'data'      => $events->toArray(),
+            'total'     => $total,
+            'page'      => $page,
+            'per_page'  => $perPage,
+            'last_page' => (int) ceil($total / $perPage),
+        ]);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Wallet Threshold
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * PUT /billing/wallet/threshold
+     *
+     * Update the low-balance notification threshold.
+     */
+    public function updateWalletThreshold(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'wallet_low_threshold_cents' => 'required|integer|min:0|max:100000',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+
+        $clientId       = $this->tenantId($request);
+        $thresholdCents = (int) $request->input('wallet_low_threshold_cents');
+
+        Client::where('id', $clientId)->update([
+            'wallet_low_threshold_cents' => $thresholdCents,
+            'wallet_low_notified'        => false, // reset so notification re-fires if still low
+        ]);
+
+        return $this->successResponse('Threshold updated', [
+            'wallet_low_threshold_cents' => $thresholdCents,
+        ]);
     }
 }

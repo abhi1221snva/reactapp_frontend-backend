@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\PaymentFailedNotificationJob;
 use App\Model\Master\Client;
 use App\Model\Master\Invoice;
 use App\Services\PlanService;
@@ -173,6 +174,12 @@ class StripeWebhookController extends Controller
 
         $client->update(['subscription_status' => 'past_due']);
         PlanService::invalidateClientPlan($client->id);
+
+        dispatch(new PaymentFailedNotificationJob(
+            $client->id,
+            $invoice->id,
+            $invoice->amount_due ?? 0
+        ));
 
         Log::warning('StripeWebhook: invoice.payment_failed', [
             'client_id'  => $client->id,

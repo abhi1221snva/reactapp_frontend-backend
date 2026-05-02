@@ -166,6 +166,7 @@ $app->routeMiddleware([
     'merchant.jwt'         => App\Http\Middleware\MerchantJwtMiddleware::class,
     'plan.feature'         => App\Http\Middleware\PlanFeatureMiddleware::class,
     'subscription.active'  => App\Http\Middleware\SubscriptionActiveMiddleware::class,
+    'wallet.balance'       => App\Http\Middleware\WalletBalanceMiddleware::class,
 ]);
 
 if (!class_exists('Redis')) {

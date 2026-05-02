@@ -48,6 +48,7 @@ use App\Console\Commands\FlushUsageCounters;
 use App\Console\Commands\CheckExpiredSubscriptions;
 use App\Console\Commands\AssignDefaultPlans;
 use App\Console\Commands\StripeSyncPlans;
+use App\Console\Commands\BackfillWalletBalances;
 use Illuminate\Console\Scheduling\Schedule;
 use Laravel\Lumen\Console\Kernel as ConsoleKernel;
 
@@ -115,6 +116,7 @@ class Kernel extends ConsoleKernel
         CheckExpiredSubscriptions::class,
         AssignDefaultPlans::class,
         StripeSyncPlans::class,
+        BackfillWalletBalances::class,
     ];
 
     /**
@@ -221,8 +223,8 @@ class Kernel extends ConsoleKernel
         // Subscription usage: flush Redis counters to DB every 5 minutes
         $schedule->command('subscription:flush-usage')->everyFiveMinutes()->name('subscription-flush-usage')->withoutOverlapping();
 
-        // Subscription expiry: check and mark expired subscriptions daily
-        $schedule->command('subscription:check-expired')->dailyAt('00:15')->name('subscription-check-expired')->withoutOverlapping();
+        // Subscription expiry: expire trials/subscriptions, set grace periods, send warnings
+        $schedule->command('subscription:check-expired')->hourly()->name('subscription-check-expired')->withoutOverlapping();
     }
 
 }
