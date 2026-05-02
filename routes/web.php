@@ -261,10 +261,8 @@ $router->group(['middleware' => ['throttle:30,1']], function () use ($router) {
     $router->get('signup/status/{id}', 'SignupController@registrationStatus');
 });
 
-// Fine-grained setup step tracking (60/min — frontend polls every 1s)
-$router->group(['middleware' => ['throttle:60,1']], function () use ($router) {
-    $router->get('signup/setup-steps/{id}', 'SetupProgressController@show');
-});
+// Fine-grained setup step tracking (cache-read only — no throttle needed)
+$router->get('signup/setup-steps/{id}', 'SetupProgressController@show');
 
 
 #Routes with super admin rights should be added here

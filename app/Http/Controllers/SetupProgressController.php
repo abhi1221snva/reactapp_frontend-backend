@@ -9,23 +9,43 @@ use Illuminate\Http\JsonResponse;
 /**
  * SetupProgressController
  *
- * Provides a fine-grained, step-by-step progress API for the premium
- * setup experience. Reads from the cache-based SetupStepTracker alongside
- * the existing RegistrationProgress model.
- *
- * This controller is read-only and does not modify any provisioning logic.
+ * Cache-first progress API. Avoids DB queries on every poll.
+ * Only touches the database when:
+ *   1. Cache has no data (fallback)
+ *   2. Setup is completed (to get auto-login JWT)
  */
 class SetupProgressController extends Controller
 {
     /**
      * GET /signup/setup-steps/{id}
-     *
-     * Returns detailed step-by-step progress for a provisioning run.
-     * Falls back to synthesizing steps from RegistrationProgress if
-     * cache tracking data is unavailable.
      */
     public function show(int $id): JsonResponse
     {
+        // ── 1. Try cache first (zero DB queries) ─────────────────────────
+        $stepData = SetupStepTracker::getProgress($id);
+
+        if ($stepData) {
+            // Still in progress — return cache data only, no DB hit
+            if (!$stepData['completed'] && !$stepData['failed']) {
+                return response()->json([
+                    'status' => true,
+                    'data'   => $stepData,
+                ]);
+            }
+
+            // Completed or failed — need DB for auto-login / error details
+            $progress = RegistrationProgress::find($id);
+            if ($progress) {
+                $stepData = $this->enrichWithRegistrationData($stepData, $progress);
+            }
+
+            return response()->json([
+                'status' => true,
+                'data'   => $stepData,
+            ]);
+        }
+
+        // ── 2. Fallback: synthesize from DB (cache miss) ─────────────────
         $progress = RegistrationProgress::find($id);
 
         if (!$progress) {
@@ -35,17 +55,6 @@ class SetupProgressController extends Controller
             ], 404);
         }
 
-        // Try cache-based fine-grained tracking first
-        $stepData = SetupStepTracker::getProgress($id);
-
-        if ($stepData) {
-            return response()->json([
-                'status' => true,
-                'data'   => $this->enrichWithRegistrationData($stepData, $progress),
-            ]);
-        }
-
-        // Fallback: synthesize from the coarse RegistrationProgress stages
         return response()->json([
             'status' => true,
             'data'   => $this->synthesizeFromStage($progress),
@@ -53,15 +62,13 @@ class SetupProgressController extends Controller
     }
 
     /**
-     * Enrich cache-based step data with auto-login info from RegistrationProgress.
+     * Enrich cache data with auto-login info from DB.
      */
     private function enrichWithRegistrationData(array $stepData, RegistrationProgress $progress): array
     {
-        $stepData['stage']    = $progress->stage;
-        $stepData['ready']    = $progress->stage === RegistrationProgress::STAGE_COMPLETED;
-        $stepData['failed']   = $progress->stage === RegistrationProgress::STAGE_FAILED;
+        $stepData['stage'] = $progress->stage;
+        $stepData['ready'] = $progress->stage === RegistrationProgress::STAGE_COMPLETED;
 
-        // Include auto-login data when completed
         if ($stepData['ready'] && $progress->user_id) {
             try {
                 $user = \App\Model\User::find($progress->user_id);
@@ -89,15 +96,14 @@ class SetupProgressController extends Controller
         }
 
         if ($stepData['failed']) {
-            $stepData['error_message'] = 'Account setup encountered an issue. Please contact support or try again.';
+            $stepData['error_message'] = 'Account setup encountered an issue. Please contact support.';
         }
 
         return $stepData;
     }
 
     /**
-     * Synthesize 7-step progress from the coarse RegistrationProgress stages.
-     * Used as fallback when cache data is unavailable (e.g., cache cleared).
+     * Synthesize 7-step progress from DB when cache is empty.
      */
     private function synthesizeFromStage(RegistrationProgress $progress): array
     {
@@ -114,27 +120,28 @@ class SetupProgressController extends Controller
         $currentIdx = array_search($progress->stage, $stageOrder);
         if ($currentIdx === false) $currentIdx = -1;
 
-        // Map backend stages to the 7 UI steps (which stage must be reached for completion)
         $stepThresholds = [
-            ['name' => 'Profile Setup',         'completes_at' => 1], // after creating_record
-            ['name' => 'Campaign Menu Setup',   'completes_at' => 2], // after creating_database
-            ['name' => 'Lead Menu Setup',       'completes_at' => 3], // during seeding_data
-            ['name' => 'DID Setup',             'completes_at' => 3], // during seeding_data
-            ['name' => 'Email Template Setup',  'completes_at' => 4], // after assigning_trial
-            ['name' => 'SMS Template Setup',    'completes_at' => 5], // after sending_welcome
-            ['name' => 'Final Initialization',  'completes_at' => 6], // completed
+            ['name' => 'Profile Setup',         'completes_at' => 1],
+            ['name' => 'Campaign Menu Setup',   'completes_at' => 2],
+            ['name' => 'Lead Menu Setup',       'completes_at' => 3],
+            ['name' => 'DID Setup',             'completes_at' => 3],
+            ['name' => 'Email Template Setup',  'completes_at' => 4],
+            ['name' => 'SMS Template Setup',    'completes_at' => 5],
+            ['name' => 'Final Initialization',  'completes_at' => 6],
         ];
 
-        $isFailed = $progress->stage === RegistrationProgress::STAGE_FAILED;
+        $isFailed    = $progress->stage === RegistrationProgress::STAGE_FAILED;
         $isCompleted = $progress->stage === RegistrationProgress::STAGE_COMPLETED;
         $currentStep = null;
-        $steps = [];
+        $steps       = [];
 
-        foreach ($stepThresholds as $i => $def) {
+        foreach ($stepThresholds as $def) {
             if ($isCompleted) {
                 $status = 'completed';
             } elseif ($isFailed) {
-                $status = $currentIdx >= $def['completes_at'] ? 'completed' : ($currentIdx === $def['completes_at'] - 1 ? 'failed' : 'pending');
+                $status = $currentIdx >= $def['completes_at']
+                    ? 'completed'
+                    : ($currentIdx === $def['completes_at'] - 1 ? 'failed' : 'pending');
             } elseif ($currentIdx >= $def['completes_at']) {
                 $status = 'completed';
             } elseif ($currentIdx === $def['completes_at'] - 1) {
@@ -147,13 +154,9 @@ class SetupProgressController extends Controller
                 $currentStep = $def['name'];
             }
 
-            $steps[] = [
-                'name'   => $def['name'],
-                'status' => $status,
-            ];
+            $steps[] = ['name' => $def['name'], 'status' => $status];
         }
 
-        // Calculate elapsed time from created_at
         $elapsed = $progress->created_at
             ? round(now()->floatDiffInSeconds($progress->created_at), 1)
             : 0;
@@ -168,7 +171,7 @@ class SetupProgressController extends Controller
             'ready'        => $isCompleted,
         ];
 
-        // Include auto-login data when completed
+        // Auto-login on completion
         if ($isCompleted && $progress->user_id) {
             try {
                 $user = \App\Model\User::find($progress->user_id);
@@ -196,7 +199,7 @@ class SetupProgressController extends Controller
         }
 
         if ($isFailed) {
-            $result['error_message'] = 'Account setup encountered an issue. Please contact support or try again.';
+            $result['error_message'] = 'Account setup encountered an issue. Please contact support.';
         }
 
         return $result;
