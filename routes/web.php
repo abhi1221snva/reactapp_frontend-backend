@@ -277,6 +277,16 @@ $router->group(['middleware' => ['jwt.auth', 'auth.superadmin', 'audit.log', 'ro
   $router->post('admin/clients/{id}/deactivate',  'AdminClientController@deactivate');
   $router->post('admin/clients/{id}/switch',      'AdminClientController@switchTo');
 
+  // ── Subscription Plan Management ──────────────────────────────────────
+  $router->get('admin/subscription-plans',          'PlanController@listPlans');
+  $router->post('admin/subscription-plans',         'PlanController@createPlan');
+  $router->put('admin/subscription-plans/{id}',     'PlanController@updatePlan');
+  $router->get('admin/clients/{id}/subscription',   'PlanController@getClientSubscription');
+  $router->put('admin/clients/{id}/subscription',   'PlanController@assignPlan');
+  $router->post('admin/clients/{id}/subscription/cancel',  'PlanController@adminCancelSubscription');
+  $router->post('admin/clients/{id}/subscription/resume',  'PlanController@adminResumeSubscription');
+  $router->post('admin/subscription-plans/sync-stripe',    'PlanController@syncToStripe');
+
   // ── RVM v2 Cutover Dashboard ──────────────────────────────────────────
   // Operator tooling for the shadow → dry_run → live migration. Read
   // surfaces rvm_shadow_log aggregates; write surfaces flip tenants
@@ -342,7 +352,7 @@ $router->group(['middleware' => ['jwt.auth', 'auth.superadmin', 'audit.log', 'ro
 
 
 #Routes with admin rights should be added here
-$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.access']], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.access', 'subscription.active']], function () use ($router) {
 
   Route::get('/api/emails', 'EmailController@index');
   Route::get('/api/emails/{id}', 'EmailController@show');
@@ -419,7 +429,7 @@ $router->group(['middleware' => ['merchant.jwt', 'throttle:120,1']], function ()
 // Team Chat Widget Public Routes (No Auth Required)
 $router->get('team-chat/widget/validate', 'TeamChatWidgetController@validateToken');
 
-$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.access']], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.access', 'subscription.active']], function () use ($router) {
   // $router->post('auth/google/callback', 'UserMailController@googlecallback');
   //profile
   $router->get('profile', 'ProfileController@index');
@@ -1160,8 +1170,8 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
 
   $router->post('user-package/update/{packageKey}', 'UserPackagesController@updateUserPackage');
   $router->post('user-package/delete/{packageKey}', 'UserPackagesController@deleteUserPackage');
-  $router->get('client-packages', 'UserPackagesController@getClientPackages');
   $router->get('client-packages/trial', 'UserPackagesController@getTrialPackageDetails');
+  $router->get('client-packages', 'UserPackagesController@getClientPackages');
 
   //cart
   $router->get('cart', 'CartController@getCartItems');
@@ -2168,7 +2178,7 @@ $router->post('forgot-password-resend', 'UserController@forgotPasswordMobileRese
 
 
 // ─── Agent Management (JWT required, admin-level 7+) ──────────────────────────
-$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.access'], 'prefix' => 'agents'], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.access', 'subscription.active'], 'prefix' => 'agents'], function () use ($router) {
     $router->get('/',                    'AgentController@index');           // GET  /agents
     $router->get('/roles',               'AgentController@roles');           // GET  /agents/roles
     $router->get('/all-users',           'AgentController@allUsers');        // GET  /agents/all-users
@@ -2186,6 +2196,33 @@ $router->group(['middleware' => ['jwt.auth', 'audit.log', 'tenant', 'route.acces
     $router->post('/complete', 'OnboardingController@completeStep'); // POST /onboarding/complete
     $router->post('/reset',    'OnboardingController@reset');        // POST /onboarding/reset (admin)
 });
+
+// ─── Subscription Plan & Usage (JWT + tenant) ─────────────────────────────────
+$router->group(['middleware' => ['jwt.auth', 'tenant', 'route.access'], 'prefix' => 'subscription'], function () use ($router) {
+    $router->get('plan',     'PlanController@myPlan');      // GET /subscription/plan
+    $router->get('usage',    'PlanController@myUsage');      // GET /subscription/usage
+    $router->get('features', 'PlanController@myFeatures');   // GET /subscription/features
+});
+
+// ─── Billing (JWT + tenant) ──────────────────────────────────────────────────
+// NOT behind subscription.active — users need billing access when expired
+$router->group(['middleware' => ['jwt.auth', 'tenant'], 'prefix' => 'billing'], function () use ($router) {
+    $router->get('overview',             'BillingController@overview');
+    $router->get('plans',                'BillingController@availablePlans');
+    $router->post('subscribe',           'BillingController@subscribe');
+    $router->post('upgrade',             'BillingController@upgrade');
+    $router->get('upgrade/preview',      'BillingController@upgradePreview');
+    $router->get('invoices',             'BillingController@invoices');
+    $router->post('wallet/top-up',       'BillingController@walletTopUp');
+    $router->get('wallet',               'BillingController@walletBalance');
+    $router->get('wallet/transactions',  'BillingController@walletTransactions');
+    $router->get('payment-methods',      'BillingController@listPaymentMethods');
+    $router->post('payment-methods',     'BillingController@addPaymentMethod');
+    $router->delete('payment-methods/{id}', 'BillingController@removePaymentMethod');
+});
+
+// ─── Stripe Webhook (public, no auth — signature-validated in controller) ────
+$router->post('stripe/webhook', 'StripeWebhookController@handleWebhook');
 
 //check cli report
 
@@ -2413,7 +2450,7 @@ $router->group(['middleware' => ['jwt.auth', 'tenant', 'route.access'], 'prefix'
 
 // ─── Twilio Telecom Infrastructure ────────────────────────────────────────────
 // JWT-protected management endpoints (Admin level enforced in controllers)
-$router->group(['middleware' => ['jwt.auth', 'tenant', 'route.access']], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'tenant', 'route.access', 'subscription.active']], function () use ($router) {
 
     // Account management
     $router->post('twilio/connect',              'TwilioAccountController@connect');
@@ -2477,7 +2514,7 @@ $router->group(['middleware' => ['twilio.webhook']], function () use ($router) {
 
 // ─── Plivo Telecom Infrastructure ─────────────────────────────────────────────
 // JWT-protected management endpoints (Admin level enforced in controllers)
-$router->group(['middleware' => ['jwt.auth', 'tenant', 'route.access']], function () use ($router) {
+$router->group(['middleware' => ['jwt.auth', 'tenant', 'route.access', 'subscription.active']], function () use ($router) {
 
     // Account management
     $router->post('plivo/connect',                'PlivoAccountController@connect');
