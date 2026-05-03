@@ -424,7 +424,7 @@ class StripeSubscriptionService
      * Upgrade (higher plan_order) → prorate immediately.
      * Downgrade (lower plan_order) → apply at next billing cycle.
      */
-    public static function changePlan(int $clientId, int $newPlanId): array
+    public static function changePlan(int $clientId, int $newPlanId, ?int $newSeatCount = null): array
     {
         $client = Client::find($clientId);
         if (!$client || !$client->stripe_subscription_id) {
@@ -442,15 +442,21 @@ class StripeSubscriptionService
 
         $oldPlanId = $client->subscription_plan_id;
         $oldPlan   = SubscriptionPlan::find($oldPlanId);
-        $seatQty   = (int) ($client->seat_quantity ?? 1);
+        $oldSeatQty = (int) ($client->seat_quantity ?? 1);
+        $seatQty    = $newSeatCount ?? $oldSeatQty;
+
+        if ($seatQty < 1) {
+            throw new \InvalidArgumentException('Seat quantity must be at least 1');
+        }
 
         $stripe       = self::stripe();
         $subscription = $stripe->subscriptions->retrieve($client->stripe_subscription_id);
         $itemId       = $subscription->items->data[0]->id;
 
-        // Upgrade → prorate immediately; Downgrade → apply at next cycle
-        $isUpgrade = $newPlan->plan_order > ($oldPlan->plan_order ?? 0);
-        $behavior  = $isUpgrade ? 'create_prorations' : 'none';
+        // Prorate if upgrading plan tier OR increasing seats
+        $isUpgrade   = $newPlan->plan_order > ($oldPlan->plan_order ?? 0);
+        $seatsUp     = $seatQty > $oldSeatQty;
+        $behavior    = ($isUpgrade || $seatsUp) ? 'create_prorations' : 'none';
 
         $updated = $stripe->subscriptions->update($client->stripe_subscription_id, [
             'items' => [[
@@ -462,11 +468,15 @@ class StripeSubscriptionService
             'metadata'           => ['plan_id' => $newPlanId, 'seats' => $seatQty],
         ]);
 
-        $client->update([
+        $clientUpdate = [
             'subscription_plan_id' => $newPlanId,
             'stripe_price_id'      => $newPlan->stripe_price_monthly_id,
             'subscription_ends_at' => Carbon::createFromTimestamp($updated->current_period_end),
-        ]);
+        ];
+        if ($newSeatCount !== null) {
+            $clientUpdate['seat_quantity'] = $seatQty;
+        }
+        $client->update($clientUpdate);
 
         PlanService::invalidateClientPlan($clientId);
         PlanService::syncFeatureFlagsToClient($clientId);
@@ -475,20 +485,22 @@ class StripeSubscriptionService
         Cache::flush(); // Simple approach — menu cache keys include plan_order
 
         self::logEvent($clientId, 'plan_changed', 'active', 'active', $newPlanId, [
-            'old_plan_id'   => $oldPlanId,
-            'new_plan_id'   => $newPlanId,
-            'old_plan_slug' => $oldPlan->slug ?? 'unknown',
-            'new_plan_slug' => $newPlan->slug,
+            'old_plan_id'    => $oldPlanId,
+            'new_plan_id'    => $newPlanId,
+            'old_plan_slug'  => $oldPlan->slug ?? 'unknown',
+            'new_plan_slug'  => $newPlan->slug,
+            'old_seat_quantity' => $oldSeatQty,
             'seat_quantity'  => $seatQty,
             'proration'      => $behavior,
             'monthly_total'  => $seatQty * ($newPlan->unit_price_cents / 100),
         ]);
 
         Log::info('StripeSubscriptionService: plan changed', [
-            'client_id'     => $clientId,
-            'old_plan'      => $oldPlan->slug ?? 'unknown',
-            'new_plan'      => $newPlan->slug,
-            'seat_quantity'  => $seatQty,
+            'client_id'      => $clientId,
+            'old_plan'       => $oldPlan->slug ?? 'unknown',
+            'new_plan'       => $newPlan->slug,
+            'old_seats'      => $oldSeatQty,
+            'new_seats'      => $seatQty,
             'proration'      => $behavior,
         ]);
 
@@ -505,7 +517,7 @@ class StripeSubscriptionService
     /**
      * Preview the billing impact of changing to a different plan.
      */
-    public static function getPlanChangePreview(int $clientId, int $newPlanId): ?array
+    public static function getPlanChangePreview(int $clientId, int $newPlanId, ?int $newSeatCount = null): ?array
     {
         $client = Client::find($clientId);
         if (!$client || !$client->stripe_customer_id || !$client->stripe_subscription_id) {
@@ -520,7 +532,7 @@ class StripeSubscriptionService
         $stripe       = self::stripe();
         $subscription = $stripe->subscriptions->retrieve($client->stripe_subscription_id);
         $itemId       = $subscription->items->data[0]->id;
-        $seatQty      = (int) ($client->seat_quantity ?? 1);
+        $seatQty      = $newSeatCount ?? (int) ($client->seat_quantity ?? 1);
 
         try {
             $preview = $stripe->invoices->upcoming([

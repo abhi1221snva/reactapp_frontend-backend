@@ -238,7 +238,8 @@ class BillingController extends Controller
     public function changePlan(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'plan_id' => 'required|integer|exists:master.subscription_plans,id',
+            'plan_id'    => 'required|integer|exists:master.subscription_plans,id',
+            'seat_count' => 'sometimes|integer|min:1',
         ]);
 
         if ($validator->fails()) {
@@ -256,18 +257,23 @@ class BillingController extends Controller
             return $this->failResponse('No active subscription. Subscribe first.', [], null, 400);
         }
 
-        $newPlanId = (int) $request->input('plan_id');
-        if ($newPlanId === (int) $client->subscription_plan_id) {
-            return $this->failResponse('Already on this plan.', [], null, 400);
+        $newPlanId  = (int) $request->input('plan_id');
+        $newSeats   = $request->has('seat_count') ? (int) $request->input('seat_count') : null;
+        $samePlan   = $newPlanId === (int) $client->subscription_plan_id;
+        $sameSeats  = $newSeats === null || $newSeats === (int) ($client->seat_quantity ?? 1);
+
+        if ($samePlan && $sameSeats) {
+            return $this->failResponse('No changes — same plan and seat count.', [], null, 400);
         }
 
         try {
-            $result = StripeSubscriptionService::changePlan($clientId, $newPlanId);
-            return $this->successResponse('Plan changed', $result);
+            $result = StripeSubscriptionService::changePlan($clientId, $newPlanId, $newSeats);
+            return $this->successResponse('Plan updated', $result);
         } catch (\Throwable $e) {
             Log::error('BillingController: changePlan failed', [
                 'client_id'   => $clientId,
                 'new_plan_id' => $newPlanId,
+                'seat_count'  => $newSeats,
                 'error'       => $e->getMessage(),
             ]);
             return $this->failResponse('Failed to change plan: ' . $e->getMessage(), [], null, 400);
@@ -289,9 +295,10 @@ class BillingController extends Controller
         }
 
         $newPlanId = (int) $request->input('plan_id');
+        $newSeats  = $request->has('seat_count') ? (int) $request->input('seat_count') : null;
 
         try {
-            $preview = StripeSubscriptionService::getPlanChangePreview($clientId, $newPlanId);
+            $preview = StripeSubscriptionService::getPlanChangePreview($clientId, $newPlanId, $newSeats);
             return $this->successResponse('OK', ['preview' => $preview]);
         } catch (\Throwable $e) {
             return $this->failResponse('Failed to preview plan change: ' . $e->getMessage(), [], null, 400);
