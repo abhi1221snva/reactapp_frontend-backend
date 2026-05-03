@@ -530,7 +530,11 @@ class DidPoolService
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * Insert pool DID into the client's `did` table.
+     * Insert pool DID into the client's `did` table AND the master `did` table.
+     *
+     * Sets CNAM to the admin user's first name and routes to
+     * their extension by default (dest_type=1).
+     *
      * Throws on failure so the master transaction can rollback.
      */
     private function insertIntoClientDid(int $clientId, string $phoneNumber, ?string $areaCode = null): void
@@ -541,17 +545,56 @@ class DidPoolService
             // Client did.cli uses 10-digit format (no +1 prefix)
             $cli = $this->toCliFormat($phoneNumber);
 
-            $exists = DB::connection($conn)->table('did')
+            // Look up the admin user (role=1) for this client to get first_name + extension
+            $adminUser = DB::connection('master')->table('users')
+                ->where('parent_id', $clientId)
+                ->where('role', 1)
+                ->where('is_deleted', 0)
+                ->orderBy('id', 'asc')
+                ->first(['id', 'first_name', 'extension']);
+
+            $cnam      = $adminUser->first_name ?? null;
+            $extension = ($adminUser && !empty($adminUser->extension) && $adminUser->extension !== '0')
+                ? $adminUser->extension
+                : null;
+
+            // dest_type 1 = extension routing
+            $destType  = $extension ? '1' : 'none';
+
+            // ── Insert into client did table ────────────────────────────
+            $existsClient = DB::connection($conn)->table('did')
                 ->where('cli', $cli)
                 ->exists();
 
-            if (!$exists) {
+            if (!$existsClient) {
                 DB::connection($conn)->table('did')->insert([
                     'cli'         => $cli,
+                    'cnam'        => $cnam,
                     'area_code'   => $areaCode ?? substr($cli, 0, 3),
-                    'dest_type'   => 'none',
+                    'extension'   => $extension,
+                    'dest_type'   => $destType,
                     'default_did' => 'N',
                     'operator'    => 'pool',
+                ]);
+            }
+
+            // ── Insert into master did table ────────────────────────────
+            $existsMaster = DB::connection('master')->table('did')
+                ->where('parent_id', $clientId)
+                ->where('cli', $phoneNumber)
+                ->exists();
+
+            if (!$existsMaster) {
+                DB::connection('master')->table('did')->insert([
+                    'parent_id'    => $clientId,
+                    'cli'          => $phoneNumber,
+                    'user_id'      => $adminUser->id ?? null,
+                    'area_code'    => $areaCode ?? substr($cli, 0, 3),
+                    'country_code' => '+1',
+                    'provider'     => '',
+                    'voip_provider' => 'pool',
+                    'created_at'   => now(),
+                    'updated_at'   => now(),
                 ]);
             }
         } catch (\Throwable $e) {
@@ -563,7 +606,7 @@ class DidPoolService
     }
 
     /**
-     * Remove pool DIDs from the client's `did` table.
+     * Remove pool DIDs from the client's `did` table AND master `did` table.
      * Non-fatal during release (logs but doesn't re-throw).
      */
     private function removeFromClientDid(int $clientId, array $phoneNumbers): void
@@ -578,6 +621,13 @@ class DidPoolService
             DB::connection($conn)->table('did')
                 ->whereIn('cli', $clis)
                 ->where('operator', 'pool')
+                ->delete();
+
+            // Also remove from master did table
+            DB::connection('master')->table('did')
+                ->where('parent_id', $clientId)
+                ->whereIn('cli', $phoneNumbers)
+                ->where('voip_provider', 'pool')
                 ->delete();
         } catch (\Throwable $e) {
             Log::error('DidPoolService::removeFromClientDid failed', [

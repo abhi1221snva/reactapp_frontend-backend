@@ -247,6 +247,9 @@ class ProvisionClientJob extends Job
             // Provision SIP extensions + Asterisk server mapping for the admin user
             $provisionSvc->provisionDefaultExtension($clientId, $userId, $firstName, $lastName);
 
+            // Create default ring group with the admin user's extension
+            $provisionSvc->provisionDefaultRingGroup($clientId, $userId);
+
             SetupStepTracker::complete($this->progressId, 'email_template_setup');
 
             $master->table('clients')->where('id', $clientId)->update([

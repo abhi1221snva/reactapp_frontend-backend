@@ -66,7 +66,7 @@ class TenantStorageService
                 @chown($path, 'www-data');
             }
         }
-        Log::info("TenantStorageService: directories ensured for client_{$clientId}");
+        try { Log::info("TenantStorageService: directories ensured for client_{$clientId}"); } catch (\Throwable $e) { /* non-fatal */ }
     }
 
     // ── Logo ──────────────────────────────────────────────────────────────────
@@ -174,7 +174,7 @@ class TenantStorageService
         $full     = $base . DIRECTORY_SEPARATOR . ltrim($relativePath, '/\\');
         $realFull = realpath($full);
         if (!$realFull || !str_starts_with($realFull, $base)) {
-            Log::warning("TenantStorageService: path traversal blocked for client_{$clientId}: {$relativePath}");
+            try { Log::warning("TenantStorageService: path traversal blocked for client_{$clientId}: {$relativePath}"); } catch (\Throwable $e) { /* non-fatal */ }
             return null;
         }
         return $realFull;

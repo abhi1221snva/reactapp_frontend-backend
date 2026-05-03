@@ -24,6 +24,18 @@ use Illuminate\Support\Str;
  */
 class TenantProvisionService
 {
+    /**
+     * Safe log wrapper — logging must NEVER crash provisioning.
+     */
+    private static function safeLog(string $level, string $message, array $context = []): void
+    {
+        try {
+            Log::{$level}($message, $context);
+        } catch (\Throwable $e) {
+            // Silently ignore — provisioning is more important than logging
+        }
+    }
+
     // ── Full pipeline ─────────────────────────────────────────────────────────
 
     /**
@@ -31,7 +43,7 @@ class TenantProvisionService
      */
     public function provision(Client $client): void
     {
-        Log::info("TenantProvisionService: starting provisioning for client_{$client->id}");
+        self::safeLog('info', "TenantProvisionService: starting provisioning for client_{$client->id}");
 
         $this->provisionDatabase($client);
         $this->provisionStorage($client->id);
@@ -39,7 +51,7 @@ class TenantProvisionService
         $this->provisionDefaultAdminUser($client->id, $client->company_name);
         $this->provisionDefaultCrmData($client->id);
 
-        Log::info("TenantProvisionService: provisioning complete for client_{$client->id}");
+        self::safeLog('info', "TenantProvisionService: provisioning complete for client_{$client->id}");
     }
 
     // ── Step 1 — Database ─────────────────────────────────────────────────────
@@ -61,9 +73,9 @@ class TenantProvisionService
         // Create database if it does not yet exist
         try {
             DB::connection("mysql_{$client->id}")->getPdo();
-            Log::info("TenantProvisionService: database {$conn->db_name} already exists");
+            self::safeLog('info', "TenantProvisionService: database {$conn->db_name} already exists");
         } catch (\Exception $e) {
-            Log::info("TenantProvisionService: creating database {$conn->db_name}");
+            self::safeLog('info', "TenantProvisionService: creating database {$conn->db_name}");
             DB::connection('master')->statement("CREATE DATABASE IF NOT EXISTS `{$conn->db_name}`");
             DB::connection('master')->statement(
                 "GRANT ALL PRIVILEGES ON `{$conn->db_name}`.* TO '{$conn->db_user}'@'{$conn->ip}'"
@@ -79,7 +91,7 @@ class TenantProvisionService
             '--force'    => true,
         ]);
 
-        Log::info("TenantProvisionService: migrations complete for client_{$client->id}");
+        self::safeLog('info', "TenantProvisionService: migrations complete for client_{$client->id}");
     }
 
     // ── Step 2 — Storage ──────────────────────────────────────────────────────
@@ -103,13 +115,13 @@ class TenantProvisionService
 
         try {
             if (!DB::connection($conn)->getSchemaBuilder()->hasTable('crm_system_setting')) {
-                Log::warning("TenantProvisionService: crm_system_setting missing for client_{$clientId} — skipping");
+                self::safeLog('warning', "TenantProvisionService: crm_system_setting missing for client_{$clientId} — skipping");
                 return;
             }
 
             $existing = DB::connection($conn)->table('crm_system_setting')->first();
             if ($existing) {
-                Log::info("TenantProvisionService: crm_system_setting already has a row for client_{$clientId}");
+                self::safeLog('info', "TenantProvisionService: crm_system_setting already has a row for client_{$clientId}");
                 return;
             }
 
@@ -124,9 +136,9 @@ class TenantProvisionService
                 'updated_at'      => now(),
             ]);
 
-            Log::info("TenantProvisionService: default company settings created for client_{$clientId}");
+            self::safeLog('info', "TenantProvisionService: default company settings created for client_{$clientId}");
         } catch (\Throwable $e) {
-            Log::error("TenantProvisionService: could not create default settings for client_{$clientId}", [
+            self::safeLog('error', "TenantProvisionService: could not create default settings for client_{$clientId}", [
                 'error' => $e->getMessage(),
             ]);
         }
@@ -148,7 +160,7 @@ class TenantProvisionService
                 ->first();
 
             if ($existing) {
-                Log::info("TenantProvisionService: admin user already exists for client_{$clientId} (id={$existing->id})");
+                self::safeLog('info', "TenantProvisionService: admin user already exists for client_{$clientId} (id={$existing->id})");
                 return null;
             }
 
@@ -180,14 +192,14 @@ class TenantProvisionService
                 'updated_at'      => now(),
             ]);
 
-            Log::info("TenantProvisionService: default admin user created for client_{$clientId}", [
+            self::safeLog('info', "TenantProvisionService: default admin user created for client_{$clientId}", [
                 'email'    => $email,
                 'password' => $password,  // one-time — retrieve from logs
             ]);
 
             return $password;
         } catch (\Throwable $e) {
-            Log::error("TenantProvisionService: could not create admin user for client_{$clientId}", [
+            self::safeLog('error', "TenantProvisionService: could not create admin user for client_{$clientId}", [
                 'error' => $e->getMessage(),
             ]);
             return null;
@@ -211,13 +223,13 @@ class TenantProvisionService
             try {
                 $this->{$method}($clientId);
             } catch (\Throwable $e) {
-                Log::warning("TenantProvisionService::{$method} failed for client_{$clientId}", [
+                self::safeLog('warning', "TenantProvisionService::{$method} failed for client_{$clientId}", [
                     'error' => $e->getMessage(),
                 ]);
             }
         }
 
-        Log::info("TenantProvisionService: default CRM data seeded for client_{$clientId}");
+        self::safeLog('info', "TenantProvisionService: default CRM data seeded for client_{$clientId}");
     }
 
     /**
@@ -454,7 +466,7 @@ class TenantProvisionService
             // 1. Find the default active Asterisk server
             $server = $master->table('asterisk_server')->where('status', 1)->orderBy('id', 'asc')->first();
             if (!$server) {
-                Log::warning("TenantProvisionService: no active Asterisk server found — skipping extension provisioning for client_{$clientId}");
+                self::safeLog('warning', "TenantProvisionService: no active Asterisk server found — skipping extension provisioning for client_{$clientId}");
                 return;
             }
 
@@ -475,7 +487,7 @@ class TenantProvisionService
             // 3. Check if user already has extensions (idempotent)
             $user = $master->table('users')->where('id', $userId)->first();
             if ($user && $user->asterisk_server_id > 0 && !empty($user->extension) && $user->extension !== '0') {
-                Log::info("TenantProvisionService: user {$userId} already has extensions — skipping");
+                self::safeLog('info', "TenantProvisionService: user {$userId} already has extensions — skipping");
                 return;
             }
 
@@ -582,7 +594,7 @@ class TenantProvisionService
                 'asterisk_server_id' => $server->id,
             ]);
 
-            Log::info("TenantProvisionService: SIP extensions provisioned for user {$userId}", [
+            self::safeLog('info', "TenantProvisionService: SIP extensions provisioned for user {$userId}", [
                 'client_id'   => $clientId,
                 'primary_ext' => $primaryExt,
                 'alt_ext'     => $altExt,
@@ -590,7 +602,7 @@ class TenantProvisionService
                 'server_id'   => $server->id,
             ]);
         } catch (\Throwable $e) {
-            Log::error("TenantProvisionService: extension provisioning failed for user {$userId}", [
+            self::safeLog('error', "TenantProvisionService: extension provisioning failed for user {$userId}", [
                 'client_id' => $clientId,
                 'error'     => $e->getMessage(),
             ]);
@@ -621,6 +633,76 @@ class TenantProvisionService
         return (int) substr(time(), -4);
     }
 
+    // ── Step 7 — Default ring group ─────────────────────────────────────────
+
+    /**
+     * Create a default "Main" ring group containing the admin user's extensions.
+     * Runs after provisionDefaultExtension() so the user already has extensions.
+     * Idempotent — skips if a ring group already exists.
+     */
+    public function provisionDefaultRingGroup(int $clientId, int $userId): void
+    {
+        $conn = "mysql_{$clientId}";
+
+        try {
+            if (!DB::connection($conn)->getSchemaBuilder()->hasTable('ring_group')) {
+                return;
+            }
+
+            // Skip if already seeded
+            if (DB::connection($conn)->table('ring_group')->exists()) {
+                return;
+            }
+
+            // Look up admin user's extensions
+            $master = DB::connection('master');
+            $user = $master->table('users')
+                ->where('id', $userId)
+                ->first(['first_name', 'last_name', 'extension', 'alt_extension', 'mobile', 'email']);
+
+            if (!$user || empty($user->extension) || $user->extension === '0') {
+                self::safeLog('warning', "TenantProvisionService: skipping default ring group — user {$userId} has no extension");
+                return;
+            }
+
+            // Build extensions string: PJSIP/{ext}&PJSIP/{altExt} (Ring All format)
+            $extParts = ['PJSIP/' . $user->extension];
+            if (!empty($user->alt_extension)) {
+                $extParts[] = 'PJSIP/' . $user->alt_extension;
+            }
+            $extensions = implode('&', $extParts);
+
+            // Build phone_number string for mobile/telnyx
+            $phoneNumber = '';
+            if (!empty($user->mobile)) {
+                $client = $master->table('clients')->where('id', $clientId)->first(['tech_prefix']);
+                $techPrefix = $client->tech_prefix ?? '';
+                $phoneNumber = 'PJSIP/telnyx/' . $techPrefix . $user->mobile;
+            }
+
+            // Email — use admin user's email
+            $emails = $user->email ?? '';
+
+            DB::connection($conn)->table('ring_group')->insert([
+                'title'           => 'Main',
+                'description'     => 'Default ring group',
+                'extensions'      => $extensions,
+                'phone_number'    => $phoneNumber,
+                'emails'          => $emails,
+                'ring_type'       => '1',  // Ring All
+                'extension_count' => 1,
+                'receive_on'      => 'web_phone',
+            ]);
+
+            self::safeLog('info', "TenantProvisionService: default ring group created for client_{$clientId}");
+        } catch (\Throwable $e) {
+            self::safeLog('error', "TenantProvisionService: could not create default ring group for client_{$clientId}", [
+                'error' => $e->getMessage(),
+            ]);
+            // Non-fatal — user can create ring groups manually
+        }
+    }
+
     // ── Bulk re-provisioning (storage only) ───────────────────────────────────
 
     /**
@@ -633,6 +715,6 @@ class TenantProvisionService
         foreach ($clients as $client) {
             TenantStorageService::ensureDirectories($client->id);
         }
-        Log::info("TenantProvisionService: storage directories ensured for {$clients->count()} clients");
+        self::safeLog('info', "TenantProvisionService: storage directories ensured for {$clients->count()} clients");
     }
 }
