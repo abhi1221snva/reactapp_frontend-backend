@@ -70,24 +70,24 @@ class AdminBillingController extends Controller
         // Total wallet balance across all clients
         $totalWalletCents = Client::where('is_deleted', 0)->sum('wallet_balance_cents');
 
-        // Per-seat metrics
+        // Per-seat metrics (MRR = sum of each client's seat_quantity * their plan's unit_price_cents)
         $totalSeats = (int) Client::where('is_deleted', 0)
             ->whereIn('subscription_status', ['active', 'trial'])
             ->sum('seat_quantity');
 
-        $perSeatPlan = DB::connection('master')->table('subscription_plans')
-            ->where('slug', 'per_seat')
-            ->where('is_active', true)
-            ->first();
-        $unitPriceCents = $perSeatPlan ? (int) $perSeatPlan->unit_price_cents : 2900;
-        $seatMrr = $totalSeats * $unitPriceCents;
+        $seatMrr = (int) DB::connection('master')->table('clients')
+            ->join('subscription_plans', 'clients.subscription_plan_id', '=', 'subscription_plans.id')
+            ->where('clients.is_deleted', 0)
+            ->whereIn('clients.subscription_status', ['active', 'trial'])
+            ->selectRaw('SUM(clients.seat_quantity * subscription_plans.unit_price_cents) as total')
+            ->value('total') ?? 0;
 
         return $this->successResponse('OK', [
             'plan_distribution'     => $planDistribution,
             'mrr_cents'             => (int) $mrrCents,
             'seat_mrr'              => $seatMrr,
             'total_seats'           => $totalSeats,
-            'price_per_seat'        => $unitPriceCents,
+            'avg_price_per_seat'    => $totalSeats > 0 ? (int) round($seatMrr / $totalSeats) : 0,
             'wallet_revenue_cents'  => (int) $walletRevenueCents,
             'total_wallet_cents'    => (int) $totalWalletCents,
             'plan_breakdown'        => $planBreakdown,

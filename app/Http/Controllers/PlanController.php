@@ -271,13 +271,13 @@ class PlanController extends Controller
     /**
      * POST /admin/subscription-plans/sync-stripe
      *
-     * Sync the per-seat plan to Stripe (create Product + Price).
+     * Sync all active plans to Stripe (create/update Products + Prices).
      */
     public function syncToStripe(Request $request)
     {
         try {
-            $result = StripeSubscriptionService::syncPerSeatPlan();
-            return $this->successResponse('Per-seat plan synced to Stripe', $result);
+            $result = StripeSubscriptionService::syncAllPlansToStripe();
+            return $this->successResponse('All plans synced to Stripe', $result);
         } catch (\Throwable $e) {
             return $this->failResponse('Sync failed: ' . $e->getMessage(), [], null, 500);
         }

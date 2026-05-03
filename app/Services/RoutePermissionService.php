@@ -58,12 +58,17 @@ class RoutePermissionService
     }
 
     /**
-     * Get sidebar menu items filtered by role permissions and user level.
+     * Get sidebar menu items filtered by role permissions, user level, and plan tier.
      * Returns hierarchical array grouped by section_label.
+     *
+     * @param int    $roleId         The user's role ID
+     * @param int    $userLevel      The user's level (1-11)
+     * @param string $engine         'dialer' or 'crm'
+     * @param int    $clientPlanOrder The client's plan order (1-4). 0 = no plan filtering.
      */
-    public function getUserMenuItems(int $roleId, int $userLevel, string $engine): array
+    public function getUserMenuItems(int $roleId, int $userLevel, string $engine, int $clientPlanOrder = 0): array
     {
-        $cacheKey = "rbac:menu:{$roleId}:{$engine}";
+        $cacheKey = "rbac:menu:{$roleId}:{$engine}:{$clientPlanOrder}";
 
         $cached = Cache::get($cacheKey);
         if ($cached !== null) {
@@ -72,12 +77,17 @@ class RoutePermissionService
 
         $allowedGroups = $this->loadRolePermissions($roleId);
 
-        $items = SidebarMenuItem::on('master')
+        $query = SidebarMenuItem::on('master')
             ->where('engine', $engine)
             ->where('is_active', true)
-            ->where('min_level', '<=', $userLevel)
-            ->orderBy('display_order')
-            ->get();
+            ->where('min_level', '<=', $userLevel);
+
+        // Filter by plan tier if client has a plan
+        if ($clientPlanOrder > 0) {
+            $query->where('min_plan_order', '<=', $clientPlanOrder);
+        }
+
+        $items = $query->orderBy('display_order')->get();
 
         // Filter items: route_group_key is null (always visible) or in allowed groups
         $filtered = $items->filter(function ($item) use ($allowedGroups) {
@@ -130,8 +140,10 @@ class RoutePermissionService
 
         if ($roleId !== null) {
             Cache::forget("rbac:role_perms:{$roleId}");
-            Cache::forget("rbac:menu:{$roleId}:dialer");
-            Cache::forget("rbac:menu:{$roleId}:crm");
+            for ($po = 0; $po <= 4; $po++) {
+                Cache::forget("rbac:menu:{$roleId}:dialer:{$po}");
+                Cache::forget("rbac:menu:{$roleId}:crm:{$po}");
+            }
         } else {
             // Clear all role permission caches
             $roleIds = RoleRoutePermission::on('master')
@@ -141,8 +153,10 @@ class RoutePermissionService
 
             foreach ($roleIds as $rid) {
                 Cache::forget("rbac:role_perms:{$rid}");
-                Cache::forget("rbac:menu:{$rid}:dialer");
-                Cache::forget("rbac:menu:{$rid}:crm");
+                for ($po = 0; $po <= 4; $po++) {
+                    Cache::forget("rbac:menu:{$rid}:dialer:{$po}");
+                    Cache::forget("rbac:menu:{$rid}:crm:{$po}");
+                }
             }
         }
     }

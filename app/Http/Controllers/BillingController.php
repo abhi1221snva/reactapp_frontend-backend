@@ -61,28 +61,27 @@ class BillingController extends Controller
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    //  Plan info (single per-seat plan)
+    //  Plan info (all tiered per-seat plans)
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * GET /billing/plan
+     * GET /billing/plans
      *
-     * Returns the single per-seat plan details + current seat count.
+     * Returns all active per-seat plans + client's current plan + seat count.
      */
     public function planInfo(Request $request)
     {
         $clientId = $this->tenantId($request);
         $client   = Client::find($clientId);
 
-        try {
-            $plan = SubscriptionPlan::getPerSeatPlan();
-        } catch (\Throwable $e) {
-            return $this->failResponse('Per-seat plan not found', [], null, 500);
-        }
+        $plans = SubscriptionPlan::getActivePlans();
+        $currentPlan = $client->subscription_plan_id
+            ? $plans->firstWhere('id', $client->subscription_plan_id)
+            : null;
 
         return $this->successResponse('OK', [
-            'plan'             => $plan->toArray(),
-            'price_per_seat'   => $plan->unit_price_cents,
+            'plans'            => $plans->toArray(),
+            'current_plan'     => $currentPlan ? $currentPlan->toArray() : null,
             'seat_quantity'    => (int) ($client->seat_quantity ?? 1),
             'has_subscription' => !empty($client->stripe_subscription_id),
         ]);
@@ -101,6 +100,7 @@ class BillingController extends Controller
     public function subscribe(Request $request)
     {
         $validator = Validator::make($request->all(), [
+            'plan_id'        => 'required|integer|exists:master.subscription_plans,id',
             'seat_count'     => 'required|integer|min:1',
             'payment_method' => 'required|string',
         ]);
@@ -118,12 +118,13 @@ class BillingController extends Controller
 
         // Only allow subscribing from trial or expired status
         if ($client->stripe_subscription_id && in_array($client->subscription_status, ['active', 'past_due'])) {
-            return $this->failResponse('You already have an active subscription. Use update-seats instead.', [], null, 400);
+            return $this->failResponse('You already have an active subscription. Use change-plan or update-seats instead.', [], null, 400);
         }
 
         try {
             $result = StripeSubscriptionService::createSubscription(
                 $clientId,
+                (int) $request->input('plan_id'),
                 (int) $request->input('seat_count'),
                 $request->input('payment_method')
             );
@@ -212,14 +213,88 @@ class BillingController extends Controller
         try {
             $preview = StripeSubscriptionService::getSeatChangePreview($clientId, $newQty);
 
+            $plan = SubscriptionPlan::find($client->subscription_plan_id);
             return $this->successResponse('OK', [
                 'preview'          => $preview,
                 'current_seats'    => (int) ($client->seat_quantity ?? 1),
                 'new_seats'        => $newQty,
-                'price_per_seat'   => 2900,
+                'price_per_seat'   => $plan ? $plan->unit_price_cents : 2900,
             ]);
         } catch (\Throwable $e) {
             return $this->failResponse('Failed to preview seat change: ' . $e->getMessage(), [], null, 400);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Change Plan
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * POST /billing/change-plan
+     *
+     * Switch to a different plan tier (upgrade/downgrade).
+     * Upgrades prorate immediately, downgrades apply at next cycle.
+     */
+    public function changePlan(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'plan_id' => 'required|integer|exists:master.subscription_plans,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+
+        $clientId = $this->tenantId($request);
+        $client   = Client::find($clientId);
+
+        if (!$client->stripe_subscription_id) {
+            return $this->failResponse('No active subscription. Subscribe first.', [], null, 400);
+        }
+
+        $newPlanId = (int) $request->input('plan_id');
+        if ($newPlanId === (int) $client->subscription_plan_id) {
+            return $this->failResponse('Already on this plan.', [], null, 400);
+        }
+
+        try {
+            $result = StripeSubscriptionService::changePlan($clientId, $newPlanId);
+            return $this->successResponse('Plan changed', $result);
+        } catch (\Throwable $e) {
+            Log::error('BillingController: changePlan failed', [
+                'client_id'   => $clientId,
+                'new_plan_id' => $newPlanId,
+                'error'       => $e->getMessage(),
+            ]);
+            return $this->failResponse('Failed to change plan: ' . $e->getMessage(), [], null, 400);
+        }
+    }
+
+    /**
+     * GET /billing/change-plan/preview?plan_id=N
+     *
+     * Preview proration for a plan change.
+     */
+    public function changePlanPreview(Request $request)
+    {
+        $clientId = $this->tenantId($request);
+        $client   = Client::find($clientId);
+
+        if (!$client->stripe_customer_id || !$client->stripe_subscription_id) {
+            return $this->successResponse('No active subscription', ['preview' => null]);
+        }
+
+        $newPlanId = (int) $request->input('plan_id');
+
+        try {
+            $preview = StripeSubscriptionService::getPlanChangePreview($clientId, $newPlanId);
+            return $this->successResponse('OK', ['preview' => $preview]);
+        } catch (\Throwable $e) {
+            return $this->failResponse('Failed to preview plan change: ' . $e->getMessage(), [], null, 400);
         }
     }
 

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Model\Master\Client;
+use App\Model\Master\SubscriptionPlan;
 use App\Services\RoutePermissionService;
 use Illuminate\Http\Request;
 
@@ -24,12 +26,23 @@ class MenuController extends Controller
             $engine = 'dialer';
         }
 
+        // Resolve client's plan tier for menu gating
+        $clientPlanOrder = 0;
+        $clientId = (int) ($request->auth->parent_id ?? 0);
+        if ($clientId > 0) {
+            $client = Client::find($clientId);
+            if ($client && $client->subscription_plan_id) {
+                $plan = SubscriptionPlan::find($client->subscription_plan_id);
+                $clientPlanOrder = $plan ? (int) $plan->plan_order : 0;
+            }
+        }
+
         $service = app(RoutePermissionService::class);
 
         if ($userLevel >= RoutePermissionService::SYSTEM_ADMIN_LEVEL) {
             $items = $service->getAllMenuItems($engine);
         } else {
-            $items = $service->getUserMenuItems($roleId, $userLevel, $engine);
+            $items = $service->getUserMenuItems($roleId, $userLevel, $engine, $clientPlanOrder);
         }
 
         return response()->json([

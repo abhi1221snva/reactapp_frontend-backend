@@ -183,18 +183,18 @@ class AdminClientController extends Controller
         ]);
         $attributes['stage'] = Client::RECORD_SAVED;
 
-        // Default to per-seat plan on trial with 1 seat
+        // Default to starter plan on trial with 1 seat
         try {
-            $perSeatPlan = SubscriptionPlan::getPerSeatPlan();
+            $starterPlan = SubscriptionPlan::getStarterPlan();
         } catch (\Throwable $e) {
-            $perSeatPlan = null;
+            $starterPlan = null;
         }
-        if ($perSeatPlan) {
-            $attributes['subscription_plan_id']    = $perSeatPlan->id;
+        if ($starterPlan) {
+            $attributes['subscription_plan_id']    = $starterPlan->id;
             $attributes['subscription_status']     = 'trial';
             $attributes['billing_cycle']           = 'monthly';
             $attributes['subscription_started_at'] = Carbon::now();
-            $attributes['subscription_ends_at']    = Carbon::now()->addDays($perSeatPlan->trial_days ?: 14);
+            $attributes['subscription_ends_at']    = Carbon::now()->addDays($starterPlan->trial_days ?: 14);
             $attributes['seat_quantity']           = 1;
         }
 

@@ -55,6 +55,7 @@ class SubscriptionPlan extends Model
         'has_compliance_packages',
         'is_active',
         'display_order',
+        'plan_order',
         'trial_days',
         'stripe_product_id',
         'stripe_price_monthly_id',
@@ -80,18 +81,42 @@ class SubscriptionPlan extends Model
         'has_compliance_packages'=> 'boolean',
         'is_active'              => 'boolean',
         'display_order'          => 'integer',
+        'plan_order'             => 'integer',
         'trial_days'             => 'integer',
     ];
 
     /**
-     * Get the single per-seat plan (cached 1 hour).
+     * Get all active plans ordered by tier (cached 1 hour).
      */
-    public static function getPerSeatPlan(): self
+    public static function getActivePlans(): \Illuminate\Database\Eloquent\Collection
     {
-        return Cache::remember('per_seat_plan', 3600, function () {
-            return self::where('slug', self::SLUG_PER_SEAT)
+        return Cache::remember('active_subscription_plans', 3600, function () {
+            return self::where('is_active', true)
+                ->where('billing_model', 'per_seat')
+                ->orderBy('plan_order')
+                ->get();
+        });
+    }
+
+    /**
+     * Get the starter plan (used for trial assignment).
+     */
+    public static function getStarterPlan(): self
+    {
+        return Cache::remember('starter_plan', 3600, function () {
+            return self::where('slug', self::SLUG_STARTER)
                 ->where('is_active', true)
                 ->firstOrFail();
+        });
+    }
+
+    /**
+     * Find plan by slug (cached 1 hour).
+     */
+    public static function getPlanBySlug(string $slug): ?self
+    {
+        return Cache::remember("plan_slug_{$slug}", 3600, function () use ($slug) {
+            return self::where('slug', $slug)->first();
         });
     }
 

@@ -252,9 +252,6 @@ class PlanService
 
     /**
      * Check if the client's plan includes a specific feature.
-     *
-     * Per-seat billing: the single plan includes ALL features,
-     * so this always returns true for any valid feature key.
      */
     public static function hasFeature(int $clientId, string $featureKey): bool
     {
@@ -262,21 +259,37 @@ class PlanService
             return false;
         }
 
-        // Per-seat plan has all features — always return true
-        return true;
+        $data = self::getClientPlan($clientId);
+        if (!$data) {
+            return true; // no plan = allowed (backward compat)
+        }
+
+        $plan = SubscriptionPlan::find($data['plan']['id'] ?? 0);
+        if (!$plan) {
+            return true;
+        }
+
+        return $plan->hasFeature($featureKey);
     }
 
     /**
      * Get all feature flags for the client's current plan.
      *
-     * Per-seat billing: single plan = all features enabled.
-     *
      * @return array<string, bool>
      */
     public static function getAllFeatures(int $clientId): array
     {
-        // Per-seat plan has all features enabled
-        return array_fill_keys(array_keys(SubscriptionPlan::FEATURE_MAP), true);
+        $data = self::getClientPlan($clientId);
+        if (!$data) {
+            return array_fill_keys(array_keys(SubscriptionPlan::FEATURE_MAP), true);
+        }
+
+        $plan = SubscriptionPlan::find($data['plan']['id'] ?? 0);
+        if (!$plan) {
+            return array_fill_keys(array_keys(SubscriptionPlan::FEATURE_MAP), true);
+        }
+
+        return $plan->featureFlags();
     }
 
     // ═══════════════════════════════════════════════════════════════════════

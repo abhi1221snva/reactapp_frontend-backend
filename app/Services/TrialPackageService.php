@@ -52,13 +52,13 @@ class TrialPackageService
                 return true;
             }
 
-            // ── Resolve trial duration from per-seat plan ────────────
+            // ── Resolve trial duration from starter plan ────────────
             try {
-                $perSeatPlan = SubscriptionPlan::getPerSeatPlan();
+                $starterPlan = SubscriptionPlan::getStarterPlan();
             } catch (\Throwable $e) {
-                $perSeatPlan = null;
+                $starterPlan = null;
             }
-            $trialDays = $perSeatPlan ? ($perSeatPlan->trial_days ?: 14) : 14;
+            $trialDays = $starterPlan ? ($starterPlan->trial_days ?: 14) : 14;
 
             $now     = Carbon::now();
             $endDate = $now->copy()->addDays($trialDays);
@@ -98,10 +98,10 @@ class TrialPackageService
                 ]);
             }
 
-            // ── Assign per-seat plan on trial with 1 seat ────────────
-            if ($perSeatPlan) {
+            // ── Assign starter plan on trial with 1 seat ────────────
+            if ($starterPlan) {
                 Client::where('id', $clientId)->update([
-                    'subscription_plan_id'    => $perSeatPlan->id,
+                    'subscription_plan_id'    => $starterPlan->id,
                     'subscription_status'     => 'trial',
                     'billing_cycle'           => 'monthly',
                     'subscription_started_at' => $now,
@@ -116,7 +116,7 @@ class TrialPackageService
             $this->creditSignupWallet($clientId, $connName, $now);
 
             // ── Log subscription event ───────────────────────────────
-            $this->logSubscriptionEvent($clientId, $perSeatPlan, $endDate, $now);
+            $this->logSubscriptionEvent($clientId, $starterPlan, $endDate, $now);
 
             Log::info('TrialPackageService: trial package assigned', [
                 'client_id'          => $clientId,
