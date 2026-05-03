@@ -326,6 +326,10 @@ $router->group(['middleware' => ['jwt.auth', 'auth.superadmin', 'audit.log', 'ro
   $router->post('admin/email-templates/{id}/test-send','AdminEmailTemplateController@testSend');
   $router->post('admin/email-templates/seed',        'AdminEmailTemplateController@seed');
 
+  // ── Auth Events / Security Dashboard ─────────────────────────────────
+  $router->post('admin/auth-events',              'AuthEventController@index');
+  $router->get('admin/auth-events/active-users',  'AuthEventController@activeUsers');
+
   #create client
   $router->put('client', 'ClientController@create');
   $router->get('clients', 'ClientController@index');
