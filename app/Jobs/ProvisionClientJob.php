@@ -120,6 +120,8 @@ class ProvisionClientJob extends Job
                     'reserved'     => 0,
                     'stage'        => Client::RECORD_SAVED,
                     'is_deleted'   => 0,
+                    'trunk'        => 'PJSIP/plivo-rohit-account/+1',
+                    'api_key'      => 'rk_' . bin2hex(random_bytes(24)),
                     'created_at'   => $now,
                     'updated_at'   => $now,
                 ]);

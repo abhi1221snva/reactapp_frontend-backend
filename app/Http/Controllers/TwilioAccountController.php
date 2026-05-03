@@ -160,6 +160,11 @@ class TwilioAccountController extends Controller
      */
     public function createSubaccount(Request $request)
     {
+        // Only system administrators (level >= 9) can create platform subaccounts
+        if (($request->auth->level ?? 0) < 9) {
+            return $this->failResponse('Only system administrators can create platform subaccounts.', [], null, 403);
+        }
+
         $clientId     = $request->auth->parent_id ?: $request->auth->id;
         $friendlyName = $request->input('friendly_name', "Client {$clientId}");
 
