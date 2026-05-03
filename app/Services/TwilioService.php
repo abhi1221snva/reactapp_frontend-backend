@@ -25,25 +25,31 @@ class TwilioService
 
     /**
      * Build a TwilioService for a given client tenant.
-     * Uses their own credentials if connected, otherwise uses platform
-     * master account (or the client's subaccount token).
+     * Uses their own credentials if connected. Throws if no account configured.
      */
     public static function forClient(int $clientId): self
     {
         $account = TwilioAccount::where('client_id', $clientId)->first();
 
-        if ($account) {
-            [$sid, $token] = $account->resolveCredentials();
-        } else {
-            $sid   = env('TWILIO_SID');
-            $token = env('TWILIO_AUTH_TOKEN');
+        if (!$account) {
+            throw new \RuntimeException('No Twilio account connected for this client. Please connect a Twilio account first.');
         }
+
+        [$sid, $token] = $account->resolveCredentials();
 
         if (!$sid || !$token) {
             throw new \RuntimeException('Twilio credentials not configured for this client.');
         }
 
         return new self($sid, $token);
+    }
+
+    /**
+     * Check if a client has a Twilio account connected.
+     */
+    public static function hasAccount(int $clientId): bool
+    {
+        return TwilioAccount::where('client_id', $clientId)->exists();
     }
 
     // ── Account ────────────────────────────────────────────────────────────

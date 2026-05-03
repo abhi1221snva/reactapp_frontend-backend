@@ -198,35 +198,38 @@ class TwilioNumberController extends Controller
         $page    = max(1, (int) $request->input('page', 1));
         $search  = $request->input('search', '');
 
-        // Sync live numbers from Twilio into local DB so the count stays accurate
-        // even for numbers purchased directly in the Twilio console.
-        try {
-            $service     = TwilioService::forClient($clientId);
-            $liveNumbers = $service->listNumbers(200);
-            $liveSids    = [];
+        // Only sync if the client has their own Twilio account connected.
+        // Without this check, clients without a Twilio account would see
+        // the platform master account's numbers.
+        if (TwilioService::hasAccount($clientId)) {
+            try {
+                $service     = TwilioService::forClient($clientId);
+                $liveNumbers = $service->listNumbers(200);
+                $liveSids    = [];
 
-            foreach ($liveNumbers as $n) {
-                TwilioNumber::on($conn)->updateOrCreate(
-                    ['sid' => $n['sid']],
-                    [
-                        'phone_number'  => $n['phone_number'],
-                        'friendly_name' => $n['phone_number'],
-                        'capabilities'  => $n['capabilities'],
-                        'status'        => 'active',
-                    ]
-                );
-                $liveSids[] = $n['sid'];
-            }
+                foreach ($liveNumbers as $n) {
+                    TwilioNumber::on($conn)->updateOrCreate(
+                        ['sid' => $n['sid']],
+                        [
+                            'phone_number'  => $n['phone_number'],
+                            'friendly_name' => $n['phone_number'],
+                            'capabilities'  => $n['capabilities'],
+                            'status'        => 'active',
+                        ]
+                    );
+                    $liveSids[] = $n['sid'];
+                }
 
-            // Mark numbers no longer in Twilio as released
-            if (!empty($liveSids)) {
-                TwilioNumber::on($conn)
-                    ->where('status', 'active')
-                    ->whereNotIn('sid', $liveSids)
-                    ->update(['status' => 'released']);
+                // Mark numbers no longer in Twilio as released
+                if (!empty($liveSids)) {
+                    TwilioNumber::on($conn)
+                        ->where('status', 'active')
+                        ->whereNotIn('sid', $liveSids)
+                        ->update(['status' => 'released']);
+                }
+            } catch (\Exception $e) {
+                Log::warning('Twilio number sync failed', ['client' => $clientId, 'err' => $e->getMessage()]);
             }
-        } catch (\Exception $e) {
-            Log::warning('Twilio number sync failed', ['client' => $clientId, 'err' => $e->getMessage()]);
         }
 
         $query = TwilioNumber::on($conn)->where('status', 'active');
@@ -249,6 +252,7 @@ class TwilioNumberController extends Controller
             'total'        => $total,
             'current_page' => $page,
             'per_page'     => $perPage,
+            'has_twilio_account' => TwilioService::hasAccount($clientId),
         ]);
     }
 
