@@ -934,6 +934,14 @@ public function loginHistory($request)
 
         $filter = (!empty($searchString)) ? " WHERE " . implode(" AND ", $searchString) : '';
 
+        // System admins (level 9+) see all clients; others see only their client
+        $userLevel = (int) ($request->auth->level ?? 1);
+        $clientFilter = '';
+        if ($userLevel < 9) {
+            $search['client_id'] = $request->auth->parent_id;
+            $clientFilter = (!empty($filter) ? ' AND ' : ' WHERE ') . 'login_logs.client_id = :client_id';
+        }
+
         $query_string = "
             SELECT
                 login_logs.created_at,
@@ -944,18 +952,15 @@ public function loginHistory($request)
                 users.extension
             FROM login_logs
             INNER JOIN users ON users.id = login_logs.user_id
-            $filter AND login_logs.client_id = :client_id
+            $filter $clientFilter
             ORDER BY login_logs.created_at DESC
         ";
-
-        // Always add client_id to the query
-        $search['client_id'] = $request->auth->parent_id;
 
         $sql = $query_string . ' ' . $limitString;
 
         $record = DB::connection('master')->select($sql, $search);
         $recordCount = DB::connection('master')->selectOne(
-            "SELECT COUNT(*) as count FROM login_logs INNER JOIN users ON users.id = login_logs.user_id $filter AND login_logs.client_id = :client_id",
+            "SELECT COUNT(*) as count FROM login_logs INNER JOIN users ON users.id = login_logs.user_id $filter $clientFilter",
             $search
         );
         $recordCount = (array) $recordCount;
