@@ -185,7 +185,7 @@ class CheckoutController extends Controller
 
                 $smtpSetting = SmtpSetting::getBySenderType('mysql_' . $request->auth->parent_id, "system");
                 $mailService = new MailService($request->auth->parent_id, $genericMail, $smtpSetting);
-                $mailService->sendEmail([env('ROHIT_EMAIL'), env('VIJAY_EMAIL')]);
+                $mailService->sendEmail([env('ADMIN_EMAIL')]);
 
                 return $this->failResponse("Payment processing failed!", []);
             }

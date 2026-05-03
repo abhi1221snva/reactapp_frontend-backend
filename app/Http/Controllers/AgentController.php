@@ -230,11 +230,19 @@ class AgentController extends Controller
         $total  = $query->count();
         $agents = $query->offset($start)->limit($limit)->get();
 
+        // Include seat limit info so the frontend can show usage
+        $seatInfo = PlanService::checkSeatLimit($clientId);
+
         return response()->json([
             'success'    => true,
             'message'    => 'Agents retrieved',
             'total'      => $total,
             'data'       => $agents,
+            'seat_limit' => [
+                'current' => $seatInfo['current'],
+                'max'     => $seatInfo['max'],       // 0 = unlimited
+                'allowed' => $seatInfo['allowed'],
+            ],
         ]);
     }
 

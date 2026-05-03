@@ -292,6 +292,17 @@ $router->group(['middleware' => ['jwt.auth', 'auth.superadmin', 'audit.log', 'ro
   $router->get('admin/billing/clients',                     'AdminBillingController@clients');
   $router->post('admin/billing/clients/{id}/credit-wallet', 'AdminBillingController@creditWallet');
 
+  // ── DID Pool Management ───────────────────────────────────────────────
+  $router->get('admin/did-pool',                  'AdminDidPoolController@index');
+  $router->get('admin/did-pool/stats',            'AdminDidPoolController@stats');
+  $router->post('admin/did-pool',                 'AdminDidPoolController@store');
+  $router->post('admin/did-pool/bulk-import',     'AdminDidPoolController@bulkImport');
+  $router->post('admin/did-pool/{id}/assign',     'AdminDidPoolController@assign');
+  $router->post('admin/did-pool/{id}/release',    'AdminDidPoolController@release');
+  $router->post('admin/did-pool/{id}/block',      'AdminDidPoolController@block');
+  $router->post('admin/did-pool/{id}/unblock',    'AdminDidPoolController@unblock');
+  $router->get('admin/did-pool/{id}/audit',       'AdminDidPoolController@audit');
+
   // ── RVM v2 Cutover Dashboard ──────────────────────────────────────────
   // Operator tooling for the shadow → dry_run → live migration. Read
   // surfaces rvm_shadow_log aggregates; write surfaces flip tenants

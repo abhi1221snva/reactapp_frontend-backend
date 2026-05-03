@@ -983,6 +983,21 @@ class SignupController extends Controller
                     ]);
                 }
 
+                // DID pool assignment (non-blocking)
+                try {
+                    $didSvc = new \App\Services\DidPoolService();
+                    $assignedDid = $didSvc->assignDidToClient($clientId, 'trial');
+                    if ($assignedDid) {
+                        Log::info('SignupController: trial DID assigned', [
+                            'client_id' => $clientId, 'did' => $assignedDid,
+                        ]);
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('SignupController: DID pool assignment failed (non-blocking)', [
+                        'client_id' => $clientId, 'error' => $e->getMessage(),
+                    ]);
+                }
+
                 // SIP extension provisioning (non-blocking)
                 try {
                     $nameParts = explode(' ', trim($prospect->name ?? ''), 2);

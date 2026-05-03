@@ -9,7 +9,10 @@ use App\Model\Master\AsteriskServer;
 use App\Model\Master\Client;
 use App\Model\Master\ClientServers;
 use App\Model\User;
+use App\Model\Master\SubscriptionPlan;
 use App\Services\ClientService;
+use App\Services\PlanService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -52,7 +55,7 @@ class AdminClientController extends Controller
         $search  = $request->input('search', '');
         $status  = $request->input('status', '');   // 'active' | 'inactive' | ''
 
-        $query = Client::with([])
+        $query = Client::with(['subscriptionPlan:id,slug,name'])
             ->orderByDesc('id');
 
         if ($search) {
@@ -129,8 +132,10 @@ class AdminClientController extends Controller
             'last_name'  => $adminUser->last_name,
         ] : null;
 
-        $data['asterisk_servers']   = $client->getAsteriskServers();
+        $data['asterisk_servers']    = $client->getAsteriskServers();
         $data['asterisk_server_list'] = AsteriskServer::list();
+        $data['subscription_plan']   = $client->subscriptionPlan;
+        $data['subscription_usage']  = PlanService::getUsageSummary($id);
 
         return $this->successResponse('OK', $data);
     }
@@ -177,6 +182,16 @@ class AdminClientController extends Controller
             'webphone', 'ringless', 'callchex', 'predictive_dial',
         ]);
         $attributes['stage'] = Client::RECORD_SAVED;
+
+        // Default to Starter plan on trial
+        $starterPlan = SubscriptionPlan::where('slug', SubscriptionPlan::SLUG_STARTER)->first();
+        if ($starterPlan) {
+            $attributes['subscription_plan_id']    = $starterPlan->id;
+            $attributes['subscription_status']     = 'trial';
+            $attributes['billing_cycle']           = 'monthly';
+            $attributes['subscription_started_at'] = Carbon::now();
+            $attributes['subscription_ends_at']    = Carbon::now()->addDays($starterPlan->trial_days ?: 14);
+        }
 
         $client = Client::create($attributes);
 

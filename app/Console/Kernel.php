@@ -49,6 +49,7 @@ use App\Console\Commands\CheckExpiredSubscriptions;
 use App\Console\Commands\AssignDefaultPlans;
 use App\Console\Commands\StripeSyncPlans;
 use App\Console\Commands\BackfillWalletBalances;
+use App\Console\Commands\ClearDidCooldowns;
 use Illuminate\Console\Scheduling\Schedule;
 use Laravel\Lumen\Console\Kernel as ConsoleKernel;
 
@@ -117,6 +118,7 @@ class Kernel extends ConsoleKernel
         AssignDefaultPlans::class,
         StripeSyncPlans::class,
         BackfillWalletBalances::class,
+        ClearDidCooldowns::class,
     ];
 
     /**
@@ -225,6 +227,9 @@ class Kernel extends ConsoleKernel
 
         // Subscription expiry: expire trials/subscriptions, set grace periods, send warnings
         $schedule->command('subscription:check-expired')->hourly()->name('subscription-check-expired')->withoutOverlapping();
+
+        // DID pool: clear 24h cooldowns so released DIDs become assignable again
+        $schedule->command('did-pool:clear-cooldowns')->hourly()->name('did-pool-cooldowns')->withoutOverlapping();
     }
 
 }

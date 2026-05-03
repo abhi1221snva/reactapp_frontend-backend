@@ -81,15 +81,21 @@ class ApnsVoipService
 
         $success = $httpCode === 200;
 
+        // Always log the full APNs response for debugging
+        Log::info('APNs response', [
+            'status'       => $httpCode,
+            'apns_host'    => $host,
+            'topic'        => $topic,
+            'token_prefix' => substr($deviceToken, 0, 12),
+            'body'         => $responseBody ?: '(empty)',
+            'payload_keys' => array_keys($payload),
+        ]);
+
         if (!$success) {
             Log::warning('APNs VoIP push failed', [
                 'http_code' => $httpCode,
                 'response'  => $responseBody,
                 'token'     => substr($deviceToken, 0, 12) . '...',
-            ]);
-        } else {
-            Log::info('APNs VoIP push sent', [
-                'token' => substr($deviceToken, 0, 12) . '...',
             ]);
         }
 

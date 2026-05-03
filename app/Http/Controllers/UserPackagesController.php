@@ -608,6 +608,15 @@ public function getClientPackages(Request $request)
         $arrTrialPackageDetails['expired'] = TRUE;
         $arrTrialPackageDetails['days_remaining'] = 0;
 
+        // If the client has an active Stripe subscription, they are not on trial
+        $client = \App\Model\Master\Client::find($request->auth->parent_id);
+        if ($client && $client->stripe_subscription_id && in_array($client->subscription_status, ['active', 'past_due'])) {
+            $arrTrialPackageDetails['expired'] = FALSE;
+            $arrTrialPackageDetails['days_remaining'] = 0;
+            $arrTrialPackageDetails['count'] = 2; // signal non-trial to frontend
+            return $this->successResponse("Trial Package Details", $arrTrialPackageDetails);
+        }
+
         $arrAllClientPackages = ClientPackage::where('client_id','=', $request->auth->parent_id)->get()->toArray();
         $arrTrialPackageDetails['count'] = count($arrAllClientPackages);
 

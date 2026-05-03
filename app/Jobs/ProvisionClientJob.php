@@ -260,6 +260,21 @@ class ProvisionClientJob extends Job
             $trialSvc = new TrialPackageService();
             $trialSvc->assignTrial($clientId, $userId);
 
+            // DID pool assignment (non-blocking)
+            try {
+                $didSvc = new \App\Services\DidPoolService();
+                $assignedDid = $didSvc->assignDidToClient($clientId, 'trial');
+                if ($assignedDid) {
+                    $this->safeLog('info', 'ProvisionClientJob: trial DID assigned', [
+                        'client_id' => $clientId, 'did' => $assignedDid,
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                $this->safeLog('warning', 'ProvisionClientJob: DID pool assignment failed (non-blocking)', [
+                    'client_id' => $clientId, 'error' => $e->getMessage(),
+                ]);
+            }
+
             SetupStepTracker::complete($this->progressId, 'sms_template_setup');
 
             // ── Stage 5: Send welcome email ──────────────────────────────────

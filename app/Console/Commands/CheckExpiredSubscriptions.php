@@ -79,6 +79,22 @@ class CheckExpiredSubscriptions extends Command
             ]);
 
             PlanService::invalidateClientPlan($client->id);
+
+            // Release pool DIDs back to inventory (24h cooldown)
+            try {
+                $didSvc = new \App\Services\DidPoolService();
+                $releasedDids = $didSvc->releaseClientDids($client->id, 'scheduler');
+                if ($releasedDids > 0) {
+                    Log::info('CheckExpiredSubscriptions: released pool DIDs', [
+                        'client_id' => $client->id, 'count' => $releasedDids,
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                Log::error('CheckExpiredSubscriptions: DID release failed', [
+                    'client_id' => $client->id, 'error' => $e->getMessage(),
+                ]);
+            }
+
             $count++;
 
             Log::info('CheckExpiredSubscriptions: client expired', [

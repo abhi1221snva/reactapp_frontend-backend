@@ -480,6 +480,17 @@ class ExtensionController extends Controller
 
     public function addExtension()
     {
+        // ── Seat limit check ────────────────────────────────────────────
+        $clientId = $this->request->auth->parent_id ?? 0;
+        $seatCheck = \App\Services\PlanService::checkSeatLimit($clientId);
+        if (!$seatCheck['allowed']) {
+            return response()->json([
+                'success' => false,
+                'message' => "Agent seat limit reached ({$seatCheck['current']}/{$seatCheck['max']}). Upgrade your plan to add more agents.",
+                'code'    => 'SEAT_LIMIT_REACHED',
+            ], 402);
+        }
+
         $this->validate($this->request, [
             'first_name' => 'required|string|max:255',
             'last_name' => 'string|max:255',
