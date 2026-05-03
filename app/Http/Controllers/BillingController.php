@@ -27,7 +27,7 @@ class BillingController extends Controller
     /**
      * GET /billing/overview
      *
-     * Returns current plan, usage, wallet balance, and upcoming invoice.
+     * Returns current plan, seat info, usage, wallet balance, and upcoming invoice.
      */
     public function overview(Request $request)
     {
@@ -39,12 +39,20 @@ class BillingController extends Controller
         $balance   = WalletTopUpService::getBalance($clientId);
         $upcoming  = StripeSubscriptionService::getUpcomingInvoice($clientId);
 
+        $plan = $planData ? $planData['plan'] : null;
+        $seatQuantity  = (int) ($client->seat_quantity ?? 1);
+        $pricePerSeat  = $plan ? (int) ($plan['unit_price_cents'] ?? 2900) : 2900;
+        $monthlyTotal  = $seatQuantity * $pricePerSeat;
+
         return $this->successResponse('OK', [
-            'plan'                      => $planData ? $planData['plan'] : null,
-            'billing_cycle'             => $client->billing_cycle ?? 'monthly',
+            'plan'                      => $plan,
+            'billing_cycle'             => 'monthly',
             'subscription_status'       => $client->subscription_status ?? null,
             'subscription_started_at'   => $client->subscription_started_at,
             'subscription_ends_at'      => $client->subscription_ends_at,
+            'seat_quantity'             => $seatQuantity,
+            'price_per_seat'            => $pricePerSeat,
+            'monthly_total'             => $monthlyTotal,
             'usage'                     => $usage,
             'wallet_balance'            => $balance,
             'wallet_low_threshold_cents' => $client->wallet_low_threshold_cents ?? 200,
@@ -53,46 +61,48 @@ class BillingController extends Controller
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    //  Plans
+    //  Plan info (single per-seat plan)
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * GET /billing/plans
+     * GET /billing/plan
      *
-     * Returns available plans for comparison + current plan ID.
+     * Returns the single per-seat plan details + current seat count.
      */
-    public function availablePlans(Request $request)
+    public function planInfo(Request $request)
     {
         $clientId = $this->tenantId($request);
         $client   = Client::find($clientId);
 
-        $plans = SubscriptionPlan::where('is_active', true)
-            ->orderBy('display_order')
-            ->get();
+        try {
+            $plan = SubscriptionPlan::getPerSeatPlan();
+        } catch (\Throwable $e) {
+            return $this->failResponse('Per-seat plan not found', [], null, 500);
+        }
 
         return $this->successResponse('OK', [
-            'plans'           => $plans->toArray(),
-            'current_plan_id' => $client->subscription_plan_id,
-            'billing_cycle'   => $client->billing_cycle ?? 'monthly',
+            'plan'             => $plan->toArray(),
+            'price_per_seat'   => $plan->unit_price_cents,
+            'seat_quantity'    => (int) ($client->seat_quantity ?? 1),
+            'has_subscription' => !empty($client->stripe_subscription_id),
         ]);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    //  Subscribe (trial → paid)
+    //  Subscribe (trial → paid) — per-seat
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
      * POST /billing/subscribe
      *
-     * Creates a Stripe subscription for the first time.
+     * Creates a Stripe subscription with per-seat quantity.
      * Only allowed when client is in trial or expired status.
      */
     public function subscribe(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'plan_id'        => 'required|integer|exists:master.subscription_plans,id',
+            'seat_count'     => 'required|integer|min:1',
             'payment_method' => 'required|string',
-            'billing_cycle'  => 'required|in:monthly,annual',
         ]);
 
         if ($validator->fails()) {
@@ -108,15 +118,14 @@ class BillingController extends Controller
 
         // Only allow subscribing from trial or expired status
         if ($client->stripe_subscription_id && in_array($client->subscription_status, ['active', 'past_due'])) {
-            return $this->failResponse('You already have an active subscription. Use upgrade instead.', [], null, 400);
+            return $this->failResponse('You already have an active subscription. Use update-seats instead.', [], null, 400);
         }
 
         try {
             $result = StripeSubscriptionService::createSubscription(
                 $clientId,
-                $request->input('plan_id'),
-                $request->input('payment_method'),
-                $request->input('billing_cycle')
+                (int) $request->input('seat_count'),
+                $request->input('payment_method')
             );
 
             return $this->successResponse('Subscription created', $result);
@@ -130,19 +139,19 @@ class BillingController extends Controller
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    //  Upgrade
+    //  Update Seats
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * POST /billing/upgrade
+     * POST /billing/update-seats
      *
-     * Upgrade to a higher plan. Validates upgrade-only (no downgrade).
+     * Change the seat quantity on the Stripe subscription.
+     * Increase = prorated immediately, decrease = applied at next billing cycle.
      */
-    public function upgrade(Request $request)
+    public function updateSeats(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'plan_id'       => 'required|integer|exists:master.subscription_plans,id',
-            'billing_cycle' => 'nullable|in:monthly,annual',
+            'seat_count' => 'required|integer|min:1',
         ]);
 
         if ($validator->fails()) {
@@ -157,40 +166,39 @@ class BillingController extends Controller
         $client   = Client::find($clientId);
 
         if (!$client->stripe_subscription_id) {
-            return $this->failResponse('No active subscription to upgrade. Use subscribe first.', [], null, 400);
+            return $this->failResponse('No active subscription. Use subscribe first.', [], null, 400);
         }
 
-        // Enforce upgrade-only: new plan must have higher display_order
-        $currentPlan = SubscriptionPlan::find($client->subscription_plan_id);
-        $newPlan     = SubscriptionPlan::find($request->input('plan_id'));
+        $newQty    = (int) $request->input('seat_count');
+        $currentQty = (int) ($client->seat_quantity ?? 1);
 
-        if ($currentPlan && $newPlan && $newPlan->display_order <= $currentPlan->display_order) {
-            return $this->failResponse('You can only upgrade to a higher plan. Contact support to downgrade.', [], null, 400);
-        }
+        // Determine proration: increase = prorate, decrease = none
+        $prorationBehavior = $newQty > $currentQty ? 'create_prorations' : 'none';
 
         try {
-            $result = StripeSubscriptionService::upgradeSubscription(
+            $result = StripeSubscriptionService::updateSeatCount(
                 $clientId,
-                $request->input('plan_id'),
-                $request->input('billing_cycle')
+                $newQty,
+                $prorationBehavior
             );
 
-            return $this->successResponse('Plan upgraded', $result);
+            return $this->successResponse('Seats updated', $result);
         } catch (\Throwable $e) {
-            Log::error('BillingController: upgrade failed', [
-                'client_id' => $clientId,
-                'error'     => $e->getMessage(),
+            Log::error('BillingController: updateSeats failed', [
+                'client_id'  => $clientId,
+                'seat_count' => $newQty,
+                'error'      => $e->getMessage(),
             ]);
-            return $this->failResponse('Failed to upgrade plan: ' . $e->getMessage(), [], null, 400);
+            return $this->failResponse('Failed to update seats: ' . $e->getMessage(), [], null, 400);
         }
     }
 
     /**
-     * GET /billing/upgrade/preview
+     * GET /billing/seats/preview
      *
-     * Preview proration for an upgrade.
+     * Preview proration for a seat count change.
      */
-    public function upgradePreview(Request $request)
+    public function seatsPreview(Request $request)
     {
         $clientId = $this->tenantId($request);
         $client   = Client::find($clientId);
@@ -199,57 +207,19 @@ class BillingController extends Controller
             return $this->successResponse('No active subscription', ['preview' => null]);
         }
 
-        $newPlanId    = $request->input('plan_id');
-        $billingCycle = $request->input('billing_cycle', $client->billing_cycle);
-
-        $newPlan = SubscriptionPlan::find($newPlanId);
-        if (!$newPlan) {
-            return $this->failResponse('Plan not found', [], null, 404);
-        }
-
-        $stripePriceId = $billingCycle === 'annual'
-            ? $newPlan->stripe_price_annual_id
-            : $newPlan->stripe_price_monthly_id;
-
-        if (!$stripePriceId) {
-            return $this->failResponse('Plan has no Stripe price for this billing cycle', [], null, 400);
-        }
+        $newQty = (int) $request->input('seat_count', $client->seat_quantity ?? 1);
 
         try {
-            $stripe = new \Stripe\StripeClient(env('STRIPE_SECRET'));
-
-            $subscription = $stripe->subscriptions->retrieve($client->stripe_subscription_id);
-            $itemId = $subscription->items->data[0]->id;
-
-            $preview = $stripe->invoices->upcoming([
-                'customer'               => $client->stripe_customer_id,
-                'subscription'           => $client->stripe_subscription_id,
-                'subscription_items'     => [[
-                    'id'    => $itemId,
-                    'price' => $stripePriceId,
-                ]],
-                'subscription_proration_behavior' => 'create_prorations',
-            ]);
-
-            $lines = [];
-            foreach ($preview->lines->data as $line) {
-                $lines[] = [
-                    'description' => $line->description,
-                    'amount'      => $line->amount,
-                ];
-            }
+            $preview = StripeSubscriptionService::getSeatChangePreview($clientId, $newQty);
 
             return $this->successResponse('OK', [
-                'preview' => [
-                    'amount_due'   => $preview->amount_due,
-                    'currency'     => $preview->currency,
-                    'period_start' => $preview->period_start,
-                    'period_end'   => $preview->period_end,
-                    'lines'        => $lines,
-                ],
+                'preview'          => $preview,
+                'current_seats'    => (int) ($client->seat_quantity ?? 1),
+                'new_seats'        => $newQty,
+                'price_per_seat'   => 2900,
             ]);
         } catch (\Throwable $e) {
-            return $this->failResponse('Failed to preview upgrade: ' . $e->getMessage(), [], null, 400);
+            return $this->failResponse('Failed to preview seat change: ' . $e->getMessage(), [], null, 400);
         }
     }
 

@@ -2224,10 +2224,10 @@ $router->group(['middleware' => ['jwt.auth', 'tenant', 'route.access'], 'prefix'
 // NOT behind subscription.active — users need billing access when expired
 $router->group(['middleware' => ['jwt.auth', 'tenant'], 'prefix' => 'billing'], function () use ($router) {
     $router->get('overview',             'BillingController@overview');
-    $router->get('plans',                'BillingController@availablePlans');
+    $router->get('plan',                 'BillingController@planInfo');
     $router->post('subscribe',           'BillingController@subscribe');
-    $router->post('upgrade',             'BillingController@upgrade');
-    $router->get('upgrade/preview',      'BillingController@upgradePreview');
+    $router->post('update-seats',        'BillingController@updateSeats');
+    $router->get('seats/preview',        'BillingController@seatsPreview');
     $router->get('invoices',             'BillingController@invoices');
     $router->post('wallet/top-up',       'BillingController@walletTopUp');
     $router->get('wallet',               'BillingController@walletBalance');

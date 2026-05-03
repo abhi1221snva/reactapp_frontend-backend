@@ -189,7 +189,7 @@ class StripeWebhookController extends Controller
     }
 
     /**
-     * customer.subscription.updated — Plan change, status change, etc.
+     * customer.subscription.updated — Seat quantity change, status change, etc.
      */
     private function handleSubscriptionUpdated(object $subscription): void
     {
@@ -203,14 +203,22 @@ class StripeWebhookController extends Controller
             'subscription_ends_at' => Carbon::createFromTimestamp($subscription->current_period_end),
         ];
 
-        // Sync plan if the price changed (e.g., upgrade from Stripe dashboard)
-        if (!empty($subscription->items->data[0]->price->id)) {
-            $stripePriceId = $subscription->items->data[0]->price->id;
-            $plan = StripeSubscriptionService::findPlanByStripePrice($stripePriceId);
+        // Sync seat quantity from Stripe subscription item
+        if (!empty($subscription->items->data[0])) {
+            $item = $subscription->items->data[0];
+            if (isset($item->quantity)) {
+                $updates['seat_quantity'] = (int) $item->quantity;
+            }
 
-            if ($plan && $plan->id !== $client->subscription_plan_id) {
-                $updates['subscription_plan_id'] = $plan->id;
-                $updates['stripe_price_id'] = $stripePriceId;
+            // Sync plan if the price changed (e.g., edited from Stripe dashboard)
+            if (!empty($item->price->id)) {
+                $stripePriceId = $item->price->id;
+                $plan = StripeSubscriptionService::findPlanByStripePrice($stripePriceId);
+
+                if ($plan && $plan->id !== $client->subscription_plan_id) {
+                    $updates['subscription_plan_id'] = $plan->id;
+                    $updates['stripe_price_id'] = $stripePriceId;
+                }
             }
         }
 
@@ -224,8 +232,9 @@ class StripeWebhookController extends Controller
         PlanService::syncFeatureFlagsToClient($client->id);
 
         Log::info('StripeWebhook: subscription.updated', [
-            'client_id' => $client->id,
-            'status'    => $subscription->status,
+            'client_id'     => $client->id,
+            'status'        => $subscription->status,
+            'seat_quantity' => $updates['seat_quantity'] ?? null,
         ]);
     }
 

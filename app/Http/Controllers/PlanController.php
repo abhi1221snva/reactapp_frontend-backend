@@ -166,6 +166,7 @@ class PlanController extends Controller
             'subscription_plan_id'     => 'required|integer|exists:master.subscription_plans,id',
             'billing_cycle'            => 'sometimes|in:monthly,annual',
             'subscription_status'      => 'sometimes|in:active,trial,past_due,cancelled,expired',
+            'seat_quantity'            => 'nullable|integer|min:1',
             'custom_max_agents'        => 'nullable|integer|min:0',
             'custom_max_calls_monthly' => 'nullable|integer|min:0',
             'custom_max_sms_monthly'   => 'nullable|integer|min:0',
@@ -194,6 +195,11 @@ class PlanController extends Controller
         // Set started_at if this is the first plan assignment
         if (!$client->subscription_started_at) {
             $updates['subscription_started_at'] = Carbon::now();
+        }
+
+        // Handle seat_quantity
+        if ($request->has('seat_quantity')) {
+            $updates['seat_quantity'] = (int) $request->input('seat_quantity');
         }
 
         // Handle custom overrides (pass null to clear)
@@ -265,13 +271,13 @@ class PlanController extends Controller
     /**
      * POST /admin/subscription-plans/sync-stripe
      *
-     * Sync all plans to Stripe (create Products + Prices).
+     * Sync the per-seat plan to Stripe (create Product + Price).
      */
     public function syncToStripe(Request $request)
     {
         try {
-            $results = StripeSubscriptionService::syncPlansToStripe();
-            return $this->successResponse('Plans synced to Stripe', $results);
+            $result = StripeSubscriptionService::syncPerSeatPlan();
+            return $this->successResponse('Per-seat plan synced to Stripe', $result);
         } catch (\Throwable $e) {
             return $this->failResponse('Sync failed: ' . $e->getMessage(), [], null, 500);
         }
@@ -304,6 +310,7 @@ class PlanController extends Controller
             'subscription_status'     => $data['client']['subscription_status'],
             'subscription_started_at' => $data['client']['subscription_started_at'],
             'subscription_ends_at'    => $data['client']['subscription_ends_at'],
+            'seat_quantity'           => (int) ($data['client']['seat_quantity'] ?? 1),
         ]);
     }
 

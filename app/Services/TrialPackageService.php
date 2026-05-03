@@ -52,9 +52,13 @@ class TrialPackageService
                 return true;
             }
 
-            // ── Resolve trial duration from subscription plan ────────
-            $starterPlan = SubscriptionPlan::where('slug', SubscriptionPlan::SLUG_STARTER)->first();
-            $trialDays   = $starterPlan ? ($starterPlan->trial_days ?: 14) : 14;
+            // ── Resolve trial duration from per-seat plan ────────────
+            try {
+                $perSeatPlan = SubscriptionPlan::getPerSeatPlan();
+            } catch (\Throwable $e) {
+                $perSeatPlan = null;
+            }
+            $trialDays = $perSeatPlan ? ($perSeatPlan->trial_days ?: 14) : 14;
 
             $now     = Carbon::now();
             $endDate = $now->copy()->addDays($trialDays);
@@ -94,14 +98,15 @@ class TrialPackageService
                 ]);
             }
 
-            // ── Assign subscription plan (new system) ────────────────
-            if ($starterPlan) {
+            // ── Assign per-seat plan on trial with 1 seat ────────────
+            if ($perSeatPlan) {
                 Client::where('id', $clientId)->update([
-                    'subscription_plan_id'    => $starterPlan->id,
+                    'subscription_plan_id'    => $perSeatPlan->id,
                     'subscription_status'     => 'trial',
                     'billing_cycle'           => 'monthly',
                     'subscription_started_at' => $now,
                     'subscription_ends_at'    => $endDate,
+                    'seat_quantity'           => 1,
                 ]);
 
                 PlanService::syncFeatureFlagsToClient($clientId);
@@ -111,7 +116,7 @@ class TrialPackageService
             $this->creditSignupWallet($clientId, $connName, $now);
 
             // ── Log subscription event ───────────────────────────────
-            $this->logSubscriptionEvent($clientId, $starterPlan, $endDate, $now);
+            $this->logSubscriptionEvent($clientId, $perSeatPlan, $endDate, $now);
 
             Log::info('TrialPackageService: trial package assigned', [
                 'client_id'          => $clientId,

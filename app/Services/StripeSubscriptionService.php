@@ -9,14 +9,15 @@ use App\Model\Master\Package;
 use App\Model\Master\SubscriptionPlan;
 use App\Model\User;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
  * StripeSubscriptionService
  *
- * Manages Stripe Subscriptions, Products, Prices, and Customers
- * at the client (tenant) level for the Rocket Dialer platform.
+ * Manages Stripe Subscriptions using a per-seat (quantity-based) pricing model.
+ * Single plan at $29/seat/month. Stripe handles total calculation via quantity.
  */
 class StripeSubscriptionService
 {
@@ -75,138 +76,115 @@ class StripeSubscriptionService
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    //  Plan synchronization to Stripe
+    //  Per-seat plan synchronization to Stripe
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * Sync all subscription plans to Stripe as Products + Prices.
-     * Safe to run multiple times — creates new Prices only if price changed.
-     *
-     * @return array synced plan summaries
+     * Sync the single per-seat plan to Stripe as a Product + per-unit monthly Price.
+     * Safe to run multiple times — creates new Price only if amount changed.
+     */
+    public static function syncPerSeatPlan(): array
+    {
+        $stripe = self::stripe();
+        $plan   = SubscriptionPlan::getPerSeatPlan();
+
+        // 1. Create or update Stripe Product
+        if ($plan->stripe_product_id) {
+            $stripe->products->update($plan->stripe_product_id, [
+                'name'        => $plan->name,
+                'description' => $plan->description ?: $plan->name,
+            ]);
+        } else {
+            $product = $stripe->products->create([
+                'name'        => $plan->name,
+                'description' => $plan->description ?: $plan->name,
+                'metadata'    => ['plan_id' => $plan->id, 'slug' => $plan->slug, 'billing_model' => 'per_seat'],
+            ]);
+            $plan->stripe_product_id = $product->id;
+        }
+
+        // 2. Create or update the per-unit monthly Price
+        $unitAmountCents = $plan->unit_price_cents; // 2900
+        $needsNewPrice   = !$plan->stripe_price_monthly_id;
+
+        if (!$needsNewPrice) {
+            try {
+                $existing = $stripe->prices->retrieve($plan->stripe_price_monthly_id);
+                if ($existing->unit_amount !== $unitAmountCents) {
+                    $stripe->prices->update($plan->stripe_price_monthly_id, ['active' => false]);
+                    $needsNewPrice = true;
+                }
+            } catch (\Stripe\Exception\InvalidRequestException $e) {
+                $needsNewPrice = true;
+            }
+        }
+
+        if ($needsNewPrice) {
+            $price = $stripe->prices->create([
+                'product'        => $plan->stripe_product_id,
+                'unit_amount'    => $unitAmountCents,
+                'currency'       => 'usd',
+                'recurring'      => ['interval' => 'month'],
+                'billing_scheme' => 'per_unit',
+                'metadata'       => ['plan_id' => $plan->id, 'type' => 'per_seat'],
+            ]);
+            $plan->stripe_price_monthly_id = $price->id;
+        }
+
+        $plan->save();
+
+        // Clear cached plan
+        Cache::forget('per_seat_plan');
+
+        Log::info('StripeSubscriptionService: per-seat plan synced to Stripe', [
+            'plan_id'    => $plan->id,
+            'product_id' => $plan->stripe_product_id,
+            'price_id'   => $plan->stripe_price_monthly_id,
+            'unit_amount' => $unitAmountCents,
+        ]);
+
+        return $plan->toArray();
+    }
+
+    /**
+     * @deprecated Use syncPerSeatPlan() instead. Multi-plan sync is no longer supported.
      */
     public static function syncPlansToStripe(): array
     {
-        $stripe = self::stripe();
-        $plans  = SubscriptionPlan::where('is_active', true)->get();
-        $results = [];
-
-        foreach ($plans as $plan) {
-            // 1. Create or update Stripe Product
-            if ($plan->stripe_product_id) {
-                $stripe->products->update($plan->stripe_product_id, [
-                    'name'        => $plan->name,
-                    'description' => $plan->description ?: $plan->name,
-                ]);
-            } else {
-                $product = $stripe->products->create([
-                    'name'        => $plan->name,
-                    'description' => $plan->description ?: $plan->name,
-                    'metadata'    => ['plan_id' => $plan->id, 'slug' => $plan->slug],
-                ]);
-                $plan->stripe_product_id = $product->id;
-            }
-
-            // 2. Create monthly price if needed
-            if ($plan->price_monthly > 0) {
-                $monthlyAmountCents = (int) round($plan->price_monthly * 100);
-                $needsNewMonthly = !$plan->stripe_price_monthly_id;
-
-                if (!$needsNewMonthly) {
-                    // Check if existing price matches
-                    try {
-                        $existing = $stripe->prices->retrieve($plan->stripe_price_monthly_id);
-                        if ($existing->unit_amount !== $monthlyAmountCents) {
-                            // Price changed — archive old, create new
-                            $stripe->prices->update($plan->stripe_price_monthly_id, ['active' => false]);
-                            $needsNewMonthly = true;
-                        }
-                    } catch (\Stripe\Exception\InvalidRequestException $e) {
-                        $needsNewMonthly = true;
-                    }
-                }
-
-                if ($needsNewMonthly) {
-                    $price = $stripe->prices->create([
-                        'product'     => $plan->stripe_product_id,
-                        'unit_amount' => $monthlyAmountCents,
-                        'currency'    => 'usd',
-                        'recurring'   => ['interval' => 'month'],
-                        'metadata'    => ['plan_id' => $plan->id, 'cycle' => 'monthly'],
-                    ]);
-                    $plan->stripe_price_monthly_id = $price->id;
-                }
-            }
-
-            // 3. Create annual price if needed
-            if ($plan->price_annual > 0) {
-                $annualAmountCents = (int) round($plan->price_annual * 100);
-                $needsNewAnnual = !$plan->stripe_price_annual_id;
-
-                if (!$needsNewAnnual) {
-                    try {
-                        $existing = $stripe->prices->retrieve($plan->stripe_price_annual_id);
-                        if ($existing->unit_amount !== $annualAmountCents) {
-                            $stripe->prices->update($plan->stripe_price_annual_id, ['active' => false]);
-                            $needsNewAnnual = true;
-                        }
-                    } catch (\Stripe\Exception\InvalidRequestException $e) {
-                        $needsNewAnnual = true;
-                    }
-                }
-
-                if ($needsNewAnnual) {
-                    $price = $stripe->prices->create([
-                        'product'     => $plan->stripe_product_id,
-                        'unit_amount' => $annualAmountCents,
-                        'currency'    => 'usd',
-                        'recurring'   => ['interval' => 'year'],
-                        'metadata'    => ['plan_id' => $plan->id, 'cycle' => 'annual'],
-                    ]);
-                    $plan->stripe_price_annual_id = $price->id;
-                }
-            }
-
-            $plan->save();
-
-            $results[] = [
-                'id'                      => $plan->id,
-                'name'                    => $plan->name,
-                'slug'                    => $plan->slug,
-                'stripe_product_id'       => $plan->stripe_product_id,
-                'stripe_price_monthly_id' => $plan->stripe_price_monthly_id,
-                'stripe_price_annual_id'  => $plan->stripe_price_annual_id,
-            ];
-        }
-
-        return $results;
+        return [self::syncPerSeatPlan()];
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    //  Subscription lifecycle
+    //  Subscription lifecycle — per-seat model
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * Create a new Stripe Subscription for the client.
+     * Create a new Stripe Subscription with per-seat quantity.
      * Used when a trial user subscribes for the first time.
+     *
+     * @param int    $clientId       The client (tenant) ID
+     * @param int    $seatQuantity   Number of seats (users) to subscribe for
+     * @param string $paymentMethodId Stripe payment method (pm_*)
      */
     public static function createSubscription(
         int    $clientId,
-        int    $planId,
-        string $paymentMethodId,
-        string $billingCycle = 'monthly'
+        int    $seatQuantity,
+        string $paymentMethodId
     ): array {
         $client = Client::find($clientId);
         if (!$client) {
             throw new \RuntimeException("Client {$clientId} not found");
         }
 
-        $plan = SubscriptionPlan::findOrFail($planId);
-        $stripePriceId = $billingCycle === 'annual'
-            ? $plan->stripe_price_annual_id
-            : $plan->stripe_price_monthly_id;
+        $plan = SubscriptionPlan::getPerSeatPlan();
+        $stripePriceId = $plan->stripe_price_monthly_id;
 
         if (!$stripePriceId) {
-            throw new \RuntimeException("Plan '{$plan->slug}' has no Stripe price for {$billingCycle} cycle. Run stripe:sync-plans first.");
+            throw new \RuntimeException('Per-seat plan has no Stripe price. Run syncPerSeatPlan() first.');
+        }
+
+        if ($seatQuantity < 1) {
+            throw new \InvalidArgumentException('Seat quantity must be at least 1');
         }
 
         // Ensure Stripe customer exists
@@ -221,26 +199,23 @@ class StripeSubscriptionService
             'invoice_settings' => ['default_payment_method' => $paymentMethodId],
         ]);
 
-        // Build subscription params
-        $subParams = [
+        // Create subscription with quantity (Stripe calculates total = unit_amount × quantity)
+        $subscription = $stripe->subscriptions->create([
             'customer'               => $stripeCustomerId,
-            'items'                  => [['price' => $stripePriceId]],
+            'items'                  => [['price' => $stripePriceId, 'quantity' => $seatQuantity]],
             'default_payment_method' => $paymentMethodId,
-            'metadata'               => ['client_id' => $clientId, 'plan_slug' => $plan->slug],
+            'metadata'               => ['client_id' => $clientId, 'seats' => $seatQuantity],
             'expand'                 => ['latest_invoice.payment_intent'],
-        ];
-
-        // No trial carryover: when a user subscribes, billing starts immediately.
-        // The user is upgrading because they see value — don't delay revenue.
-
-        $subscription = $stripe->subscriptions->create($subParams);
+        ]);
 
         // Update client record
+        $previousStatus = $client->subscription_status;
         $client->update([
             'subscription_plan_id'    => $plan->id,
             'stripe_subscription_id'  => $subscription->id,
             'stripe_price_id'         => $stripePriceId,
-            'billing_cycle'           => $billingCycle,
+            'billing_cycle'           => 'monthly',
+            'seat_quantity'           => $seatQuantity,
             'subscription_status'     => self::mapStripeStatus($subscription->status),
             'subscription_started_at' => $client->subscription_started_at ?: Carbon::now(),
             'subscription_ends_at'    => Carbon::createFromTimestamp($subscription->current_period_end),
@@ -259,103 +234,158 @@ class StripeSubscriptionService
         PlanService::syncFeatureFlagsToClient($clientId);
 
         // Log subscription event
-        self::logEvent($clientId, 'subscribed', $client->subscription_status ?? 'trial', 'active', $plan->id, [
-            'billing_cycle'   => $billingCycle,
+        self::logEvent($clientId, 'subscribed', $previousStatus ?? 'trial', 'active', $plan->id, [
+            'seat_quantity'   => $seatQuantity,
             'subscription_id' => $subscription->id,
+            'monthly_total'   => $seatQuantity * ($plan->unit_price_cents / 100),
         ]);
 
-        Log::info('StripeSubscriptionService: subscription created', [
+        Log::info('StripeSubscriptionService: per-seat subscription created', [
             'client_id'       => $clientId,
-            'plan'            => $plan->slug,
+            'seats'           => $seatQuantity,
             'subscription_id' => $subscription->id,
             'status'          => $subscription->status,
         ]);
 
         return [
-            'subscription_id' => $subscription->id,
-            'status'          => $subscription->status,
-            'plan'            => $plan->slug,
-            'billing_cycle'   => $billingCycle,
+            'subscription_id'    => $subscription->id,
+            'status'             => $subscription->status,
+            'seat_quantity'      => $seatQuantity,
+            'monthly_total'      => $seatQuantity * ($plan->unit_price_cents / 100),
             'current_period_end' => $subscription->current_period_end,
         ];
     }
 
     /**
-     * Upgrade the client's subscription to a higher plan.
-     * Stripe handles proration automatically.
+     * Update the seat count on an existing Stripe subscription.
+     *
+     * Increase: immediate proration (client is charged prorated amount now).
+     * Decrease: no proration (takes effect at next billing cycle).
+     *
+     * @param int    $clientId          The client ID
+     * @param int    $newQuantity       New seat count
+     * @param string $prorationBehavior 'create_prorations' or 'none'
      */
-    public static function upgradeSubscription(
-        int     $clientId,
-        int     $newPlanId,
-        ?string $billingCycle = null
+    public static function updateSeatCount(
+        int    $clientId,
+        int    $newQuantity,
+        string $prorationBehavior = 'create_prorations'
     ): array {
         $client = Client::find($clientId);
         if (!$client || !$client->stripe_subscription_id) {
             throw new \RuntimeException("Client {$clientId} has no active Stripe subscription");
         }
 
-        $newPlan = SubscriptionPlan::findOrFail($newPlanId);
-        $cycle   = $billingCycle ?: $client->billing_cycle;
-
-        $stripePriceId = $cycle === 'annual'
-            ? $newPlan->stripe_price_annual_id
-            : $newPlan->stripe_price_monthly_id;
-
-        if (!$stripePriceId) {
-            throw new \RuntimeException("Plan '{$newPlan->slug}' has no Stripe price for {$cycle} cycle");
+        if ($newQuantity < 1) {
+            throw new \InvalidArgumentException('Seat quantity must be at least 1');
         }
 
+        $oldQuantity = (int) ($client->seat_quantity ?? 1);
         $stripe = self::stripe();
 
-        // Retrieve current subscription to get the item ID
         $subscription = $stripe->subscriptions->retrieve($client->stripe_subscription_id);
         $itemId = $subscription->items->data[0]->id;
 
-        // Update the subscription item with proration
+        // Increase → prorate immediately; Decrease → apply at next cycle
+        $behavior = $newQuantity > $oldQuantity ? 'create_prorations' : $prorationBehavior;
+
         $updated = $stripe->subscriptions->update($client->stripe_subscription_id, [
             'items' => [[
-                'id'    => $itemId,
-                'price' => $stripePriceId,
+                'id'       => $itemId,
+                'quantity' => $newQuantity,
             ]],
-            'proration_behavior' => 'create_prorations',
-            'metadata'           => ['plan_slug' => $newPlan->slug],
+            'proration_behavior' => $behavior,
+            'metadata'           => ['seats' => $newQuantity],
         ]);
 
-        // Update client record
         $client->update([
-            'subscription_plan_id' => $newPlan->id,
-            'stripe_price_id'      => $stripePriceId,
-            'billing_cycle'        => $cycle,
-            'subscription_status'  => self::mapStripeStatus($updated->status),
+            'seat_quantity'       => $newQuantity,
             'subscription_ends_at' => Carbon::createFromTimestamp($updated->current_period_end),
         ]);
 
         PlanService::invalidateClientPlan($clientId);
-        PlanService::syncFeatureFlagsToClient($clientId);
 
-        self::logEvent($clientId, 'upgraded', $client->subscription_status, 'active', $newPlan->id, [
-            'previous_plan_id' => $client->subscription_plan_id,
-            'billing_cycle'    => $cycle,
+        $plan = SubscriptionPlan::getPerSeatPlan();
+        self::logEvent($clientId, 'seats_changed', 'active', 'active', $plan->id, [
+            'old_quantity' => $oldQuantity,
+            'new_quantity' => $newQuantity,
+            'proration'    => $behavior,
+            'monthly_total' => $newQuantity * ($plan->unit_price_cents / 100),
         ]);
 
-        Log::info('StripeSubscriptionService: subscription upgraded', [
-            'client_id' => $clientId,
-            'new_plan'  => $newPlan->slug,
-            'cycle'     => $cycle,
+        Log::info('StripeSubscriptionService: seat count updated', [
+            'client_id'    => $clientId,
+            'old_quantity' => $oldQuantity,
+            'new_quantity' => $newQuantity,
+            'proration'    => $behavior,
         ]);
 
         return [
-            'subscription_id' => $updated->id,
-            'status'          => $updated->status,
-            'plan'            => $newPlan->slug,
-            'billing_cycle'   => $cycle,
+            'subscription_id'    => $updated->id,
+            'old_quantity'       => $oldQuantity,
+            'new_quantity'       => $newQuantity,
+            'monthly_total'      => $newQuantity * ($plan->unit_price_cents / 100),
             'current_period_end' => $updated->current_period_end,
         ];
     }
 
     /**
+     * Preview the billing impact of changing the seat count.
+     * Returns the upcoming invoice with proration line items.
+     */
+    public static function getSeatChangePreview(int $clientId, int $newQuantity): ?array
+    {
+        $client = Client::find($clientId);
+        if (!$client || !$client->stripe_customer_id || !$client->stripe_subscription_id) {
+            return null;
+        }
+
+        $stripe = self::stripe();
+        $subscription = $stripe->subscriptions->retrieve($client->stripe_subscription_id);
+        $itemId = $subscription->items->data[0]->id;
+
+        try {
+            $preview = $stripe->invoices->upcoming([
+                'customer'           => $client->stripe_customer_id,
+                'subscription'       => $client->stripe_subscription_id,
+                'subscription_items' => [['id' => $itemId, 'quantity' => $newQuantity]],
+                'subscription_proration_behavior' => 'create_prorations',
+            ]);
+
+            $lines = [];
+            foreach ($preview->lines->data as $line) {
+                $lines[] = [
+                    'description' => $line->description,
+                    'amount'      => $line->amount,
+                ];
+            }
+
+            return [
+                'amount_due'   => $preview->amount_due,
+                'currency'     => $preview->currency,
+                'period_start' => $preview->period_start,
+                'period_end'   => $preview->period_end,
+                'lines'        => $lines,
+            ];
+        } catch (\Stripe\Exception\InvalidRequestException $e) {
+            Log::warning('StripeSubscriptionService: seat preview failed', [
+                'client_id' => $clientId,
+                'error'     => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * @deprecated Plan upgrades are no longer supported. Use updateSeatCount() instead.
+     */
+    public static function upgradeSubscription(int $clientId, int $newPlanId, ?string $billingCycle = null): array
+    {
+        throw new \RuntimeException('Plan upgrades are no longer supported. Use updateSeatCount() to adjust seats.');
+    }
+
+    /**
      * Cancel the client's subscription at the end of the current period.
-     * Admin-only operation.
      */
     public static function cancelSubscription(int $clientId): array
     {
@@ -382,15 +412,14 @@ class StripeSubscriptionService
         ]);
 
         return [
-            'subscription_id'     => $updated->id,
+            'subscription_id'      => $updated->id,
             'cancel_at_period_end' => true,
-            'cancel_at'           => $updated->cancel_at,
+            'cancel_at'            => $updated->cancel_at,
         ];
     }
 
     /**
      * Resume a cancelled subscription (undo cancel_at_period_end).
-     * Admin-only operation.
      */
     public static function resumeSubscription(int $clientId): array
     {
@@ -408,8 +437,8 @@ class StripeSubscriptionService
         PlanService::invalidateClientPlan($clientId);
 
         return [
-            'subscription_id'     => $updated->id,
-            'status'              => $updated->status,
+            'subscription_id'      => $updated->id,
+            'status'               => $updated->status,
             'cancel_at_period_end' => false,
         ];
     }
@@ -450,7 +479,6 @@ class StripeSubscriptionService
                 'lines'        => $lines,
             ];
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            // No upcoming invoice (e.g., no active subscription)
             return null;
         }
     }
@@ -482,18 +510,18 @@ class StripeSubscriptionService
             Invoice::updateOrCreate(
                 ['stripe_invoice_id' => $inv->id],
                 [
-                    'client_id'               => $clientId,
-                    'stripe_subscription_id'   => $inv->subscription,
-                    'type'                     => $inv->subscription ? 'subscription' : 'wallet_topup',
-                    'status'                   => $inv->status,
-                    'amount_due'               => $inv->amount_due,
-                    'amount_paid'              => $inv->amount_paid,
-                    'currency'                 => $inv->currency,
-                    'hosted_invoice_url'       => $inv->hosted_invoice_url,
-                    'invoice_pdf_url'          => $inv->invoice_pdf,
-                    'period_start'             => $inv->period_start ? Carbon::createFromTimestamp($inv->period_start) : null,
-                    'period_end'               => $inv->period_end ? Carbon::createFromTimestamp($inv->period_end) : null,
-                    'paid_at'                  => $inv->status === 'paid' && $inv->status_transitions?->paid_at
+                    'client_id'              => $clientId,
+                    'stripe_subscription_id' => $inv->subscription,
+                    'type'                   => $inv->subscription ? 'subscription' : 'wallet_topup',
+                    'status'                 => $inv->status,
+                    'amount_due'             => $inv->amount_due,
+                    'amount_paid'            => $inv->amount_paid,
+                    'currency'               => $inv->currency,
+                    'hosted_invoice_url'     => $inv->hosted_invoice_url,
+                    'invoice_pdf_url'        => $inv->invoice_pdf,
+                    'period_start'           => $inv->period_start ? Carbon::createFromTimestamp($inv->period_start) : null,
+                    'period_end'             => $inv->period_end ? Carbon::createFromTimestamp($inv->period_end) : null,
+                    'paid_at'                => $inv->status === 'paid' && $inv->status_transitions?->paid_at
                         ? Carbon::createFromTimestamp($inv->status_transitions->paid_at) : null,
                 ]
             );
@@ -538,7 +566,6 @@ class StripeSubscriptionService
             'type'     => 'card',
         ]);
 
-        // Get default payment method
         $customer  = $stripe->customers->retrieve($stripeCustomerId);
         $defaultPm = $customer->invoice_settings->default_payment_method ?? null;
 
@@ -558,7 +585,7 @@ class StripeSubscriptionService
     }
 
     /**
-     * Attach a payment method (pm_* token from Stripe.js) to the client's customer.
+     * Attach a payment method to the client's customer.
      */
     public static function addPaymentMethod(int $clientId, string $paymentMethodId, bool $setDefault = true): array
     {
@@ -588,14 +615,12 @@ class StripeSubscriptionService
     }
 
     /**
-     * Remove a payment method from the client's customer.
-     * Blocks removal of the last card if an active subscription exists.
+     * Remove a payment method. Blocks removal of the last card if subscription active.
      */
     public static function removePaymentMethod(int $clientId, string $paymentMethodId): void
     {
         $client = Client::find($clientId);
 
-        // Check if this is the last payment method and subscription is active
         if ($client && $client->stripe_subscription_id) {
             $methods = self::listPaymentMethods($clientId);
             if (count($methods) <= 1) {
@@ -624,9 +649,7 @@ class StripeSubscriptionService
      */
     public static function findPlanByStripePrice(string $stripePriceId): ?SubscriptionPlan
     {
-        return SubscriptionPlan::where('stripe_price_monthly_id', $stripePriceId)
-            ->orWhere('stripe_price_annual_id', $stripePriceId)
-            ->first();
+        return SubscriptionPlan::where('stripe_price_monthly_id', $stripePriceId)->first();
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -677,7 +700,6 @@ class StripeSubscriptionService
                 'created_at'   => Carbon::now(),
             ]);
         } catch (\Throwable $e) {
-            // Don't fail the operation if event logging fails
             Log::warning('StripeSubscriptionService: event logging failed', [
                 'client_id'  => $clientId,
                 'event_type' => $eventType,

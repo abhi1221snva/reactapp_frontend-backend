@@ -74,6 +74,7 @@ class PlanService
                         'custom_max_agents'        => $client->custom_max_agents,
                         'custom_max_calls_monthly' => $client->custom_max_calls_monthly,
                         'custom_max_sms_monthly'   => $client->custom_max_sms_monthly,
+                        'seat_quantity'            => $client->seat_quantity ?? 1,
                     ],
                 ];
             }
@@ -83,6 +84,7 @@ class PlanService
     /**
      * Resolve the effective limit for a given key.
      *
+     * For per-seat billing, max_agents is driven by client.seat_quantity.
      * Checks custom_* override first, then falls back to the plan default.
      * Returns 0 for "unlimited" or when no plan is assigned.
      */
@@ -91,6 +93,15 @@ class PlanService
         $data = self::getClientPlan($clientId);
         if (!$data) {
             return 0; // no plan = no limit (backward compat)
+        }
+
+        // Per-seat billing: max_agents is determined by seat_quantity
+        if ($limitKey === 'max_agents') {
+            $customVal = $data['client']['custom_max_agents'] ?? null;
+            if ($customVal !== null) {
+                return (int) $customVal;
+            }
+            return (int) ($data['client']['seat_quantity'] ?? 1);
         }
 
         $customKey = "custom_{$limitKey}";
@@ -108,6 +119,9 @@ class PlanService
 
     /**
      * Check if adding an agent would exceed the seat limit.
+     *
+     * Per-seat billing: the limit is driven by client.seat_quantity
+     * (purchased seats), not plan.max_agents.
      *
      * @return array{allowed: bool, current: int, max: int}
      */
@@ -238,40 +252,31 @@ class PlanService
 
     /**
      * Check if the client's plan includes a specific feature.
+     *
+     * Per-seat billing: the single plan includes ALL features,
+     * so this always returns true for any valid feature key.
      */
     public static function hasFeature(int $clientId, string $featureKey): bool
     {
-        $data = self::getClientPlan($clientId);
-        if (!$data) {
-            return true; // no plan = all features enabled (backward compat)
-        }
-
-        $column = SubscriptionPlan::FEATURE_MAP[$featureKey] ?? null;
-        if (!$column) {
+        if (!isset(SubscriptionPlan::FEATURE_MAP[$featureKey])) {
             return false;
         }
 
-        return (bool) ($data['plan'][$column] ?? false);
+        // Per-seat plan has all features — always return true
+        return true;
     }
 
     /**
      * Get all feature flags for the client's current plan.
      *
+     * Per-seat billing: single plan = all features enabled.
+     *
      * @return array<string, bool>
      */
     public static function getAllFeatures(int $clientId): array
     {
-        $data = self::getClientPlan($clientId);
-        if (!$data) {
-            // No plan — return all enabled for backward compat
-            return array_fill_keys(array_keys(SubscriptionPlan::FEATURE_MAP), true);
-        }
-
-        $flags = [];
-        foreach (SubscriptionPlan::FEATURE_MAP as $key => $column) {
-            $flags[$key] = (bool) ($data['plan'][$column] ?? false);
-        }
-        return $flags;
+        // Per-seat plan has all features enabled
+        return array_fill_keys(array_keys(SubscriptionPlan::FEATURE_MAP), true);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -305,11 +310,14 @@ class PlanService
         $callCheck = self::checkCallLimit($clientId);
         $smsCheck  = self::checkSmsLimit($clientId);
 
+        $data = self::getClientPlan($clientId);
+
         return [
-            'agents'     => ['current' => $seatCheck['current'], 'max' => $seatCheck['max']],
-            'calls'      => ['current' => $callCheck['current'], 'max' => $callCheck['max']],
-            'sms'        => ['current' => $smsCheck['current'],  'max' => $smsCheck['max']],
-            'year_month' => Carbon::now()->format('Y-m'),
+            'agents'        => ['current' => $seatCheck['current'], 'max' => $seatCheck['max']],
+            'calls'         => ['current' => $callCheck['current'], 'max' => $callCheck['max']],
+            'sms'           => ['current' => $smsCheck['current'],  'max' => $smsCheck['max']],
+            'seat_quantity' => $data ? (int) ($data['client']['seat_quantity'] ?? 1) : 1,
+            'year_month'    => Carbon::now()->format('Y-m'),
         ];
     }
 

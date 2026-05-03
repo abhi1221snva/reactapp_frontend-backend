@@ -70,9 +70,24 @@ class AdminBillingController extends Controller
         // Total wallet balance across all clients
         $totalWalletCents = Client::where('is_deleted', 0)->sum('wallet_balance_cents');
 
+        // Per-seat metrics
+        $totalSeats = (int) Client::where('is_deleted', 0)
+            ->whereIn('subscription_status', ['active', 'trial'])
+            ->sum('seat_quantity');
+
+        $perSeatPlan = DB::connection('master')->table('subscription_plans')
+            ->where('slug', 'per_seat')
+            ->where('is_active', true)
+            ->first();
+        $unitPriceCents = $perSeatPlan ? (int) $perSeatPlan->unit_price_cents : 2900;
+        $seatMrr = $totalSeats * $unitPriceCents;
+
         return $this->successResponse('OK', [
             'plan_distribution'     => $planDistribution,
             'mrr_cents'             => (int) $mrrCents,
+            'seat_mrr'              => $seatMrr,
+            'total_seats'           => $totalSeats,
+            'price_per_seat'        => $unitPriceCents,
             'wallet_revenue_cents'  => (int) $walletRevenueCents,
             'total_wallet_cents'    => (int) $totalWalletCents,
             'plan_breakdown'        => $planBreakdown,
@@ -101,6 +116,7 @@ class AdminBillingController extends Controller
                 'clients.grace_period_ends_at',
                 'clients.wallet_balance_cents',
                 'clients.stripe_customer_id',
+                'clients.seat_quantity',
                 'subscription_plans.name as plan_name',
                 'subscription_plans.slug as plan_slug',
                 'subscription_plans.price_monthly'

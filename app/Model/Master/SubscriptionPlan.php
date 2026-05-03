@@ -3,6 +3,7 @@
 namespace App\Model\Master;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 
 class SubscriptionPlan extends Model
 {
@@ -13,6 +14,7 @@ class SubscriptionPlan extends Model
     const SLUG_GROWTH     = 'growth';
     const SLUG_PRO        = 'pro';
     const SLUG_ENTERPRISE = 'enterprise';
+    const SLUG_PER_SEAT   = 'per_seat';
 
     /**
      * Map feature keys (used in middleware/service calls) to database columns.
@@ -36,6 +38,8 @@ class SubscriptionPlan extends Model
         'description',
         'price_monthly',
         'price_annual',
+        'unit_price_cents',
+        'billing_model',
         'max_agents',
         'max_calls_monthly',
         'max_sms_monthly',
@@ -60,6 +64,7 @@ class SubscriptionPlan extends Model
     protected $casts = [
         'price_monthly'          => 'float',
         'price_annual'           => 'float',
+        'unit_price_cents'       => 'integer',
         'max_agents'             => 'integer',
         'max_calls_monthly'      => 'integer',
         'max_sms_monthly'        => 'integer',
@@ -77,6 +82,18 @@ class SubscriptionPlan extends Model
         'display_order'          => 'integer',
         'trial_days'             => 'integer',
     ];
+
+    /**
+     * Get the single per-seat plan (cached 1 hour).
+     */
+    public static function getPerSeatPlan(): self
+    {
+        return Cache::remember('per_seat_plan', 3600, function () {
+            return self::where('slug', self::SLUG_PER_SEAT)
+                ->where('is_active', true)
+                ->firstOrFail();
+        });
+    }
 
     /**
      * Check if a given feature key is enabled on this plan.
